@@ -92,6 +92,14 @@ Format : `type: description courte`
 
 ---
 
+## Outils disponibles
+
+| Outil | Usage |
+|-------|-------|
+| `gh` (GitHub CLI) | Authentifié en tant que `ouro84`. Utiliser pour gérer le backlog GitHub Projects en langage naturel : ajouter des cartes, changer leur statut, lister les items. |
+
+---
+
 ## Règles de code
 
 1. **TypeScript strict partout.** Corriger les erreurs de typage, ne pas les contourner.
