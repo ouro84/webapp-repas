@@ -60,6 +60,13 @@ Il faut stocker les données utilisateur (recettes personnalisées, plannings) e
 ### Note d'implémentation
 Pour le MVP (Phase 3–5), les recettes sont stockées dans `/data/recettes.json` et le planning en `localStorage`. Supabase entre en jeu à la Phase 4 pour l'auth et la persistance multi-device. Ce choix est anticipé dès maintenant pour ne pas avoir à refactoriser l'architecture plus tard.
 
+> [RÉVISION - ADR-02 — 2026-06-03] Le client Supabase est scindé en deux fichiers plutôt qu'un seul `lib/supabase.ts` :
+> - `lib/supabase/client.ts` — client navigateur (Client Components), utilise `createBrowserClient`
+> - `lib/supabase/server.ts` — client serveur (Server Components, API Routes), utilise `createServerClient` avec gestion des cookies
+> Cette séparation est imposée par l'App Router de Next.js : les deux contextes d'exécution (navigateur / serveur) nécessitent des clients différents pour la gestion des sessions.
+
+> [NOTE PRODUCTION - 2026-06-03] La confirmation email Supabase Auth est désactivée en développement pour accélérer les tests. À réactiver dans Supabase → Authentication → Providers → Email → "Confirm email" avant tout déploiement en production.
+
 ### Alternatives écartées
 - **Firebase (Google)** : NoSQL — moins adapté aux données relationnelles. Vendor lock-in fort.
 - **PlanetScale / Neon** : bases de données seules, sans auth intégrée — implique de gérer l'auth séparément.
