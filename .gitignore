@@ -30,8 +30,11 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
-.env*
+# env files — les fichiers avec de vraies valeurs ne sont jamais commités
+.env
+.env.local
+.env*.local
+# .env.example est volontairement commité (template sans valeurs)
 
 # vercel
 .vercel
