@@ -31,7 +31,27 @@ export async function middleware(request: NextRequest) {
 
   // Rafraîchit la session si elle a expiré
   // Ne pas écrire de logique entre createServerClient et getUser()
-  await supabase.auth.getUser()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  // Pages protégées : redirige vers /login si non connecté
+  const protectedRoutes = ["/planning", "/courses"]
+  const isProtectedRoute = protectedRoutes.some(route =>
+    request.nextUrl.pathname.startsWith(route)
+  )
+
+  if (isProtectedRoute && !user) {
+    return NextResponse.redirect(new URL("/login", request.url))
+  }
+
+  // Pages auth : redirige vers /planning si déjà connecté
+  const authRoutes = ["/login", "/signup"]
+  const isAuthRoute = authRoutes.some(route =>
+    request.nextUrl.pathname.startsWith(route)
+  )
+
+  if (isAuthRoute && user) {
+    return NextResponse.redirect(new URL("/planning", request.url))
+  }
 
   return supabaseResponse
 }
