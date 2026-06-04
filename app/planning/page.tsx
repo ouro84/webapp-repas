@@ -17,6 +17,7 @@
 
 import Link from "next/link";
 import { useMemo, useState, useSyncExternalStore } from "react";
+import { toast } from "sonner";
 import { genererPlanning, remplacerSlot } from "@/lib/generateur";
 import recettesJson from "@/data/recettes.json";
 import type {
@@ -177,6 +178,7 @@ export default function PagePlanning() {
         sauvegarderPlanning(nouveau);
         setSlotIndisponible(null);
         setTransition({ statut: "repos" });
+        toast.success("Planning généré");
       } catch (erreur) {
         setTransition({
           statut: "erreur",
@@ -195,11 +197,14 @@ export default function PagePlanning() {
     if (planning === null) return;
     const nouveau = remplacerSlot(planning, jour, typeRepas, RECETTES);
     if (nouveau === null) {
+      // Toast en complément du message inline du slot (RG-04)
       setSlotIndisponible(cleSlot(jour, typeRepas));
+      toast.error("Pas de recette disponible");
       return;
     }
     sauvegarderPlanning(nouveau);
     setSlotIndisponible(null);
+    toast.success("Recette remplacée");
   }
 
   // --- État chargement (RG-09) ---

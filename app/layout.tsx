@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { Toaster } from "sonner";
 import "./globals.css";
 import { NavBar } from "@/components/ui/nav";
 
@@ -35,6 +36,20 @@ export default function RootLayout({
       */}
       <body className="flex min-h-full flex-col">
         <NavBar />
+        {/*
+          Notifications toast (sonner) — aux couleurs du design system via les
+          variables CSS émises par le @theme de globals.css.
+        */}
+        <Toaster
+          position="bottom-center"
+          toastOptions={{
+            style: {
+              background: "#ffffff",
+              border: "1px solid var(--color-brand-100)",
+              color: "var(--color-brand-900)",
+            },
+          }}
+        />
         {children}
       </body>
     </html>
