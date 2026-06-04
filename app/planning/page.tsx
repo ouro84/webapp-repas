@@ -83,7 +83,7 @@ const LIBELLES_JOURS: Record<Jour, { complet: string; abrege: string }> = {
 // Badge coloré par temps de préparation : rapide = vert, normal = jaune,
 // long = rouge.
 const STYLES_BADGE: Record<TempsPreparation, string> = {
-  rapide: "bg-green-100 text-green-800",
+  rapide: "bg-brand-50 text-brand-700",
   normal: "bg-yellow-100 text-yellow-800",
   long: "bg-red-100 text-red-800",
 };
@@ -179,8 +179,8 @@ export default function PagePlanning() {
   // --- État chargement (RG-09) ---
   if (transition.statut === "chargement") {
     return (
-      <main className="flex min-h-screen flex-col items-center justify-center gap-4 p-8">
-        <p className="animate-pulse text-lg text-gray-500">
+      <main className="flex flex-1 flex-col items-center justify-center gap-4 p-8">
+        <p className="animate-pulse text-lg text-brand-700/60">
           Génération du planning…
         </p>
       </main>
@@ -190,7 +190,7 @@ export default function PagePlanning() {
   // --- État erreur (RG-09) ---
   if (transition.statut === "erreur") {
     return (
-      <main className="flex min-h-screen flex-col items-center justify-center gap-6 p-8">
+      <main className="flex flex-1 flex-col items-center justify-center gap-6 p-8">
         <div className="max-w-md rounded-lg border border-red-200 bg-red-50 p-4 text-center">
           <p className="font-medium text-red-800">La génération a échoué</p>
           <p className="mt-1 text-sm text-red-600">{transition.message}</p>
@@ -198,7 +198,7 @@ export default function PagePlanning() {
         <button
           type="button"
           onClick={genererNouveauPlanning}
-          className="rounded-full bg-black px-6 py-3 font-medium text-white transition-colors hover:bg-gray-800"
+          className="rounded-full bg-brand-600 px-6 py-3 font-medium text-white transition-colors hover:bg-brand-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
         >
           Réessayer
         </button>
@@ -209,19 +209,19 @@ export default function PagePlanning() {
   // --- État vide (RG-09) : bouton de génération centré (écran 1) ---
   if (planning === null) {
     return (
-      <main className="flex min-h-screen flex-col items-center justify-center gap-8 p-8">
+      <main className="flex flex-1 flex-col items-center justify-center gap-8 p-8">
         <div className="text-center">
-          <h1 className="text-2xl font-bold text-gray-900">
+          <h1 className="text-2xl font-bold text-brand-900">
             Mon planning de la semaine
           </h1>
-          <p className="mt-2 text-gray-500">
+          <p className="mt-2 text-brand-700/60">
             Aucun planning pour l&apos;instant — lance la génération !
           </p>
         </div>
         <button
           type="button"
           onClick={genererNouveauPlanning}
-          className="rounded-full bg-black px-8 py-4 text-lg font-medium text-white transition-colors hover:bg-gray-800"
+          className="rounded-full bg-brand-600 px-8 py-4 text-lg font-medium text-white transition-colors hover:bg-brand-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
         >
           Générer mon planning
         </button>
@@ -231,24 +231,24 @@ export default function PagePlanning() {
 
   // --- État chargé : planning affiché ---
   return (
-    <main className="min-h-screen p-4 md:p-8">
+    <main className="flex-1 p-4 md:p-8">
       <header className="mb-6 flex flex-wrap items-center gap-3">
         <div className="min-w-0 flex-1">
-          <h1 className="text-2xl font-bold text-gray-900">
+          <h1 className="text-2xl font-bold text-brand-900">
             Mon planning de la semaine
           </h1>
-          <p className="text-sm text-gray-500">Semaine {planning.semaine}</p>
+          <p className="text-sm text-brand-700/60">Semaine {planning.semaine}</p>
         </div>
         <button
           type="button"
           onClick={genererNouveauPlanning}
-          className="rounded-full border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100"
+          className="rounded-full border border-brand-200 px-4 py-2 text-sm font-medium text-brand-700 transition-colors hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
         >
           Regénérer
         </button>
         <Link
           href="/courses"
-          className="rounded-full bg-black px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800"
+          className="rounded-full bg-brand-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
         >
           Liste de courses →
         </Link>
@@ -259,9 +259,9 @@ export default function PagePlanning() {
         {planning.jours.map((jp) => (
           <li
             key={jp.jour}
-            className="rounded-lg border border-gray-200 bg-white p-4"
+            className="rounded-lg border border-brand-100 bg-white p-4"
           >
-            <h2 className="mb-3 font-semibold text-gray-900">
+            <h2 className="mb-3 font-semibold text-brand-900">
               {LIBELLES_JOURS[jp.jour].complet}
             </h2>
             <div className="space-y-3">
@@ -285,7 +285,7 @@ export default function PagePlanning() {
       <div className="hidden md:grid md:grid-cols-7 md:gap-3">
         {planning.jours.map((jp) => (
           <section key={jp.jour} className="flex flex-col gap-3">
-            <h2 className="text-center text-sm font-semibold uppercase tracking-wide text-gray-500">
+            <h2 className="text-center text-sm font-semibold uppercase tracking-wide text-brand-700/60">
               {LIBELLES_JOURS[jp.jour].abrege}
             </h2>
             {slotsDuJour(jp).map((slot) => (
@@ -321,11 +321,11 @@ function SlotRepas({
   onChanger: () => void;
 }) {
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-3">
-      <p className="text-xs font-medium uppercase tracking-wide text-gray-400">
+    <div className="rounded-lg border border-brand-100 bg-white p-3">
+      <p className="text-xs font-medium uppercase tracking-wide text-brand-700/50">
         {libelle}
       </p>
-      <p className="mt-1 text-sm font-medium text-gray-900">{recette.nom}</p>
+      <p className="mt-1 text-sm font-medium text-brand-900">{recette.nom}</p>
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <span
           className={`rounded-full px-2 py-0.5 text-xs font-medium ${STYLES_BADGE[recette.tempsPreparation]}`}
@@ -335,7 +335,7 @@ function SlotRepas({
         <button
           type="button"
           onClick={onChanger}
-          className="text-xs text-gray-500 underline-offset-2 transition-colors hover:text-gray-900 hover:underline"
+          className="text-xs text-brand-700/60 underline-offset-2 transition-colors hover:text-brand-900 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
         >
           ↺ changer
         </button>
