@@ -98,6 +98,32 @@ function cleSlot(jour: Jour, typeRepas: TypeRepas): string {
   return `${jour}-${typeRepas}`;
 }
 
+// "2026-W23" → "Semaine du 1 juin 2026" — bien plus lisible que l'identifiant
+// ISO brut. Norme ISO 8601 : le 4 janvier appartient toujours à la semaine 1 ;
+// on en déduit le lundi de la semaine 1, puis on avance de N-1 semaines.
+// Tout est calculé en UTC pour être insensible au fuseau horaire.
+function formaterSemaine(semaine: string): string {
+  const correspondance = /^(\d{4})-W(\d{2})$/.exec(semaine);
+  if (!correspondance) return `Semaine ${semaine}`; // format inattendu : affichage brut
+  const annee = Number(correspondance[1]);
+  const numero = Number(correspondance[2]);
+
+  const quatreJanvier = new Date(Date.UTC(annee, 0, 4));
+  const jourSemaine = quatreJanvier.getUTCDay() || 7; // ISO : lundi = 1 … dimanche = 7
+  const lundi = new Date(quatreJanvier);
+  lundi.setUTCDate(
+    quatreJanvier.getUTCDate() - (jourSemaine - 1) + (numero - 1) * 7
+  );
+
+  const date = lundi.toLocaleDateString("fr-FR", {
+    timeZone: "UTC",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+  return `Semaine du ${date}`;
+}
+
 // Slots d'un jour dans l'ordre d'affichage : déjeuner (week-end) puis dîner.
 function slotsDuJour(
   jp: JourPlanning
@@ -238,7 +264,9 @@ export default function PagePlanning() {
           <h1 className="text-2xl font-bold text-brand-900">
             Mon planning de la semaine
           </h1>
-          <p className="text-sm text-brand-700/85">Semaine {planning.semaine}</p>
+          <p className="text-sm text-brand-700/85">
+            {formaterSemaine(planning.semaine)}
+          </p>
         </div>
         {/* after:-inset-1 : étend la zone tactile à ≥ 44px sans changer le visuel */}
         <button
@@ -327,7 +355,7 @@ function SlotRepas({
   onChanger: () => void;
 }) {
   return (
-    <div className="rounded-lg border border-brand-100 bg-white p-3">
+    <div className="rounded-lg border border-brand-100 bg-white p-3 shadow-sm">
       <p className="text-xs font-medium uppercase tracking-wide text-brand-700/85">
         {libelle}
       </p>
@@ -347,7 +375,7 @@ function SlotRepas({
           type="button"
           onClick={onChanger}
           aria-label={`Changer le ${libelle.toLowerCase()} de ${jourLabel.toLowerCase()}`}
-          className="relative text-xs text-brand-700/85 underline-offset-2 transition-colors after:absolute after:-inset-x-2 after:-inset-y-3.5 after:content-[''] hover:text-brand-900 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
+          className="relative px-3 py-2 text-sm text-brand-700/85 underline-offset-2 transition-colors after:absolute after:-inset-1 after:content-[''] hover:text-brand-900 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
         >
           <span aria-hidden="true">↺</span> changer
         </button>
