@@ -17,6 +17,7 @@
 
 import Link from "next/link";
 import { useMemo, useState, useSyncExternalStore } from "react";
+import { toast } from "sonner";
 import { genererPlanning, remplacerSlot } from "@/lib/generateur";
 import recettesJson from "@/data/recettes.json";
 import type {
@@ -83,7 +84,7 @@ const LIBELLES_JOURS: Record<Jour, { complet: string; abrege: string }> = {
 // Badge coloré par temps de préparation : rapide = vert, normal = jaune,
 // long = rouge.
 const STYLES_BADGE: Record<TempsPreparation, string> = {
-  rapide: "bg-green-100 text-green-800",
+  rapide: "bg-brand-50 text-brand-700",
   normal: "bg-yellow-100 text-yellow-800",
   long: "bg-red-100 text-red-800",
 };
@@ -96,6 +97,32 @@ const LIBELLES_TEMPS: Record<TempsPreparation, string> = {
 
 function cleSlot(jour: Jour, typeRepas: TypeRepas): string {
   return `${jour}-${typeRepas}`;
+}
+
+// "2026-W23" → "Semaine du 1 juin 2026" — bien plus lisible que l'identifiant
+// ISO brut. Norme ISO 8601 : le 4 janvier appartient toujours à la semaine 1 ;
+// on en déduit le lundi de la semaine 1, puis on avance de N-1 semaines.
+// Tout est calculé en UTC pour être insensible au fuseau horaire.
+function formaterSemaine(semaine: string): string {
+  const correspondance = /^(\d{4})-W(\d{2})$/.exec(semaine);
+  if (!correspondance) return `Semaine ${semaine}`; // format inattendu : affichage brut
+  const annee = Number(correspondance[1]);
+  const numero = Number(correspondance[2]);
+
+  const quatreJanvier = new Date(Date.UTC(annee, 0, 4));
+  const jourSemaine = quatreJanvier.getUTCDay() || 7; // ISO : lundi = 1 … dimanche = 7
+  const lundi = new Date(quatreJanvier);
+  lundi.setUTCDate(
+    quatreJanvier.getUTCDate() - (jourSemaine - 1) + (numero - 1) * 7
+  );
+
+  const date = lundi.toLocaleDateString("fr-FR", {
+    timeZone: "UTC",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+  return `Semaine du ${date}`;
 }
 
 // Slots d'un jour dans l'ordre d'affichage : déjeuner (week-end) puis dîner.
@@ -151,6 +178,7 @@ export default function PagePlanning() {
         sauvegarderPlanning(nouveau);
         setSlotIndisponible(null);
         setTransition({ statut: "repos" });
+        toast.success("Planning généré");
       } catch (erreur) {
         setTransition({
           statut: "erreur",
@@ -169,18 +197,22 @@ export default function PagePlanning() {
     if (planning === null) return;
     const nouveau = remplacerSlot(planning, jour, typeRepas, RECETTES);
     if (nouveau === null) {
+      // Toast en complément du message inline du slot (RG-04)
       setSlotIndisponible(cleSlot(jour, typeRepas));
+      toast.error("Pas de recette disponible");
       return;
     }
     sauvegarderPlanning(nouveau);
     setSlotIndisponible(null);
+    toast.success("Recette remplacée");
   }
 
   // --- État chargement (RG-09) ---
   if (transition.statut === "chargement") {
     return (
-      <main className="flex min-h-screen flex-col items-center justify-center gap-4 p-8">
-        <p className="animate-pulse text-lg text-gray-500">
+      <main id="contenu" className="flex flex-1 flex-col items-center justify-center gap-4 p-8">
+        {/* role="status" : annonce le chargement aux lecteurs d'écran */}
+        <p role="status" className="animate-pulse text-lg text-brand-700/85">
           Génération du planning…
         </p>
       </main>
@@ -190,15 +222,15 @@ export default function PagePlanning() {
   // --- État erreur (RG-09) ---
   if (transition.statut === "erreur") {
     return (
-      <main className="flex min-h-screen flex-col items-center justify-center gap-6 p-8">
+      <main id="contenu" className="flex flex-1 flex-col items-center justify-center gap-6 p-8">
         <div className="max-w-md rounded-lg border border-red-200 bg-red-50 p-4 text-center">
           <p className="font-medium text-red-800">La génération a échoué</p>
-          <p className="mt-1 text-sm text-red-600">{transition.message}</p>
+          <p className="mt-1 text-sm text-red-700">{transition.message}</p>
         </div>
         <button
           type="button"
           onClick={genererNouveauPlanning}
-          className="rounded-full bg-black px-6 py-3 font-medium text-white transition-colors hover:bg-gray-800"
+          className="rounded-full bg-brand-600 px-6 py-3 font-medium text-white transition-colors hover:bg-brand-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
         >
           Réessayer
         </button>
@@ -209,19 +241,19 @@ export default function PagePlanning() {
   // --- État vide (RG-09) : bouton de génération centré (écran 1) ---
   if (planning === null) {
     return (
-      <main className="flex min-h-screen flex-col items-center justify-center gap-8 p-8">
+      <main id="contenu" className="flex flex-1 flex-col items-center justify-center gap-8 p-8">
         <div className="text-center">
-          <h1 className="text-2xl font-bold text-gray-900">
+          <h1 className="text-2xl font-bold text-brand-900">
             Mon planning de la semaine
           </h1>
-          <p className="mt-2 text-gray-500">
+          <p className="mt-2 text-brand-700/85">
             Aucun planning pour l&apos;instant — lance la génération !
           </p>
         </div>
         <button
           type="button"
           onClick={genererNouveauPlanning}
-          className="rounded-full bg-black px-8 py-4 text-lg font-medium text-white transition-colors hover:bg-gray-800"
+          className="rounded-full bg-brand-600 px-8 py-4 text-lg font-medium text-white transition-colors hover:bg-brand-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
         >
           Générer mon planning
         </button>
@@ -231,24 +263,27 @@ export default function PagePlanning() {
 
   // --- État chargé : planning affiché ---
   return (
-    <main className="min-h-screen p-4 md:p-8">
+    <main id="contenu" className="flex-1 p-4 md:p-8">
       <header className="mb-6 flex flex-wrap items-center gap-3">
         <div className="min-w-0 flex-1">
-          <h1 className="text-2xl font-bold text-gray-900">
+          <h1 className="text-2xl font-bold text-brand-900">
             Mon planning de la semaine
           </h1>
-          <p className="text-sm text-gray-500">Semaine {planning.semaine}</p>
+          <p className="text-sm text-brand-700/85">
+            {formaterSemaine(planning.semaine)}
+          </p>
         </div>
+        {/* after:-inset-1 : étend la zone tactile à ≥ 44px sans changer le visuel */}
         <button
           type="button"
           onClick={genererNouveauPlanning}
-          className="rounded-full border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100"
+          className="relative rounded-full border border-brand-200 px-4 py-2 text-sm font-medium text-brand-700 transition-colors after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
         >
           Regénérer
         </button>
         <Link
           href="/courses"
-          className="rounded-full bg-black px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800"
+          className="relative rounded-full bg-brand-600 px-4 py-2 text-sm font-medium text-white transition-colors after:absolute after:-inset-1 after:content-[''] hover:bg-brand-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
         >
           Liste de courses →
         </Link>
@@ -259,9 +294,9 @@ export default function PagePlanning() {
         {planning.jours.map((jp) => (
           <li
             key={jp.jour}
-            className="rounded-lg border border-gray-200 bg-white p-4"
+            className="rounded-lg border border-brand-100 bg-white p-4"
           >
-            <h2 className="mb-3 font-semibold text-gray-900">
+            <h2 className="mb-3 font-semibold text-brand-900">
               {LIBELLES_JOURS[jp.jour].complet}
             </h2>
             <div className="space-y-3">
@@ -269,6 +304,7 @@ export default function PagePlanning() {
                 <SlotRepas
                   key={slot.typeRepas}
                   libelle={slot.libelle}
+                  jourLabel={LIBELLES_JOURS[jp.jour].complet}
                   recette={slot.recette}
                   indisponible={
                     slotIndisponible === cleSlot(jp.jour, slot.typeRepas)
@@ -285,13 +321,14 @@ export default function PagePlanning() {
       <div className="hidden md:grid md:grid-cols-7 md:gap-3">
         {planning.jours.map((jp) => (
           <section key={jp.jour} className="flex flex-col gap-3">
-            <h2 className="text-center text-sm font-semibold uppercase tracking-wide text-gray-500">
+            <h2 className="text-center text-sm font-semibold uppercase tracking-wide text-brand-700/85">
               {LIBELLES_JOURS[jp.jour].abrege}
             </h2>
             {slotsDuJour(jp).map((slot) => (
               <SlotRepas
                 key={slot.typeRepas}
                 libelle={slot.libelle}
+                jourLabel={LIBELLES_JOURS[jp.jour].complet}
                 recette={slot.recette}
                 indisponible={
                   slotIndisponible === cleSlot(jp.jour, slot.typeRepas)
@@ -311,37 +348,48 @@ export default function PagePlanning() {
 // mobile et desktop.
 function SlotRepas({
   libelle,
+  jourLabel,
   recette,
   indisponible,
   onChanger,
 }: {
   libelle: string;
+  jourLabel: string;
   recette: Recette;
   indisponible: boolean;
   onChanger: () => void;
 }) {
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-3">
-      <p className="text-xs font-medium uppercase tracking-wide text-gray-400">
+    <div className="rounded-lg border border-brand-100 bg-white p-3 shadow-sm">
+      <p className="text-xs font-medium uppercase tracking-wide text-brand-700/85">
         {libelle}
       </p>
-      <p className="mt-1 text-sm font-medium text-gray-900">{recette.nom}</p>
+      <p className="mt-1 text-sm font-medium text-brand-900">{recette.nom}</p>
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <span
           className={`rounded-full px-2 py-0.5 text-xs font-medium ${STYLES_BADGE[recette.tempsPreparation]}`}
         >
           {LIBELLES_TEMPS[recette.tempsPreparation]}
         </span>
+        {/*
+          a11y : aria-label contextualisé — 9 boutons "changer" identiques sont
+          indiscernables au lecteur d'écran ; le glyphe ↺ (vocalisé bizarrement)
+          est masqué ; after:-inset-* étend la zone tactile à ≥ 44px.
+        */}
         <button
           type="button"
           onClick={onChanger}
-          className="text-xs text-gray-500 underline-offset-2 transition-colors hover:text-gray-900 hover:underline"
+          aria-label={`Changer le ${libelle.toLowerCase()} de ${jourLabel.toLowerCase()}`}
+          className="relative px-3 py-2 text-sm text-brand-700/85 underline-offset-2 transition-colors after:absolute after:-inset-1 after:content-[''] hover:text-brand-900 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
         >
-          ↺ changer
+          <span aria-hidden="true">↺</span> changer
         </button>
       </div>
+      {/* role="alert" : le message dynamique est annoncé aux lecteurs d'écran */}
       {indisponible && (
-        <p className="mt-2 text-xs text-red-600">Pas de recette disponible</p>
+        <p role="alert" className="mt-2 text-xs text-red-600">
+          Pas de recette disponible
+        </p>
       )}
     </div>
   );

@@ -123,8 +123,11 @@ export default function PageCourses() {
   // --- État chargement (RG-09) : prérendu serveur + calcul initial ---
   if (!hydrate) {
     return (
-      <main className="flex min-h-screen flex-col items-center justify-center p-8">
-        <p className="animate-pulse text-lg text-gray-500">Chargement…</p>
+      <main id="contenu" className="flex flex-1 flex-col items-center justify-center p-8">
+        {/* role="status" : annonce le chargement aux lecteurs d'écran */}
+        <p role="status" className="animate-pulse text-lg text-brand-700/85">
+          Chargement…
+        </p>
       </main>
     );
   }
@@ -132,14 +135,14 @@ export default function PageCourses() {
   // --- État vide (RG-09) : aucun planning à agréger ---
   if (liste === null) {
     return (
-      <main className="flex min-h-screen flex-col items-center justify-center gap-8 p-8">
+      <main id="contenu" className="flex flex-1 flex-col items-center justify-center gap-8 p-8">
         <div className="text-center">
-          <h1 className="text-2xl font-bold text-gray-900">Liste de courses</h1>
-          <p className="mt-2 text-gray-500">Génère d&apos;abord un planning</p>
+          <h1 className="text-2xl font-bold text-brand-900">Liste de courses</h1>
+          <p className="mt-2 text-brand-700/85">Génère d&apos;abord un planning</p>
         </div>
         <Link
           href="/planning"
-          className="rounded-full bg-black px-8 py-4 text-lg font-medium text-white transition-colors hover:bg-gray-800"
+          className="rounded-full bg-brand-600 px-8 py-4 text-lg font-medium text-white transition-colors hover:bg-brand-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
         >
           Aller au planning
         </Link>
@@ -154,11 +157,11 @@ export default function PageCourses() {
   );
 
   return (
-    <main className="mx-auto min-h-screen w-full max-w-2xl p-4 md:p-8">
+    <main id="contenu" className="mx-auto flex-1 w-full max-w-2xl p-4 md:p-8">
       <header className="mb-6 flex flex-wrap items-center gap-3">
         <div className="min-w-0 flex-1">
-          <h1 className="text-2xl font-bold text-gray-900">Liste de courses</h1>
-          <p className="text-sm text-gray-500">
+          <h1 className="text-2xl font-bold text-brand-900">Liste de courses</h1>
+          <p className="text-sm text-brand-700/85">
             {nbArticles} article{nbArticles > 1 ? "s" : ""}
             {liste.fondDePlacard.length > 0 &&
               ` · ${liste.fondDePlacard.length} à vérifier`}
@@ -166,7 +169,8 @@ export default function PageCourses() {
         </div>
         <Link
           href="/planning"
-          className="rounded-full border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100"
+          // after:-inset-1 : étend la zone tactile à ≥ 44px sans changer le visuel
+          className="relative rounded-full border border-brand-200 px-4 py-2 text-sm font-medium text-brand-700 transition-colors after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
         >
           ← Planning
         </Link>
@@ -176,17 +180,17 @@ export default function PageCourses() {
       <div className="space-y-6">
         {liste.normal.map((ligne) => (
           <section key={ligne.categorie}>
-            <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500">
+            <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-brand-700/85">
               {LIBELLES_CATEGORIES[ligne.categorie]}
             </h2>
-            <ul className="divide-y divide-gray-100 rounded-lg border border-gray-200 bg-white">
+            <ul className="divide-y divide-brand-100 rounded-lg border border-brand-100 bg-white">
               {ligne.ingredients.map((ingredient) => (
                 <li
                   key={`${ingredient.nom}-${ingredient.unite}`}
                   className="flex items-baseline justify-between gap-4 px-4 py-2.5"
                 >
-                  <span className="text-sm text-gray-900">{ingredient.nom}</span>
-                  <span className="shrink-0 text-sm font-medium text-gray-500">
+                  <span className="text-sm text-brand-900">{ingredient.nom}</span>
+                  <span className="shrink-0 text-sm font-medium text-brand-700/85">
                     {formaterQuantite(ingredient)}
                   </span>
                 </li>
