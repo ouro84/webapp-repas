@@ -180,7 +180,8 @@ export default function PagePlanning() {
   if (transition.statut === "chargement") {
     return (
       <main className="flex flex-1 flex-col items-center justify-center gap-4 p-8">
-        <p className="animate-pulse text-lg text-brand-700/60">
+        {/* role="status" : annonce le chargement aux lecteurs d'écran */}
+        <p role="status" className="animate-pulse text-lg text-brand-700/85">
           Génération du planning…
         </p>
       </main>
@@ -193,7 +194,7 @@ export default function PagePlanning() {
       <main className="flex flex-1 flex-col items-center justify-center gap-6 p-8">
         <div className="max-w-md rounded-lg border border-red-200 bg-red-50 p-4 text-center">
           <p className="font-medium text-red-800">La génération a échoué</p>
-          <p className="mt-1 text-sm text-red-600">{transition.message}</p>
+          <p className="mt-1 text-sm text-red-700">{transition.message}</p>
         </div>
         <button
           type="button"
@@ -214,7 +215,7 @@ export default function PagePlanning() {
           <h1 className="text-2xl font-bold text-brand-900">
             Mon planning de la semaine
           </h1>
-          <p className="mt-2 text-brand-700/60">
+          <p className="mt-2 text-brand-700/85">
             Aucun planning pour l&apos;instant — lance la génération !
           </p>
         </div>
@@ -237,18 +238,19 @@ export default function PagePlanning() {
           <h1 className="text-2xl font-bold text-brand-900">
             Mon planning de la semaine
           </h1>
-          <p className="text-sm text-brand-700/60">Semaine {planning.semaine}</p>
+          <p className="text-sm text-brand-700/85">Semaine {planning.semaine}</p>
         </div>
+        {/* after:-inset-1 : étend la zone tactile à ≥ 44px sans changer le visuel */}
         <button
           type="button"
           onClick={genererNouveauPlanning}
-          className="rounded-full border border-brand-200 px-4 py-2 text-sm font-medium text-brand-700 transition-colors hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
+          className="relative rounded-full border border-brand-200 px-4 py-2 text-sm font-medium text-brand-700 transition-colors after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
         >
           Regénérer
         </button>
         <Link
           href="/courses"
-          className="rounded-full bg-brand-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
+          className="relative rounded-full bg-brand-600 px-4 py-2 text-sm font-medium text-white transition-colors after:absolute after:-inset-1 after:content-[''] hover:bg-brand-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
         >
           Liste de courses →
         </Link>
@@ -269,6 +271,7 @@ export default function PagePlanning() {
                 <SlotRepas
                   key={slot.typeRepas}
                   libelle={slot.libelle}
+                  jourLabel={LIBELLES_JOURS[jp.jour].complet}
                   recette={slot.recette}
                   indisponible={
                     slotIndisponible === cleSlot(jp.jour, slot.typeRepas)
@@ -285,13 +288,14 @@ export default function PagePlanning() {
       <div className="hidden md:grid md:grid-cols-7 md:gap-3">
         {planning.jours.map((jp) => (
           <section key={jp.jour} className="flex flex-col gap-3">
-            <h2 className="text-center text-sm font-semibold uppercase tracking-wide text-brand-700/60">
+            <h2 className="text-center text-sm font-semibold uppercase tracking-wide text-brand-700/85">
               {LIBELLES_JOURS[jp.jour].abrege}
             </h2>
             {slotsDuJour(jp).map((slot) => (
               <SlotRepas
                 key={slot.typeRepas}
                 libelle={slot.libelle}
+                jourLabel={LIBELLES_JOURS[jp.jour].complet}
                 recette={slot.recette}
                 indisponible={
                   slotIndisponible === cleSlot(jp.jour, slot.typeRepas)
@@ -311,18 +315,20 @@ export default function PagePlanning() {
 // mobile et desktop.
 function SlotRepas({
   libelle,
+  jourLabel,
   recette,
   indisponible,
   onChanger,
 }: {
   libelle: string;
+  jourLabel: string;
   recette: Recette;
   indisponible: boolean;
   onChanger: () => void;
 }) {
   return (
     <div className="rounded-lg border border-brand-100 bg-white p-3">
-      <p className="text-xs font-medium uppercase tracking-wide text-brand-700/50">
+      <p className="text-xs font-medium uppercase tracking-wide text-brand-700/85">
         {libelle}
       </p>
       <p className="mt-1 text-sm font-medium text-brand-900">{recette.nom}</p>
@@ -332,16 +338,25 @@ function SlotRepas({
         >
           {LIBELLES_TEMPS[recette.tempsPreparation]}
         </span>
+        {/*
+          a11y : aria-label contextualisé — 9 boutons "changer" identiques sont
+          indiscernables au lecteur d'écran ; le glyphe ↺ (vocalisé bizarrement)
+          est masqué ; after:-inset-* étend la zone tactile à ≥ 44px.
+        */}
         <button
           type="button"
           onClick={onChanger}
-          className="text-xs text-brand-700/60 underline-offset-2 transition-colors hover:text-brand-900 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
+          aria-label={`Changer le ${libelle.toLowerCase()} de ${jourLabel.toLowerCase()}`}
+          className="relative text-xs text-brand-700/85 underline-offset-2 transition-colors after:absolute after:-inset-x-2 after:-inset-y-3.5 after:content-[''] hover:text-brand-900 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
         >
-          ↺ changer
+          <span aria-hidden="true">↺</span> changer
         </button>
       </div>
+      {/* role="alert" : le message dynamique est annoncé aux lecteurs d'écran */}
       {indisponible && (
-        <p className="mt-2 text-xs text-red-600">Pas de recette disponible</p>
+        <p role="alert" className="mt-2 text-xs text-red-600">
+          Pas de recette disponible
+        </p>
       )}
     </div>
   );

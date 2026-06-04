@@ -8,7 +8,7 @@ export default function Accueil() {
         <h1 className="text-3xl font-bold text-brand-900">
           Repas de la semaine
         </h1>
-        <p className="mt-3 max-w-sm text-brand-700/70">
+        <p className="mt-3 max-w-sm text-brand-700/85">
           Génère ton planning et ta liste de courses en un clic
         </p>
       </div>

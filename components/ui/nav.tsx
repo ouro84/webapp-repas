@@ -45,7 +45,9 @@ export function NavBar() {
                   key={href}
                   href={href}
                   aria-current={actif ? "page" : undefined}
-                  className={`rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
+                  // after:-inset-y-2 : étend la zone tactile verticale à ≥ 44px
+                  // (inset-x-0 pour ne pas chevaucher le lien voisin, gap-1)
+                  className={`relative rounded-full px-4 py-1.5 text-sm font-medium transition-colors after:absolute after:inset-x-0 after:-inset-y-2 after:content-[''] ${
                     actif
                       ? "bg-brand-600 text-white"
                       : "text-brand-700 hover:bg-brand-50"

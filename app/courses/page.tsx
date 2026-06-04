@@ -124,7 +124,10 @@ export default function PageCourses() {
   if (!hydrate) {
     return (
       <main className="flex flex-1 flex-col items-center justify-center p-8">
-        <p className="animate-pulse text-lg text-brand-700/60">Chargement…</p>
+        {/* role="status" : annonce le chargement aux lecteurs d'écran */}
+        <p role="status" className="animate-pulse text-lg text-brand-700/85">
+          Chargement…
+        </p>
       </main>
     );
   }
@@ -135,7 +138,7 @@ export default function PageCourses() {
       <main className="flex flex-1 flex-col items-center justify-center gap-8 p-8">
         <div className="text-center">
           <h1 className="text-2xl font-bold text-brand-900">Liste de courses</h1>
-          <p className="mt-2 text-brand-700/60">Génère d&apos;abord un planning</p>
+          <p className="mt-2 text-brand-700/85">Génère d&apos;abord un planning</p>
         </div>
         <Link
           href="/planning"
@@ -158,7 +161,7 @@ export default function PageCourses() {
       <header className="mb-6 flex flex-wrap items-center gap-3">
         <div className="min-w-0 flex-1">
           <h1 className="text-2xl font-bold text-brand-900">Liste de courses</h1>
-          <p className="text-sm text-brand-700/60">
+          <p className="text-sm text-brand-700/85">
             {nbArticles} article{nbArticles > 1 ? "s" : ""}
             {liste.fondDePlacard.length > 0 &&
               ` · ${liste.fondDePlacard.length} à vérifier`}
@@ -166,7 +169,8 @@ export default function PageCourses() {
         </div>
         <Link
           href="/planning"
-          className="rounded-full border border-brand-200 px-4 py-2 text-sm font-medium text-brand-700 transition-colors hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
+          // after:-inset-1 : étend la zone tactile à ≥ 44px sans changer le visuel
+          className="relative rounded-full border border-brand-200 px-4 py-2 text-sm font-medium text-brand-700 transition-colors after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
         >
           ← Planning
         </Link>
@@ -176,7 +180,7 @@ export default function PageCourses() {
       <div className="space-y-6">
         {liste.normal.map((ligne) => (
           <section key={ligne.categorie}>
-            <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-brand-700/60">
+            <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-brand-700/85">
               {LIBELLES_CATEGORIES[ligne.categorie]}
             </h2>
             <ul className="divide-y divide-brand-100 rounded-lg border border-brand-100 bg-white">
@@ -186,7 +190,7 @@ export default function PageCourses() {
                   className="flex items-baseline justify-between gap-4 px-4 py-2.5"
                 >
                   <span className="text-sm text-brand-900">{ingredient.nom}</span>
-                  <span className="shrink-0 text-sm font-medium text-brand-700/60">
+                  <span className="shrink-0 text-sm font-medium text-brand-700/85">
                     {formaterQuantite(ingredient)}
                   </span>
                 </li>
