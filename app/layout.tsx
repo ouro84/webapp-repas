@@ -35,6 +35,14 @@ export default function RootLayout({
         le contenu (children) remplit le reste via flex-1 sur chaque page.
       */}
       <body className="flex min-h-full flex-col">
+        {/* Skip link (WCAG 2.4.1) : visible uniquement au focus clavier,
+            permet de sauter la NavBar pour atteindre le contenu directement */}
+        <a
+          href="#contenu"
+          className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[100] focus:rounded-full focus:bg-brand-600 focus:px-4 focus:py-2 focus:text-white"
+        >
+          Aller au contenu
+        </a>
         <NavBar />
         {/*
           Notifications toast (sonner) — aux couleurs du design system via les

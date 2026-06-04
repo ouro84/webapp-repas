@@ -2,7 +2,7 @@ import Link from "next/link";
 
 export default function Accueil() {
   return (
-    <main className="flex flex-1 flex-col items-center justify-center gap-10 p-8">
+    <main id="contenu" className="flex flex-1 flex-col items-center justify-center gap-10 p-8">
       <div className="text-center">
         <div className="mb-4 text-5xl" aria-hidden="true">🥗</div>
         <h1 className="text-3xl font-bold text-brand-900">

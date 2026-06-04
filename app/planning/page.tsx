@@ -210,7 +210,7 @@ export default function PagePlanning() {
   // --- État chargement (RG-09) ---
   if (transition.statut === "chargement") {
     return (
-      <main className="flex flex-1 flex-col items-center justify-center gap-4 p-8">
+      <main id="contenu" className="flex flex-1 flex-col items-center justify-center gap-4 p-8">
         {/* role="status" : annonce le chargement aux lecteurs d'écran */}
         <p role="status" className="animate-pulse text-lg text-brand-700/85">
           Génération du planning…
@@ -222,7 +222,7 @@ export default function PagePlanning() {
   // --- État erreur (RG-09) ---
   if (transition.statut === "erreur") {
     return (
-      <main className="flex flex-1 flex-col items-center justify-center gap-6 p-8">
+      <main id="contenu" className="flex flex-1 flex-col items-center justify-center gap-6 p-8">
         <div className="max-w-md rounded-lg border border-red-200 bg-red-50 p-4 text-center">
           <p className="font-medium text-red-800">La génération a échoué</p>
           <p className="mt-1 text-sm text-red-700">{transition.message}</p>
@@ -241,7 +241,7 @@ export default function PagePlanning() {
   // --- État vide (RG-09) : bouton de génération centré (écran 1) ---
   if (planning === null) {
     return (
-      <main className="flex flex-1 flex-col items-center justify-center gap-8 p-8">
+      <main id="contenu" className="flex flex-1 flex-col items-center justify-center gap-8 p-8">
         <div className="text-center">
           <h1 className="text-2xl font-bold text-brand-900">
             Mon planning de la semaine
@@ -263,7 +263,7 @@ export default function PagePlanning() {
 
   // --- État chargé : planning affiché ---
   return (
-    <main className="flex-1 p-4 md:p-8">
+    <main id="contenu" className="flex-1 p-4 md:p-8">
       <header className="mb-6 flex flex-wrap items-center gap-3">
         <div className="min-w-0 flex-1">
           <h1 className="text-2xl font-bold text-brand-900">
