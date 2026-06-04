@@ -1,7 +1,6 @@
 "use client"
 
 import { useState } from "react"
-import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import Link from "next/link"
 
@@ -10,7 +9,6 @@ export default function SignupPage() {
   const [password, setPassword] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
-  const router = useRouter()
   const supabase = createClient()
 
   async function handleSubmit(e: React.FormEvent) {
@@ -26,7 +24,10 @@ export default function SignupPage() {
       return
     }
 
-    router.push("/planning")
+    // Navigation pleine page : voir le commentaire équivalent dans login —
+    // évite que le cache du router Next resserve la redirection préfetchée
+    // avant connexion.
+    window.location.assign("/planning")
   }
 
   return (

@@ -1,7 +1,6 @@
 "use client"
 
 import { useState } from "react"
-import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import Link from "next/link"
 
@@ -10,7 +9,6 @@ export default function LoginPage() {
   const [password, setPassword] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
-  const router = useRouter()
   const supabase = createClient()
 
   async function handleSubmit(e: React.FormEvent) {
@@ -26,7 +24,11 @@ export default function LoginPage() {
       return
     }
 
-    router.push("/planning")
+    // Navigation pleine page (et non router.push) : le cache du router Next
+    // peut contenir le résultat préfetché de /planning AVANT connexion
+    // (= redirection vers /login) et ignorer la session toute neuve.
+    // Un vrai chargement force le passage par le middleware avec le cookie.
+    window.location.assign("/planning")
   }
 
   return (
