@@ -1,0 +1,59 @@
+# CI — lance les tests unitaires (Vitest) et e2e (Playwright)
+# sur chaque PR et chaque push vers main.
+#
+# Secrets GitHub Actions requis (Settings → Secrets and variables → Actions) :
+# - NEXT_PUBLIC_SUPABASE_URL
+# - NEXT_PUBLIC_SUPABASE_ANON_KEY
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Installer les dépendances
+        run: npm ci
+
+      - name: Tests unitaires (Vitest)
+        # `vitest` détecte CI=true et tourne en mode single-run, pas en watch.
+        run: npm run test
+
+      # auth.setup.ts et `next dev` lisent .env.local (pas process.env) :
+      # on le génère depuis les secrets avant de lancer les e2e.
+      - name: Générer .env.local depuis les secrets
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+        run: |
+          {
+            echo "NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL"
+            echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY"
+          } > .env.local
+
+      - name: Installer le navigateur Playwright
+        run: npx playwright install --with-deps chromium
+
+      - name: Tests e2e (Playwright)
+        run: npx playwright test
+
+      # En cas d'échec e2e, le rapport HTML (traces incluses) est téléchargeable
+      # depuis l'onglet Actions du run.
+      - name: Publier le rapport Playwright
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
