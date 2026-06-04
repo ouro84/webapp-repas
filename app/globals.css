@@ -1,26 +1,46 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+/* ============================================================
+   Design system — Webapp Repas de la semaine
+   Tailwind v4 : la configuration se fait ici via @theme,
+   plus de tailwind.config.js.
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+   Convention de nommage :
+   --color-brand-*   → palette principale (vert herbe fraîche)
+   --color-accent-*  → palette secondaire (terracotta / épice)
+   --color-canvas    → fond de page crème
+
+   Chaque token --color-X-Y devient automatiquement les classes
+   utilitaires bg-X-Y / text-X-Y / border-X-Y dans les composants.
+   ============================================================ */
+
+@theme {
+  /* ---- Brand — vert herbe fraîche ---- */
+  --color-brand-50:  #edf7ee;   /* fonds très légers (hover, tags) */
+  --color-brand-100: #d4ecd6;   /* bordures, séparateurs */
+  --color-brand-200: #aad9ae;   /* bordures medium */
+  --color-brand-500: #4a9454;   /* icônes, badges */
+  --color-brand-600: #3d7a44;   /* boutons principaux */
+  --color-brand-700: #2e5e34;   /* texte sur fond clair, hover buttons */
+  --color-brand-900: #1a3820;   /* titres, texte fort */
+
+  /* ---- Accent — terracotta / épice ---- */
+  --color-accent-50:  #fef0ec;   /* fonds légers accent */
+  --color-accent-100: #fdddd3;   /* bordures accent */
+  --color-accent-500: #d4683a;   /* éléments accent */
+  --color-accent-600: #b85530;   /* accent hover */
+
+  /* ---- Canvas — fond crème ---- */
+  --color-canvas: #fafaf5;
+
+  /* ---- Typographie ---- */
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
+/* Base : fond crème + texte vert très foncé (plus chaleureux que noir pur) */
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: var(--color-canvas);
+  color: var(--color-brand-900);
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
 }
