@@ -1,0 +1,39 @@
+# Configuration Dependabot — mises à jour automatiques des dépendances
+# Doc : https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+version: 2
+
+updates:
+  # Dépendances npm (package.json)
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    # Convention de commit du projet : `chore: ...`
+    commit-message:
+      prefix: "chore"
+    labels:
+      - "dependencies"
+    groups:
+      # Une seule PR hebdomadaire pour les mises à jour patch + minor.
+      # Les mises à jour majeures restent hors groupe → PRs séparées.
+      dependances-non-majeures:
+        update-types:
+          - "minor"
+          - "patch"
+
+  # GitHub Actions (.github/workflows)
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    commit-message:
+      prefix: "chore"
+    labels:
+      - "dependencies"
+    groups:
+      actions-non-majeures:
+        update-types:
+          - "minor"
+          - "patch"
