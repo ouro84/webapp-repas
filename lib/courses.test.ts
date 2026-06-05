@@ -7,15 +7,15 @@
 //   4. isoler les ingrédients fond de placard dans une section dédiée
 //   5. trier par catégorie (ordre canonique), puis par nom
 //
-// Données : les vraies recettes de data/recettes.json, assemblées dans des
+// Données : les fixtures de tests/fixtures/recettes.ts, assemblées dans des
 // plannings construits à la main pour des assertions déterministes.
+// Découplé de data/recettes.json (issue #29) : le vrai dataset peut évoluer
+// librement sans casser ces tests.
 
 import { describe, test, expect } from "vitest";
 import { genererListeCourses } from "@/lib/courses";
-import recettesJson from "@/data/recettes.json";
+import { RECETTES_FIXTURES, recetteFixture } from "@/tests/fixtures/recettes";
 import type { CategorieIngredient, Jour, Planning, Recette } from "@/types";
-
-const RECETTES = recettesJson as Recette[];
 
 const ORDRE_CATEGORIES: CategorieIngredient[] = [
   "viandes-poissons",
@@ -26,13 +26,6 @@ const ORDRE_CATEGORIES: CategorieIngredient[] = [
   "surgeles",
   "autre",
 ];
-
-// Recette réelle par id — échoue bruyamment si le dataset change.
-function recette(id: string): Recette {
-  const trouvee = RECETTES.find((r) => r.id === id);
-  if (!trouvee) throw new Error(`Recette absente du dataset : ${id}`);
-  return trouvee;
-}
 
 // Planning minimal : un dîner par recette fournie (7 max).
 function planningAvec(...recettes: Recette[]): Planning {
@@ -55,11 +48,11 @@ function toutesLesLignes(planning: Planning) {
 // ---------------------------------------------------------------------------
 describe("genererListeCourses — RG-05 agrégation des quantités", () => {
   test("additionne les quantités d'un ingrédient présent dans plusieurs recettes", () => {
-    // Le parmesan (en grammes) apparaît dans ces trois recettes réelles.
+    // Le parmesan (en grammes) apparaît dans ces trois fixtures.
     const sources = [
-      recette("pates-au-pesto"),
-      recette("salade-cesar-au-poulet"),
-      recette("spaghetti-carbonara"),
+      recetteFixture("tagliatelles-au-parmesan"),
+      recetteFixture("risotto-au-parmesan"),
+      recetteFixture("gratin-de-courgettes"),
     ];
     const lignes = toutesLesLignes(planningAvec(...sources));
 
@@ -75,9 +68,9 @@ describe("genererListeCourses — RG-05 agrégation des quantités", () => {
   });
 
   test("regroupe les noms sans tenir compte de la casse", () => {
-    // Même recette réelle dupliquée avec ses noms d'ingrédients en MAJUSCULES :
+    // Même fixture dupliquée avec ses noms d'ingrédients en MAJUSCULES :
     // chaque ingrédient doit fusionner avec son jumeau, quantité doublée.
-    const originale = recette("omelette-aux-fines-herbes");
+    const originale = recetteFixture("omelette-aux-champignons");
     const enMajuscules: Recette = {
       ...originale,
       id: "clone-majuscules",
@@ -99,17 +92,12 @@ describe("genererListeCourses — RG-05 agrégation des quantités", () => {
   });
 
   test("garde des lignes séparées pour un même ingrédient en unités différentes", () => {
-    // Dans le dataset réel, la crème fraîche existe en "cas" et en "briquette".
-    const enCas = RECETTES.find((r) =>
-      r.ingredients.some((i) => i.nom.toLowerCase() === "crème fraîche" && i.unite === "cas")
-    );
-    const enBriquette = RECETTES.find((r) =>
-      r.ingredients.some((i) => i.nom.toLowerCase() === "crème fraîche" && i.unite === "briquette")
-    );
-    expect(enCas).toBeDefined();
-    expect(enBriquette).toBeDefined();
+    // Dans les fixtures, la crème fraîche existe en "cas" (gratin)
+    // et en "briquette" (quiche).
+    const enCas = recetteFixture("gratin-de-courgettes");
+    const enBriquette = recetteFixture("quiche-aux-lardons");
 
-    const lignes = toutesLesLignes(planningAvec(enCas!, enBriquette!));
+    const lignes = toutesLesLignes(planningAvec(enCas, enBriquette));
     const lignesCreme = lignes.filter((i) => i.nom.toLowerCase() === "crème fraîche");
 
     expect(lignesCreme).toHaveLength(2); // aucune conversion tentée
@@ -124,7 +112,10 @@ describe("genererListeCourses — RG-05 agrégation des quantités", () => {
 describe("genererListeCourses — RG-05 section fond de placard", () => {
   test("isole les ingrédients fond de placard hors de la liste à acheter", () => {
     const liste = genererListeCourses(
-      planningAvec(recette("omelette-aux-fines-herbes"), recette("pates-au-pesto"))
+      planningAvec(
+        recetteFixture("omelette-aux-champignons"),
+        recetteFixture("tagliatelles-au-parmesan")
+      )
     );
 
     // La section dédiée ne contient que des ingrédients flaggués…
@@ -141,8 +132,11 @@ describe("genererListeCourses — RG-05 section fond de placard", () => {
   });
 
   test("additionne aussi les quantités dans le fond de placard", () => {
-    // Le sel (en cac) est flaggué fond de placard dans plusieurs recettes réelles.
-    const sources = [recette("omelette-aux-fines-herbes"), recette("pates-au-pesto")];
+    // Le sel (en cac) est flaggué fond de placard dans ces deux fixtures.
+    const sources = [
+      recetteFixture("tagliatelles-au-parmesan"),
+      recetteFixture("gratin-de-courgettes"),
+    ];
     const liste = genererListeCourses(planningAvec(...sources));
 
     const sel = liste.fondDePlacard.filter((i) => i.nom.toLowerCase() === "sel");
@@ -162,7 +156,7 @@ describe("genererListeCourses — RG-05 section fond de placard", () => {
 // ---------------------------------------------------------------------------
 describe("genererListeCourses — RG-05 tri et présentation", () => {
   // Un planning copieux pour couvrir plusieurs catégories.
-  const planningComplet = planningAvec(...RECETTES.slice(0, 7));
+  const planningComplet = planningAvec(...RECETTES_FIXTURES.slice(0, 7));
 
   test("ordonne les catégories selon le parcours magasin", () => {
     const liste = genererListeCourses(planningComplet);
@@ -192,7 +186,7 @@ describe("genererListeCourses — RG-05 tri et présentation", () => {
 
   test("omet les catégories sans aucun ingrédient", () => {
     // L'omelette seule ne couvre pas toutes les catégories du référentiel.
-    const liste = genererListeCourses(planningAvec(recette("omelette-aux-fines-herbes")));
+    const liste = genererListeCourses(planningAvec(recetteFixture("omelette-aux-champignons")));
     for (const ligne of liste.normal) {
       expect(ligne.ingredients.length).toBeGreaterThan(0);
     }
@@ -207,9 +201,9 @@ describe("genererListeCourses — RG-05 tri et présentation", () => {
 describe("genererListeCourses — immutabilité", () => {
   test("ne modifie pas le planning ni ses recettes", () => {
     const planning = planningAvec(
-      recette("pates-au-pesto"),
-      recette("spaghetti-carbonara"),
-      recette("salade-cesar-au-poulet")
+      recetteFixture("tagliatelles-au-parmesan"),
+      recetteFixture("quiche-aux-lardons"),
+      recetteFixture("soupe-de-legumes")
     );
     const instantane = JSON.stringify(planning);
     genererListeCourses(planning);
