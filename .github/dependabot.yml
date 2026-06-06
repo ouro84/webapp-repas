@@ -21,6 +21,12 @@ updates:
         update-types:
           - "minor"
           - "patch"
+    ignore:
+      # ESLint 10 casse eslint-config-next 16.2.7 : son eslint-plugin-react
+      # (7.x) utilise context.getFilename, supprimé en v10. Retirer cette
+      # règle quand eslint-config-next supportera ESLint 10.
+      - dependency-name: "eslint"
+        update-types: ["version-update:semver-major"]
 
   # GitHub Actions (.github/workflows)
   - package-ecosystem: "github-actions"

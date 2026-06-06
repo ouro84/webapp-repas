@@ -26,6 +26,12 @@ jobs:
       - name: Installer les dépendances
         run: npm ci
 
+      # Ni `next build` (Next 16) ni les tests ne lancent ESLint :
+      # sans cette étape, une dépendance qui casse le lint passe en CI
+      # (vécu avec le bump eslint 10, incompatible eslint-config-next).
+      - name: Lint (ESLint)
+        run: npm run lint
+
       - name: Tests unitaires (Vitest)
         # `vitest` détecte CI=true et tourne en mode single-run, pas en watch.
         run: npm run test
