@@ -1,3 +1,4 @@
+import { withSentryConfig } from "@sentry/nextjs";
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
@@ -8,4 +9,13 @@ const nextConfig: NextConfig = {
   allowedDevOrigins: ["10.0.0.18"],
 };
 
-export default nextConfig;
+// withSentryConfig instrumente le build (injection des configs runtime).
+// L'upload des source maps vers Sentry est inactif tant qu'aucun
+// SENTRY_AUTH_TOKEN n'est fourni — les stack traces seront minifiées en
+// prod, acceptable pour l'instant (le digest Next reste disponible).
+export default withSentryConfig(nextConfig, {
+  // Pas de télémétrie Sentry sur l'outillage de build.
+  telemetry: false,
+  // N'affiche les logs du plugin qu'en cas d'erreur.
+  silent: true,
+});

@@ -7,6 +7,7 @@
 // l'erreur capturée + reset() qui re-tente le rendu du segment en échec.
 // Reprend l'idiome visuel des états erreur des pages (cf. planning RG-09).
 
+import * as Sentry from "@sentry/nextjs";
 import { useEffect } from "react";
 
 export default function Error({
@@ -21,6 +22,9 @@ export default function Error({
   // message affiché côté serveur est masqué, le digest permet de la retrouver.
   useEffect(() => {
     console.error("Erreur non gérée attrapée par l'error boundary :", error);
+    // Remontée vers Sentry — les erreurs de rendu attrapées par une error
+    // boundary ne sont pas capturées automatiquement par le SDK.
+    Sentry.captureException(error);
   }, [error]);
 
   return (
