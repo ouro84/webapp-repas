@@ -7,6 +7,10 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+### Ajouté
+
+- Monitoring d'erreurs Sentry (`@sentry/nextjs`) : erreurs client, serveur (RSC/route handlers via `onRequestError`) et edge ; sans tracing ni session replay pour préserver le quota gratuit. DSN via `NEXT_PUBLIC_SENTRY_DSN`
+
 ### Modifié
 
 - Les tests e2e en CI utilisent l'instance Supabase staging (secrets `STAGING_SUPABASE_URL` / `STAGING_SUPABASE_ANON_KEY`) au lieu de la prod
