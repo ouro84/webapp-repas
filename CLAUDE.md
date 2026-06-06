@@ -158,9 +158,11 @@ Format : `type: description courte`
 
 ### Tests & CI
 
-**Playwright lit `.env.local` directement, pas `process.env`** — `e2e/auth.setup.ts` parse le fichier avec `readFileSync` (Playwright ne charge pas les env Next). Conséquence en CI : le workflow génère un `.env.local` depuis les secrets GitHub Actions (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, déjà configurés sur le repo). Supprimer cette étape du workflow = e2e cassés en CI uniquement.
+**Playwright lit `.env.local` directement, pas `process.env`** — `e2e/auth.setup.ts` parse le fichier avec `readFileSync` (Playwright ne charge pas les env Next). Conséquence en CI : le workflow génère un `.env.local` depuis les secrets GitHub Actions `STAGING_SUPABASE_URL` / `STAGING_SUPABASE_ANON_KEY`, mappés vers les noms `NEXT_PUBLIC_*` attendus par l'app. Supprimer cette étape du workflow = e2e cassés en CI uniquement. Les secrets staging doivent exister dans les deux coffres (Actions **et** Dependabot, cf. piège Dependabot ci-dessous).
 
-**Les e2e tapent la vraie instance Supabase** — Compte de test `claude-e2e-test@example.com`, signup idempotent à chaque run (local et CI). `workers: 1` obligatoire (les tests partagent serveur dev et localStorage), viewport mobile 390×844 (la grille desktop est en `display:none`), session réutilisée via `e2e/.auth/user.json`.
+**Les e2e tapent une vraie instance Supabase — staging en CI, celle de `.env.local` en local** — Depuis 2026-06-06, la CI pointe vers l'instance Supabase staging (séparée de la prod) ; en local, les e2e utilisent l'instance configurée dans `.env.local`. Compte de test `claude-e2e-test@example.com`, signup idempotent à chaque run. `workers: 1` obligatoire (les tests partagent serveur dev et localStorage), viewport mobile 390×844 (la grille desktop est en `display:none`), session réutilisée via `e2e/.auth/user.json`. La confirmation email doit être désactivée sur le staging aussi, sinon `auth.setup.ts` casse.
+
+**Les PR Dependabot lisent un coffre de secrets séparé** — Les workflows déclenchés par Dependabot n'ont pas accès aux secrets Actions classiques : ils lisent le coffre Dependabot (Settings → Secrets and variables → Dependabot). Les secrets Supabase y sont donc dupliqués. Conséquence : tout nouveau secret utilisé par la CI doit être créé dans **les deux coffres**, et une rotation de clé doit mettre à jour **les deux** — sinon, seules les PR Dependabot échouent (symptôme déroutant).
 
 **La confirmation email Supabase est désactivée** — Volontaire en dev (note ADR-02), et `auth.setup.ts` en dépend (le compte de test est utilisable dès le signup). La réactiver pour la prod cassera le setup e2e tel quel — prévoir un compte pré-confirmé ou un autre mécanisme à ce moment-là.
 
