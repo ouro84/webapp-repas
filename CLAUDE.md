@@ -103,6 +103,11 @@ Format : `type: description courte`
 - `.env.local` dans `.gitignore` — jamais commité
 - `.env.example` commité avec les noms de variables, sans les valeurs
 
+### Changelog
+- `CHANGELOG.md` à la racine, format [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
+- Tout changement notable est ajouté à la section `[Unreleased]` dans la PR qui l'introduit
+- À chaque release GitHub : transformer `[Unreleased]` en section versionnée datée, et mettre à jour les liens de comparaison en bas de fichier
+
 ---
 
 ## Outils disponibles
