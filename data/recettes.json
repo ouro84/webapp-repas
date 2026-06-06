@@ -1,241 +1,653 @@
 [
   {
-    "id": "omelette-aux-fines-herbes",
-    "nom": "Omelette aux fines herbes",
+    "id": "poulet-poelee",
+    "nom": "Poulet poêlée",
     "tempsPreparation": "rapide",
     "ingredients": [
-      { "nom": "Œufs", "quantite": 6, "unite": "piece", "categorie": "produits-frais", "fondDePlacard": false },
-      { "nom": "Crème fraîche", "quantite": 2, "unite": "cas", "categorie": "produits-frais", "fondDePlacard": false },
-      { "nom": "Ciboulette", "quantite": 1, "unite": "sachet", "categorie": "legumes-fruits", "fondDePlacard": false },
-      { "nom": "Beurre", "quantite": 20, "unite": "g", "categorie": "produits-frais", "fondDePlacard": true },
-      { "nom": "Sel", "quantite": 1, "unite": "cac", "categorie": "epicerie", "fondDePlacard": true },
-      { "nom": "Poivre", "quantite": 1, "unite": "cac", "categorie": "epicerie", "fondDePlacard": true }
+      {
+        "nom": "blanc de poulet",
+        "quantite": 2,
+        "unite": "piece",
+        "categorie": "viandes-poissons",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "poêlée surgelée",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "surgeles",
+        "fondDePlacard": false
+      }
     ]
   },
   {
-    "id": "pates-au-pesto",
-    "nom": "Pâtes au pesto",
-    "tempsPreparation": "rapide",
-    "ingredients": [
-      { "nom": "Pâtes", "quantite": 250, "unite": "g", "categorie": "epicerie", "fondDePlacard": false },
-      { "nom": "Pesto", "quantite": 4, "unite": "cas", "categorie": "epicerie", "fondDePlacard": false },
-      { "nom": "Parmesan", "quantite": 40, "unite": "g", "categorie": "produits-frais", "fondDePlacard": false },
-      { "nom": "Huile d'olive", "quantite": 1, "unite": "cas", "categorie": "epicerie", "fondDePlacard": true },
-      { "nom": "Sel", "quantite": 1, "unite": "cac", "categorie": "epicerie", "fondDePlacard": true }
-    ]
-  },
-  {
-    "id": "croque-monsieur",
-    "nom": "Croque-monsieur",
-    "tempsPreparation": "rapide",
-    "ingredients": [
-      { "nom": "Pain de mie", "quantite": 4, "unite": "piece", "categorie": "boulangerie", "fondDePlacard": false },
-      { "nom": "Jambon blanc", "quantite": 4, "unite": "piece", "categorie": "viandes-poissons", "fondDePlacard": false },
-      { "nom": "Gruyère râpé", "quantite": 100, "unite": "g", "categorie": "produits-frais", "fondDePlacard": false },
-      { "nom": "Beurre", "quantite": 20, "unite": "g", "categorie": "produits-frais", "fondDePlacard": true }
-    ]
-  },
-  {
-    "id": "salade-cesar-au-poulet",
-    "nom": "Salade César au poulet",
-    "tempsPreparation": "rapide",
-    "ingredients": [
-      { "nom": "Blanc de poulet", "quantite": 300, "unite": "g", "categorie": "viandes-poissons", "fondDePlacard": false },
-      { "nom": "Salade romaine", "quantite": 1, "unite": "piece", "categorie": "legumes-fruits", "fondDePlacard": false },
-      { "nom": "Parmesan", "quantite": 40, "unite": "g", "categorie": "produits-frais", "fondDePlacard": false },
-      { "nom": "Croûtons", "quantite": 1, "unite": "sachet", "categorie": "epicerie", "fondDePlacard": false },
-      { "nom": "Sauce César", "quantite": 4, "unite": "cas", "categorie": "epicerie", "fondDePlacard": false },
-      { "nom": "Huile d'olive", "quantite": 1, "unite": "cas", "categorie": "epicerie", "fondDePlacard": true }
-    ]
-  },
-  {
-    "id": "saumon-poele-au-citron",
-    "nom": "Saumon poêlé au citron",
-    "tempsPreparation": "rapide",
-    "ingredients": [
-      { "nom": "Pavé de saumon", "quantite": 2, "unite": "piece", "categorie": "viandes-poissons", "fondDePlacard": false },
-      { "nom": "Citron", "quantite": 1, "unite": "piece", "categorie": "legumes-fruits", "fondDePlacard": false },
-      { "nom": "Aneth", "quantite": 1, "unite": "sachet", "categorie": "legumes-fruits", "fondDePlacard": false },
-      { "nom": "Beurre", "quantite": 20, "unite": "g", "categorie": "produits-frais", "fondDePlacard": true },
-      { "nom": "Sel", "quantite": 1, "unite": "cac", "categorie": "epicerie", "fondDePlacard": true },
-      { "nom": "Poivre", "quantite": 1, "unite": "cac", "categorie": "epicerie", "fondDePlacard": true }
-    ]
-  },
-  {
-    "id": "wok-de-legumes-au-tofu",
-    "nom": "Wok de légumes au tofu",
-    "tempsPreparation": "rapide",
-    "ingredients": [
-      { "nom": "Tofu ferme", "quantite": 200, "unite": "g", "categorie": "produits-frais", "fondDePlacard": false },
-      { "nom": "Poivron", "quantite": 2, "unite": "piece", "categorie": "legumes-fruits", "fondDePlacard": false },
-      { "nom": "Carottes", "quantite": 2, "unite": "piece", "categorie": "legumes-fruits", "fondDePlacard": false },
-      { "nom": "Sauce soja", "quantite": 3, "unite": "cas", "categorie": "epicerie", "fondDePlacard": false },
-      { "nom": "Ail", "quantite": 2, "unite": "piece", "categorie": "legumes-fruits", "fondDePlacard": true },
-      { "nom": "Huile d'olive", "quantite": 1, "unite": "cas", "categorie": "epicerie", "fondDePlacard": true }
-    ]
-  },
-  {
-    "id": "quesadillas-au-poulet",
-    "nom": "Quesadillas au poulet",
-    "tempsPreparation": "rapide",
-    "ingredients": [
-      { "nom": "Tortillas", "quantite": 4, "unite": "piece", "categorie": "epicerie", "fondDePlacard": false },
-      { "nom": "Blanc de poulet", "quantite": 250, "unite": "g", "categorie": "viandes-poissons", "fondDePlacard": false },
-      { "nom": "Gruyère râpé", "quantite": 100, "unite": "g", "categorie": "produits-frais", "fondDePlacard": false },
-      { "nom": "Poivron", "quantite": 1, "unite": "piece", "categorie": "legumes-fruits", "fondDePlacard": false },
-      { "nom": "Crème fraîche", "quantite": 2, "unite": "cas", "categorie": "produits-frais", "fondDePlacard": false }
-    ]
-  },
-  {
-    "id": "spaghetti-carbonara",
-    "nom": "Spaghetti carbonara",
-    "tempsPreparation": "rapide",
-    "ingredients": [
-      { "nom": "Spaghetti", "quantite": 250, "unite": "g", "categorie": "epicerie", "fondDePlacard": false },
-      { "nom": "Lardons", "quantite": 150, "unite": "g", "categorie": "viandes-poissons", "fondDePlacard": false },
-      { "nom": "Œufs", "quantite": 3, "unite": "piece", "categorie": "produits-frais", "fondDePlacard": false },
-      { "nom": "Parmesan", "quantite": 50, "unite": "g", "categorie": "produits-frais", "fondDePlacard": false },
-      { "nom": "Poivre", "quantite": 1, "unite": "cac", "categorie": "epicerie", "fondDePlacard": true }
-    ]
-  },
-  {
-    "id": "salade-grecque",
-    "nom": "Salade grecque",
-    "tempsPreparation": "rapide",
-    "ingredients": [
-      { "nom": "Tomates", "quantite": 3, "unite": "piece", "categorie": "legumes-fruits", "fondDePlacard": false },
-      { "nom": "Concombre", "quantite": 1, "unite": "piece", "categorie": "legumes-fruits", "fondDePlacard": false },
-      { "nom": "Feta", "quantite": 200, "unite": "g", "categorie": "produits-frais", "fondDePlacard": false },
-      { "nom": "Olives noires", "quantite": 100, "unite": "g", "categorie": "epicerie", "fondDePlacard": false },
-      { "nom": "Oignon rouge", "quantite": 1, "unite": "piece", "categorie": "legumes-fruits", "fondDePlacard": false },
-      { "nom": "Huile d'olive", "quantite": 2, "unite": "cas", "categorie": "epicerie", "fondDePlacard": true }
-    ]
-  },
-  {
-    "id": "steak-hache-haricots-verts",
-    "nom": "Steak haché et haricots verts",
-    "tempsPreparation": "rapide",
-    "ingredients": [
-      { "nom": "Steak haché", "quantite": 2, "unite": "piece", "categorie": "viandes-poissons", "fondDePlacard": false },
-      { "nom": "Haricots verts", "quantite": 400, "unite": "g", "categorie": "legumes-fruits", "fondDePlacard": false },
-      { "nom": "Ail", "quantite": 1, "unite": "piece", "categorie": "legumes-fruits", "fondDePlacard": true },
-      { "nom": "Beurre", "quantite": 20, "unite": "g", "categorie": "produits-frais", "fondDePlacard": true },
-      { "nom": "Sel", "quantite": 1, "unite": "cac", "categorie": "epicerie", "fondDePlacard": true }
-    ]
-  },
-  {
-    "id": "tartine-avocat-oeuf-poche",
-    "nom": "Tartine avocat et œuf poché",
-    "tempsPreparation": "rapide",
-    "ingredients": [
-      { "nom": "Pain de campagne", "quantite": 2, "unite": "piece", "categorie": "boulangerie", "fondDePlacard": false },
-      { "nom": "Avocat", "quantite": 2, "unite": "piece", "categorie": "legumes-fruits", "fondDePlacard": false },
-      { "nom": "Œufs", "quantite": 2, "unite": "piece", "categorie": "produits-frais", "fondDePlacard": false },
-      { "nom": "Citron", "quantite": 1, "unite": "piece", "categorie": "legumes-fruits", "fondDePlacard": false },
-      { "nom": "Huile d'olive", "quantite": 1, "unite": "cas", "categorie": "epicerie", "fondDePlacard": true }
-    ]
-  },
-  {
-    "id": "gambas-a-l-ail",
-    "nom": "Gambas à l'ail",
-    "tempsPreparation": "rapide",
-    "ingredients": [
-      { "nom": "Gambas", "quantite": 400, "unite": "g", "categorie": "viandes-poissons", "fondDePlacard": false },
-      { "nom": "Ail", "quantite": 3, "unite": "piece", "categorie": "legumes-fruits", "fondDePlacard": true },
-      { "nom": "Persil", "quantite": 1, "unite": "sachet", "categorie": "legumes-fruits", "fondDePlacard": false },
-      { "nom": "Citron", "quantite": 1, "unite": "piece", "categorie": "legumes-fruits", "fondDePlacard": false },
-      { "nom": "Huile d'olive", "quantite": 2, "unite": "cas", "categorie": "epicerie", "fondDePlacard": true }
-    ]
-  },
-  {
-    "id": "tacos-de-boeuf",
-    "nom": "Tacos de bœuf",
-    "tempsPreparation": "rapide",
-    "ingredients": [
-      { "nom": "Bœuf haché", "quantite": 300, "unite": "g", "categorie": "viandes-poissons", "fondDePlacard": false },
-      { "nom": "Tortillas", "quantite": 4, "unite": "piece", "categorie": "epicerie", "fondDePlacard": false },
-      { "nom": "Poivron", "quantite": 1, "unite": "piece", "categorie": "legumes-fruits", "fondDePlacard": false },
-      { "nom": "Oignon", "quantite": 1, "unite": "piece", "categorie": "legumes-fruits", "fondDePlacard": false },
-      { "nom": "Gruyère râpé", "quantite": 80, "unite": "g", "categorie": "produits-frais", "fondDePlacard": false },
-      { "nom": "Épices tacos", "quantite": 1, "unite": "sachet", "categorie": "epicerie", "fondDePlacard": true }
-    ]
-  },
-  {
-    "id": "poke-bowl-au-thon",
-    "nom": "Poke bowl au thon",
-    "tempsPreparation": "rapide",
-    "ingredients": [
-      { "nom": "Thon", "quantite": 200, "unite": "g", "categorie": "viandes-poissons", "fondDePlacard": false },
-      { "nom": "Riz", "quantite": 200, "unite": "g", "categorie": "epicerie", "fondDePlacard": false },
-      { "nom": "Avocat", "quantite": 1, "unite": "piece", "categorie": "legumes-fruits", "fondDePlacard": false },
-      { "nom": "Concombre", "quantite": 1, "unite": "piece", "categorie": "legumes-fruits", "fondDePlacard": false },
-      { "nom": "Carottes", "quantite": 1, "unite": "piece", "categorie": "legumes-fruits", "fondDePlacard": false },
-      { "nom": "Sauce soja", "quantite": 3, "unite": "cas", "categorie": "epicerie", "fondDePlacard": false }
-    ]
-  },
-  {
-    "id": "veloute-de-courgettes",
-    "nom": "Velouté de courgettes",
-    "tempsPreparation": "rapide",
-    "ingredients": [
-      { "nom": "Courgettes", "quantite": 600, "unite": "g", "categorie": "legumes-fruits", "fondDePlacard": false },
-      { "nom": "Pomme de terre", "quantite": 1, "unite": "piece", "categorie": "legumes-fruits", "fondDePlacard": false },
-      { "nom": "Bouillon de légumes", "quantite": 1, "unite": "piece", "categorie": "epicerie", "fondDePlacard": true },
-      { "nom": "Crème fraîche", "quantite": 2, "unite": "cas", "categorie": "produits-frais", "fondDePlacard": false },
-      { "nom": "Sel", "quantite": 1, "unite": "cac", "categorie": "epicerie", "fondDePlacard": true }
-    ]
-  },
-  {
-    "id": "poulet-au-curry-coco",
-    "nom": "Poulet au curry coco",
+    "id": "poulet-riz-tomates",
+    "nom": "Poulet riz tomates",
     "tempsPreparation": "normal",
     "ingredients": [
-      { "nom": "Blanc de poulet", "quantite": 400, "unite": "g", "categorie": "viandes-poissons", "fondDePlacard": false },
-      { "nom": "Lait de coco", "quantite": 1, "unite": "briquette", "categorie": "epicerie", "fondDePlacard": false },
-      { "nom": "Oignon", "quantite": 1, "unite": "piece", "categorie": "legumes-fruits", "fondDePlacard": false },
-      { "nom": "Ail", "quantite": 2, "unite": "piece", "categorie": "legumes-fruits", "fondDePlacard": true },
-      { "nom": "Curry", "quantite": 2, "unite": "cac", "categorie": "epicerie", "fondDePlacard": true },
-      { "nom": "Riz", "quantite": 200, "unite": "g", "categorie": "epicerie", "fondDePlacard": false }
+      {
+        "nom": "blanc de poulet",
+        "quantite": 2,
+        "unite": "piece",
+        "categorie": "viandes-poissons",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "riz basmati",
+        "quantite": 150,
+        "unite": "g",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "pulpe de tomates",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "epicerie",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "oignon",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "ail",
+        "quantite": 2,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "huile d'olive",
+        "quantite": 1,
+        "unite": "cas",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      }
     ]
   },
   {
-    "id": "risotto-aux-champignons",
-    "nom": "Risotto aux champignons",
-    "tempsPreparation": "normal",
+    "id": "poulet-petits-pois",
+    "nom": "Poulet petits pois",
+    "tempsPreparation": "rapide",
     "ingredients": [
-      { "nom": "Riz arborio", "quantite": 250, "unite": "g", "categorie": "epicerie", "fondDePlacard": false },
-      { "nom": "Champignons", "quantite": 300, "unite": "g", "categorie": "legumes-fruits", "fondDePlacard": false },
-      { "nom": "Oignon", "quantite": 1, "unite": "piece", "categorie": "legumes-fruits", "fondDePlacard": false },
-      { "nom": "Parmesan", "quantite": 60, "unite": "g", "categorie": "produits-frais", "fondDePlacard": false },
-      { "nom": "Vin blanc", "quantite": 10, "unite": "cl", "categorie": "epicerie", "fondDePlacard": false },
-      { "nom": "Bouillon de légumes", "quantite": 1, "unite": "piece", "categorie": "epicerie", "fondDePlacard": true },
-      { "nom": "Beurre", "quantite": 20, "unite": "g", "categorie": "produits-frais", "fondDePlacard": true }
+      {
+        "nom": "blanc de poulet",
+        "quantite": 2,
+        "unite": "piece",
+        "categorie": "viandes-poissons",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "petits pois",
+        "quantite": 400,
+        "unite": "g",
+        "categorie": "surgeles",
+        "fondDePlacard": false
+      }
     ]
   },
   {
-    "id": "gratin-de-courgettes",
-    "nom": "Gratin de courgettes",
-    "tempsPreparation": "normal",
+    "id": "poulet-haricots-verts",
+    "nom": "Poulet haricots verts",
+    "tempsPreparation": "rapide",
     "ingredients": [
-      { "nom": "Courgettes", "quantite": 800, "unite": "g", "categorie": "legumes-fruits", "fondDePlacard": false },
-      { "nom": "Crème fraîche", "quantite": 1, "unite": "briquette", "categorie": "produits-frais", "fondDePlacard": false },
-      { "nom": "Gruyère râpé", "quantite": 100, "unite": "g", "categorie": "produits-frais", "fondDePlacard": false },
-      { "nom": "Œufs", "quantite": 2, "unite": "piece", "categorie": "produits-frais", "fondDePlacard": false },
-      { "nom": "Ail", "quantite": 1, "unite": "piece", "categorie": "legumes-fruits", "fondDePlacard": true },
-      { "nom": "Sel", "quantite": 1, "unite": "cac", "categorie": "epicerie", "fondDePlacard": true }
+      {
+        "nom": "blanc de poulet",
+        "quantite": 2,
+        "unite": "piece",
+        "categorie": "viandes-poissons",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "haricots verts",
+        "quantite": 400,
+        "unite": "g",
+        "categorie": "surgeles",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "beurre",
+        "quantite": 20,
+        "unite": "g",
+        "categorie": "produits-frais",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "ail",
+        "quantite": 2,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "huile d'olive",
+        "quantite": 1,
+        "unite": "cas",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "persil",
+        "quantite": 1,
+        "unite": "cas",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      }
     ]
   },
   {
-    "id": "quiche-lorraine",
-    "nom": "Quiche lorraine",
+    "id": "poulet-choux-fleur",
+    "nom": "Poulet choux-fleur",
     "tempsPreparation": "normal",
     "ingredients": [
-      { "nom": "Pâte brisée", "quantite": 1, "unite": "piece", "categorie": "epicerie", "fondDePlacard": false },
-      { "nom": "Lardons", "quantite": 200, "unite": "g", "categorie": "viandes-poissons", "fondDePlacard": false },
-      { "nom": "Œufs", "quantite": 3, "unite": "piece", "categorie": "produits-frais", "fondDePlacard": false },
-      { "nom": "Crème fraîche", "quantite": 1, "unite": "briquette", "categorie": "produits-frais", "fondDePlacard": false },
-      { "nom": "Gruyère râpé", "quantite": 80, "unite": "g", "categorie": "produits-frais", "fondDePlacard": false },
-      { "nom": "Poivre", "quantite": 1, "unite": "cac", "categorie": "epicerie", "fondDePlacard": true }
+      {
+        "nom": "blanc de poulet",
+        "quantite": 2,
+        "unite": "piece",
+        "categorie": "viandes-poissons",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "chou-fleur",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": false
+      }
+    ]
+  },
+  {
+    "id": "poulet-curry",
+    "nom": "Poulet curry",
+    "tempsPreparation": "normal",
+    "ingredients": [
+      {
+        "nom": "blanc de poulet",
+        "quantite": 2,
+        "unite": "piece",
+        "categorie": "viandes-poissons",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "oignon",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "pulpe de tomates",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "epicerie",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "sauce curry",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "produits-frais",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "ail",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "brocolis",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "huile d'olive",
+        "quantite": 1,
+        "unite": "cas",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      }
+    ]
+  },
+  {
+    "id": "poulet-estragon-creme-haricots-verts",
+    "nom": "Poulet estragon crème haricots verts",
+    "tempsPreparation": "long",
+    "ingredients": [
+      {
+        "nom": "blanc de poulet",
+        "quantite": 2,
+        "unite": "piece",
+        "categorie": "viandes-poissons",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "haricots verts",
+        "quantite": 300,
+        "unite": "g",
+        "categorie": "surgeles",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "estragon",
+        "quantite": 1,
+        "unite": "cas",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "crème fraîche",
+        "quantite": 20,
+        "unite": "cl",
+        "categorie": "produits-frais",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "échalote",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "jus de citron",
+        "quantite": 10,
+        "unite": "cas",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "huile d'olive",
+        "quantite": 1,
+        "unite": "cas",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      }
+    ]
+  },
+  {
+    "id": "poulet-mozza-pesto",
+    "nom": "Poulet mozza pesto",
+    "tempsPreparation": "normal",
+    "ingredients": [
+      {
+        "nom": "blanc de poulet",
+        "quantite": 2,
+        "unite": "piece",
+        "categorie": "viandes-poissons",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "mozzarella",
+        "quantite": 125,
+        "unite": "g",
+        "categorie": "produits-frais",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "pesto",
+        "quantite": 2,
+        "unite": "cas",
+        "categorie": "produits-frais",
+        "fondDePlacard": false
+      }
+    ]
+  },
+  {
+    "id": "poulet-brocolis",
+    "nom": "Poulet brocolis",
+    "tempsPreparation": "normal",
+    "ingredients": [
+      {
+        "nom": "blanc de poulet",
+        "quantite": 2,
+        "unite": "piece",
+        "categorie": "viandes-poissons",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "brocolis",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": false
+      }
+    ]
+  },
+  {
+    "id": "poulet-fondue-de-poireaux",
+    "nom": "Poulet fondue de poireaux",
+    "tempsPreparation": "long",
+    "ingredients": [
+      {
+        "nom": "blanc de poulet",
+        "quantite": 2,
+        "unite": "piece",
+        "categorie": "viandes-poissons",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "poireaux",
+        "quantite": 4,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "crème fraîche",
+        "quantite": 20,
+        "unite": "cl",
+        "categorie": "produits-frais",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "beurre",
+        "quantite": 20,
+        "unite": "g",
+        "categorie": "produits-frais",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "sel",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "poivre",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "moutarde",
+        "quantite": 3,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      }
+    ]
+  },
+  {
+    "id": "poulet-basquaise",
+    "nom": "Poulet basquaise",
+    "tempsPreparation": "long",
+    "ingredients": [
+      {
+        "nom": "cuisses de poulet",
+        "quantite": 600,
+        "unite": "g",
+        "categorie": "viandes-poissons",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "poivron rouge",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "poivron vert",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "tomates",
+        "quantite": 3,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "oignon",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "ail",
+        "quantite": 3,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "huile d'olive",
+        "quantite": 2,
+        "unite": "cas",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "paprika",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "bouquet garnis",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "sel",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "poivre",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "riz basmati",
+        "quantite": 130,
+        "unite": "g",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      }
+    ]
+  },
+  {
+    "id": "filet-mignon-haricots-verts",
+    "nom": "Filet mignon haricots verts",
+    "tempsPreparation": "long",
+    "ingredients": [
+      {
+        "nom": "filet mignon de porc",
+        "quantite": 400,
+        "unite": "g",
+        "categorie": "viandes-poissons",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "haricots verts",
+        "quantite": 400,
+        "unite": "g",
+        "categorie": "surgeles",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "oignon",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "emmental",
+        "quantite": 50,
+        "unite": "g",
+        "categorie": "produits-frais",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "pâte feuilletée",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "produits-frais",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "jambon",
+        "quantite": 2,
+        "unite": "piece",
+        "categorie": "viandes-poissons",
+        "fondDePlacard": false
+      }
+    ]
+  },
+  {
+    "id": "filet-mignon-poireaux-moutarde",
+    "nom": "Filet mignon poireaux moutarde",
+    "tempsPreparation": "long",
+    "ingredients": [
+      {
+        "nom": "filet mignon de porc",
+        "quantite": 400,
+        "unite": "g",
+        "categorie": "viandes-poissons",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "poireaux",
+        "quantite": 4,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "crème fraîche",
+        "quantite": 20,
+        "unite": "cl",
+        "categorie": "produits-frais",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "beurre",
+        "quantite": 20,
+        "unite": "g",
+        "categorie": "produits-frais",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "sel",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "poivre",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "moutarde",
+        "quantite": 3,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      }
+    ]
+  },
+  {
+    "id": "magret-de-canard-patates-sarladaises",
+    "nom": "Magret de canard patates sarladaises",
+    "tempsPreparation": "normal",
+    "ingredients": [
+      {
+        "nom": "magret de canard",
+        "quantite": 2,
+        "unite": "piece",
+        "categorie": "viandes-poissons",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "pommes de terre sarladaises",
+        "quantite": 600,
+        "unite": "g",
+        "categorie": "surgeles",
+        "fondDePlacard": false
+      }
+    ]
+  },
+  {
+    "id": "rougail-saucisses",
+    "nom": "Rougail saucisses",
+    "tempsPreparation": "normal",
+    "ingredients": [
+      {
+        "nom": "saucisses de toulouse",
+        "quantite": 400,
+        "unite": "g",
+        "categorie": "viandes-poissons",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "pulpe de tomates",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "epicerie",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "oignon",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "gingembre",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "ail",
+        "quantite": 2,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "huile",
+        "quantite": 1,
+        "unite": "cas",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "riz basmati",
+        "quantite": 130,
+        "unite": "g",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      }
     ]
   },
   {
@@ -243,71 +655,83 @@
     "nom": "Chili con carne",
     "tempsPreparation": "normal",
     "ingredients": [
-      { "nom": "Bœuf haché", "quantite": 400, "unite": "g", "categorie": "viandes-poissons", "fondDePlacard": false },
-      { "nom": "Haricots rouges", "quantite": 1, "unite": "boite", "categorie": "epicerie", "fondDePlacard": false },
-      { "nom": "Tomates concassées", "quantite": 1, "unite": "boite", "categorie": "epicerie", "fondDePlacard": false },
-      { "nom": "Oignon", "quantite": 1, "unite": "piece", "categorie": "legumes-fruits", "fondDePlacard": false },
-      { "nom": "Poivron", "quantite": 1, "unite": "piece", "categorie": "legumes-fruits", "fondDePlacard": false },
-      { "nom": "Épices chili", "quantite": 1, "unite": "sachet", "categorie": "epicerie", "fondDePlacard": true },
-      { "nom": "Riz", "quantite": 200, "unite": "g", "categorie": "epicerie", "fondDePlacard": false }
-    ]
-  },
-  {
-    "id": "dahl-de-lentilles-corail",
-    "nom": "Dahl de lentilles corail",
-    "tempsPreparation": "normal",
-    "ingredients": [
-      { "nom": "Lentilles corail", "quantite": 250, "unite": "g", "categorie": "epicerie", "fondDePlacard": false },
-      { "nom": "Lait de coco", "quantite": 1, "unite": "briquette", "categorie": "epicerie", "fondDePlacard": false },
-      { "nom": "Tomates concassées", "quantite": 1, "unite": "boite", "categorie": "epicerie", "fondDePlacard": false },
-      { "nom": "Oignon", "quantite": 1, "unite": "piece", "categorie": "legumes-fruits", "fondDePlacard": false },
-      { "nom": "Ail", "quantite": 2, "unite": "piece", "categorie": "legumes-fruits", "fondDePlacard": true },
-      { "nom": "Gingembre", "quantite": 1, "unite": "piece", "categorie": "legumes-fruits", "fondDePlacard": false },
-      { "nom": "Curry", "quantite": 2, "unite": "cac", "categorie": "epicerie", "fondDePlacard": true }
-    ]
-  },
-  {
-    "id": "boulettes-de-boeuf-a-la-tomate",
-    "nom": "Boulettes de bœuf à la tomate",
-    "tempsPreparation": "normal",
-    "ingredients": [
-      { "nom": "Bœuf haché", "quantite": 400, "unite": "g", "categorie": "viandes-poissons", "fondDePlacard": false },
-      { "nom": "Sauce tomate", "quantite": 1, "unite": "boite", "categorie": "epicerie", "fondDePlacard": false },
-      { "nom": "Oignon", "quantite": 1, "unite": "piece", "categorie": "legumes-fruits", "fondDePlacard": false },
-      { "nom": "Chapelure", "quantite": 50, "unite": "g", "categorie": "epicerie", "fondDePlacard": false },
-      { "nom": "Œufs", "quantite": 1, "unite": "piece", "categorie": "produits-frais", "fondDePlacard": false },
-      { "nom": "Ail", "quantite": 1, "unite": "piece", "categorie": "legumes-fruits", "fondDePlacard": true },
-      { "nom": "Pâtes", "quantite": 250, "unite": "g", "categorie": "epicerie", "fondDePlacard": false }
-    ]
-  },
-  {
-    "id": "boeuf-bourguignon",
-    "nom": "Bœuf bourguignon",
-    "tempsPreparation": "long",
-    "ingredients": [
-      { "nom": "Bœuf à mijoter", "quantite": 600, "unite": "g", "categorie": "viandes-poissons", "fondDePlacard": false },
-      { "nom": "Vin rouge", "quantite": 50, "unite": "cl", "categorie": "epicerie", "fondDePlacard": false },
-      { "nom": "Carottes", "quantite": 4, "unite": "piece", "categorie": "legumes-fruits", "fondDePlacard": false },
-      { "nom": "Oignon", "quantite": 2, "unite": "piece", "categorie": "legumes-fruits", "fondDePlacard": false },
-      { "nom": "Lardons", "quantite": 150, "unite": "g", "categorie": "viandes-poissons", "fondDePlacard": false },
-      { "nom": "Champignons", "quantite": 250, "unite": "g", "categorie": "legumes-fruits", "fondDePlacard": false },
-      { "nom": "Farine", "quantite": 2, "unite": "cas", "categorie": "epicerie", "fondDePlacard": true },
-      { "nom": "Bouquet garni", "quantite": 1, "unite": "sachet", "categorie": "epicerie", "fondDePlacard": true }
-    ]
-  },
-  {
-    "id": "lasagnes-a-la-bolognaise",
-    "nom": "Lasagnes à la bolognaise",
-    "tempsPreparation": "long",
-    "ingredients": [
-      { "nom": "Plaques de lasagnes", "quantite": 250, "unite": "g", "categorie": "epicerie", "fondDePlacard": false },
-      { "nom": "Bœuf haché", "quantite": 400, "unite": "g", "categorie": "viandes-poissons", "fondDePlacard": false },
-      { "nom": "Sauce tomate", "quantite": 1, "unite": "boite", "categorie": "epicerie", "fondDePlacard": false },
-      { "nom": "Oignon", "quantite": 1, "unite": "piece", "categorie": "legumes-fruits", "fondDePlacard": false },
-      { "nom": "Lait", "quantite": 50, "unite": "cl", "categorie": "produits-frais", "fondDePlacard": false },
-      { "nom": "Farine", "quantite": 40, "unite": "g", "categorie": "epicerie", "fondDePlacard": true },
-      { "nom": "Beurre", "quantite": 40, "unite": "g", "categorie": "produits-frais", "fondDePlacard": true },
-      { "nom": "Gruyère râpé", "quantite": 100, "unite": "g", "categorie": "produits-frais", "fondDePlacard": false }
+      {
+        "nom": "viande hachée",
+        "quantite": 300,
+        "unite": "g",
+        "categorie": "viandes-poissons",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "haricots rouges",
+        "quantite": 200,
+        "unite": "g",
+        "categorie": "epicerie",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "pulpe de tomates",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "epicerie",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "oignon",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "poivron rouge",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "ail",
+        "quantite": 2,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "paprika",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "huile d'olive",
+        "quantite": 1,
+        "unite": "cas",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "sel",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "poivre",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "riz basmati",
+        "quantite": 130,
+        "unite": "g",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      }
     ]
   },
   {
@@ -315,14 +739,2904 @@
     "nom": "Blanquette de veau",
     "tempsPreparation": "long",
     "ingredients": [
-      { "nom": "Veau à mijoter", "quantite": 600, "unite": "g", "categorie": "viandes-poissons", "fondDePlacard": false },
-      { "nom": "Carottes", "quantite": 3, "unite": "piece", "categorie": "legumes-fruits", "fondDePlacard": false },
-      { "nom": "Champignons", "quantite": 250, "unite": "g", "categorie": "legumes-fruits", "fondDePlacard": false },
-      { "nom": "Oignon", "quantite": 1, "unite": "piece", "categorie": "legumes-fruits", "fondDePlacard": false },
-      { "nom": "Crème fraîche", "quantite": 1, "unite": "briquette", "categorie": "produits-frais", "fondDePlacard": false },
-      { "nom": "Farine", "quantite": 2, "unite": "cas", "categorie": "epicerie", "fondDePlacard": true },
-      { "nom": "Bouillon de volaille", "quantite": 1, "unite": "piece", "categorie": "epicerie", "fondDePlacard": true },
-      { "nom": "Riz", "quantite": 200, "unite": "g", "categorie": "epicerie", "fondDePlacard": false }
+      {
+        "nom": "blanquette de veau",
+        "quantite": 400,
+        "unite": "g",
+        "categorie": "viandes-poissons",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "carottes",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "oignon",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "champignons de Paris",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "crème fraîche",
+        "quantite": 20,
+        "unite": "cl",
+        "categorie": "produits-frais",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "œufs",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "produits-frais",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "kubor",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "jus de citron",
+        "quantite": 1,
+        "unite": "cas",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "farine",
+        "quantite": 2,
+        "unite": "cas",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "bouquet garnis",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "riz basmati",
+        "quantite": 130,
+        "unite": "g",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      }
+    ]
+  },
+  {
+    "id": "saute-de-veau",
+    "nom": "Sauté de veau",
+    "tempsPreparation": "long",
+    "ingredients": [
+      {
+        "nom": "sauté de veau",
+        "quantite": 400,
+        "unite": "g",
+        "categorie": "viandes-poissons",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "pulpe de tomates",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "epicerie",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "oignon",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "chorizo",
+        "quantite": 0.5,
+        "unite": "piece",
+        "categorie": "viandes-poissons",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "olives vertes",
+        "quantite": 0.5,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "ail",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "huile d'olive",
+        "quantite": 1,
+        "unite": "cas",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "bouquet garnis",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      }
+    ]
+  },
+  {
+    "id": "steaks-haricots-verts",
+    "nom": "Steaks haricots verts",
+    "tempsPreparation": "rapide",
+    "ingredients": [
+      {
+        "nom": "steaks hachés",
+        "quantite": 2,
+        "unite": "piece",
+        "categorie": "surgeles",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "haricots verts",
+        "quantite": 400,
+        "unite": "g",
+        "categorie": "surgeles",
+        "fondDePlacard": false
+      }
+    ]
+  },
+  {
+    "id": "cotes-de-porc-legumes-verts",
+    "nom": "Côtes de porc légumes verts",
+    "tempsPreparation": "rapide",
+    "ingredients": [
+      {
+        "nom": "côtes de porc",
+        "quantite": 2,
+        "unite": "piece",
+        "categorie": "viandes-poissons",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "poêlée legumes verts",
+        "quantite": 400,
+        "unite": "g",
+        "categorie": "surgeles",
+        "fondDePlacard": false
+      }
+    ]
+  },
+  {
+    "id": "roti-de-porc-betteraves",
+    "nom": "Rôti de porc betteraves",
+    "tempsPreparation": "rapide",
+    "ingredients": [
+      {
+        "nom": "rôti de porc (tranches)",
+        "quantite": 2,
+        "unite": "piece",
+        "categorie": "viandes-poissons",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "betteraves",
+        "quantite": 5,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": false
+      }
+    ]
+  },
+  {
+    "id": "saucisse-lentilles-carottes",
+    "nom": "Saucisse lentilles",
+    "tempsPreparation": "long",
+    "ingredients": [
+      {
+        "nom": "saucisses de toulouse",
+        "quantite": 400,
+        "unite": "g",
+        "categorie": "viandes-poissons",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "lentilles vertes",
+        "quantite": 150,
+        "unite": "g",
+        "categorie": "epicerie",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "carottes",
+        "quantite": 0.5,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "oignon",
+        "quantite": 0.5,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "kubor",
+        "quantite": 0.5,
+        "unite": "piece",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "bouquet garnis",
+        "quantite": 0.5,
+        "unite": "piece",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "sel",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "poivre",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      }
+    ]
+  },
+  {
+    "id": "hachis-parmentier-canard",
+    "nom": "Hachis parmentier canard",
+    "tempsPreparation": "long",
+    "ingredients": [
+      {
+        "nom": "cuisses de canard confites",
+        "quantite": 2,
+        "unite": "piece",
+        "categorie": "viandes-poissons",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "pommes de terre",
+        "quantite": 500,
+        "unite": "g",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "oignon",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "lait",
+        "quantite": 100,
+        "unite": "ml",
+        "categorie": "produits-frais",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "beurre",
+        "quantite": 30,
+        "unite": "g",
+        "categorie": "produits-frais",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "emmental",
+        "quantite": 50,
+        "unite": "g",
+        "categorie": "produits-frais",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "sel",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "poivre",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      }
+    ]
+  },
+  {
+    "id": "hachoux-parmentier-canard",
+    "nom": "Hachoux parmentier canard",
+    "tempsPreparation": "long",
+    "ingredients": [
+      {
+        "nom": "cuisses de canard confites",
+        "quantite": 2,
+        "unite": "piece",
+        "categorie": "viandes-poissons",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "pommes de terre",
+        "quantite": 200,
+        "unite": "g",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "chou-fleur",
+        "quantite": 0.5,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "oignon",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "lait",
+        "quantite": 100,
+        "unite": "ml",
+        "categorie": "produits-frais",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "beurre",
+        "quantite": 30,
+        "unite": "g",
+        "categorie": "produits-frais",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "emmental",
+        "quantite": 50,
+        "unite": "g",
+        "categorie": "produits-frais",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "sel",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "poivre",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      }
+    ]
+  },
+  {
+    "id": "gigot-d-agneau-grenailles",
+    "nom": "Gigot d'agneau pommes grenailles",
+    "tempsPreparation": "long",
+    "ingredients": [
+      {
+        "nom": "gigot d'agneau",
+        "quantite": 800,
+        "unite": "g",
+        "categorie": "viandes-poissons",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "pommes de terre grenailles",
+        "quantite": 400,
+        "unite": "g",
+        "categorie": "surgeles",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "romarin",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "ail",
+        "quantite": 4,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "huile d'olive",
+        "quantite": 2,
+        "unite": "cas",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "thym",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "sel",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "poivre",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      }
+    ]
+  },
+  {
+    "id": "pot-au-feu",
+    "nom": "Pot au feu",
+    "tempsPreparation": "long",
+    "ingredients": [
+      {
+        "nom": "bœuf à braiser",
+        "quantite": 500,
+        "unite": "g",
+        "categorie": "viandes-poissons",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "carottes",
+        "quantite": 2,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "navets",
+        "quantite": 2,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "poireaux",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "pommes de terre",
+        "quantite": 300,
+        "unite": "g",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "oignon",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "bouquet garnis",
+        "quantite": 0.5,
+        "unite": "piece",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": " gros sel",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      }
+    ]
+  },
+  {
+    "id": "osso-bucco-pates",
+    "nom": "Osso bucco pâtes",
+    "tempsPreparation": "long",
+    "ingredients": [
+      {
+        "nom": "osso bucco de veau",
+        "quantite": 2,
+        "unite": "piece",
+        "categorie": "viandes-poissons",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "pâtes",
+        "quantite": 200,
+        "unite": "g",
+        "categorie": "epicerie",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "tomates pelées",
+        "quantite": 400,
+        "unite": "g",
+        "categorie": "epicerie",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "oignon",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "carottes",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "vin blanc",
+        "quantite": 10,
+        "unite": "cl",
+        "categorie": "epicerie",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "bouillon de veau",
+        "quantite": 200,
+        "unite": "ml",
+        "categorie": "epicerie",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "citron",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "ail",
+        "quantite": 2,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "farine",
+        "quantite": 2,
+        "unite": "cas",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "huile d'olive",
+        "quantite": 1,
+        "unite": "cas",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "bouquet garnis",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "sel",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "poivre",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      }
+    ]
+  },
+  {
+    "id": "confit-de-canard-patates",
+    "nom": "Confit de canard patates",
+    "tempsPreparation": "normal",
+    "ingredients": [
+      {
+        "nom": "cuisses de canard confites",
+        "quantite": 2,
+        "unite": "piece",
+        "categorie": "viandes-poissons",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "pommes de terre sarladaises",
+        "quantite": 400,
+        "unite": "g",
+        "categorie": "surgeles",
+        "fondDePlacard": false
+      }
+    ]
+  },
+  {
+    "id": "escalope-dinde-ratatouille",
+    "nom": "Escalope dinde ratatouille",
+    "tempsPreparation": "normal",
+    "ingredients": [
+      {
+        "nom": "escalopes de dinde",
+        "quantite": 2,
+        "unite": "piece",
+        "categorie": "viandes-poissons",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "ratatouille boite",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "epicerie",
+        "fondDePlacard": false
+      }
+    ]
+  },
+  {
+    "id": "poisson-petits-pois",
+    "nom": "Poisson petits pois",
+    "tempsPreparation": "rapide",
+    "ingredients": [
+      {
+        "nom": "filets de poisson blanc",
+        "quantite": 300,
+        "unite": "g",
+        "categorie": "viandes-poissons",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "petits pois",
+        "quantite": 400,
+        "unite": "g",
+        "categorie": "surgeles",
+        "fondDePlacard": false
+      }
+    ]
+  },
+  {
+    "id": "poisson-haricots-verts",
+    "nom": "Poisson haricots verts",
+    "tempsPreparation": "rapide",
+    "ingredients": [
+      {
+        "nom": "filets de poisson blanc",
+        "quantite": 300,
+        "unite": "g",
+        "categorie": "viandes-poissons",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "haricots verts",
+        "quantite": 400,
+        "unite": "g",
+        "categorie": "surgeles",
+        "fondDePlacard": false
+      }
+    ]
+  },
+  {
+    "id": "poisson-riz",
+    "nom": "Poisson riz",
+    "tempsPreparation": "normal",
+    "ingredients": [
+      {
+        "nom": "filets de poisson blanc",
+        "quantite": 300,
+        "unite": "g",
+        "categorie": "viandes-poissons",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "riz",
+        "quantite": 130,
+        "unite": "g",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      }
+    ]
+  },
+  {
+    "id": "poisson-piperade",
+    "nom": "Poisson piperade",
+    "tempsPreparation": "long",
+    "ingredients": [
+      {
+        "nom": "filets de poisson blanc",
+        "quantite": 300,
+        "unite": "g",
+        "categorie": "viandes-poissons",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "poivron rouge",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "poivron vert",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "poivron jaune",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "oignon",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "ail",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "huile d'olive",
+        "quantite": 1,
+        "unite": "cas",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "paprika",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "herbes de Provence",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "sel",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "poivre",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      }
+    ]
+  },
+  {
+    "id": "poisson-poelee-mediterranee",
+    "nom": "Poisson poêlée Méditerranée",
+    "tempsPreparation": "rapide",
+    "ingredients": [
+      {
+        "nom": "filets de poisson blanc",
+        "quantite": 300,
+        "unite": "g",
+        "categorie": "viandes-poissons",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "poêlée méditerranée",
+        "quantite": 400,
+        "unite": "g",
+        "categorie": "surgeles",
+        "fondDePlacard": false
+      }
+    ]
+  },
+  {
+    "id": "poisson-papillote-petits-pois",
+    "nom": "Poisson papillote petits pois",
+    "tempsPreparation": "normal",
+    "ingredients": [
+      {
+        "nom": "filets de poisson blanc",
+        "quantite": 300,
+        "unite": "g",
+        "categorie": "viandes-poissons",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "petits pois",
+        "quantite": 400,
+        "unite": "g",
+        "categorie": "surgeles",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "échalote",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "jus de citron",
+        "quantite": 1,
+        "unite": "cas",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "tomates cerises",
+        "quantite": 100,
+        "unite": "g",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "estragon",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "sel",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "poivre",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      }
+    ]
+  },
+  {
+    "id": "blanquette-de-poisson",
+    "nom": "Blanquette de poisson",
+    "tempsPreparation": "normal",
+    "ingredients": [
+      {
+        "nom": "filets de poisson blanc",
+        "quantite": 300,
+        "unite": "g",
+        "categorie": "viandes-poissons",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "champignons",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "crème fraîche",
+        "quantite": 20.0,
+        "unite": "cl",
+        "categorie": "produits-frais",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "beurre",
+        "quantite": 30,
+        "unite": "g",
+        "categorie": "produits-frais",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "kubor",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "citron",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "farine",
+        "quantite": 2,
+        "unite": "cas",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "sel",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "poivre",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "tagliatelles",
+        "quantite": 250,
+        "unite": "g",
+        "categorie": "epicerie",
+        "fondDePlacard": false
+      }
+    ]
+  },
+  {
+    "id": "saumon-riz",
+    "nom": "Saumon riz",
+    "tempsPreparation": "rapide",
+    "ingredients": [
+      {
+        "nom": "pavés de saumon",
+        "quantite": 2,
+        "unite": "piece",
+        "categorie": "viandes-poissons",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "riz",
+        "quantite": 130,
+        "unite": "g",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      }
+    ]
+  },
+  {
+    "id": "saumon-pates-curry",
+    "nom": "Saumon pâtes curry",
+    "tempsPreparation": "rapide",
+    "ingredients": [
+      {
+        "nom": "pavés de saumon",
+        "quantite": 2,
+        "unite": "piece",
+        "categorie": "viandes-poissons",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "fusilli",
+        "quantite": 250,
+        "unite": "g",
+        "categorie": "epicerie",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "crème fraîche",
+        "quantite": 20.0,
+        "unite": "cl",
+        "categorie": "produits-frais",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "échalote",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "curry en poudre",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "sel",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "poivre",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      }
+    ]
+  },
+  {
+    "id": "cordons-bleus-lentilles",
+    "nom": "Cordons bleus lentilles",
+    "tempsPreparation": "rapide",
+    "ingredients": [
+      {
+        "nom": "cordons bleus",
+        "quantite": 4,
+        "unite": "piece",
+        "categorie": "epicerie",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "lentilles (boite)",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "epicerie",
+        "fondDePlacard": false
+      }
+    ]
+  },
+  {
+    "id": "beignets-de-poulet-lentilles",
+    "nom": "Beignets de poulet lentilles",
+    "tempsPreparation": "rapide",
+    "ingredients": [
+      {
+        "nom": "beignets de poulet",
+        "quantite": 200,
+        "unite": "g",
+        "categorie": "epicerie",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "lentilles (boite)",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "epicerie",
+        "fondDePlacard": false
+      }
+    ]
+  },
+  {
+    "id": "pates-bolognaises",
+    "nom": "Pâtes bolognaises",
+    "tempsPreparation": "rapide",
+    "ingredients": [
+      {
+        "nom": "penne",
+        "quantite": 250,
+        "unite": "g",
+        "categorie": "epicerie",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "boulettes de boeuf",
+        "quantite": 250,
+        "unite": "g",
+        "categorie": "surgeles",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "sauce provençale",
+        "quantite": 400,
+        "unite": "g",
+        "categorie": "epicerie",
+        "fondDePlacard": false
+      }
+    ]
+  },
+  {
+    "id": "pates-carbonara",
+    "nom": "Pâtes carbonara",
+    "tempsPreparation": "rapide",
+    "ingredients": [
+      {
+        "nom": "pâtes",
+        "quantite": 250,
+        "unite": "g",
+        "categorie": "epicerie",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "lardons",
+        "quantite": 150,
+        "unite": "g",
+        "categorie": "viandes-poissons",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "parmesan",
+        "quantite": 50,
+        "unite": "g",
+        "categorie": "produits-frais",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "crème fraîche",
+        "quantite": 20,
+        "unite": "cl",
+        "categorie": "produits-frais",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "poivre",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      }
+    ]
+  },
+  {
+    "id": "pates-pesto",
+    "nom": "Pâtes pesto",
+    "tempsPreparation": "rapide",
+    "ingredients": [
+      {
+        "nom": "fusilli",
+        "quantite": 250,
+        "unite": "g",
+        "categorie": "epicerie",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "pesto",
+        "quantite": 3,
+        "unite": "cas",
+        "categorie": "produits-frais",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "parmesan",
+        "quantite": 30,
+        "unite": "g",
+        "categorie": "produits-frais",
+        "fondDePlacard": false
+      }
+    ]
+  },
+  {
+    "id": "pates-au-saumon",
+    "nom": "Pâtes au saumon",
+    "tempsPreparation": "normal",
+    "ingredients": [
+      {
+        "nom": "pâtes",
+        "quantite": 200,
+        "unite": "g",
+        "categorie": "epicerie",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "pavés de saumon",
+        "quantite": 2,
+        "unite": "piece",
+        "categorie": "viandes-poissons",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "crème fraîche",
+        "quantite": 20,
+        "unite": "cl",
+        "categorie": "produits-frais",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "échalote",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": false
+      }
+    ]
+  },
+  {
+    "id": "pates-chorizo",
+    "nom": "Pâtes chorizo",
+    "tempsPreparation": "normal",
+    "ingredients": [
+      {
+        "nom": "penne",
+        "quantite": 200,
+        "unite": "g",
+        "categorie": "epicerie",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "chorizo",
+        "quantite": 0.5,
+        "unite": "piece",
+        "categorie": "viandes-poissons",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "pulpe de tomates",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "epicerie",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "échalote",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "paprika",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "huile d'olive",
+        "quantite": 1,
+        "unite": "cas",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "kubor",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      }
+    ]
+  },
+  {
+    "id": "pates-aux-legumes",
+    "nom": "Pâtes aux légumes",
+    "tempsPreparation": "long",
+    "ingredients": [
+      {
+        "nom": "pâtes",
+        "quantite": 250,
+        "unite": "g",
+        "categorie": "epicerie",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "carottes",
+        "quantite": 2,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "navets boule d'or",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "pulpe de tomates",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "epicerie",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "oignon",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "parmesan",
+        "quantite": 30,
+        "unite": "g",
+        "categorie": "produits-frais",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "herbes de Provence",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      }
+    ]
+  },
+  {
+    "id": "lasagnes",
+    "nom": "Lasagnes",
+    "tempsPreparation": "long",
+    "ingredients": [
+      {
+        "nom": "lasagne",
+        "quantite": 200,
+        "unite": "g",
+        "categorie": "epicerie",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "viande hachée",
+        "quantite": 300,
+        "unite": "g",
+        "categorie": "viandes-poissons",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "sauce provençale",
+        "quantite": 600,
+        "unite": "g",
+        "categorie": "epicerie",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "oignon",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "lait",
+        "quantite": 300,
+        "unite": "ml",
+        "categorie": "produits-frais",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "beurre",
+        "quantite": 30,
+        "unite": "g",
+        "categorie": "produits-frais",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "emmental",
+        "quantite": 100,
+        "unite": "g",
+        "categorie": "produits-frais",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "huile d'olive",
+        "quantite": 1,
+        "unite": "cas",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "herbes de Provence",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      }
+    ]
+  },
+  {
+    "id": "lasagnes-chevre-epinards",
+    "nom": "Lasagnes chèvre épinards",
+    "tempsPreparation": "long",
+    "ingredients": [
+      {
+        "nom": "lasagne",
+        "quantite": 200,
+        "unite": "g",
+        "categorie": "epicerie",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "épinards",
+        "quantite": 300,
+        "unite": "g",
+        "categorie": "surgeles",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "buche de chèvre",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "produits-frais",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "lait",
+        "quantite": 500,
+        "unite": "ml",
+        "categorie": "produits-frais",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "beurre",
+        "quantite": 50,
+        "unite": "g",
+        "categorie": "produits-frais",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "emmental",
+        "quantite": 100,
+        "unite": "g",
+        "categorie": "produits-frais",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "oignon",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "muscade",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "farine",
+        "quantite": 2,
+        "unite": "cas",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "sel",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "poivre",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      }
+    ]
+  },
+  {
+    "id": "lasagne-reblochon-butternut",
+    "nom": "Lasagne reblochon butternut",
+    "tempsPreparation": "long",
+    "ingredients": [
+      {
+        "nom": "feuilles de lasagne",
+        "quantite": 200,
+        "unite": "g",
+        "categorie": "epicerie",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "butternut",
+        "quantite": 400,
+        "unite": "g",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "reblochon",
+        "quantite": 200,
+        "unite": "g",
+        "categorie": "produits-frais",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "lardons",
+        "quantite": 150,
+        "unite": "g",
+        "categorie": "viandes-poissons",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "lait",
+        "quantite": 500,
+        "unite": "ml",
+        "categorie": "produits-frais",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "beurre",
+        "quantite": 50,
+        "unite": "g",
+        "categorie": "produits-frais",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "oignon",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "farine",
+        "quantite": 2,
+        "unite": "cas",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "sel",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "poivre",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      }
+    ]
+  },
+  {
+    "id": "gratin-ravioles",
+    "nom": "Gratin ravioles",
+    "tempsPreparation": "normal",
+    "ingredients": [
+      {
+        "nom": "ravioles",
+        "quantite": 1,
+        "unite": "sachet",
+        "categorie": "produits-frais",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "blanc de poulet",
+        "quantite": 2,
+        "unite": "piece",
+        "categorie": "viandes-poissons",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "crème fraîche semi-épaisse",
+        "quantite": 20.0,
+        "unite": "cl",
+        "categorie": "produits-frais",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "comté",
+        "quantite": 100,
+        "unite": "g",
+        "categorie": "produits-frais",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "sel",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "pesto",
+        "quantite": 4,
+        "unite": "cas",
+        "categorie": "produits-frais",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "poivre",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      }
+    ]
+  },
+  {
+    "id": "gratin-crozets-butternut",
+    "nom": "Gratin crozets butternut",
+    "tempsPreparation": "long",
+    "ingredients": [
+      {
+        "nom": "crozets",
+        "quantite": 300,
+        "unite": "g",
+        "categorie": "epicerie",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "butternut",
+        "quantite": 400,
+        "unite": "g",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "fromage à raclette",
+        "quantite": 80,
+        "unite": "g",
+        "categorie": "produits-frais",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "oignon",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "dés de jambon",
+        "quantite": 150,
+        "unite": "g",
+        "categorie": "viandes-poissons",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "kubor",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "muscade",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "sel",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "poivre",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      }
+    ]
+  },
+  {
+    "id": "gratin-crozets-choux-fleur",
+    "nom": "Gratin crozets choux-fleur",
+    "tempsPreparation": "long",
+    "ingredients": [
+      {
+        "nom": "crozets",
+        "quantite": 300,
+        "unite": "g",
+        "categorie": "epicerie",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "chou-fleur",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "fromage à raclette",
+        "quantite": 80,
+        "unite": "g",
+        "categorie": "produits-frais",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "oignon",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "dés de jambon",
+        "quantite": 150,
+        "unite": "g",
+        "categorie": "viandes-poissons",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "kubor",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "muscade",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "sel",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "poivre",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      }
+    ]
+  },
+  {
+    "id": "croziflette",
+    "nom": "Croziflette",
+    "tempsPreparation": "long",
+    "ingredients": [
+      {
+        "nom": "crozets",
+        "quantite": 200,
+        "unite": "g",
+        "categorie": "epicerie",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "reblochon",
+        "quantite": 200,
+        "unite": "g",
+        "categorie": "produits-frais",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "lardons",
+        "quantite": 150,
+        "unite": "g",
+        "categorie": "viandes-poissons",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "oignon",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "crème fraîche",
+        "quantite": 10.0,
+        "unite": "cl",
+        "categorie": "produits-frais",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "sel",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "poivre",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      }
+    ]
+  },
+  {
+    "id": "tartiflette",
+    "nom": "Tartiflette",
+    "tempsPreparation": "long",
+    "ingredients": [
+      {
+        "nom": "pommes de terre",
+        "quantite": 500,
+        "unite": "g",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "reblochon",
+        "quantite": 200,
+        "unite": "g",
+        "categorie": "produits-frais",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "lardons",
+        "quantite": 150,
+        "unite": "g",
+        "categorie": "viandes-poissons",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "oignon",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "sel",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "poivre",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      }
+    ]
+  },
+  {
+    "id": "quiche-chevre-epinards",
+    "nom": "Quiche chèvre épinards",
+    "tempsPreparation": "long",
+    "ingredients": [
+      {
+        "nom": "pâte feuilletée",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "boulangerie",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "épinards",
+        "quantite": 200,
+        "unite": "g",
+        "categorie": "surgeles",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "buche de chèvre",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "produits-frais",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "œufs",
+        "quantite": 3,
+        "unite": "piece",
+        "categorie": "produits-frais",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "crème fraîche semi-épaisse",
+        "quantite": 20.0,
+        "unite": "cl",
+        "categorie": "produits-frais",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "lait",
+        "quantite": 200,
+        "unite": "ml",
+        "categorie": "produits-frais",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "parmesan",
+        "quantite": 100,
+        "unite": "g",
+        "categorie": "produits-frais",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "sel",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "poivre",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      }
+    ]
+  },
+  {
+    "id": "quiche-lorraine",
+    "nom": "Quiche lorraine",
+    "tempsPreparation": "long",
+    "ingredients": [
+      {
+        "nom": "pâte feuilletée",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "boulangerie",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "lardons",
+        "quantite": 200,
+        "unite": "g",
+        "categorie": "viandes-poissons",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "œufs",
+        "quantite": 3,
+        "unite": "piece",
+        "categorie": "produits-frais",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "crème fraîche",
+        "quantite": 20.0,
+        "unite": "cl",
+        "categorie": "produits-frais",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "lait",
+        "quantite": 200,
+        "unite": "ml",
+        "categorie": "produits-frais",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "emmental",
+        "quantite": 100,
+        "unite": "g",
+        "categorie": "produits-frais",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "muscade",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "sel",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "poivre",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      }
+    ]
+  },
+  {
+    "id": "feuilletes-chevre-jambon",
+    "nom": "Feuilleté chèvre jambon",
+    "tempsPreparation": "rapide",
+    "ingredients": [
+      {
+        "nom": "pâte feuilletée",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "boulangerie",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "jambon cru (tranches)",
+        "quantite": 4,
+        "unite": "piece",
+        "categorie": "viandes-poissons",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "buche de chèvre",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "produits-frais",
+        "fondDePlacard": false
+      }
+    ]
+  },
+  {
+    "id": "feuilletes-mozza-pesto",
+    "nom": "Feuilleté mozza pesto",
+    "tempsPreparation": "rapide",
+    "ingredients": [
+      {
+        "nom": "pâte feuilletée",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "boulangerie",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "mozzarella",
+        "quantite": 125,
+        "unite": "g",
+        "categorie": "produits-frais",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "pesto",
+        "quantite": 2,
+        "unite": "cas",
+        "categorie": "produits-frais",
+        "fondDePlacard": false
+      }
+    ]
+  },
+  {
+    "id": "tarte-tomates",
+    "nom": "Tarte tomates",
+    "tempsPreparation": "normal",
+    "ingredients": [
+      {
+        "nom": "pâte feuilletée",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "boulangerie",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "tomates",
+        "quantite": 3,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "oignon",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "moutarde",
+        "quantite": 2,
+        "unite": "cas",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "emmental",
+        "quantite": 100,
+        "unite": "g",
+        "categorie": "produits-frais",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "herbes de Provence",
+        "quantite": 1,
+        "unite": "cas",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "poivre",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      }
+    ]
+  },
+  {
+    "id": "tarte-thon-tomates",
+    "nom": "Tarte thon tomates",
+    "tempsPreparation": "normal",
+    "ingredients": [
+      {
+        "nom": "pâte feuilletée",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "boulangerie",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "tomates",
+        "quantite": 3,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "thon en boite",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "epicerie",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "moutarde",
+        "quantite": 2,
+        "unite": "cas",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "emmental",
+        "quantite": 100,
+        "unite": "g",
+        "categorie": "produits-frais",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "herbes de Provence",
+        "quantite": 1,
+        "unite": "cas",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "poivre",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      }
+    ]
+  },
+  {
+    "id": "wraps",
+    "nom": "Wraps",
+    "tempsPreparation": "rapide",
+    "ingredients": [
+      {
+        "nom": "wraps",
+        "quantite": 6,
+        "unite": "piece",
+        "categorie": "boulangerie",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "jambon blanc (tranche)",
+        "quantite": 6,
+        "unite": "piece",
+        "categorie": "viandes-poissons",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "tomates",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "tartare",
+        "quantite": 200,
+        "unite": "g",
+        "categorie": "produits-frais",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "sel",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "poivre",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      }
+    ]
+  },
+  {
+    "id": "buns-frites",
+    "nom": "Bun's frites",
+    "tempsPreparation": "rapide",
+    "ingredients": [
+      {
+        "nom": "bun's ketchup",
+        "quantite": 4,
+        "unite": "piece",
+        "categorie": "boulangerie",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "frites",
+        "quantite": 600,
+        "unite": "g",
+        "categorie": "surgeles",
+        "fondDePlacard": false
+      }
+    ]
+  },
+  {
+    "id": "burger-maison-frites",
+    "nom": "Burger maison frites",
+    "tempsPreparation": "long",
+    "ingredients": [
+      {
+        "nom": "pain burger",
+        "quantite": 2,
+        "unite": "piece",
+        "categorie": "boulangerie",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "steaks hachés",
+        "quantite": 300,
+        "unite": "g",
+        "categorie": "surgeles",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "frites",
+        "quantite": 600,
+        "unite": "g",
+        "categorie": "surgeles",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "emmental",
+        "quantite": 60,
+        "unite": "g",
+        "categorie": "produits-frais",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "tomates",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "oignon",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "ketchup",
+        "quantite": 2,
+        "unite": "cas",
+        "categorie": "epicerie",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "huile",
+        "quantite": 500,
+        "unite": "ml",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "mayonnaise",
+        "quantite": 1,
+        "unite": "cas",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "sel",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "poivre",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      }
+    ]
+  },
+  {
+    "id": "croustibat-riz",
+    "nom": "Croustibat riz",
+    "tempsPreparation": "normal",
+    "ingredients": [
+      {
+        "nom": "croustibat",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "surgeles",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "riz",
+        "quantite": 130,
+        "unite": "g",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      }
+    ]
+  },
+  {
+    "id": "croissant-jambon",
+    "nom": "Croissant jambon",
+    "tempsPreparation": "rapide",
+    "ingredients": [
+      {
+        "nom": "croissants",
+        "quantite": 4,
+        "unite": "piece",
+        "categorie": "boulangerie",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "jambon blanc (tranche)",
+        "quantite": 4,
+        "unite": "piece",
+        "categorie": "viandes-poissons",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "emmental",
+        "quantite": 100,
+        "unite": "g",
+        "categorie": "produits-frais",
+        "fondDePlacard": true
+      }
+    ]
+  },
+  {
+    "id": "brownie-brocolis",
+    "nom": "Brownie brocolis",
+    "tempsPreparation": "normal",
+    "ingredients": [
+      {
+        "nom": "brocolis",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "œufs",
+        "quantite": 2,
+        "unite": "piece",
+        "categorie": "produits-frais",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "dés de jambon",
+        "quantite": 150,
+        "unite": "g",
+        "categorie": "viandes-poissons",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "comté",
+        "quantite": 80,
+        "unite": "g",
+        "categorie": "produits-frais",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "lait",
+        "quantite": 250,
+        "unite": "ml",
+        "categorie": "produits-frais",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "feta",
+        "quantite": 0.5,
+        "unite": "piece",
+        "categorie": "produits-frais",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "farine",
+        "quantite": 160,
+        "unite": "g",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "sel",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "levure chimique",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "poivre",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      }
+    ]
+  },
+  {
+    "id": "dal-lentilles",
+    "nom": "Dal lentilles",
+    "tempsPreparation": "normal",
+    "ingredients": [
+      {
+        "nom": "lentilles corail",
+        "quantite": 300,
+        "unite": "g",
+        "categorie": "epicerie",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "lait de coco",
+        "quantite": 200,
+        "unite": "ml",
+        "categorie": "epicerie",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "pulpe de tomates",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "epicerie",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "échalote",
+        "quantite": 4,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "gingembre",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "ail",
+        "quantite": 3,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "coriandre",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "curcuma",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "cumin",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "kubor",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "huile d'olive",
+        "quantite": 1,
+        "unite": "cas",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "moutarde à l'ancienne",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      }
+    ]
+  },
+  {
+    "id": "taboule",
+    "nom": "Taboulé",
+    "tempsPreparation": "normal",
+    "ingredients": [
+      {
+        "nom": "taboulé",
+        "quantite": 1,
+        "unite": "sachet",
+        "categorie": "epicerie",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "tomates",
+        "quantite": 3,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "concombre",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "poivron rouge",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": false
+      }
+    ]
+  },
+  {
+    "id": "paella-surgelee",
+    "nom": "Paella surgelée",
+    "tempsPreparation": "rapide",
+    "ingredients": [
+      {
+        "nom": "paella surgelée",
+        "quantite": 600,
+        "unite": "g",
+        "categorie": "surgeles",
+        "fondDePlacard": false
+      }
+    ]
+  },
+  {
+    "id": "curry-vegetarien",
+    "nom": "Curry végétarien",
+    "tempsPreparation": "long",
+    "ingredients": [
+      {
+        "nom": "patates douces",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "courgette",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "carottes",
+        "quantite": 2,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "pulpe de tomates",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "epicerie",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "lait de coco",
+        "quantite": 200,
+        "unite": "ml",
+        "categorie": "epicerie",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "oignon",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "gingembre",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "ail",
+        "quantite": 2,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "pate de curry",
+        "quantite": 3,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "jus de citron",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "cumin",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "huile d'olive",
+        "quantite": 1,
+        "unite": "cas",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "sel",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "riz basmati",
+        "quantite": 130,
+        "unite": "g",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      }
+    ]
+  },
+  {
+    "id": "bruschetta",
+    "nom": "Bruschetta",
+    "tempsPreparation": "rapide",
+    "ingredients": [
+      {
+        "nom": "pain tranché",
+        "quantite": 6,
+        "unite": "piece",
+        "categorie": "boulangerie",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "tomates",
+        "quantite": 2,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "jambon cru (tranches)",
+        "quantite": 6,
+        "unite": "piece",
+        "categorie": "viandes-poissons",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "buche de chèvre",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "produits-frais",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "huile d'olive",
+        "quantite": 3,
+        "unite": "cas",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "poivre",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      }
+    ]
+  },
+  {
+    "id": "salade-cesar",
+    "nom": "Salade César",
+    "tempsPreparation": "rapide",
+    "ingredients": [
+      {
+        "nom": "émincé de poulet",
+        "quantite": 200,
+        "unite": "g",
+        "categorie": "viandes-poissons",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "laitue iceberg",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "parmesan (copeaux)",
+        "quantite": 40,
+        "unite": "g",
+        "categorie": "produits-frais",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "croûtons",
+        "quantite": 50,
+        "unite": "g",
+        "categorie": "boulangerie",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "maïs",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "epicerie",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "œufs",
+        "quantite": 2,
+        "unite": "piece",
+        "categorie": "produits-frais",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "tomates",
+        "quantite": 2,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "sauce césar",
+        "quantite": 1,
+        "unite": "piece",
+        "categorie": "epicerie",
+        "fondDePlacard": false
+      }
+    ]
+  },
+  {
+    "id": "omelette",
+    "nom": "Omelette",
+    "tempsPreparation": "rapide",
+    "ingredients": [
+      {
+        "nom": "œufs",
+        "quantite": 6,
+        "unite": "piece",
+        "categorie": "produits-frais",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "emmental",
+        "quantite": 50,
+        "unite": "g",
+        "categorie": "produits-frais",
+        "fondDePlacard": true
+      }
+    ]
+  },
+  {
+    "id": "poireaux-jambon",
+    "nom": "Poireaux jambon",
+    "tempsPreparation": "long",
+    "ingredients": [
+      {
+        "nom": "poireaux",
+        "quantite": 4,
+        "unite": "piece",
+        "categorie": "legumes-fruits",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "jambon blanc (tranche)",
+        "quantite": 4,
+        "unite": "piece",
+        "categorie": "viandes-poissons",
+        "fondDePlacard": false
+      },
+      {
+        "nom": "emmental",
+        "quantite": 80,
+        "unite": "g",
+        "categorie": "produits-frais",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "beurre",
+        "quantite": 50,
+        "unite": "g",
+        "categorie": "produits-frais",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "lait",
+        "quantite": 500,
+        "unite": "ml",
+        "categorie": "produits-frais",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "farine",
+        "quantite": 2,
+        "unite": "cas",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      },
+      {
+        "nom": "muscade",
+        "quantite": 1,
+        "unite": "cac",
+        "categorie": "epicerie",
+        "fondDePlacard": true
+      }
     ]
   }
 ]

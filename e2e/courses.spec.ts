@@ -2,10 +2,8 @@
 // Session authentifiée via le projet "setup" (storageState).
 
 import { test, expect } from "@playwright/test";
-import recettesJson from "../data/recettes.json";
-import type { Jour, Planning, Recette } from "../types";
-
-const RECETTES = recettesJson as Recette[];
+import { recetteFixture } from "../tests/fixtures/recettes";
+import type { Jour, Planning } from "../types";
 
 test("après génération d'un planning, la liste de courses n'est pas vide", async ({
   page,
@@ -32,18 +30,15 @@ test("après génération d'un planning, la liste de courses n'est pas vide", as
 test("les catégories d'ingrédients et le fond de placard sont visibles", async ({
   page,
 }) => {
-  // Planning déterministe injecté en localStorage : des recettes réelles
-  // choisies pour couvrir plusieurs catégories et le fond de placard.
-  const ids = [
-    "omelette-aux-fines-herbes", // produits-frais, legumes-fruits + sel/poivre/beurre
-    "pates-au-pesto", // epicerie + huile d'olive
-    "salade-cesar-au-poulet", // viandes-poissons
+  // Planning déterministe injecté en localStorage : des fixtures choisies
+  // pour couvrir plusieurs catégories et le fond de placard. La page lit le
+  // planning depuis localStorage — nul besoin que ces recettes existent
+  // dans data/recettes.json (découplage, issue #29).
+  const choisies = [
+    recetteFixture("omelette-aux-champignons"), // produits-frais, legumes-fruits + beurre/poivre placard
+    recetteFixture("tagliatelles-au-parmesan"), // epicerie + huile d'olive/sel placard
+    recetteFixture("quiche-aux-lardons"), // viandes-poissons
   ];
-  const choisies = ids.map((id) => {
-    const r = RECETTES.find((x) => x.id === id);
-    if (!r) throw new Error(`Recette absente du dataset : ${id}`);
-    return r;
-  });
   const jours: Jour[] = ["lundi", "mardi", "mercredi"];
   const planning: Planning = {
     semaine: "2026-W23",

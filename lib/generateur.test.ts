@@ -1,16 +1,18 @@
 // Tests unitaires du générateur de planning — RG-01 à RG-04
 // (SPECS_FONCTIONNELLES.md section 6) + structure du planning (section 5.5).
 //
-// Données : les vraies recettes de data/recettes.json (25 recettes —
-// 15 rapides, 7 normales, 3 longues), parfois filtrées en sous-ensembles
+// Données : les fixtures de tests/fixtures/recettes.ts (15 recettes —
+// 12 rapides/normales, 3 longues), parfois filtrées en sous-ensembles
 // pour rendre certains comportements déterministes malgré l'aléatoire (RG-03).
+// Découplé de data/recettes.json (issue #29) : le vrai dataset peut évoluer
+// librement sans casser ces tests.
 
 import { describe, test, expect } from "vitest";
 import { genererPlanning, remplacerSlot } from "@/lib/generateur";
-import recettesJson from "@/data/recettes.json";
+import { RECETTES_FIXTURES } from "@/tests/fixtures/recettes";
 import type { Jour, Planning, Recette } from "@/types";
 
-const RECETTES = recettesJson as Recette[];
+const RECETTES = RECETTES_FIXTURES;
 const RAPIDES_NORMALES = RECETTES.filter((r) => r.tempsPreparation !== "long");
 const LONGUES = RECETTES.filter((r) => r.tempsPreparation === "long");
 
@@ -111,7 +113,7 @@ describe("genererPlanning — RG-02 pas de répétition dans la semaine", () => 
 // ---------------------------------------------------------------------------
 describe("genererPlanning — RG-03 sélection aléatoire", () => {
   test("produit des plannings différents d'une génération à l'autre", () => {
-    // 30 générations sur 25 recettes : la probabilité d'obtenir 30 fois
+    // 30 générations sur 15 recettes : la probabilité d'obtenir 30 fois
     // exactement la même semaine est nulle en pratique.
     const signatures = new Set<string>();
     for (let i = 0; i < 30; i++) {
