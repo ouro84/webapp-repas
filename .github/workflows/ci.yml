@@ -2,8 +2,12 @@
 # sur chaque PR et chaque push vers main.
 #
 # Secrets GitHub Actions requis (Settings → Secrets and variables → Actions) :
-# - NEXT_PUBLIC_SUPABASE_URL
-# - NEXT_PUBLIC_SUPABASE_ANON_KEY
+# - STAGING_SUPABASE_URL
+# - STAGING_SUPABASE_ANON_KEY
+#
+# Les e2e tapent l'instance Supabase STAGING, jamais la prod.
+# ⚠ Ces secrets doivent exister dans DEUX coffres : Actions ET Dependabot
+# (les workflows déclenchés par les PR Dependabot lisent le coffre Dependabot).
 name: CI
 
 on:
@@ -38,10 +42,12 @@ jobs:
 
       # auth.setup.ts et `next dev` lisent .env.local (pas process.env) :
       # on le génère depuis les secrets avant de lancer les e2e.
-      - name: Générer .env.local depuis les secrets
+      # Les secrets STAGING_* sont mappés vers les noms de variables attendus
+      # par l'app — les e2e pointent ainsi vers l'instance staging.
+      - name: Générer .env.local depuis les secrets (staging)
         env:
-          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
         run: |
           {
             echo "NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL"
