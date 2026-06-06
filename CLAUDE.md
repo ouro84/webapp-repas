@@ -1,7 +1,20 @@
 # Contexte projet — Webapp Repas de la semaine
 
-> Dernière mise à jour : 2026-06-04
+> Dernière mise à jour : 2026-06-06
 > Stack : Next.js 16 (App Router) + Supabase + Vercel + Tailwind CSS v4
+
+---
+
+## Règle de mise à jour de ce fichier
+
+Ce fichier est un critère de merge. Toute PR qui introduit un nouveau piège, modifie une convention, ou solde une dette documentée ici doit mettre ce fichier à jour dans le même commit.
+
+Cas déclencheurs :
+- Nouveau comportement non-évident découvert pendant le dev
+- Convention modifiée (nommage, structure de dossiers, workflow Git)
+- Dette soldée → supprimer ou annoter l'entrée concernée
+- Nouvelle dépendance avec comportement non-standard
+- Changement de version majeure d'une lib
 
 ---
 
