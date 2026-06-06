@@ -4,10 +4,14 @@
 # Secrets GitHub Actions requis (Settings → Secrets and variables → Actions) :
 # - STAGING_SUPABASE_URL
 # - STAGING_SUPABASE_ANON_KEY
+# - SUPABASE_ACCESS_TOKEN          (CLI Supabase — link/db push)
+# - STAGING_SUPABASE_DB_PASSWORD   (db push staging, job test)
+# - SUPABASE_DB_PASSWORD           (db push prod, job migrate-prod — coffre Actions uniquement)
 #
 # Les e2e tapent l'instance Supabase STAGING, jamais la prod.
-# ⚠ Ces secrets doivent exister dans DEUX coffres : Actions ET Dependabot
-# (les workflows déclenchés par les PR Dependabot lisent le coffre Dependabot).
+# ⚠ Les secrets utilisés sur les PR (tous sauf SUPABASE_DB_PASSWORD) doivent
+# exister dans DEUX coffres : Actions ET Dependabot (les workflows déclenchés
+# par les PR Dependabot lisent le coffre Dependabot).
 name: CI
 
 on:
@@ -40,6 +44,18 @@ jobs:
         # `vitest` détecte CI=true et tourne en mode single-run, pas en watch.
         run: npm run test
 
+      # Applique les migrations sur le STAGING avant les e2e — garantit que
+      # les tests tournent sur le schéma de la branche. `db push` est
+      # idempotent : seules les migrations absentes de l'historique distant
+      # (supabase_migrations.schema_migrations) sont appliquées.
+      - name: Appliquer les migrations (staging)
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.STAGING_SUPABASE_DB_PASSWORD }}
+        run: |
+          npx supabase link --project-ref upxoxrjumxpzumakawiv
+          npx supabase db push
+
       # auth.setup.ts et `next dev` lisent .env.local (pas process.env) :
       # on le génère depuis les secrets avant de lancer les e2e.
       # Les secrets STAGING_* sont mappés vers les noms de variables attendus
@@ -69,3 +85,31 @@ jobs:
           name: playwright-report
           path: playwright-report/
           retention-days: 7
+
+  # Applique les migrations sur la PROD — uniquement sur push vers main
+  # (jamais sur les PR), et seulement si les tests sont verts.
+  # Tourne toujours avec le coffre Actions (un push n'est jamais un
+  # événement Dependabot), d'où SUPABASE_DB_PASSWORD dans ce seul coffre.
+  migrate-prod:
+    if: github.event_name == 'push'
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Installer les dépendances
+        run: npm ci
+
+      - name: Appliquer les migrations (prod)
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          npx supabase link --project-ref gabyhlcwahzquolwxmgd
+          npx supabase db push

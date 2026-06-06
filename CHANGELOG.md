@@ -11,6 +11,7 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 - Migrations Supabase CLI : `supabase` en devDependency, `supabase/config.toml`, baseline `20260606225900_init.sql` vérifiée contre le schéma prod ; historique de migrations marqué sur prod et staging
 - `scripts/query-supabase.mjs` : exécution de SQL distant via l'API de management (contourne le blocage Avast du CLI Go en local)
+- CI : application automatique des migrations — staging avant les e2e de chaque PR, prod via le job `migrate-prod` sur push `main` (après tests verts)
 
 ### Modifié
 
