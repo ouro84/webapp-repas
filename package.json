@@ -33,6 +33,7 @@
     "eslint": "^9.39.4",
     "eslint-config-next": "16.2.7",
     "jsdom": "^29.1.1",
+    "supabase": "^2.105.0",
     "tailwindcss": "^4",
     "typescript": "^6",
     "vitest": "^4.1.8"

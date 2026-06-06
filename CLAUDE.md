@@ -115,6 +115,7 @@ Format : `type: description courte`
 | Outil | Usage |
 |-------|-------|
 | `gh` (GitHub CLI) | Authentifié en tant que `ouro84`. Utiliser pour gérer le backlog GitHub Projects en langage naturel : ajouter des cartes, changer leur statut, lister les items. |
+| `supabase` (CLI, devDependency) | Migrations de schéma (`supabase/migrations/`). En CI uniquement pour `db push` — en local le binaire Go est bloqué par Avast (cf. piège ci-dessous), passer par `scripts/query-supabase.mjs`. Token : `SUPABASE_ACCESS_TOKEN` dans `.env.local`. |
 
 ---
 
@@ -156,6 +157,14 @@ Format : `type: description courte`
 
 **Semaine au format ISO 8601 (`"2026-W23"`)** — L'année ISO est celle du jeudi de la semaine : elle peut différer de l'année civile autour du 1er janvier. Tous les calculs de date (génération et affichage `formaterSemaine`) sont en UTC pour neutraliser les fuseaux. Ne pas remplacer par `getFullYear()` + un compteur naïf.
 
+### Migrations Supabase
+
+**Tout changement de schéma passe par un fichier de migration** — `supabase/migrations/<timestamp 14 chiffres>_<nom>.sql`, appliqué par la CI via `supabase db push` (staging sur chaque PR, prod sur push `main`). Ne plus jamais modifier le schéma à la main dans le SQL editor : la base divergerait des migrations et le `db push` suivant pourrait casser.
+
+**La baseline `20260606225900_init.sql` remplace les migrations manuelles** — Les fichiers `20260603_001/_002` (format de nommage incompatible CLI) ont été fusionnés dedans, contenu vérifié contre le schéma réel de la prod via l'API de management. L'historique distant (`supabase_migrations.schema_migrations`) a été marqué manuellement sur prod **et** staging le 2026-06-06 : la baseline y figure comme appliquée, `db push` ne la rejouera pas. Une base neuve, elle, la rejouera entièrement — c'est voulu.
+
+**`db pull` / `db dump` ne marchent pas sur ce poste** — Double blocage : ces commandes exigent Docker (non installé), et le binaire Go du CLI est bloqué par Avast (cf. piège Avast ci-dessous). Pour inspecter un schéma distant : `node scripts/query-supabase.mjs <ref> "<sql>"` (API de management, requiert `SUPABASE_ACCESS_TOKEN`). Refs : prod `gabyhlcwahzquolwxmgd`, staging `upxoxrjumxpzumakawiv`.
+
 ### Tests & CI
 
 **Playwright lit `.env.local` directement, pas `process.env`** — `e2e/auth.setup.ts` parse le fichier avec `readFileSync` (Playwright ne charge pas les env Next). Conséquence en CI : le workflow génère un `.env.local` depuis les secrets GitHub Actions `STAGING_SUPABASE_URL` / `STAGING_SUPABASE_ANON_KEY`, mappés vers les noms `NEXT_PUBLIC_*` attendus par l'app. Supprimer cette étape du workflow = e2e cassés en CI uniquement. Les secrets staging doivent exister dans les deux coffres (Actions **et** Dependabot, cf. piège Dependabot ci-dessous).
@@ -173,6 +182,8 @@ Format : `type: description courte`
 ### Environnement de dev (poste Windows + Avast)
 
 **Avast intercepte le TLS → Node ne reconnaît pas sa CA** — Symptôme : le login Supabase échoue en dev local (erreur TLS). Remède : `NODE_OPTIONS=--use-system-ca` (déjà posé en variable d'environnement machine via `setx`). C'est aussi la raison du `ignoreHTTPSErrors: true` dans `playwright.config.ts`. Si l'auth e2e échoue localement avec une erreur certificat, vérifier cette variable avant de chercher ailleurs.
+
+**Avast bloque aussi les binaires Go (Supabase CLI) — sans remède env** — Le certificat MITM d'Avast échoue au contrôle de révocation (`CRYPT_E_NO_REVOCATION_CHECK`) : `npx supabase link/db pull` échouent en local avec un message quasi vide (« Try rerunning with --debug », qui n'affiche rien de plus). `--use-system-ca` ne s'applique qu'à Node. Contournement : `scripts/query-supabase.mjs` (Node + API de management) pour tout ce qui est lecture/SQL distant ; les commandes CLI réseau ne tournent qu'en CI.
 
 ### Conventions de code observées
 

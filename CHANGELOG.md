@@ -7,6 +7,11 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+### Ajouté
+
+- Migrations Supabase CLI : `supabase` en devDependency, `supabase/config.toml`, baseline `20260606225900_init.sql` vérifiée contre le schéma prod ; historique de migrations marqué sur prod et staging
+- `scripts/query-supabase.mjs` : exécution de SQL distant via l'API de management (contourne le blocage Avast du CLI Go en local)
+
 ### Modifié
 
 - Les tests e2e en CI utilisent l'instance Supabase staging (secrets `STAGING_SUPABASE_URL` / `STAGING_SUPABASE_ANON_KEY`) au lieu de la prod
