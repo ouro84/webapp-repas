@@ -46,6 +46,7 @@ Webapp de génération automatique de plannings de repas hebdomadaires, avec lis
 | Typage | TypeScript strict | v5 |
 | Tests unitaires | Vitest | — (Phase 7) |
 | Tests e2e | Playwright | — (Phase 7) |
+| Monitoring d'erreurs | Sentry (`@sentry/nextjs`) | v10 |
 | Versioning | Git + GitHub | — |
 
 > **Note Tailwind v4 :** la configuration se fait dans `app/globals.css` via `@theme`, pas dans un fichier `tailwind.config.js`. Les classes utilitaires restent identiques.
@@ -149,6 +150,8 @@ Format : `type: description courte`
 
 **`middleware.ts` est déprécié en Next.js 16** — Warning au démarrage : « The "middleware" file convention is deprecated. Please use "proxy" instead. » Le fichier gère la session Supabase ; il fonctionne encore. Le warning en CI/dev est attendu — ne pas le « corriger » à la va-vite, la migration vers `proxy` est un chantier à part entière.
 
+**Sentry v10 : pas de `sentry.client.config.ts`** — Depuis @sentry/nextjs v9, la config client vit dans `instrumentation-client.ts` à la racine (les tutos qui mentionnent `sentry.client.config.ts` sont obsolètes). `sentry.server.config.ts` et `sentry.edge.config.ts` existent toujours, chargés par `instrumentation.ts`. La variable d'env est `NEXT_PUBLIC_SENTRY_DSN` (pas `SENTRY_DSN`) : le préfixe est requis pour inliner le DSN dans le bundle client — un DSN n'est pas un secret. Choix volontaires : pas de tracing ni de session replay (quota gratuit, usage perso) ; pas d'upload de source maps (pas de `SENTRY_AUTH_TOKEN`) → stack traces minifiées dans Sentry en prod, le digest Next reste la référence.
+
 **Client Supabase scindé en deux** — `lib/supabase/client.ts` (navigateur, `createBrowserClient`) et `lib/supabase/server.ts` (serveur, `createServerClient` + cookies), pas un `lib/supabase.ts` unique comme le montre la structure cible ci-dessus. Imposé par l'App Router (révision ADR-02). Importer le mauvais client = erreurs de session.
 
 ### Logique métier (`lib/generateur.ts`)
@@ -177,7 +180,7 @@ Format : `type: description courte`
 
 **`npm run test` en CI ne reste pas en watch** — Le script lance `vitest` (mode watch en local), mais Vitest détecte `CI=true` et passe en single-run. En local, préférer `npm run test:run` pour un run unique.
 
-**Branch protection : dette connue** — Le workflow CI (`.github/workflows/ci.yml`) tourne sur chaque PR et push vers `main`, mais aucun check n'est *obligatoire* pour merger : rien n'empêche techniquement de merger une PR rouge. À configurer manuellement sur GitHub (Settings → Branches) le jour venu.
+**Branch protection : dette connue, et bloquée par le plan GitHub** — Le workflow CI (`.github/workflows/ci.yml`) tourne sur chaque PR et push vers `main`, mais aucun check n'est *obligatoire* pour merger : rien n'empêche techniquement de merger une PR rouge. Vérifié le 2026-06-06 : la protection de branche (classique et rulesets) est **indisponible sur un repo privé en plan Free** — l'API répond 403 « Upgrade to GitHub Pro or make this repository public ». Décision : on reste comme ça (discipline). Si la situation change (repo public ou GitHub Pro), configurer : require PR before merging + required status check `test` (nom du job CI).
 
 ### Environnement de dev (poste Windows + Avast)
 
