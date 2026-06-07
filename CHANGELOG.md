@@ -22,6 +22,7 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 ### Modifié
 
 - Les tests e2e en CI utilisent l'instance Supabase staging (secrets `STAGING_SUPABASE_URL` / `STAGING_SUPABASE_ANON_KEY`) au lieu de la prod
+- Pages login/signup alignées sur le design system (#57) et formulaire d'auth accessible (#60) : composant partagé `FormulaireAuth` aux couleurs brand (boutons `rounded-full bg-brand-600`, inputs `border-brand-200`, focus `outline-brand-600`), autocomplete email + mot de passe, toggle afficher/masquer le mot de passe, erreur en `role="alert"` avec retour du focus, bouton en chargement avec spinner + `aria-busy`, `<main id="contenu">` pour le skip link
 
 ## [1.0.1] - 2026-06-06
 

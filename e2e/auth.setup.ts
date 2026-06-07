@@ -41,7 +41,9 @@ setup("authentification du compte de test", async ({ page, request }) => {
   // Connexion par le parcours réel.
   await page.goto("/login");
   await page.getByLabel("Email").fill(EMAIL);
-  await page.getByLabel("Mot de passe").fill(MOT_DE_PASSE);
+  // exact : le bouton œil (aria-label « Afficher le mot de passe ») contient
+  // aussi « mot de passe » — sans exact, le locator serait ambigu (#60).
+  await page.getByLabel("Mot de passe", { exact: true }).fill(MOT_DE_PASSE);
   await page.getByRole("button", { name: "Se connecter" }).click();
 
   // La redirection post-login prouve que le middleware valide la session.
