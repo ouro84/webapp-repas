@@ -284,7 +284,7 @@ test("modifier le nombre de personnes met à l'échelle la liste de courses (RG-
   await page.waitForURL("**/courses");
 
   // 6 œufs (recette) → 12 à 4 personnes.
-  const ligneOeufs = page.locator("li", { hasText: "oeufs" }).first();
+  const ligneOeufs = page.locator("li", { hasText: "œufs" }).first();
   await expect(ligneOeufs).toContainText("12");
 });
 
@@ -304,8 +304,8 @@ test("modifier les personnes invalide la coche de l'article touché, pas les aut
   // Cocher les œufs côté courses.
   await page.getByRole("link", { name: "Liste de courses →" }).click();
   await page.waitForURL("**/courses");
-  await page.getByRole("checkbox", { name: /oeufs/ }).click();
-  await expect(page.getByRole("checkbox", { name: /oeufs/ })).toBeChecked();
+  await page.getByRole("checkbox", { name: /œufs/ }).click();
+  await expect(page.getByRole("checkbox", { name: /œufs/ })).toBeChecked();
 
   // Augmenter les personnes : la quantité d'œufs change → coche invalidée.
   await page.getByRole("link", { name: "← Planning" }).click();
@@ -318,7 +318,7 @@ test("modifier les personnes invalide la coche de l'article touché, pas les aut
 
   await page.getByRole("link", { name: "Liste de courses →" }).click();
   await page.waitForURL("**/courses");
-  await expect(page.getByRole("checkbox", { name: /oeufs/ })).not.toBeChecked();
+  await expect(page.getByRole("checkbox", { name: /œufs/ })).not.toBeChecked();
 });
 
 test("une génération complète remet tous les repas à 2 personnes (RG-16)", async ({

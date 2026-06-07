@@ -194,3 +194,39 @@ test("regénérer le planning réinitialise toutes les coches (RG-13)", async ({
   await page.goto("/courses");
   await expect(page.getByText(/^0\/[1-9]\d* articles?/)).toBeVisible();
 });
+
+test("les libellés s'accordent en nombre selon la quantité (US-08)", async ({
+  page,
+}) => {
+  // Planning forgé : un ingrédient pièce au singulier (1), un au pluriel (3),
+  // un nom de masse invariable (200 g). La page lit le planning brut depuis
+  // localStorage — pas besoin que la recette existe dans le dataset (#29).
+  const planning = {
+    semaine: "2026-W23",
+    jours: [
+      {
+        jour: "lundi",
+        diner: {
+          id: "test-accord",
+          nom: "Test accord",
+          tempsPreparation: "rapide",
+          ingredients: [
+            { nom: "carottes", quantite: 1, unite: "piece", categorie: "legumes-fruits", fondDePlacard: false },
+            { nom: "tomates", quantite: 3, unite: "piece", categorie: "legumes-fruits", fondDePlacard: false },
+            { nom: "beurre", quantite: 200, unite: "g", categorie: "produits-frais", fondDePlacard: false },
+          ],
+        },
+      },
+    ],
+  };
+  await page.addInitScript(
+    (contenu) => localStorage.setItem("planning_courant", contenu),
+    JSON.stringify(planning)
+  );
+  await page.goto("/courses");
+
+  // Quantité 1 → singulier ; quantité 3 → pluriel ; masse → invariable.
+  await expect(page.getByText("carotte", { exact: true })).toBeVisible();
+  await expect(page.getByText("tomates", { exact: true })).toBeVisible();
+  await expect(page.getByText("beurre", { exact: true })).toBeVisible();
+});

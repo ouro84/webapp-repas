@@ -218,6 +218,25 @@ Réduire à zéro l'effort de planification hebdomadaire des repas, du choix des
 
 ---
 
+### US-08 — Accord en nombre des libellés de courses
+
+> **En tant qu'** utilisateur, je veux que les libellés de la liste de courses s'accordent en nombre selon la quantité, afin d'avoir une liste lisible et naturelle.
+
+**Comportement :**
+> **Given** je visualise la liste de courses  
+> **When** un ingrédient vendu à la pièce a une quantité ≥ 2  
+> **Then** son nom est au pluriel (« 3 carottes »)
+
+> **Given** un ingrédient vendu à la pièce a une quantité < 2  
+> **When** je visualise la liste  
+> **Then** son nom est au singulier (« 1 carotte »)
+
+> **Given** un ingrédient mesuré (g, ml, c.à.s…) ou un nom de masse  
+> **When** la quantité varie  
+> **Then** son nom reste invariable (« 200 g de beurre »)
+
+---
+
 ## 5. Modèle de données
 
 > Les structures ci-dessous sont exprimées en TypeScript à titre documentaire. Le fichier de données réel est `/data/recettes.json` — format JSON lisible et éditable sans connaissance technique.
@@ -366,6 +385,15 @@ Les recettes sont données pour 2 personnes. Pour un slot réglé à `N` personn
 | `cas`, `cac` (cuillères) | au 0,5 près |
 
 > Arrondir après agrégation évite d'accumuler les erreurs d'arrondi quand un même ingrédient provient de plusieurs repas mis à l'échelle différemment.
+
+### RG-18 — Accord en nombre des libellés de courses (US-08)
+
+L'accord se fait à l'affichage uniquement (le nom stocké est inchangé), et selon ce qui est compté :
+- **unité `piece`** : le **nom** s'accorde — singulier si quantité < 2, pluriel si ≥ 2. Implémenté par un pluriel régulier conscient des connecteurs (« de / à / en… » : seule la tête s'accorde, ex. « blancs de poulet ») complété d'une **table d'exceptions** (formes déjà au pluriel dans le dataset, composés irréguliers, mots à trait d'union, invariants : marques, variétés, noms de masse vendus à la pièce).
+- **unités conteneur** (`sachet`, `boite`, `bouteille`, `briquette`) : c'est le **libellé d'unité** qui s'accorde (« 2 sachets »), pas le nom (contenu).
+- **mesures** (`g`, `kg`, `ml`, `cl`, `l`, `cas`, `cac`) : noms de masse, jamais accordés.
+
+> Hors table d'exceptions et hors règle régulière sûre, la forme est laissée **inchangée** — ne jamais risquer une faute d'accord.
 
 ---
 

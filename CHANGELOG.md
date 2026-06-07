@@ -18,6 +18,7 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 - Mini-stores localStorage partagés dans `lib/stockage.ts` (`storePlanning`, `storeCoches`) — le pattern `useSyncExternalStore` de la page planning est extrait et réutilisé par la page courses
 - Sélection manuelle d'une recette pour un slot du planning (US-06, RG-15, #14) : sélecteur `<dialog>` natif (bottom sheet mobile / modale desktop) avec recherche insensible à la casse et aux accents, badge « déjà au planning », by-pass des contraintes de temps et d'unicité (choix éclairé) ; coches de la liste de courses conservées
 - Nombre de personnes par repas (US-07, RG-16/17, #34) : stepper − / + sur chaque card du planning (défaut 2, borné [1;12]), la liste de courses met les quantités à l'échelle ×N/2 avec arrondi par type d'unité ; le réglage est conservé au changement de recette et réinitialisé à la regénération ; les plannings persistés antérieurs se relisent sans migration (champ `personnes` absent = 2)
+- Accord en nombre des libellés de la liste de courses (US-08, RG-18, #33) : le nom des ingrédients à la pièce s'accorde selon la quantité (« 1 carotte » / « 3 carottes »), le libellé des unités conteneur aussi (« 2 sachets ») ; pluriel régulier conscient des connecteurs (« blancs de poulet ») + table d'exceptions (formes au pluriel, composés irréguliers, invariants) ; noms de masse jamais accordés (`lib/pluriels.ts`)
 
 ### Modifié
 
