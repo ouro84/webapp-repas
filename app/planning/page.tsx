@@ -17,10 +17,9 @@
 // grille 7 colonnes à partir de md (≥ 768px).
 
 import Link from "next/link";
-import { useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
 import {
-  genererPlanning,
   recettesUtilisees,
   remplacerSlot,
   remplacerSlotManuel,
@@ -36,12 +35,11 @@ import {
   PERSONNES_MAX,
   PERSONNES_MIN,
 } from "@/lib/personnes";
+import { chargerRecettes } from "@/lib/recettes";
+import { parseApiError } from "@/lib/errors";
 import { BadgeTemps } from "@/components/planning/badge-temps";
 import { SelecteurRecette } from "@/components/planning/selecteur-recette";
-import recettesJson from "@/data/recettes.json";
 import type { Jour, JourPlanning, Planning, Recette } from "@/types";
-
-const RECETTES = recettesJson as Recette[];
 
 type TypeRepas = "dejeuner" | "diner";
 
@@ -117,6 +115,8 @@ export default function PagePlanning() {
   );
   // Message d'échec de la dernière génération (RG-09 état erreur), ou null.
   const [erreurGeneration, setErreurGeneration] = useState<string | null>(null);
+  // Génération serveur en cours (#2 : la génération est désormais asynchrone).
+  const [enGeneration, setEnGeneration] = useState(false);
   // Slot dont le dernier remplacement a échoué (RG-04) : "jour-typeRepas".
   const [slotIndisponible, setSlotIndisponible] = useState<string | null>(null);
   // Slot en cours de sélection manuelle (US-06) : le sélecteur est monté
@@ -125,6 +125,26 @@ export default function PagePlanning() {
     jour: Jour;
     typeRepas: TypeRepas;
   } | null>(null);
+  // Recettes de l'utilisateur (globales + perso) chargées depuis Supabase (#2),
+  // pour le sélecteur manuel (#14) et le remplacement aléatoire. Liste vide
+  // tant que le chargement n'a pas abouti.
+  const [recettes, setRecettes] = useState<Recette[]>([]);
+
+  // Chargement des recettes au montage (système externe asynchrone : setState
+  // dans une promesse, pas en synchrone au montage → conforme à la règle ESLint).
+  useEffect(() => {
+    let actif = true;
+    chargerRecettes()
+      .then((liste) => {
+        if (actif) setRecettes(liste);
+      })
+      .catch((erreur) => {
+        console.error("Chargement des recettes échoué.", erreur);
+      });
+    return () => {
+      actif = false;
+    };
+  }, []);
 
   const planning = useMemo<Planning | null>(() => {
     if (brut === null) return null;
@@ -138,24 +158,36 @@ export default function PagePlanning() {
     }
   }, [brut]);
 
-  // Génération (US-01) : la génération est synchrone et quasi instantanée — on
-  // l'exécute sans délai ni écran de chargement plein (#63), l'écrasement du
-  // store repeint directement le planning. Le toast confirme l'action.
-  function genererNouveauPlanning(): void {
+  // Génération (US-01) : déléguée au serveur (#2, route /api/planning/generer)
+  // qui lit les recettes de l'utilisateur (globales + perso) sous RLS et
+  // applique lib/generateur. Le planning renvoyé est persisté en localStorage
+  // (la persistance en base est un chantier distinct). Asynchrone → état
+  // `enGeneration` pour le retour visuel, sans vider l'écran (#63).
+  async function genererNouveauPlanning(): Promise<void> {
+    if (enGeneration) return;
+    setEnGeneration(true);
+    setErreurGeneration(null);
     try {
-      const nouveau = genererPlanning(RECETTES);
+      const reponse = await fetch("/api/planning/generer", { method: "POST" });
+      if (!reponse.ok) {
+        setErreurGeneration(await parseApiError(reponse));
+        return;
+      }
+      const { planning: nouveau } = (await reponse.json()) as {
+        planning: Planning;
+      };
       // Génération complète : réinitialise aussi les coches de la liste
       // de courses (RG-13) — règle centralisée dans lib/stockage.ts.
       sauvegarderPlanningComplet(nouveau);
       setSlotIndisponible(null);
-      setErreurGeneration(null);
       toast.success("Planning généré");
     } catch (erreur) {
+      console.error("Génération du planning échouée.", erreur);
       setErreurGeneration(
-        erreur instanceof Error
-          ? erreur.message
-          : "Erreur inattendue pendant la génération."
+        "Impossible de générer le planning. Vérifie ta connexion et réessaie."
       );
+    } finally {
+      setEnGeneration(false);
     }
   }
 
@@ -163,7 +195,7 @@ export default function PagePlanning() {
   // n'est disponible, le slot concerné affiche "Pas de recette disponible".
   function changerSlot(jour: Jour, typeRepas: TypeRepas): void {
     if (planning === null) return;
-    const nouveau = remplacerSlot(planning, jour, typeRepas, RECETTES);
+    const nouveau = remplacerSlot(planning, jour, typeRepas, recettes);
     if (nouveau === null) {
       // Toast en complément du message inline du slot (RG-04)
       setSlotIndisponible(cleSlot(jour, typeRepas));
@@ -219,9 +251,11 @@ export default function PagePlanning() {
         <button
           type="button"
           onClick={genererNouveauPlanning}
-          className="rounded-full bg-brand-600 px-6 py-3 font-medium text-white transition-colors hover:bg-brand-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
+          disabled={enGeneration}
+          aria-busy={enGeneration}
+          className="rounded-full bg-brand-600 px-6 py-3 font-medium text-white transition-colors hover:bg-brand-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 disabled:opacity-60"
         >
-          Réessayer
+          {enGeneration ? "Génération…" : "Réessayer"}
         </button>
       </main>
     );
@@ -242,9 +276,11 @@ export default function PagePlanning() {
         <button
           type="button"
           onClick={genererNouveauPlanning}
-          className="rounded-full bg-brand-600 px-8 py-4 text-lg font-medium text-white transition-colors hover:bg-brand-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
+          disabled={enGeneration}
+          aria-busy={enGeneration}
+          className="rounded-full bg-brand-600 px-8 py-4 text-lg font-medium text-white transition-colors hover:bg-brand-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 disabled:opacity-60"
         >
-          Générer mon planning
+          {enGeneration ? "Génération…" : "Générer mon planning"}
         </button>
       </main>
     );
@@ -274,9 +310,11 @@ export default function PagePlanning() {
           <button
             type="button"
             onClick={genererNouveauPlanning}
-            className="relative flex-1 rounded-full border border-brand-200 px-4 py-2 text-center text-sm font-medium text-brand-700 transition-colors after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 sm:flex-none"
+            disabled={enGeneration}
+            aria-busy={enGeneration}
+            className="relative flex-1 rounded-full border border-brand-200 px-4 py-2 text-center text-sm font-medium text-brand-700 transition-colors after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 disabled:opacity-60 sm:flex-none"
           >
-            Regénérer
+            {enGeneration ? "Génération…" : "Regénérer"}
           </button>
           <Link
             href="/courses"
@@ -358,7 +396,7 @@ export default function PagePlanning() {
       {slotEnSelection && (
         <SelecteurRecette
           titre={`${slotEnSelection.typeRepas === "diner" ? "Dîner" : "Déjeuner"} de ${LIBELLES_JOURS[slotEnSelection.jour].complet.toLowerCase()}`}
-          recettes={RECETTES}
+          recettes={recettes}
           idsAuPlanning={recettesUtilisees(planning)}
           onSelectionner={selectionnerRecette}
           onFermer={() => setSlotEnSelection(null)}

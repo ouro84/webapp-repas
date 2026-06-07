@@ -154,6 +154,16 @@ Format : `type: description courte`
 
 **Client Supabase scindé en deux** — `lib/supabase/client.ts` (navigateur, `createBrowserClient`) et `lib/supabase/server.ts` (serveur, `createServerClient` + cookies), pas un `lib/supabase.ts` unique comme le montre la structure cible ci-dessus. Imposé par l'App Router (révision ADR-02). Importer le mauvais client = erreurs de session.
 
+### Recettes & génération (depuis #2)
+
+**La source de vérité des recettes est Supabase, pas `data/recettes.json`** — Le JSON ne sert plus qu'd'asset d'amorçage du catalogue global (cf. migration `..._recettes_globales.sql` et `scripts/generer-seed-recettes.mjs`). Les tests (`tests/recettes-dataset.test.ts`, fixtures) continuent de le lire, mais l'app lit la base. Modifier le JSON ne change rien à l'app déployée — il faut une migration/CRUD.
+
+**Catalogue global (lecture seule) + recettes perso** — Les recettes `user_id IS NULL` sont globales (visibles de tous, non éditables) ; celles de l'utilisateur sont privées et modifiables. RLS : SELECT autorise `user_id IS NULL OR auth.uid() = user_id`, mais insert/update/delete restent « propriétaire ». Pour « modifier » une globale, on la **duplique** dans son espace (PR3). Ne pas attendre qu'un `update`/`delete` touche une globale : la RLS le refuse silencieusement.
+
+**Génération côté serveur, liste côté client** — La génération passe par `POST /api/planning/generer` (lit les recettes sous RLS, applique `lib/generateur`, renvoie le planning ; le client le persiste en localStorage). Mais le sélecteur (#14) et le « ↺ changer » ont besoin de la liste : ils la chargent via `lib/recettes.ts` (client). Deux accès distincts, c'est voulu.
+
+**Les e2e de génération ne valident qu'en CI** — En local, les e2e tapent l'instance de `.env.local` (prod), qui n'a le catalogue global que si la migration y a été appliquée (au merge). Le catalogue est seedé sur **staging** par la CI (migration avant e2e), donc les parcours de génération sont fiables en CI mais peuvent échouer en local si la base pointée n'est pas seedée.
+
 ### Logique métier (`lib/generateur.ts`)
 
 **Ordre de remplissage : slots contraints d'abord** — Les dîners de semaine (limités aux recettes « rapide »/« normal », RG-01) sont attribués avant les slots week-end (qui acceptent tout). Remplir dans l'ordre chronologique pourrait épuiser le vivier rapide/normal sur le week-end et faire échouer un slot de semaine alors qu'une solution existe.
