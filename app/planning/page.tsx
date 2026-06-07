@@ -30,6 +30,12 @@ import {
   sauvegarderPlanningComplet,
   sauvegarderRemplacementSlot,
 } from "@/lib/stockage";
+import {
+  modifierPersonnes,
+  personnesDuSlot,
+  PERSONNES_MAX,
+  PERSONNES_MIN,
+} from "@/lib/personnes";
 import { BadgeTemps } from "@/components/planning/badge-temps";
 import { SelecteurRecette } from "@/components/planning/selecteur-recette";
 import recettesJson from "@/data/recettes.json";
@@ -198,6 +204,20 @@ export default function PagePlanning() {
     toast.success("Recette remplacée");
   }
 
+  // Nombre de personnes d'un slot (US-07, RG-16/17) : la liste de courses
+  // se met à l'échelle, les coches des articles touchés sont invalidées par
+  // la variation de quantité (RG-12). Écriture sans reset des coches.
+  function changerPersonnes(
+    jour: Jour,
+    typeRepas: TypeRepas,
+    personnes: number
+  ): void {
+    if (planning === null) return;
+    const nouveau = modifierPersonnes(planning, jour, typeRepas, personnes);
+    if (nouveau === null) return; // slot inexistant : impossible depuis l'UI
+    sauvegarderRemplacementSlot(nouveau);
+  }
+
   // --- État chargement (RG-09) ---
   if (transition.statut === "chargement") {
     return (
@@ -300,9 +320,13 @@ export default function PagePlanning() {
                   indisponible={
                     slotIndisponible === cleSlot(jp.jour, slot.typeRepas)
                   }
+                  personnes={personnesDuSlot(jp, slot.typeRepas)}
                   onChanger={() => changerSlot(jp.jour, slot.typeRepas)}
                   onSelectionner={() =>
                     setSlotEnSelection({ jour: jp.jour, typeRepas: slot.typeRepas })
+                  }
+                  onChangerPersonnes={(n) =>
+                    changerPersonnes(jp.jour, slot.typeRepas, n)
                   }
                 />
               ))}
@@ -327,9 +351,13 @@ export default function PagePlanning() {
                 indisponible={
                   slotIndisponible === cleSlot(jp.jour, slot.typeRepas)
                 }
+                personnes={personnesDuSlot(jp, slot.typeRepas)}
                 onChanger={() => changerSlot(jp.jour, slot.typeRepas)}
                 onSelectionner={() =>
                   setSlotEnSelection({ jour: jp.jour, typeRepas: slot.typeRepas })
+                }
+                onChangerPersonnes={(n) =>
+                  changerPersonnes(jp.jour, slot.typeRepas, n)
                 }
               />
             ))}
@@ -359,15 +387,19 @@ function SlotRepas({
   jourLabel,
   recette,
   indisponible,
+  personnes,
   onChanger,
   onSelectionner,
+  onChangerPersonnes,
 }: {
   libelle: string;
   jourLabel: string;
   recette: Recette;
   indisponible: boolean;
+  personnes: number;
   onChanger: () => void;
   onSelectionner: () => void;
+  onChangerPersonnes: (personnes: number) => void;
 }) {
   return (
     <div className="rounded-lg border border-brand-100 bg-white p-3 shadow-sm">
@@ -400,12 +432,62 @@ function SlotRepas({
           Sélectionner
         </button>
       </div>
+      {/* Nombre de personnes (US-07) : la liste de courses se met à l'échelle */}
+      <StepperPersonnes
+        personnes={personnes}
+        slotLabel={`${libelle.toLowerCase()} de ${jourLabel.toLowerCase()}`}
+        onChanger={onChangerPersonnes}
+      />
       {/* role="alert" : le message dynamique est annoncé aux lecteurs d'écran */}
       {indisponible && (
         <p role="alert" className="mt-2 text-xs text-red-600">
           Pas de recette disponible
         </p>
       )}
+    </div>
+  );
+}
+
+// Stepper du nombre de personnes (US-07, RG-16) : − N pers. +, borné [1;12].
+// Les boutons portent un aria-label contextualisé (9 paires identiques) et
+// une zone tactile ≥ 44px ; la valeur est annoncée via aria-live.
+function StepperPersonnes({
+  personnes,
+  slotLabel,
+  onChanger,
+}: {
+  personnes: number;
+  slotLabel: string;
+  onChanger: (personnes: number) => void;
+}) {
+  const styleBouton =
+    "relative flex size-7 items-center justify-center rounded-full border border-brand-200 text-brand-700 transition-colors after:absolute after:-inset-2 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent";
+  return (
+    <div className="mt-2 flex items-center gap-2">
+      <button
+        type="button"
+        onClick={() => onChanger(personnes - 1)}
+        disabled={personnes <= PERSONNES_MIN}
+        aria-label={`Moins de personnes pour le ${slotLabel}`}
+        className={styleBouton}
+      >
+        <span aria-hidden="true">−</span>
+      </button>
+      <span
+        aria-live="polite"
+        className="min-w-[4.5rem] text-center text-xs font-medium text-brand-700/85"
+      >
+        {personnes} pers.
+      </span>
+      <button
+        type="button"
+        onClick={() => onChanger(personnes + 1)}
+        disabled={personnes >= PERSONNES_MAX}
+        aria-label={`Plus de personnes pour le ${slotLabel}`}
+        className={styleBouton}
+      >
+        <span aria-hidden="true">+</span>
+      </button>
     </div>
   );
 }

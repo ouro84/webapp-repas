@@ -5,6 +5,7 @@
 // est donc déterministe (état vide, RG-09) malgré la persistance (F-11).
 
 import { test, expect } from "@playwright/test";
+import { recetteFixture } from "../tests/fixtures/recettes";
 
 test.beforeEach(async ({ page }) => {
   // Purge le planning persisté AVANT le chargement de la page.
@@ -215,4 +216,122 @@ test("une sélection manuelle conserve les coches de la liste de courses (RG-15/
   await page.getByRole("link", { name: "Liste de courses →" }).click();
   await page.waitForURL("**/courses");
   await expect(page.getByRole("checkbox", { name: nomArticle }).first()).toBeChecked();
+});
+
+// ---------------------------------------------------------------------------
+// US-07 — nombre de personnes par repas (RG-16/17).
+// ---------------------------------------------------------------------------
+
+test("le stepper de personnes est borné et persiste au rechargement", async ({
+  page,
+}) => {
+  await page.getByRole("button", { name: "Générer mon planning" }).click();
+  const carteLundi = page.locator("main ul > li").first();
+  await expect(carteLundi).toContainText("2 pers."); // défaut RG-16
+
+  const plus = carteLundi.getByRole("button", {
+    name: "Plus de personnes pour le dîner de lundi",
+  });
+  const moins = carteLundi.getByRole("button", {
+    name: "Moins de personnes pour le dîner de lundi",
+  });
+
+  // À 2, on peut monter ; descendre deux fois borne à 1 (bouton désactivé).
+  await moins.click();
+  await expect(carteLundi).toContainText("1 pers.");
+  await expect(moins).toBeDisabled();
+
+  // Remonter à 4 et vérifier la persistance.
+  await plus.click();
+  await plus.click();
+  await plus.click();
+  await expect(carteLundi).toContainText("4 pers.");
+
+  // Persistance via aller-retour SPA (et non reload : l'addInitScript du
+  // beforeEach re-purgerait le planning — cf. piège documenté CLAUDE.md).
+  await page.getByRole("link", { name: "Liste de courses →" }).click();
+  await page.waitForURL("**/courses");
+  await page.getByRole("link", { name: "← Planning" }).click();
+  await page.waitForURL("**/planning");
+  await expect(page.locator("main ul > li").first()).toContainText("4 pers.");
+});
+
+test("modifier le nombre de personnes met à l'échelle la liste de courses (RG-17)", async ({
+  page,
+}) => {
+  // Planning déterministe : omelette (6 œufs) au dîner de lundi.
+  const planning = {
+    semaine: "2026-W23",
+    jours: [{ jour: "lundi", diner: recetteFixture("omelette-aux-champignons") }],
+  };
+  await page.addInitScript(
+    (contenu) => localStorage.setItem("planning_courant", contenu),
+    JSON.stringify(planning)
+  );
+  await page.goto("/planning");
+
+  // 4 personnes sur le dîner de lundi → œufs ×2.
+  const carteLundi = page.locator("main ul > li").first();
+  await carteLundi
+    .getByRole("button", { name: "Plus de personnes pour le dîner de lundi" })
+    .click();
+  await carteLundi
+    .getByRole("button", { name: "Plus de personnes pour le dîner de lundi" })
+    .click();
+  await expect(carteLundi).toContainText("4 pers.");
+
+  await page.getByRole("link", { name: "Liste de courses →" }).click();
+  await page.waitForURL("**/courses");
+
+  // 6 œufs (recette) → 12 à 4 personnes.
+  const ligneOeufs = page.locator("li", { hasText: "oeufs" }).first();
+  await expect(ligneOeufs).toContainText("12");
+});
+
+test("modifier les personnes invalide la coche de l'article touché, pas les autres (RG-12)", async ({
+  page,
+}) => {
+  const planning = {
+    semaine: "2026-W23",
+    jours: [{ jour: "lundi", diner: recetteFixture("omelette-aux-champignons") }],
+  };
+  await page.addInitScript(
+    (contenu) => localStorage.setItem("planning_courant", contenu),
+    JSON.stringify(planning)
+  );
+  await page.goto("/planning");
+
+  // Cocher les œufs côté courses.
+  await page.getByRole("link", { name: "Liste de courses →" }).click();
+  await page.waitForURL("**/courses");
+  await page.getByRole("checkbox", { name: /oeufs/ }).click();
+  await expect(page.getByRole("checkbox", { name: /oeufs/ })).toBeChecked();
+
+  // Augmenter les personnes : la quantité d'œufs change → coche invalidée.
+  await page.getByRole("link", { name: "← Planning" }).click();
+  await page.waitForURL("**/planning");
+  await page
+    .locator("main ul > li")
+    .first()
+    .getByRole("button", { name: "Plus de personnes pour le dîner de lundi" })
+    .click();
+
+  await page.getByRole("link", { name: "Liste de courses →" }).click();
+  await page.waitForURL("**/courses");
+  await expect(page.getByRole("checkbox", { name: /oeufs/ })).not.toBeChecked();
+});
+
+test("une génération complète remet tous les repas à 2 personnes (RG-16)", async ({
+  page,
+}) => {
+  await page.getByRole("button", { name: "Générer mon planning" }).click();
+  const carteLundi = page.locator("main ul > li").first();
+  await carteLundi
+    .getByRole("button", { name: "Plus de personnes pour le dîner de lundi" })
+    .click();
+  await expect(carteLundi).toContainText("3 pers.");
+
+  await page.getByRole("button", { name: "Regénérer" }).click();
+  await expect(page.getByText("Planning généré")).toBeVisible();
+  await expect(page.locator("main ul > li").first()).toContainText("2 pers.");
 });

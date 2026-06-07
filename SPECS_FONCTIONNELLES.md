@@ -191,6 +191,33 @@ Réduire à zéro l'effort de planification hebdomadaire des repas, du choix des
 
 ---
 
+### US-07 — Nombre de personnes par repas
+
+> **En tant qu'** utilisateur, je veux modifier le nombre de personnes par repas, afin d'avoir une liste de courses correcte si je reçois du monde un jour.
+
+**Comportement :**
+> **Given** je suis sur le planning  
+> **When** je modifie le nombre de personnes d'un repas via le stepper de sa card (− / +)  
+> **Then** le nombre est visible sur la card et la liste de courses reflète immédiatement les quantités mises à l'échelle
+
+> **Given** un repas est à 1 personne (ou 12)  
+> **When** je tente de descendre (ou monter) encore  
+> **Then** le bouton est inactif — le nombre reste dans [1 ; 12]
+
+> **Given** un repas est réglé à 4 personnes  
+> **When** je change sa recette (aléatoire ou sélection manuelle)  
+> **Then** le repas reste à 4 personnes (RG-16)
+
+> **Given** je (re)génère entièrement le planning  
+> **When** le nouveau planning s'affiche  
+> **Then** tous les repas sont à 2 personnes (RG-16)
+
+> **Given** un article de la liste de courses est coché  
+> **When** je modifie le nombre de personnes d'un repas qui contribue à cet article  
+> **Then** sa quantité agrégée change et sa coche est invalidée (RG-12) — les autres coches sont conservées
+
+---
+
 ## 5. Modèle de données
 
 > Les structures ci-dessous sont exprimées en TypeScript à titre documentaire. Le fichier de données réel est `/data/recettes.json` — format JSON lisible et éditable sans connaissance technique.
@@ -263,6 +290,9 @@ type JourPlanning = {
   jour: "lundi" | "mardi" | "mercredi" | "jeudi" | "vendredi" | "samedi" | "dimanche"
   dejeuner?: Recette     // uniquement samedi et dimanche en MVP
   diner: Recette
+  // Nombre de personnes par slot (US-07, RG-16). Optionnel : champ absent = 2
+  // (défaut), ce qui rend les plannings persistés antérieurs relisables sans migration.
+  personnes?: { dejeuner?: number; diner?: number }
 }
 
 type Planning = {
@@ -319,6 +349,23 @@ Pour construire la liste de courses depuis un planning :
 > Les RG-10 à RG-14 (liste de courses cochable) sont en section 7.
 
 La sélection manuelle by-passe **RG-01** (une recette « long » est permise un soir de semaine) et **RG-02** (le doublon est permis) : l'utilisateur arbitre, informé par le badge temps et le badge « déjà au planning ». Elle constitue un remplacement individuel : les coches de la liste de courses sont conservées (RG-12/RG-13) et l'opération ne peut pas échouer — le cas « Pas de recette disponible » (RG-04) n'existe pas dans ce mode, et un message d'indisponibilité affiché précédemment sur le slot est nettoyé après une sélection réussie.
+
+### RG-16 — Nombre de personnes par repas (US-07)
+
+Le nombre de personnes est porté par chaque slot du planning (section 5.5), avec une valeur par défaut de **2** et borné à **[1 ; 12]**. Il est **conservé** lors d'un remplacement de recette (US-04, US-06) et **réinitialisé à 2** par une génération complète (cohérent avec RG-13). Les plannings persistés antérieurs à cette feature se relisent sans migration : un champ `personnes` absent vaut 2.
+
+### RG-17 — Mise à l'échelle des quantités (US-07)
+
+Les recettes sont données pour 2 personnes. Pour un slot réglé à `N` personnes, chaque quantité d'ingrédient est multipliée par `N / 2` **à la collecte** (RG-05, étape 1), avant agrégation. L'arrondi est appliqué **après** agrégation, par type d'unité :
+
+| Unités | Arrondi |
+|--------|---------|
+| `piece`, `briquette`, `bouteille`, `boite`, `sachet`, `autre` (comptables) | entier supérieur |
+| `g`, `ml`, `cl` (mesures fines) | entier le plus proche |
+| `kg`, `l` (grosses mesures) | 1 décimale |
+| `cas`, `cac` (cuillères) | au 0,5 près |
+
+> Arrondir après agrégation évite d'accumuler les erreurs d'arrondi quand un même ingrédient provient de plusieurs repas mis à l'échelle différemment.
 
 ---
 
