@@ -10,6 +10,11 @@ import type {
   LignesCourses,
   CategorieIngredient,
 } from "@/types"
+import {
+  arrondirQuantite,
+  facteurEchelle,
+  personnesDuSlot,
+} from "@/lib/personnes"
 
 // Ordre d'affichage des catégories dans la liste de courses (RG-05, étape 5).
 // Suit le parcours type d'un magasin : frais d'abord, surgelés en dernier.
@@ -42,9 +47,11 @@ function comparerNoms(a: Ingredient, b: Ingredient): number {
  *
  * Règles métier appliquées (RG-05) :
  *  1. Collecte tous les ingrédients de toutes les recettes du planning
- *     (dîners de chaque jour + déjeuners du week-end).
+ *     (dîners de chaque jour + déjeuners du week-end), chaque quantité mise
+ *     à l'échelle ×N/2 selon le nombre de personnes du slot (RG-17).
  *  2. Regroupe par nom d'ingrédient, insensible à la casse.
- *  3. Additionne les quantités pour les ingrédients de même nom ET même unité.
+ *  3. Additionne les quantités pour les ingrédients de même nom ET même unité,
+ *     puis arrondit le total par type d'unité (RG-17).
  *     Cas limite : même nom mais unités différentes → deux lignes distinctes,
  *     aucune conversion n'est tentée.
  *  4. Sépare les ingrédients `fondDePlacard: true` dans une section dédiée
@@ -60,10 +67,20 @@ function comparerNoms(a: Ingredient, b: Ingredient): number {
  */
 export function genererListeCourses(planning: Planning): ListeCourses {
   // Étape 1 — collecte : toutes les recettes du planning, tous slots confondus.
+  // Chaque slot est mis à l'échelle selon son nombre de personnes (RG-17) :
+  // l'échelle est appliquée AVANT agrégation, l'arrondi APRÈS (cf. étape 3).
   const ingredients: Ingredient[] = []
   for (const jp of planning.jours) {
-    ingredients.push(...jp.diner.ingredients)
-    if (jp.dejeuner) ingredients.push(...jp.dejeuner.ingredients)
+    const facteurDiner = facteurEchelle(personnesDuSlot(jp, "diner"))
+    for (const ing of jp.diner.ingredients) {
+      ingredients.push({ ...ing, quantite: ing.quantite * facteurDiner })
+    }
+    if (jp.dejeuner) {
+      const facteurDejeuner = facteurEchelle(personnesDuSlot(jp, "dejeuner"))
+      for (const ing of jp.dejeuner.ingredients) {
+        ingredients.push({ ...ing, quantite: ing.quantite * facteurDejeuner })
+      }
+    }
   }
 
   // Étapes 2 & 3 — agrégation par nom (insensible à la casse) + unité.
@@ -77,6 +94,12 @@ export function genererListeCourses(planning: Planning): ListeCourses {
     } else {
       agreges.set(cle, { ...ingredient }) // copie : ne jamais muter le planning
     }
+  }
+
+  // Arrondi APRÈS agrégation (RG-17) : évite de cumuler les erreurs d'arrondi
+  // entre plusieurs repas contribuant au même ingrédient.
+  for (const ingredient of agreges.values()) {
+    ingredient.quantite = arrondirQuantite(ingredient.quantite, ingredient.unite)
   }
 
   // Étape 4 — séparation fond de placard / ingrédients à acheter.

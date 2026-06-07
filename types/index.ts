@@ -75,6 +75,10 @@ export type JourPlanning = {
   jour: Jour;
   dejeuner?: Recette; // uniquement samedi et dimanche en MVP
   diner: Recette;
+  // Nombre de personnes par slot (US-07, RG-16). Optionnel : champ absent = 2
+  // (défaut), ce qui rend relisables sans migration les plannings persistés
+  // avant cette feature.
+  personnes?: { dejeuner?: number; diner?: number };
 };
 
 export type Planning = {

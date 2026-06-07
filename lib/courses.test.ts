@@ -210,3 +210,62 @@ describe("genererListeCourses — immutabilité", () => {
     expect(JSON.stringify(planning)).toBe(instantane);
   });
 });
+
+// ---------------------------------------------------------------------------
+// RG-17 — mise à l'échelle selon le nombre de personnes (US-07).
+// L'échelle s'applique par slot AVANT agrégation, l'arrondi APRÈS.
+// ---------------------------------------------------------------------------
+describe("genererListeCourses — RG-17 mise à l'échelle (US-07)", () => {
+  // Quantité d'un ingrédient donné dans la liste générée (toutes sections).
+  function quantiteDe(planning: Planning, nom: string): number | undefined {
+    return toutesLesLignes(planning).find(
+      (i) => i.nom.toLocaleLowerCase("fr") === nom.toLocaleLowerCase("fr")
+    )?.quantite;
+  }
+
+  test("sans réglage, les quantités sont celles de la recette (facteur 1)", () => {
+    const omelette = recetteFixture("omelette-aux-champignons"); // oeufs: 6 piece
+    const planning = planningAvec(omelette);
+    expect(quantiteDe(planning, "oeufs")).toBe(6);
+  });
+
+  test("un slot à 4 personnes double les quantités de ses ingrédients", () => {
+    const omelette = recetteFixture("omelette-aux-champignons");
+    const planning: Planning = {
+      semaine: "2026-W23",
+      jours: [{ jour: "lundi", diner: omelette, personnes: { diner: 4 } }],
+    };
+    // oeufs 6 → ×2 = 12 (piece, entier) ; champignons 250 g → 500 g.
+    expect(quantiteDe(planning, "oeufs")).toBe(12);
+    expect(quantiteDe(planning, "champignons de Paris")).toBe(500);
+  });
+
+  test("un slot à 1 personne réduit de moitié, arrondi par unité", () => {
+    const omelette = recetteFixture("omelette-aux-champignons");
+    const planning: Planning = {
+      semaine: "2026-W23",
+      jours: [{ jour: "lundi", diner: omelette, personnes: { diner: 1 } }],
+    };
+    // oeufs 6 → ×0,5 = 3 (piece) ; champignons 250 g → 125 g.
+    expect(quantiteDe(planning, "oeufs")).toBe(3);
+    expect(quantiteDe(planning, "champignons de Paris")).toBe(125);
+  });
+
+  test("arrondi APRÈS agrégation : deux slots à 1 pers. du même ingrédient", () => {
+    // omelette (6 oeufs) à 1 pers. = 3 ; quiche (3 oeufs) à 1 pers. = 1,5.
+    // Agrégé = 4,5 → arrondi piece (entier sup) = 5.
+    // Si on arrondissait AVANT : 3 + ceil(1,5)=2 = 5 aussi ici, donc on prend
+    // un cas où ça diverge : deux fois la quiche (3 oeufs) à 1 pers.
+    // Chaque = 1,5 ; arrondi avant → 2+2 = 4 ; après → ceil(3) = 3.
+    const quiche = recetteFixture("quiche-aux-lardons"); // oeufs: 3 piece
+    const quicheBis: Recette = { ...quiche, id: "quiche-bis" };
+    const planning: Planning = {
+      semaine: "2026-W23",
+      jours: [
+        { jour: "lundi", diner: quiche, personnes: { diner: 1 } },
+        { jour: "mardi", diner: quicheBis, personnes: { diner: 1 } },
+      ],
+    };
+    expect(quantiteDe(planning, "oeufs")).toBe(3); // ceil(1,5 + 1,5), pas 4
+  });
+});
