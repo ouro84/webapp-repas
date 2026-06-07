@@ -1,20 +1,34 @@
 "use client";
 
 // Page Liste de courses — agrégation depuis le planning courant (US-03, RG-05)
+// + articles cochables en magasin (US-05, RG-10 à RG-14).
 //
 // États d'interface (RG-09) : chargement (avant hydratation), vide (aucun
 // planning sauvegardé), chargé. La liste est recalculée à la volée depuis
-// localStorage["planning_courant"] (section 5.6) via genererListeCourses().
+// localStorage["planning_courant"] (section 5.6) via genererListeCourses() ;
+// les coches vivent dans localStorage["courses_cochees"] (RG-12).
 //
-// Comme sur la page Planning, localStorage est branché via
-// useSyncExternalStore (la règle ESLint react-hooks/set-state-in-effect
-// interdit le setState synchrone dans un useEffect au montage). Côté serveur
-// le snapshot vaut null : la page est prérendue en état "Chargement…", puis
-// hydratée avec la liste réelle.
+// Les deux clés localStorage sont branchées via useSyncExternalStore et les
+// mini-stores partagés de lib/stockage.ts. Côté serveur les snapshots valent
+// null : la page est prérendue en état "Chargement…", puis hydratée.
+//
+// Animation de réordonnancement (RG-11) : un article coché glisse en fin de
+// catégorie via l'API View Transitions quand le navigateur la supporte —
+// repli sans animation sinon, et si `prefers-reduced-motion` est actif.
 
 import Link from "next/link";
-import { useMemo, useSyncExternalStore } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
+import { flushSync } from "react-dom";
 import { genererListeCourses } from "@/lib/courses";
+import {
+  aDesCoches,
+  basculerCoche,
+  compterProgression,
+  estCoche,
+  parserCoches,
+  trierAvecCoches,
+} from "@/lib/coches";
+import { storeCoches, storePlanning } from "@/lib/stockage";
 import type {
   CategorieIngredient,
   Ingredient,
@@ -22,29 +36,6 @@ import type {
   Planning,
   Unite,
 } from "@/types";
-
-const CLE_STORAGE = "planning_courant";
-
-// ============================================================================
-// Lecture localStorage (système externe)
-// ============================================================================
-
-// Cette page ne fait que lire : seul l'événement "storage" (modifications
-// depuis d'autres onglets) peut invalider le snapshot.
-function sAbonner(rappel: () => void): () => void {
-  window.addEventListener("storage", rappel);
-  return () => window.removeEventListener("storage", rappel);
-}
-
-function lireSnapshot(): string | null {
-  return localStorage.getItem(CLE_STORAGE);
-}
-
-// Pas de localStorage côté serveur : prérendu en état "chargement",
-// le vrai contenu arrive à l'hydratation.
-function lireSnapshotServeur(): null {
-  return null;
-}
 
 // Vrai uniquement après hydratation côté navigateur — permet d'afficher
 // "Chargement…" pendant le prérendu/calcul initial sans setState (RG-09).
@@ -100,25 +91,100 @@ function formaterQuantite(ingredient: Ingredient): string {
 }
 
 // ============================================================================
+// Animation de réordonnancement (View Transitions)
+// ============================================================================
+
+// `view-transition-name` exige un identifiant CSS valide et unique : on
+// dérive un slug ASCII de la clé d'agrégation (accents décomposés puis
+// caractères hors [a-z0-9] remplacés). Unicité garantie par l'agrégation
+// RG-05 : une seule ligne par nom|unité dans toute la liste.
+function nomTransition(ingredient: Ingredient): string {
+  const slug = `${ingredient.nom}-${ingredient.unite}`
+    .toLocaleLowerCase("fr")
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "") // diacritiques décomposés par NFD
+    .replace(/[^a-z0-9]+/g, "-");
+  return `article-${slug}`;
+}
+
+// Applique une mise à jour d'état dans une View Transition quand c'est
+// possible — sinon directement (navigateur sans support, reduced motion).
+function avecTransition(majEtat: () => void): void {
+  const reduireAnimations = window.matchMedia(
+    "(prefers-reduced-motion: reduce)"
+  ).matches;
+  if (!document.startViewTransition || reduireAnimations) {
+    majEtat();
+    return;
+  }
+  // flushSync : la View Transition capture l'état AVANT/APRÈS — le rendu
+  // React doit être synchrone à l'intérieur du callback.
+  document.startViewTransition(() => {
+    flushSync(majEtat);
+  });
+}
+
+// ============================================================================
 // Composant page
 // ============================================================================
 
 export default function PageCourses() {
   const hydrate = useHydratation();
-  const brut = useSyncExternalStore(sAbonner, lireSnapshot, lireSnapshotServeur);
+  const brutPlanning = useSyncExternalStore(
+    storePlanning.sAbonner,
+    storePlanning.lire,
+    storePlanning.lireServeur
+  );
+  const brutCoches = useSyncExternalStore(
+    storeCoches.sAbonner,
+    storeCoches.lire,
+    storeCoches.lireServeur
+  );
+
+  // Catégories repliées (US-05) — état volontairement non persisté :
+  // réinitialisé à chaque chargement de page. "fond-de-placard" est une
+  // pseudo-catégorie pour la section dédiée.
+  const [replies, setReplies] = useState<ReadonlySet<string>>(new Set());
 
   // Agrégation (RG-05) recalculée uniquement quand le planning change.
   const liste = useMemo<ListeCourses | null>(() => {
-    if (brut === null) return null;
+    if (brutPlanning === null) return null;
     try {
-      const planning = JSON.parse(brut) as Planning;
+      const planning = JSON.parse(brutPlanning) as Planning;
       return genererListeCourses(planning);
     } catch (erreur) {
       // Donnée corrompue : on la signale et on retombe en état vide.
-      console.error(`localStorage["${CLE_STORAGE}"] illisible.`, erreur);
+      console.error(`localStorage["planning_courant"] illisible.`, erreur);
       return null;
     }
-  }, [brut]);
+  }, [brutPlanning]);
+
+  // Coches valides ou non : parserCoches tolère l'absence et la corruption.
+  const coches = useMemo(() => parserCoches(brutCoches), [brutCoches]);
+
+  function basculer(ingredient: Ingredient): void {
+    avecTransition(() => {
+      storeCoches.ecrire(JSON.stringify(basculerCoche(coches, ingredient)));
+    });
+  }
+
+  function toutDecocher(): void {
+    avecTransition(() => {
+      storeCoches.effacer();
+    });
+  }
+
+  function basculerSection(cle: string): void {
+    setReplies((courantes) => {
+      const suivantes = new Set(courantes);
+      if (suivantes.has(cle)) {
+        suivantes.delete(cle);
+      } else {
+        suivantes.add(cle);
+      }
+      return suivantes;
+    });
+  }
 
   // --- État chargement (RG-09) : prérendu serveur + calcul initial ---
   if (!hydrate) {
@@ -151,79 +217,181 @@ export default function PageCourses() {
   }
 
   // --- État chargé : liste agrégée par catégorie (écran 3) ---
-  const nbArticles = liste.normal.reduce(
-    (total, ligne) => total + ligne.ingredients.length,
-    0
-  );
+  // Progression "n/N" : articles à acheter uniquement (RG-14).
+  const progression = compterProgression(liste, coches);
 
   return (
     <main id="contenu" className="mx-auto flex-1 w-full max-w-2xl p-4 md:p-8">
       <header className="mb-6 flex flex-wrap items-center gap-3">
         <div className="min-w-0 flex-1">
           <h1 className="text-2xl font-bold text-brand-900">Liste de courses</h1>
-          <p className="text-sm text-brand-700/85">
-            {nbArticles} article{nbArticles > 1 ? "s" : ""}
+          {/* aria-live : la progression est annoncée à chaque coche */}
+          <p aria-live="polite" className="text-sm text-brand-700/85">
+            {progression.coches}/{progression.total} article
+            {progression.total > 1 ? "s" : ""}
             {liste.fondDePlacard.length > 0 &&
               ` · ${liste.fondDePlacard.length} à vérifier`}
           </p>
         </div>
+        {aDesCoches(liste, coches) && (
+          <button
+            type="button"
+            onClick={toutDecocher}
+            // after:-inset-1 : étend la zone tactile à ≥ 44px sans changer le visuel
+            className="relative rounded-full border border-brand-200 px-4 py-2 text-sm font-medium text-brand-700 transition-colors after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
+          >
+            Tout décocher
+          </button>
+        )}
         <Link
           href="/planning"
-          // after:-inset-1 : étend la zone tactile à ≥ 44px sans changer le visuel
           className="relative rounded-full border border-brand-200 px-4 py-2 text-sm font-medium text-brand-700 transition-colors after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
         >
           ← Planning
         </Link>
       </header>
 
-      {/* Une section par catégorie présente, dans l'ordre canonique (RG-05) */}
+      {/* Une section par catégorie présente, dans l'ordre canonique (RG-05).
+          Articles non cochés d'abord, cochés en fin de catégorie (RG-11). */}
       <div className="space-y-6">
-        {liste.normal.map((ligne) => (
-          <section key={ligne.categorie}>
-            <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-brand-700/85">
-              {LIBELLES_CATEGORIES[ligne.categorie]}
-            </h2>
-            <ul className="divide-y divide-brand-100 rounded-lg border border-brand-100 bg-white">
-              {ligne.ingredients.map((ingredient) => (
-                <li
-                  key={`${ingredient.nom}-${ingredient.unite}`}
-                  className="flex items-baseline justify-between gap-4 px-4 py-2.5"
+        {liste.normal.map((ligne) => {
+          const repliee = replies.has(ligne.categorie);
+          return (
+            <section key={ligne.categorie}>
+              <h2 className="mb-2">
+                <button
+                  type="button"
+                  onClick={() => basculerSection(ligne.categorie)}
+                  aria-expanded={!repliee}
+                  className="flex min-h-11 w-full cursor-pointer items-center justify-between gap-2 text-sm font-semibold uppercase tracking-wide text-brand-700/85 transition-colors hover:text-brand-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
                 >
-                  <span className="text-sm text-brand-900">{ingredient.nom}</span>
-                  <span className="shrink-0 text-sm font-medium text-brand-700/85">
-                    {formaterQuantite(ingredient)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </section>
-        ))}
+                  {LIBELLES_CATEGORIES[ligne.categorie]}
+                  <Chevron repliee={repliee} />
+                </button>
+              </h2>
+              {!repliee && (
+                <ul className="divide-y divide-brand-100 rounded-lg border border-brand-100 bg-white">
+                  {trierAvecCoches(ligne.ingredients, coches).map((ingredient) => (
+                    <ArticleCochable
+                      key={`${ingredient.nom}-${ingredient.unite}`}
+                      ingredient={ingredient}
+                      coche={estCoche(coches, ingredient)}
+                      onBasculer={() => basculer(ingredient)}
+                    />
+                  ))}
+                </ul>
+              )}
+            </section>
+          );
+        })}
 
-        {/* Section fond de placard (F-09) : fond distinct, à vérifier avant d'acheter */}
+        {/* Section fond de placard (F-09) : cochable aussi, mais hors
+            compteur de progression (RG-14). */}
         {liste.fondDePlacard.length > 0 && (
           <section className="rounded-lg bg-amber-50 p-4">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-amber-800">
-              Fond de placard
+            <h2>
+              <button
+                type="button"
+                onClick={() => basculerSection("fond-de-placard")}
+                aria-expanded={!replies.has("fond-de-placard")}
+                className="flex min-h-11 w-full cursor-pointer items-center justify-between gap-2 text-sm font-semibold uppercase tracking-wide text-amber-800 transition-colors hover:text-amber-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
+              >
+                Fond de placard
+                <Chevron repliee={replies.has("fond-de-placard")} />
+              </button>
             </h2>
-            <p className="mb-2 text-xs text-amber-700">
-              À vérifier avant d&apos;acheter
-            </p>
-            <ul className="divide-y divide-amber-100">
-              {liste.fondDePlacard.map((ingredient) => (
-                <li
-                  key={`${ingredient.nom}-${ingredient.unite}`}
-                  className="flex items-baseline justify-between gap-4 py-2.5"
-                >
-                  <span className="text-sm text-amber-900">{ingredient.nom}</span>
-                  <span className="shrink-0 text-sm font-medium text-amber-700">
-                    {formaterQuantite(ingredient)}
-                  </span>
-                </li>
-              ))}
-            </ul>
+            {!replies.has("fond-de-placard") && (
+              <>
+                <p className="mb-2 text-xs text-amber-700">
+                  À vérifier avant d&apos;acheter
+                </p>
+                <ul className="divide-y divide-amber-100">
+                  {trierAvecCoches(liste.fondDePlacard, coches).map((ingredient) => (
+                    <ArticleCochable
+                      key={`${ingredient.nom}-${ingredient.unite}`}
+                      ingredient={ingredient}
+                      coche={estCoche(coches, ingredient)}
+                      onBasculer={() => basculer(ingredient)}
+                      placard
+                    />
+                  ))}
+                </ul>
+              </>
+            )}
           </section>
         )}
       </div>
     </main>
+  );
+}
+
+// Ligne d'article cochable (RG-10) : le <label> couvre toute la ligne
+// (min-h-11 ≈ 44px) — checkbox native = clavier et lecteurs d'écran gratuits.
+// Coché : rayé + grisé (RG-11) — l'état ne repose pas que sur la couleur.
+function ArticleCochable({
+  ingredient,
+  coche,
+  onBasculer,
+  placard = false,
+}: {
+  ingredient: Ingredient;
+  coche: boolean;
+  onBasculer: () => void;
+  placard?: boolean;
+}) {
+  const couleurNom = placard ? "text-amber-900" : "text-brand-900";
+  const couleurQuantite = placard
+    ? "text-amber-700"
+    : "text-brand-700/85";
+  return (
+    <li style={{ viewTransitionName: nomTransition(ingredient) }}>
+      <label
+        className={`flex min-h-11 cursor-pointer items-center gap-3 py-2.5 transition-colors ${
+          placard ? "" : "px-4 hover:bg-brand-50/60"
+        }`}
+      >
+        <input
+          type="checkbox"
+          checked={coche}
+          onChange={onBasculer}
+          className="size-4 shrink-0 cursor-pointer accent-brand-600"
+        />
+        <span
+          className={`flex-1 text-sm transition-colors ${
+            coche ? `line-through ${couleurNom} opacity-40` : couleurNom
+          }`}
+        >
+          {ingredient.nom}
+        </span>
+        <span
+          className={`shrink-0 text-sm font-medium ${
+            coche ? `line-through ${couleurQuantite} opacity-40` : couleurQuantite
+          }`}
+        >
+          {formaterQuantite(ingredient)}
+        </span>
+      </label>
+    </li>
+  );
+}
+
+// Chevron de section repliable — SVG inline (pas d'emoji ni de glyphe,
+// cf. audit #51), pivote selon l'état.
+function Chevron({ repliee }: { repliee: boolean }) {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 16 16"
+      className={`size-4 shrink-0 transition-transform ${
+        repliee ? "-rotate-90" : ""
+      }`}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M4 6l4 4 4-4" />
+    </svg>
   );
 }

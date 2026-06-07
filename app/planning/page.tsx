@@ -9,7 +9,8 @@
 // localStorage est un système externe à React : il est branché via
 // useSyncExternalStore (pattern recommandé par React — la règle ESLint
 // react-hooks/set-state-in-effect interdit le setState synchrone dans un
-// useEffect au montage). Côté serveur, le snapshot vaut null : la page est
+// useEffect au montage). Le mini-store vit dans lib/stockage.ts (partagé
+// avec la page Courses). Côté serveur, le snapshot vaut null : la page est
 // prérendue en état vide, puis hydratée avec le planning sauvegardé.
 //
 // Responsive (RG-06 à RG-08) : liste verticale par jour en mobile,
@@ -19,6 +20,11 @@ import Link from "next/link";
 import { useMemo, useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
 import { genererPlanning, remplacerSlot } from "@/lib/generateur";
+import {
+  storePlanning,
+  sauvegarderPlanningComplet,
+  sauvegarderRemplacementSlot,
+} from "@/lib/stockage";
 import recettesJson from "@/data/recettes.json";
 import type {
   Jour,
@@ -30,40 +36,7 @@ import type {
 
 const RECETTES = recettesJson as Recette[];
 
-const CLE_STORAGE = "planning_courant";
-
 type TypeRepas = "dejeuner" | "diner";
-
-// ============================================================================
-// Mini-store localStorage — source de vérité de la persistance (section 5.6)
-// ============================================================================
-
-// Abonnés même onglet : l'événement natif "storage" ne se déclenche que dans
-// les AUTRES onglets, il faut donc notifier manuellement l'onglet courant.
-const abonnes = new Set<() => void>();
-
-function sAbonner(rappel: () => void): () => void {
-  abonnes.add(rappel);
-  window.addEventListener("storage", rappel); // modifications des autres onglets
-  return () => {
-    abonnes.delete(rappel);
-    window.removeEventListener("storage", rappel);
-  };
-}
-
-function lireSnapshot(): string | null {
-  return localStorage.getItem(CLE_STORAGE);
-}
-
-// Pas de localStorage côté serveur : le prérendu se fait en état vide.
-function lireSnapshotServeur(): null {
-  return null;
-}
-
-function sauvegarderPlanning(planning: Planning): void {
-  localStorage.setItem(CLE_STORAGE, JSON.stringify(planning));
-  for (const rappel of abonnes) rappel();
-}
 
 // ============================================================================
 // Libellés & styles
@@ -151,7 +124,11 @@ type Transition =
 
 export default function PagePlanning() {
   // Planning persisté (système externe) : null = état vide (RG-09).
-  const brut = useSyncExternalStore(sAbonner, lireSnapshot, lireSnapshotServeur);
+  const brut = useSyncExternalStore(
+    storePlanning.sAbonner,
+    storePlanning.lire,
+    storePlanning.lireServeur
+  );
   const [transition, setTransition] = useState<Transition>({ statut: "repos" });
   // Slot dont le dernier remplacement a échoué (RG-04) : "jour-typeRepas".
   const [slotIndisponible, setSlotIndisponible] = useState<string | null>(null);
@@ -163,7 +140,7 @@ export default function PagePlanning() {
     } catch (erreur) {
       // Donnée corrompue : on la signale et on retombe en état vide.
       // La prochaine génération écrasera la valeur illisible.
-      console.error(`localStorage["${CLE_STORAGE}"] illisible.`, erreur);
+      console.error(`localStorage["planning_courant"] illisible.`, erreur);
       return null;
     }
   }, [brut]);
@@ -175,7 +152,9 @@ export default function PagePlanning() {
     setTimeout(() => {
       try {
         const nouveau = genererPlanning(RECETTES);
-        sauvegarderPlanning(nouveau);
+        // Génération complète : réinitialise aussi les coches de la liste
+        // de courses (RG-13) — règle centralisée dans lib/stockage.ts.
+        sauvegarderPlanningComplet(nouveau);
         setSlotIndisponible(null);
         setTransition({ statut: "repos" });
         toast.success("Planning généré");
@@ -202,7 +181,9 @@ export default function PagePlanning() {
       toast.error("Pas de recette disponible");
       return;
     }
-    sauvegarderPlanning(nouveau);
+    // Remplacement individuel : les coches sont conservées, l'invalidation
+    // par quantité (RG-12) protège les articles dont l'agrégat change.
+    sauvegarderRemplacementSlot(nouveau);
     setSlotIndisponible(null);
     toast.success("Recette remplacée");
   }

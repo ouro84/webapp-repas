@@ -27,7 +27,8 @@ const ORDRE_CATEGORIES: CategorieIngredient[] = [
 // Deux occurrences ne fusionnent que si elles partagent la même unité —
 // cas limite RG-05 : "200 g" et "1 piece" du même ingrédient restent
 // sur deux lignes distinctes, sans tentative de conversion.
-function cleAgregation(ingredient: Ingredient): string {
+// Exportée : sert aussi d'identité aux coches de la liste (RG-12).
+export function cleAgregation(ingredient: Ingredient): string {
   return `${ingredient.nom.toLocaleLowerCase("fr")}|${ingredient.unite}`
 }
 

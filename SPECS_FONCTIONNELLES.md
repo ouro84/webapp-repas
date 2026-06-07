@@ -57,6 +57,7 @@ Réduire à zéro l'effort de planification hebdomadaire des repas, du choix des
 | F-09 | Section fond de placard | Ingrédients flaggués affichés à part avec mention "à vérifier avant d'acheter" |
 | F-10 | Responsive (mobile-first) | L'app est mobile-first. Vue desktop disponible (grille 7 colonnes) |
 | F-11 | Persistance du planning | Le planning généré est sauvegardé localement (localStorage) — survit à la fermeture de l'app |
+| F-12 | Liste de courses cochable | Cocher/décocher les articles en magasin : rayé + fin de catégorie, progression, persistance locale (#19) |
 
 ### Nice-to-have — backlog futur
 
@@ -125,6 +126,41 @@ Réduire à zéro l'effort de planification hebdomadaire des repas, du choix des
 > **Given** l'utilisateur clique sur "↺ changer"  
 > **When** toutes les recettes éligibles sont déjà utilisées dans la semaine  
 > **Then** l'app affiche le message : "Pas de recette disponible"
+
+---
+
+### US-05 — Cocher les articles de la liste de courses
+
+> **En tant qu'** utilisateur en train de faire mes courses, je veux pouvoir identifier les articles que j'ai chez moi ou mis dans mon chariot, afin de ne pas les ajouter en doublon ou en oublier.
+
+**Comportement :**
+> **Given** je suis sur la liste de courses  
+> **When** je clique sur un article non coché  
+> **Then** il se raye, se grise et passe en fin de liste de sa catégorie (transition animée, `prefers-reduced-motion` respecté)
+
+> **Given** un article est coché  
+> **When** je clique dessus  
+> **Then** il se dé-raye et reprend sa place alphabétique parmi les articles non cochés de sa catégorie
+
+> **Given** des articles sont cochés  
+> **When** je recharge la page ou rouvre le navigateur  
+> **Then** les coches sont conservées
+
+> **Given** des articles sont cochés  
+> **When** je remplace un repas du planning  
+> **Then** seules les coches des articles dont la quantité a changé (ou qui ont disparu) sont invalidées
+
+> **Given** des articles sont cochés  
+> **When** je regénère entièrement le planning  
+> **Then** toutes les coches sont réinitialisées
+
+> **Given** au moins un article est coché  
+> **When** je clique sur « Tout décocher »  
+> **Then** toutes les coches (y compris fond de placard) sont retirées
+
+> **Given** je suis sur la liste de courses  
+> **When** je clique sur l'en-tête d'une catégorie  
+> **Then** la section se replie/déplie (état non persisté)
 
 ---
 
@@ -212,6 +248,8 @@ type Planning = {
 
 Le planning généré est sauvegardé en `localStorage` sous la clé `planning_courant`. Il est écrasé à chaque nouvelle génération. La persistance multi-device (sync via Supabase) est un nice-to-have lié à l'authentification.
 
+Les coches de la liste de courses (US-05) sont sauvegardées sous la clé `courses_cochees` : un objet `{ [nom|unité]: quantité au moment du cochage }` (cf. RG-12). La clé est effacée à chaque génération complète de planning (RG-13).
+
 ---
 
 ## 6. Règles métier du générateur
@@ -271,6 +309,26 @@ Chaque écran doit gérer trois états :
 - **Loading** : pendant la génération du planning
 - **Error** : si la génération échoue (ex: pas assez de recettes éligibles)
 - **Empty** : état initial avant toute génération
+
+### RG-10 — Bascule cocher/décocher (US-05)
+
+Un clic sur un article de la liste de courses bascule son état coché/non coché. La zone cliquable est la ligne entière (hauteur ≥ 44 px).
+
+### RG-11 — Affichage des articles cochés
+
+Un article coché est rayé, grisé et affiché en fin de sa catégorie (ordre alphabétique entre articles cochés). Décoché, il reprend sa place alphabétique (RG-05).
+
+### RG-12 — Persistance et invalidation des coches
+
+Les coches sont persistées en `localStorage` (clé `courses_cochees`), accrochées à la clé d'agrégation `nom|unité` (RG-05) avec la quantité de l'article au moment du cochage. Une coche n'est valide que si la quantité actuelle de l'article est identique — sinon elle est silencieusement ignorée (protège des remplacements de slots, US-04).
+
+### RG-13 — Cycle de vie des coches
+
+Une génération complète de planning réinitialise toutes les coches. Un remplacement de slot individuel ne déclenche aucune réinitialisation globale : l'invalidation par quantité (RG-12) suffit.
+
+### RG-14 — Fond de placard cochable, hors progression
+
+Les articles du fond de placard sont cochables (même comportement visuel) mais exclus du compteur de progression « n/N », qui ne porte que sur les articles à acheter.
 
 ---
 
