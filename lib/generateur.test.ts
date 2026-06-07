@@ -8,7 +8,12 @@
 // librement sans casser ces tests.
 
 import { describe, test, expect } from "vitest";
-import { genererPlanning, remplacerSlot } from "@/lib/generateur";
+import {
+  genererPlanning,
+  recettesUtilisees,
+  remplacerSlot,
+  remplacerSlotManuel,
+} from "@/lib/generateur";
 import { RECETTES_FIXTURES } from "@/tests/fixtures/recettes";
 import type { Jour, Planning, Recette } from "@/types";
 
@@ -212,5 +217,102 @@ describe("remplacerSlot — RG-04 remplacement individuel", () => {
     const planning = genererPlanning(RECETTES);
     const resultat = remplacerSlot(planning, "vendredi", "diner", RECETTES);
     expect(resultat!.semaine).toBe(planning.semaine);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// RG-15 — sélection manuelle d'une recette (US-06) : remplace le slot visé
+// par la recette CHOISIE, by-passe RG-01 (temps) et RG-02 (unicité).
+// ---------------------------------------------------------------------------
+describe("remplacerSlotManuel — RG-15 sélection manuelle (US-06)", () => {
+  test("remplace le slot visé par la recette choisie, sans toucher aux autres", () => {
+    const planning = genererPlanning(RECETTES);
+    const choisie = RAPIDES_NORMALES[0]!;
+    const resultat = remplacerSlotManuel(planning, "mercredi", "diner", choisie);
+
+    expect(resultat).not.toBeNull();
+    expect(resultat!.jours.find((jp) => jp.jour === "mercredi")!.diner.id).toBe(
+      choisie.id
+    );
+    for (const jp of resultat!.jours) {
+      if (jp.jour === "mercredi") continue;
+      const original = planning.jours.find((o) => o.jour === jp.jour)!;
+      expect(jp.diner.id).toBe(original.diner.id);
+      expect(jp.dejeuner?.id).toBe(original.dejeuner?.id);
+    }
+  });
+
+  test("by-passe RG-01 : une recette « long » est permise un soir de semaine", () => {
+    const planning = genererPlanning(RECETTES);
+    const longue = LONGUES[0]!;
+    const resultat = remplacerSlotManuel(planning, "mardi", "diner", longue);
+
+    expect(resultat!.jours.find((jp) => jp.jour === "mardi")!.diner.id).toBe(
+      longue.id
+    );
+  });
+
+  test("by-passe RG-02 : le doublon est permis dans le planning", () => {
+    const planning = genererPlanning(RECETTES);
+    // La recette déjà servie au dîner de lundi est posée aussi le jeudi.
+    const dejaServie = planning.jours.find((jp) => jp.jour === "lundi")!.diner;
+    const resultat = remplacerSlotManuel(planning, "jeudi", "diner", dejaServie);
+
+    const repas = tousLesRepas(resultat!);
+    expect(repas.filter((r) => r.id === dejaServie.id)).toHaveLength(2);
+  });
+
+  test("fonctionne aussi sur un déjeuner de week-end", () => {
+    const planning = genererPlanning(RECETTES);
+    const choisie = LONGUES[1]!;
+    const resultat = remplacerSlotManuel(planning, "dimanche", "dejeuner", choisie);
+
+    expect(
+      resultat!.jours.find((jp) => jp.jour === "dimanche")!.dejeuner!.id
+    ).toBe(choisie.id);
+  });
+
+  test("retourne null pour un slot qui n'existe pas (déjeuner en semaine)", () => {
+    const planning = genererPlanning(RECETTES);
+    expect(
+      remplacerSlotManuel(planning, "lundi", "dejeuner", RAPIDES_NORMALES[0]!)
+    ).toBeNull();
+  });
+
+  test("ne modifie jamais le planning d'origine et conserve la semaine", () => {
+    const planning = genererPlanning(RECETTES);
+    const instantane = JSON.stringify(planning);
+    const resultat = remplacerSlotManuel(
+      planning,
+      "vendredi",
+      "diner",
+      LONGUES[0]!
+    );
+    expect(JSON.stringify(planning)).toBe(instantane);
+    expect(resultat!.semaine).toBe(planning.semaine);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// recettesUtilisees — alimente le badge « déjà au planning » du sélecteur.
+// ---------------------------------------------------------------------------
+describe("recettesUtilisees — ids des recettes du planning (US-06)", () => {
+  test("retourne les ids de tous les slots, déjeuners de week-end compris", () => {
+    const planning = genererPlanning(RECETTES);
+    const ids = recettesUtilisees(planning);
+
+    // 9 slots, tous distincts (RG-02 respectée par la génération).
+    expect(ids.size).toBe(9);
+    for (const repas of tousLesRepas(planning)) {
+      expect(ids.has(repas.id)).toBe(true);
+    }
+  });
+
+  test("un doublon issu d'une sélection manuelle ne produit qu'un seul id", () => {
+    const planning = genererPlanning(RECETTES);
+    const dejaServie = planning.jours.find((jp) => jp.jour === "lundi")!.diner;
+    const avecDoublon = remplacerSlotManuel(planning, "mardi", "diner", dejaServie)!;
+
+    expect(recettesUtilisees(avecDoublon).size).toBe(8); // 9 slots, 8 recettes
   });
 });

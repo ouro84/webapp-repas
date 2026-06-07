@@ -178,6 +178,8 @@ Format : `type: description courte`
 
 **La confirmation email Supabase est désactivée** — Volontaire en dev (note ADR-02), et `auth.setup.ts` en dépend (le compte de test est utilisable dès le signup). La réactiver pour la prod cassera le setup e2e tel quel — prévoir un compte pré-confirmé ou un autre mécanisme à ce moment-là.
 
+**`addInitScript` rejoue à chaque chargement complet de page** — Le `beforeEach` de `e2e/planning.spec.ts` purge `planning_courant` via `addInitScript` : un `page.goto()` en cours de test re-purge donc le planning généré (liste de courses vide, symptôme déroutant). Dans ces tests, naviguer entre pages par les **liens de l'app** (navigation SPA Next, l'init script ne rejoue pas), pas par `page.goto()`.
+
 **`npm run test` en CI ne reste pas en watch** — Le script lance `vitest` (mode watch en local), mais Vitest détecte `CI=true` et passe en single-run. En local, préférer `npm run test:run` pour un run unique.
 
 **Branch protection : dette connue, et bloquée par le plan GitHub** — Le workflow CI (`.github/workflows/ci.yml`) tourne sur chaque PR et push vers `main`, mais aucun check n'est *obligatoire* pour merger : rien n'empêche techniquement de merger une PR rouge. Vérifié le 2026-06-06 : la protection de branche (classique et rulesets) est **indisponible sur un repo privé en plan Free** — l'API répond 403 « Upgrade to GitHub Pro or make this repository public ». Décision : on reste comme ça (discipline). Si la situation change (repo public ou GitHub Pro), configurer : require PR before merging + required status check `test` (nom du job CI).

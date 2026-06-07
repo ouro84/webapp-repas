@@ -16,6 +16,7 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 - Workflow keep-alive Supabase (`.github/workflows/supabase-keepalive.yml`) : ping REST de la prod et du staging lundi et jeudi 8h UTC pour éviter la mise en pause automatique du tier gratuit ; secrets `SUPABASE_URL` / `SUPABASE_ANON_KEY` ajoutés au coffre Actions (#15)
 - Liste de courses cochable en magasin (US-05, RG-10 à RG-14, #19) : cocher/décocher un article (rayé + fin de catégorie, animation View Transitions avec repli `prefers-reduced-motion`), persistance locale des coches avec invalidation par quantité au remplacement d'un slot et réinitialisation à la regénération, compteur de progression « n/N » (fond de placard cochable mais hors compteur), bouton « Tout décocher », sections repliables
 - Mini-stores localStorage partagés dans `lib/stockage.ts` (`storePlanning`, `storeCoches`) — le pattern `useSyncExternalStore` de la page planning est extrait et réutilisé par la page courses
+- Sélection manuelle d'une recette pour un slot du planning (US-06, RG-15, #14) : sélecteur `<dialog>` natif (bottom sheet mobile / modale desktop) avec recherche insensible à la casse et aux accents, badge « déjà au planning », by-pass des contraintes de temps et d'unicité (choix éclairé) ; coches de la liste de courses conservées
 
 ### Modifié
 
