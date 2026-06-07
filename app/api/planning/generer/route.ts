@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { apiError } from "@/lib/errors"
+import { genererPlanning } from "@/lib/generateur"
+import { dbRecetteToDomain } from "@/lib/adapters"
+import type { DbRecette } from "@/types"
 
 export async function POST() {
   const supabase = await createClient()
@@ -43,7 +46,22 @@ export async function POST() {
     )
   }
 
-  // TODO Phase 5 : appeler lib/generateur.ts avec les recettes
-  // Pour l'instant on retourne les recettes pour valider que la connexion fonctionne
-  return NextResponse.json({ recettes }, { status: 200 })
+  // Conversion DB → domaine, puis génération (RG-01 à RG-03).
+  const recettesDomain = (recettes as unknown as DbRecette[]).map(
+    dbRecetteToDomain
+  )
+
+  try {
+    const planning = genererPlanning(recettesDomain)
+    return NextResponse.json({ planning }, { status: 200 })
+  } catch (erreur) {
+    // genererPlanning lève si le vivier est insuffisant (trop peu de recettes
+    // rapide/normal pour remplir la semaine) — message actionnable (RG-09).
+    return apiError(
+      "POST /api/planning/generer",
+      erreur,
+      "Pas assez de recettes pour générer un planning complet. Ajoute des recettes (notamment rapides ou normales) puis réessaie.",
+      422
+    )
+  }
 }

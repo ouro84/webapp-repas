@@ -12,8 +12,9 @@
 // insensible à la casse et aux accents, cf. lib/recherche.ts) : avec un
 // vivier qui grandit, pas de scroll interminable.
 //
-// Les recettes arrivent en prop : aujourd'hui data/recettes.json, demain
-// les recettes de l'utilisateur (CRUD, #2) — le composant ne change pas.
+// Les recettes arrivent en prop (chargées depuis Supabase via lib/recettes.ts,
+// catalogue global + recettes de l'utilisateur) — le composant ne change pas
+// quand le CRUD perso arrive (#2, PR2/3).
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { filtrerRecettes } from "@/lib/recherche";

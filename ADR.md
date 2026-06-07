@@ -67,6 +67,8 @@ Pour le MVP (Phase 3–5), les recettes sont stockées dans `/data/recettes.json
 
 > [NOTE PRODUCTION - 2026-06-03] La confirmation email Supabase Auth est désactivée en développement pour accélérer les tests. À réactiver dans Supabase → Authentication → Providers → Email → "Confirm email" avant tout déploiement en production.
 
+> [RÉVISION - ADR-02 — 2026-06-07] Bascule de la source de vérité des recettes du JSON statique vers Supabase (#2), avec un modèle **hybride** : un **catalogue global** (recettes `user_id IS NULL`, visibles de tous, en lecture seule) sert de base commune, et chaque utilisateur ajoute ses **recettes personnelles** (`user_id = auth.uid()`, modifiables par lui seul). Les policies SELECT de `recette` et `recette_ingredient` autorisent donc `user_id IS NULL OR user_id = auth.uid()` ; insert/update/delete restent « propriétaire » (les globales ne sont pas éditables — on les personnalise par duplication). Les 74 recettes de `data/recettes.json` ont été amorcées en globales via migration ; le JSON ne sert plus qu'd'**asset d'amorçage**. La **génération du planning se fait côté serveur** (route `/api/planning/generer`, RLS par session) et renvoie le planning, toujours **persisté en localStorage** (la persistance du planning en base reste hors périmètre). Le **sélecteur** (#14) et le **remplacement aléatoire** lisent la liste côté client (`lib/recettes.ts`).
+
 ### Alternatives écartées
 - **Firebase (Google)** : NoSQL — moins adapté aux données relationnelles. Vendor lock-in fort.
 - **PlanetScale / Neon** : bases de données seules, sans auth intégrée — implique de gérer l'auth séparément.
