@@ -251,6 +251,43 @@ export function recettesUtilisees(planning: Planning): Set<string> {
   return ids
 }
 
+// Vivier minimal pour générer une semaine (cf. genererPlanning) : 9 slots
+// distincts (RG-02), dont 5 dîners de semaine réservés aux recettes
+// rapide/normal (RG-01). Les 4 slots week-end acceptent toutes les recettes.
+const SLOTS_TOTAL = 9
+const SLOTS_SEMAINE = 5
+
+export type AnalyseVivier = {
+  suffisant: boolean
+  total: number
+  rapideNormal: number
+  /** Message d'alerte si insuffisant, sinon null. */
+  message: string | null
+}
+
+/**
+ * Analyse si le vivier de recettes permet de générer une semaine complète
+ * (#2, bonus PR3) — anticipe l'échec « Pas de recette disponible » du
+ * générateur en prévenant l'utilisateur avant qu'il ne génère.
+ */
+export function analyserVivier(recettes: Recette[]): AnalyseVivier {
+  const total = recettes.length
+  const rapideNormal = recettes.filter(
+    (r) => r.tempsPreparation !== "long"
+  ).length
+  const suffisant = total >= SLOTS_TOTAL && rapideNormal >= SLOTS_SEMAINE
+
+  if (suffisant) {
+    return { suffisant, total, rapideNormal, message: null }
+  }
+  return {
+    suffisant,
+    total,
+    rapideNormal,
+    message: `Pour générer une semaine, il faut au moins ${SLOTS_TOTAL} recettes dont ${SLOTS_SEMAINE} rapides ou normales. Tu en as ${total} (dont ${rapideNormal} rapide${rapideNormal > 1 ? "s" : ""}/normale${rapideNormal > 1 ? "s" : ""}).`,
+  }
+}
+
 /**
  * Réinjecte une recette modifiée dans le planning (US-08/#2, RG-03) : tout slot
  * qui référence cette recette (par id) reçoit sa nouvelle version (nom, temps,

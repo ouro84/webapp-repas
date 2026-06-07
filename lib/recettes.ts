@@ -221,3 +221,16 @@ export async function modifierRecette(
     ingredients: saisie.ingredients,
   }
 }
+
+/**
+ * Supprime une recette personnelle (RG-01 : la confirmation est gérée par
+ * l'UI en amont). La RLS interdit la suppression d'une recette globale ou
+ * d'autrui ; les liens recette_ingredient partent en cascade (FK).
+ */
+export async function supprimerRecette(id: string): Promise<void> {
+  const client = createClient()
+  const { error } = await client.from("recette").delete().eq("id", id)
+  if (error) {
+    throw new Error(`Suppression impossible : ${error.message}`)
+  }
+}

@@ -9,6 +9,7 @@
 
 import { describe, test, expect } from "vitest";
 import {
+  analyserVivier,
   genererPlanning,
   recettesUtilisees,
   remplacerRecetteDansPlanning,
@@ -368,5 +369,44 @@ describe("remplacerRecetteDansPlanning — RG-03 (#2)", () => {
     expect(maj.jours[0]!.personnes).toEqual({ diner: 4 }); // personnes conservé
     expect(maj.jours[0]!.diner.nom).toBe("Éditée");
     expect(JSON.stringify(planning)).toBe(instantane); // original non muté
+  });
+});
+
+// ---------------------------------------------------------------------------
+// analyserVivier — viabilité du vivier pour générer une semaine (#2 PR3).
+// 9 slots distincts dont 5 dîners de semaine en rapide/normal.
+// ---------------------------------------------------------------------------
+describe("analyserVivier — alerte vivier insuffisant (#2)", () => {
+  function recettesOf(rapideNormal: number, longues: number): Recette[] {
+    const r: Recette[] = [];
+    for (let i = 0; i < rapideNormal; i++)
+      r.push({ id: `rn-${i}`, nom: `rn${i}`, tempsPreparation: "rapide", ingredients: [] });
+    for (let i = 0; i < longues; i++)
+      r.push({ id: `l-${i}`, nom: `l${i}`, tempsPreparation: "long", ingredients: [] });
+    return r;
+  }
+
+  test("suffisant : 9 recettes dont 5 rapides/normales", () => {
+    const a = analyserVivier(recettesOf(5, 4));
+    expect(a.suffisant).toBe(true);
+    expect(a.message).toBeNull();
+  });
+
+  test("insuffisant : total < 9", () => {
+    const a = analyserVivier(recettesOf(8, 0)); // 8 recettes
+    expect(a.suffisant).toBe(false);
+    expect(a.message).toMatch(/au moins 9/);
+  });
+
+  test("insuffisant : pas assez de rapides/normales (< 5)", () => {
+    const a = analyserVivier(recettesOf(4, 6)); // 10 total mais 4 r/n
+    expect(a.suffisant).toBe(false);
+    expect(a.rapideNormal).toBe(4);
+  });
+
+  test("vivier vide", () => {
+    const a = analyserVivier([]);
+    expect(a.suffisant).toBe(false);
+    expect(a.total).toBe(0);
   });
 });
