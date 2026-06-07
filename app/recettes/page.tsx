@@ -14,20 +14,27 @@ import {
   chargerRecettesGerees,
   creerRecette,
   modifierRecette,
+  supprimerRecette,
   type RecetteGeree,
   type SaisieRecette,
 } from "@/lib/recettes";
 import { filtrerRecettes } from "@/lib/recherche";
-import { remplacerRecetteDansPlanning } from "@/lib/generateur";
+import {
+  analyserVivier,
+  recettesUtilisees,
+  remplacerRecetteDansPlanning,
+} from "@/lib/generateur";
 import { storePlanning, sauvegarderRemplacementSlot } from "@/lib/stockage";
 import { BadgeTemps } from "@/components/planning/badge-temps";
 import { FormulaireRecette } from "@/components/recettes/formulaire-recette";
+import { ConfirmationSuppression } from "@/components/recettes/confirmation-suppression";
 import type { Planning, Recette } from "@/types";
 
 type Vue =
   | { mode: "liste" }
   | { mode: "creation" }
-  | { mode: "edition"; recette: Recette };
+  | { mode: "edition"; recette: Recette }
+  | { mode: "duplication"; source: Recette };
 
 // Réinjecte une recette éditée dans le planning persisté (RG-03) : la liste
 // de courses reflète aussitôt le changement. Sans effet si la recette n'y est pas.
@@ -43,11 +50,25 @@ function repercuterSurPlanning(recette: Recette): void {
   }
 }
 
+// Vrai si la recette figure dans le planning courant (garde-fou suppression).
+function estDansPlanningCourant(id: string): boolean {
+  const brut = storePlanning.lire();
+  if (brut === null) return false;
+  try {
+    return recettesUtilisees(JSON.parse(brut) as Planning).has(id);
+  } catch {
+    return false;
+  }
+}
+
 export default function PageRecettes() {
   const [vue, setVue] = useState<Vue>({ mode: "liste" });
   const [recettes, setRecettes] = useState<RecetteGeree[] | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
   const [requete, setRequete] = useState("");
+  // Recette en attente de confirmation de suppression (RG-01), ou null.
+  const [aSupprimer, setASupprimer] = useState<RecetteGeree | null>(null);
+  const [suppressionEnCours, setSuppressionEnCours] = useState(false);
 
   function recharger(): void {
     chargerRecettesGerees()
@@ -93,12 +114,41 @@ export default function PageRecettes() {
     recharger();
   }
 
-  // --- Formulaire (création / édition) ---
-  if (vue.mode === "creation") {
+  async function confirmerSuppression(): Promise<void> {
+    if (aSupprimer === null) return;
+    setSuppressionEnCours(true);
+    try {
+      await supprimerRecette(aSupprimer.recette.id);
+      toast.success("Recette supprimée");
+      setASupprimer(null);
+      recharger();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Suppression impossible.");
+    } finally {
+      setSuppressionEnCours(false);
+    }
+  }
+
+  // Pré-remplissage pour la duplication : copie du nom + ingrédients (#2 PR3).
+  // Permet aussi de personnaliser une recette du catalogue (globale, en lecture
+  // seule) en créant une copie personnelle.
+  function valeurDuplication(source: Recette) {
+    return {
+      nom: `${source.nom} (copie)`,
+      tempsPreparation: source.tempsPreparation,
+      ingredients: source.ingredients,
+    };
+  }
+
+  // --- Formulaire (création / édition / duplication) ---
+  if (vue.mode === "creation" || vue.mode === "duplication") {
     return (
       <main id="contenu" className="mx-auto w-full max-w-2xl flex-1 p-4 md:p-8">
         <FormulaireRecette
-          titre="Nouvelle recette"
+          titre={vue.mode === "duplication" ? "Dupliquer la recette" : "Nouvelle recette"}
+          valeurInitiale={
+            vue.mode === "duplication" ? valeurDuplication(vue.source) : undefined
+          }
           onEnregistrer={enregistrerCreation}
           onAnnuler={() => setVue({ mode: "liste" })}
         />
@@ -146,6 +196,17 @@ export default function PageRecettes() {
         </p>
       )}
 
+      {/* Alerte vivier insuffisant (#2 PR3) : anticipe l'échec de génération */}
+      {recettes !== null &&
+        (() => {
+          const vivier = analyserVivier(recettes.map((r) => r.recette));
+          return vivier.suffisant ? null : (
+            <p className="mb-4 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              {vivier.message}
+            </p>
+          );
+        })()}
+
       {recettes !== null && (
         <>
           <label htmlFor="recherche-recettes" className="sr-only">
@@ -177,24 +238,54 @@ export default function PageRecettes() {
                     {recette.nom}
                   </span>
                   <BadgeTemps temps={recette.tempsPreparation} />
-                  {editable ? (
-                    <button
-                      type="button"
-                      onClick={() => setVue({ mode: "edition", recette })}
-                      className="rounded-full px-3 py-2 text-sm font-medium text-brand-700 underline-offset-2 transition-colors hover:bg-brand-50 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
-                    >
-                      Modifier
-                    </button>
-                  ) : (
+                  {!editable && (
                     <span className="rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700/85">
                       Catalogue
                     </span>
+                  )}
+                  {/* Duplication possible sur toutes les recettes (catalogue compris :
+                      c'est le moyen de personnaliser une recette globale) */}
+                  <button
+                    type="button"
+                    onClick={() => setVue({ mode: "duplication", source: recette })}
+                    className="rounded-full px-3 py-2 text-sm font-medium text-brand-700 underline-offset-2 transition-colors hover:bg-brand-50 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
+                  >
+                    Dupliquer
+                  </button>
+                  {editable && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setVue({ mode: "edition", recette })}
+                        className="rounded-full px-3 py-2 text-sm font-medium text-brand-700 underline-offset-2 transition-colors hover:bg-brand-50 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
+                      >
+                        Modifier
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setASupprimer({ recette, editable })}
+                        className="rounded-full px-3 py-2 text-sm font-medium text-red-700 underline-offset-2 transition-colors hover:bg-red-50 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600"
+                      >
+                        Supprimer
+                      </button>
+                    </>
                   )}
                 </li>
               ))}
             </ul>
           )}
         </>
+      )}
+
+      {/* Confirmation de suppression (RG-01) + garde-fou planning (#2 PR3) */}
+      {aSupprimer !== null && (
+        <ConfirmationSuppression
+          nom={aSupprimer.recette.nom}
+          dansPlanning={estDansPlanningCourant(aSupprimer.recette.id)}
+          enCours={suppressionEnCours}
+          onConfirmer={confirmerSuppression}
+          onAnnuler={() => setASupprimer(null)}
+        />
       )}
 
       <p className="mt-6 text-sm text-brand-700/85">

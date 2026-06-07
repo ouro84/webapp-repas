@@ -164,7 +164,7 @@ Format : `type: description courte`
 
 **Les e2e de génération ne valident qu'en CI** — En local, les e2e tapent l'instance de `.env.local` (prod), qui n'a le catalogue global que si la migration y a été appliquée (au merge). Le catalogue est seedé sur **staging** par la CI (migration avant e2e), donc les parcours de génération sont fiables en CI mais peuvent échouer en local si la base pointée n'est pas seedée.
 
-**Les e2e CRUD recettes écrivent en base et ne nettoient pas (jusqu'à PR3)** — `e2e/recettes.spec.ts` crée de vraies recettes (nom unique par run via `Date.now`, pour éviter les collisions strict-mode avec les restes des runs précédents). Sans suppression (UI en PR3), elles s'accumulent sur le compte de test staging — sans impact fonctionnel (les assertions portent sur des noms, pas des comptes). **Ne pas lancer `recettes.spec` en local** : `.env.local` pointe la prod, ça y créerait des recettes parasites. Une fois la suppression livrée (PR3), prévoir un teardown.
+**Les e2e CRUD recettes écrivent en base** — `e2e/recettes.spec.ts` crée de vraies recettes (nom suffixé par le `Date.now` du run, pour l'identification et éviter les collisions strict-mode). Un `afterAll` les supprime toutes (recherche par suffixe + suppression via l'UI) → pas d'accumulation sur le compte de test. **Ne pas lancer `recettes.spec` en local** : `.env.local` pointe la prod, ça y créerait (transitoirement) des recettes ; si le teardown échoue, elles y resteraient. Validation en CI (staging).
 
 ### Logique métier (`lib/generateur.ts`)
 
