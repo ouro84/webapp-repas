@@ -34,14 +34,18 @@ jobs:
             key_secret: STAGING_SUPABASE_ANON_KEY
     name: ping (${{ matrix.instance }})
     steps:
-      - name: Requête REST anodine
+      - name: Ping auth health
         env:
           SUPABASE_URL: ${{ secrets[matrix.url_secret] }}
           SUPABASE_ANON_KEY: ${{ secrets[matrix.key_secret] }}
         run: |
+          # /auth/v1/health : répond 200 avec la clé anon ; la racine /rest/v1/
+          # renvoie 401 sur ces projets (endpoint OpenAPI verrouillé), même si
+          # les requêtes de table passent. Une requête au gateway suffit comme
+          # activité anti-pause.
           # --fail : code de sortie non nul sur HTTP >= 400
           # --retry 3 : tolère un hoquet réseau, pas une vraie pause
           curl --fail --silent --show-error --retry 3 --retry-delay 5 \
             -H "apikey: ${SUPABASE_ANON_KEY}" \
-            "${SUPABASE_URL}/rest/v1/" > /dev/null
+            "${SUPABASE_URL}/auth/v1/health" > /dev/null
           echo "Instance ${{ matrix.instance }} active."
