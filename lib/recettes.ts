@@ -12,7 +12,15 @@
 
 import { createClient } from "@/lib/supabase/client"
 import { dbRecetteToDomain } from "@/lib/adapters"
-import type { DbRecette, Recette } from "@/types"
+import type { DbRecette, Ingredient, Recette } from "@/types"
+
+// Données d'un formulaire de recette (création/édition) — sans id (généré par
+// la base) ni user_id (posé à l'enregistrement depuis la session).
+export type SaisieRecette = {
+  nom: string
+  tempsPreparation: Recette["tempsPreparation"]
+  ingredients: Ingredient[]
+}
 
 // Sélection partagée : même forme imbriquée que la route serveur, pour que
 // l'adaptateur dbRecetteToDomain s'applique des deux côtés.
@@ -43,4 +51,173 @@ export async function chargerRecettes(): Promise<Recette[]> {
     throw new Error(`Chargement des recettes impossible : ${error.message}`)
   }
   return (data as unknown as DbRecette[]).map(dbRecetteToDomain)
+}
+
+// Recette annotée pour la page de gestion : `editable` distingue les recettes
+// personnelles (modifiables) des recettes globales (catalogue, lecture seule).
+export type RecetteGeree = { recette: Recette; editable: boolean }
+
+/**
+ * Charge les recettes pour la page de gestion (#2), en marquant celles qui
+ * appartiennent à l'utilisateur (les globales, user_id NULL, sont en lecture
+ * seule — cf. RLS).
+ */
+export async function chargerRecettesGerees(): Promise<RecetteGeree[]> {
+  const supabase = createClient()
+  const [{ data, error }, { data: { user } }] = await Promise.all([
+    supabase.from("recette").select(`user_id, ${SELECT_RECETTE}`),
+    supabase.auth.getUser(),
+  ])
+
+  if (error) {
+    throw new Error(`Chargement des recettes impossible : ${error.message}`)
+  }
+  return (data as unknown as (DbRecette & { user_id: string | null })[]).map(
+    (db) => ({
+      recette: dbRecetteToDomain(db),
+      editable: db.user_id !== null && db.user_id === user?.id,
+    })
+  )
+}
+
+// ============================================================================
+// Écritures (recettes personnelles) — #2 PR2
+// ============================================================================
+
+type Client = ReturnType<typeof createClient>
+
+/**
+ * Find-or-create d'un ingrédient du catalogue, identifié par le triplet
+ * (nom, catégorie, fond de placard) — pas d'unicité SQL sur le nom seul, on
+ * déduplique donc explicitement pour ne pas gonfler le catalogue partagé.
+ * Retourne l'id de l'ingrédient.
+ */
+async function trouverOuCreerIngredient(
+  client: Client,
+  ingredient: Ingredient
+): Promise<string> {
+  const { data: existant, error: erreurLecture } = await client
+    .from("ingredient")
+    .select("id")
+    .eq("nom", ingredient.nom)
+    .eq("categorie", ingredient.categorie)
+    .eq("fond_de_placard", ingredient.fondDePlacard)
+    .limit(1)
+    .maybeSingle()
+
+  if (erreurLecture) {
+    throw new Error(`Lecture d'un ingrédient impossible : ${erreurLecture.message}`)
+  }
+  if (existant) return existant.id
+
+  const { data: cree, error: erreurInsertion } = await client
+    .from("ingredient")
+    .insert({
+      nom: ingredient.nom,
+      categorie: ingredient.categorie,
+      fond_de_placard: ingredient.fondDePlacard,
+    })
+    .select("id")
+    .single()
+
+  if (erreurInsertion || !cree) {
+    throw new Error(
+      `Création d'un ingrédient impossible : ${erreurInsertion?.message ?? "réponse vide"}`
+    )
+  }
+  return cree.id
+}
+
+// Lie les ingrédients saisis à une recette : résout chaque ingrédient
+// (find-or-create) puis insère les lignes recette_ingredient.
+async function lierIngredients(
+  client: Client,
+  recetteId: string,
+  ingredients: Ingredient[]
+): Promise<void> {
+  const liens = await Promise.all(
+    ingredients.map(async (ing) => ({
+      recette_id: recetteId,
+      ingredient_id: await trouverOuCreerIngredient(client, ing),
+      quantite: ing.quantite,
+      unite: ing.unite,
+    }))
+  )
+  const { error } = await client.from("recette_ingredient").insert(liens)
+  if (error) {
+    throw new Error(`Enregistrement des ingrédients impossible : ${error.message}`)
+  }
+}
+
+/**
+ * Crée une recette personnelle (RLS : user_id = utilisateur courant).
+ * Retourne la recette créée en domaine (avec son id de base).
+ */
+export async function creerRecette(saisie: SaisieRecette): Promise<Recette> {
+  const client = createClient()
+  const {
+    data: { user },
+  } = await client.auth.getUser()
+  if (!user) throw new Error("Tu dois être connecté pour enregistrer une recette.")
+
+  const { data: recette, error } = await client
+    .from("recette")
+    .insert({
+      nom: saisie.nom,
+      temps_preparation: saisie.tempsPreparation,
+      user_id: user.id,
+    })
+    .select("id")
+    .single()
+
+  if (error || !recette) {
+    throw new Error(`Création de la recette impossible : ${error?.message ?? "réponse vide"}`)
+  }
+
+  await lierIngredients(client, recette.id, saisie.ingredients)
+
+  return {
+    id: recette.id,
+    nom: saisie.nom,
+    tempsPreparation: saisie.tempsPreparation,
+    ingredients: saisie.ingredients,
+  }
+}
+
+/**
+ * Modifie une recette personnelle existante (RG-02 : déclenché par
+ * « Enregistrer »). Réconcilie les ingrédients en remplaçant l'ensemble des
+ * liens (simple et sûr : delete puis re-insert). Retourne la recette à jour.
+ */
+export async function modifierRecette(
+  id: string,
+  saisie: SaisieRecette
+): Promise<Recette> {
+  const client = createClient()
+
+  const { error: erreurRecette } = await client
+    .from("recette")
+    .update({ nom: saisie.nom, temps_preparation: saisie.tempsPreparation })
+    .eq("id", id)
+
+  if (erreurRecette) {
+    throw new Error(`Modification de la recette impossible : ${erreurRecette.message}`)
+  }
+
+  // Remplacement intégral des liens ingrédients.
+  const { error: erreurSuppression } = await client
+    .from("recette_ingredient")
+    .delete()
+    .eq("recette_id", id)
+  if (erreurSuppression) {
+    throw new Error(`Mise à jour des ingrédients impossible : ${erreurSuppression.message}`)
+  }
+  await lierIngredients(client, id, saisie.ingredients)
+
+  return {
+    id,
+    nom: saisie.nom,
+    tempsPreparation: saisie.tempsPreparation,
+    ingredients: saisie.ingredients,
+  }
 }

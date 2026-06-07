@@ -34,7 +34,7 @@ export async function middleware(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
 
   // Pages protégées : redirige vers /login si non connecté
-  const protectedRoutes = ["/planning", "/courses"]
+  const protectedRoutes = ["/planning", "/courses", "/recettes"]
   const isProtectedRoute = protectedRoutes.some(route =>
     request.nextUrl.pathname.startsWith(route)
   )

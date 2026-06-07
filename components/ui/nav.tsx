@@ -14,6 +14,7 @@ import { usePathname } from "next/navigation";
 const LIENS = [
   { href: "/planning", label: "Planning" },
   { href: "/courses", label: "Courses" },
+  { href: "/recettes", label: "Recettes" },
 ];
 
 export function NavBar() {

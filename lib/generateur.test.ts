@@ -11,6 +11,7 @@ import { describe, test, expect } from "vitest";
 import {
   genererPlanning,
   recettesUtilisees,
+  remplacerRecetteDansPlanning,
   remplacerSlot,
   remplacerSlotManuel,
 } from "@/lib/generateur";
@@ -314,5 +315,58 @@ describe("recettesUtilisees — ids des recettes du planning (US-06)", () => {
     const avecDoublon = remplacerSlotManuel(planning, "mardi", "diner", dejaServie)!;
 
     expect(recettesUtilisees(avecDoublon).size).toBe(8); // 9 slots, 8 recettes
+  });
+});
+
+// ---------------------------------------------------------------------------
+// remplacerRecetteDansPlanning — réinjection d'une recette éditée (#2, RG-03).
+// ---------------------------------------------------------------------------
+describe("remplacerRecetteDansPlanning — RG-03 (#2)", () => {
+  test("met à jour tous les slots référençant la recette éditée", () => {
+    const planning = genererPlanning(RECETTES);
+    const cible = planning.jours[0]!.diner;
+    const editee: Recette = {
+      ...cible,
+      nom: `${cible.nom} (modifiée)`,
+      ingredients: [
+        { nom: "test", quantite: 1, unite: "piece", categorie: "autre", fondDePlacard: false },
+      ],
+    };
+
+    const maj = remplacerRecetteDansPlanning(planning, editee)!;
+    expect(maj).not.toBeNull();
+    expect(maj.jours[0]!.diner.nom).toBe(`${cible.nom} (modifiée)`);
+    expect(maj.jours[0]!.diner.ingredients).toHaveLength(1);
+  });
+
+  test("retourne null si la recette n'est pas au planning", () => {
+    const planning = genererPlanning(RECETTES);
+    const absente: Recette = {
+      id: "id-inexistant",
+      nom: "Absente",
+      tempsPreparation: "rapide",
+      ingredients: [],
+    };
+    expect(remplacerRecetteDansPlanning(planning, absente)).toBeNull();
+  });
+
+  test("préserve le nombre de personnes du slot et n'altère pas l'original", () => {
+    const base = genererPlanning(RECETTES);
+    const cible = base.jours[0]!.diner;
+    // Slot lundi réglé à 4 personnes.
+    const planning: Planning = {
+      ...base,
+      jours: base.jours.map((jp, i) =>
+        i === 0 ? { ...jp, personnes: { diner: 4 } } : jp
+      ),
+    };
+    const instantane = JSON.stringify(planning);
+
+    const editee: Recette = { ...cible, nom: "Éditée" };
+    const maj = remplacerRecetteDansPlanning(planning, editee)!;
+
+    expect(maj.jours[0]!.personnes).toEqual({ diner: 4 }); // personnes conservé
+    expect(maj.jours[0]!.diner.nom).toBe("Éditée");
+    expect(JSON.stringify(planning)).toBe(instantane); // original non muté
   });
 });
