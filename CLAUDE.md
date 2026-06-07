@@ -144,9 +144,9 @@ Format : `type: description courte`
 
 ### React / Next.js 16
 
-**localStorage = `useSyncExternalStore`, pas `useEffect` + `setState`** — La règle ESLint `react-hooks/set-state-in-effect` (config Next.js 16) interdit le setState synchrone dans un effet au montage. Le pattern du projet (cf. `app/planning/page.tsx`) : mini-store avec snapshot serveur `null` (prérendu en état vide, puis hydratation). Dévier = erreur de lint + risque de mismatch d'hydratation.
+**localStorage = `useSyncExternalStore`, pas `useEffect` + `setState`** — La règle ESLint `react-hooks/set-state-in-effect` (config Next.js 16) interdit le setState synchrone dans un effet au montage. Le pattern du projet : mini-stores partagés dans `lib/stockage.ts` (`storePlanning`, `storeCoches`) avec snapshot serveur `null` (prérendu en état vide, puis hydratation). Dévier = erreur de lint + risque de mismatch d'hydratation.
 
-**L'événement `storage` ne notifie pas l'onglet courant** — Il ne se déclenche que dans les *autres* onglets. Le mini-store maintient donc un `Set` d'abonnés notifiés manuellement à chaque écriture (`sauvegarderPlanning`). Écrire dans localStorage sans passer par cette fonction = UI qui ne se rafraîchit pas.
+**L'événement `storage` ne notifie pas l'onglet courant** — Il ne se déclenche que dans les *autres* onglets. Chaque store de `lib/stockage.ts` maintient donc un `Set` d'abonnés notifiés manuellement à chaque écriture. Écrire dans localStorage sans passer par ces stores = UI qui ne se rafraîchit pas. Les écritures métier passent par `sauvegarderPlanningComplet` (qui **efface aussi les coches** de la liste de courses, RG-13) ou `sauvegarderRemplacementSlot` (qui les conserve) — ne pas appeler `storePlanning.ecrire` directement depuis une page.
 
 **`middleware.ts` est déprécié en Next.js 16** — Warning au démarrage : « The "middleware" file convention is deprecated. Please use "proxy" instead. » Le fichier gère la session Supabase ; il fonctionne encore. Le warning en CI/dev est attendu — ne pas le « corriger » à la va-vite, la migration vers `proxy` est un chantier à part entière.
 

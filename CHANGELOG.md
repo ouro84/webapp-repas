@@ -14,6 +14,8 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 - `scripts/query-supabase.mjs` : exécution de SQL distant via l'API de management (contourne le blocage Avast du CLI Go en local)
 - CI : application automatique des migrations — staging avant les e2e de chaque PR, prod via le job `migrate-prod` sur push `main` (après tests verts)
 - Workflow keep-alive Supabase (`.github/workflows/supabase-keepalive.yml`) : ping REST de la prod et du staging lundi et jeudi 8h UTC pour éviter la mise en pause automatique du tier gratuit ; secrets `SUPABASE_URL` / `SUPABASE_ANON_KEY` ajoutés au coffre Actions (#15)
+- Liste de courses cochable en magasin (US-05, RG-10 à RG-14, #19) : cocher/décocher un article (rayé + fin de catégorie, animation View Transitions avec repli `prefers-reduced-motion`), persistance locale des coches avec invalidation par quantité au remplacement d'un slot et réinitialisation à la regénération, compteur de progression « n/N » (fond de placard cochable mais hors compteur), bouton « Tout décocher », sections repliables
+- Mini-stores localStorage partagés dans `lib/stockage.ts` (`storePlanning`, `storeCoches`) — le pattern `useSyncExternalStore` de la page planning est extrait et réutilisé par la page courses
 
 ### Modifié
 

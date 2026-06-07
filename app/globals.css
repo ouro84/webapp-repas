@@ -44,3 +44,11 @@ body {
   color: var(--color-brand-900);
   font-family: var(--font-sans), Arial, Helvetica, sans-serif;
 }
+
+/* View Transitions (réordonnancement de la liste de courses, US-05) :
+   par défaut l'overlay de transition intercepte les pointer events pendant
+   ~250 ms — en magasin, cocher plusieurs articles à la suite perdrait des
+   taps. On laisse passer les interactions vers le DOM réel. */
+::view-transition {
+  pointer-events: none;
+}
