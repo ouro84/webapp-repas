@@ -22,6 +22,12 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 ### Modifié
 
 - Les tests e2e en CI utilisent l'instance Supabase staging (secrets `STAGING_SUPABASE_URL` / `STAGING_SUPABASE_ANON_KEY`) au lieu de la prod
+- Lot de corrections issues de l'audit UI/UX (#51) :
+  - Messages d'erreur d'auth traduits en français et actionnables (#58) : `lib/messages-auth.ts` mappe les codes/messages Supabase, repli générique — plus de texte anglais brut
+  - Badges de temps aux tokens du design system (#61) : rapide = `brand`, normal/long = `accent` (terracotta), fin du rouge réservé aux erreurs ; icône horloge sur « long », texte `accent-700` (nouveau token, contraste AA) — le sens n'est plus porté par la couleur seule
+  - Génération du planning synchrone sans écran de chargement plein (#63) : la mise en page reste stable, suppression du `setTimeout(300)` artificiel
+  - Grille planning desktop à partir de `lg` (≥ 1024px) au lieu de `md` (#64) : liste verticale sur tablette, plus de cellules compressées vers 1000px
+  - Header planning empilé sur mobile (#65) : le titre prend toute la largeur (≤ 2 lignes), actions sur une rangée dédiée — le premier repas remonte au-dessus de la ligne de flottaison
 - Pages login/signup alignées sur le design system (#57) et formulaire d'auth accessible (#60) : composant partagé `FormulaireAuth` aux couleurs brand (boutons `rounded-full bg-brand-600`, inputs `border-brand-200`, focus `outline-brand-600`), autocomplete email + mot de passe, toggle afficher/masquer le mot de passe, erreur en `role="alert"` avec retour du focus, bouton en chargement avec spinner + `aria-busy`, `<main id="contenu">` pour le skip link
 
 ## [1.0.1] - 2026-06-06

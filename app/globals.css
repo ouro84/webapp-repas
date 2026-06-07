@@ -29,6 +29,7 @@
   --color-accent-100: #fdddd3;   /* bordures accent */
   --color-accent-500: #d4683a;   /* éléments accent */
   --color-accent-600: #b85530;   /* accent hover */
+  --color-accent-700: #8a3f20;   /* texte accent sur fond clair — contraste AA (≥ 4.5:1 sur accent-50/100) */
 
   /* ---- Canvas — fond crème ---- */
   --color-canvas: #fafaf5;

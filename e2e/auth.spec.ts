@@ -66,9 +66,12 @@ test("un échec de connexion affiche une alerte et redonne le focus à l'email (
     .fill("mauvais-mot-de-passe");
   await page.getByRole("button", { name: "Se connecter" }).click();
 
-  // L'erreur est annoncée via role="alert" (le texte exact — anglais Supabase —
-  // sera traduit par #58 ; on ne teste donc que la présence de l'alerte).
-  await expect(page.getByRole("alert")).toBeVisible();
+  // L'erreur est annoncée via role="alert", en français actionnable (#58) —
+  // jamais le « Invalid login credentials » brut de Supabase. Scopé à main :
+  // le Toaster sonner (hors main) expose lui aussi une région live.
+  const alerte = page.locator("main").getByRole("alert");
+  await expect(alerte).toBeVisible();
+  await expect(alerte).toContainText("Email ou mot de passe incorrect");
   // On reste sur /login (pas de navigation) et le focus revient à l'email.
   await expect(page).toHaveURL(/\/login$/);
   await expect(page.getByLabel("Email")).toBeFocused();

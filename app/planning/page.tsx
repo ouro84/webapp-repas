@@ -108,13 +108,6 @@ function slotsDuJour(
 // Composant page
 // ============================================================================
 
-// Transition en cours, par-dessus le planning persisté : repos (rien),
-// chargement (génération en cours) ou erreur (génération échouée).
-type Transition =
-  | { statut: "repos" }
-  | { statut: "chargement" }
-  | { statut: "erreur"; message: string };
-
 export default function PagePlanning() {
   // Planning persisté (système externe) : null = état vide (RG-09).
   const brut = useSyncExternalStore(
@@ -122,7 +115,8 @@ export default function PagePlanning() {
     storePlanning.lire,
     storePlanning.lireServeur
   );
-  const [transition, setTransition] = useState<Transition>({ statut: "repos" });
+  // Message d'échec de la dernière génération (RG-09 état erreur), ou null.
+  const [erreurGeneration, setErreurGeneration] = useState<string | null>(null);
   // Slot dont le dernier remplacement a échoué (RG-04) : "jour-typeRepas".
   const [slotIndisponible, setSlotIndisponible] = useState<string | null>(null);
   // Slot en cours de sélection manuelle (US-06) : le sélecteur est monté
@@ -144,29 +138,25 @@ export default function PagePlanning() {
     }
   }, [brut]);
 
-  // Génération (US-01) : un court délai laisse React peindre l'état
-  // "chargement" avant le calcul, puis le résultat écrase la sauvegarde.
+  // Génération (US-01) : la génération est synchrone et quasi instantanée — on
+  // l'exécute sans délai ni écran de chargement plein (#63), l'écrasement du
+  // store repeint directement le planning. Le toast confirme l'action.
   function genererNouveauPlanning(): void {
-    setTransition({ statut: "chargement" });
-    setTimeout(() => {
-      try {
-        const nouveau = genererPlanning(RECETTES);
-        // Génération complète : réinitialise aussi les coches de la liste
-        // de courses (RG-13) — règle centralisée dans lib/stockage.ts.
-        sauvegarderPlanningComplet(nouveau);
-        setSlotIndisponible(null);
-        setTransition({ statut: "repos" });
-        toast.success("Planning généré");
-      } catch (erreur) {
-        setTransition({
-          statut: "erreur",
-          message:
-            erreur instanceof Error
-              ? erreur.message
-              : "Erreur inattendue pendant la génération.",
-        });
-      }
-    }, 300);
+    try {
+      const nouveau = genererPlanning(RECETTES);
+      // Génération complète : réinitialise aussi les coches de la liste
+      // de courses (RG-13) — règle centralisée dans lib/stockage.ts.
+      sauvegarderPlanningComplet(nouveau);
+      setSlotIndisponible(null);
+      setErreurGeneration(null);
+      toast.success("Planning généré");
+    } catch (erreur) {
+      setErreurGeneration(
+        erreur instanceof Error
+          ? erreur.message
+          : "Erreur inattendue pendant la génération."
+      );
+    }
   }
 
   // Remplacement d'un slot (US-04, RG-04) : si aucune recette éligible
@@ -218,25 +208,13 @@ export default function PagePlanning() {
     sauvegarderRemplacementSlot(nouveau);
   }
 
-  // --- État chargement (RG-09) ---
-  if (transition.statut === "chargement") {
-    return (
-      <main id="contenu" className="flex flex-1 flex-col items-center justify-center gap-4 p-8">
-        {/* role="status" : annonce le chargement aux lecteurs d'écran */}
-        <p role="status" className="animate-pulse text-lg text-brand-700/85">
-          Génération du planning…
-        </p>
-      </main>
-    );
-  }
-
   // --- État erreur (RG-09) ---
-  if (transition.statut === "erreur") {
+  if (erreurGeneration !== null) {
     return (
       <main id="contenu" className="flex flex-1 flex-col items-center justify-center gap-6 p-8">
         <div className="max-w-md rounded-lg border border-red-200 bg-red-50 p-4 text-center">
           <p className="font-medium text-red-800">La génération a échoué</p>
-          <p className="mt-1 text-sm text-red-700">{transition.message}</p>
+          <p className="mt-1 text-sm text-red-700">{erreurGeneration}</p>
         </div>
         <button
           type="button"
@@ -275,7 +253,13 @@ export default function PagePlanning() {
   // --- État chargé : planning affiché ---
   return (
     <main id="contenu" className="flex-1 p-4 md:p-8">
-      <header className="mb-6 flex flex-wrap items-center gap-3">
+      {/*
+        #65 — Sur mobile le header s'empile : le titre prend toute la largeur
+        (≤ 2 lignes au lieu de 4, le premier repas remonte au-dessus de la
+        ligne de flottaison), les actions sur une rangée en dessous. À partir
+        de sm, retour à la disposition titre + actions sur une ligne.
+      */}
+      <header className="mb-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
         <div className="min-w-0 flex-1">
           <h1 className="text-2xl font-bold text-brand-900">
             Mon planning de la semaine
@@ -284,24 +268,29 @@ export default function PagePlanning() {
             {formaterSemaine(planning.semaine)}
           </p>
         </div>
-        {/* after:-inset-1 : étend la zone tactile à ≥ 44px sans changer le visuel */}
-        <button
-          type="button"
-          onClick={genererNouveauPlanning}
-          className="relative rounded-full border border-brand-200 px-4 py-2 text-sm font-medium text-brand-700 transition-colors after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
-        >
-          Regénérer
-        </button>
-        <Link
-          href="/courses"
-          className="relative rounded-full bg-brand-600 px-4 py-2 text-sm font-medium text-white transition-colors after:absolute after:-inset-1 after:content-[''] hover:bg-brand-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
-        >
-          Liste de courses →
-        </Link>
+        {/* Actions : pleine largeur partagée sur mobile, compactes dès sm.
+            after:-inset-1 étend la zone tactile à ≥ 44px sans changer le visuel. */}
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={genererNouveauPlanning}
+            className="relative flex-1 rounded-full border border-brand-200 px-4 py-2 text-center text-sm font-medium text-brand-700 transition-colors after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 sm:flex-none"
+          >
+            Regénérer
+          </button>
+          <Link
+            href="/courses"
+            className="relative flex-1 rounded-full bg-brand-600 px-4 py-2 text-center text-sm font-medium text-white transition-colors after:absolute after:-inset-1 after:content-[''] hover:bg-brand-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 sm:flex-none"
+          >
+            Liste de courses →
+          </Link>
+        </div>
       </header>
 
-      {/* Vue mobile (RG-08) : liste verticale, un bloc par jour */}
-      <ul className="space-y-4 md:hidden">
+      {/* Vue mobile + tablette (RG-08, #64) : liste verticale jusqu'à lg.
+          La grille 7 colonnes ne s'active qu'à ≥ 1024px, où chaque cellule
+          reste lisible (à md=768 elle tombait à ~120px, badges compressés). */}
+      <ul className="space-y-4 lg:hidden">
         {planning.jours.map((jp) => (
           <li
             key={jp.jour}
@@ -335,8 +324,8 @@ export default function PagePlanning() {
         ))}
       </ul>
 
-      {/* Vue desktop (RG-07) : grille 7 colonnes, une par jour */}
-      <div className="hidden md:grid md:grid-cols-7 md:gap-3">
+      {/* Vue desktop (RG-07, #64) : grille 7 colonnes à partir de lg (≥ 1024px) */}
+      <div className="hidden lg:grid lg:grid-cols-7 lg:gap-3">
         {planning.jours.map((jp) => (
           <section key={jp.jour} className="flex flex-col gap-3">
             <h2 className="text-center text-sm font-semibold uppercase tracking-wide text-brand-700/85">
