@@ -250,3 +250,32 @@ export function recettesUtilisees(planning: Planning): Set<string> {
   }
   return ids
 }
+
+/**
+ * Réinjecte une recette modifiée dans le planning (US-08/#2, RG-03) : tout slot
+ * qui référence cette recette (par id) reçoit sa nouvelle version (nom, temps,
+ * ingrédients), pour que la liste de courses reflète immédiatement l'édition.
+ * Le nombre de personnes du slot (porté par le jour) est préservé.
+ *
+ * @returns un nouveau planning si au moins un slot était concerné, sinon `null`
+ *          (la recette n'est pas au planning courant — rien à faire).
+ */
+export function remplacerRecetteDansPlanning(
+  planning: Planning,
+  recette: Recette
+): Planning | null {
+  let modifie = false
+  const jours: JourPlanning[] = planning.jours.map((jp) => {
+    const nouveau: JourPlanning = { ...jp }
+    if (jp.diner.id === recette.id) {
+      nouveau.diner = recette
+      modifie = true
+    }
+    if (jp.dejeuner && jp.dejeuner.id === recette.id) {
+      nouveau.dejeuner = recette
+      modifie = true
+    }
+    return nouveau
+  })
+  return modifie ? { semaine: planning.semaine, jours } : null
+}
