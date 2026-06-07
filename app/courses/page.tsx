@@ -29,6 +29,7 @@ import {
   trierAvecCoches,
 } from "@/lib/coches";
 import { storeCoches, storePlanning } from "@/lib/stockage";
+import { accorderLibelleUnite, accorderNom } from "@/lib/pluriels";
 import type {
   CategorieIngredient,
   Ingredient,
@@ -85,9 +86,10 @@ const LIBELLES_UNITES: Record<Unite, string> = {
 // "400 g", "20 cl", "2 c.à.s" — et juste "3" pour les pièces.
 function formaterQuantite(ingredient: Ingredient): string {
   const libelle = LIBELLES_UNITES[ingredient.unite];
-  return libelle === ""
-    ? String(ingredient.quantite)
-    : `${ingredient.quantite} ${libelle}`;
+  if (libelle === "") return String(ingredient.quantite);
+  // Accord du libellé d'unité conteneur : « 2 sachets » (#33).
+  const accorde = accorderLibelleUnite(libelle, ingredient.unite, ingredient.quantite);
+  return `${ingredient.quantite} ${accorde}`;
 }
 
 // ============================================================================
@@ -361,7 +363,7 @@ function ArticleCochable({
             coche ? `line-through ${couleurNom} opacity-40` : couleurNom
           }`}
         >
-          {ingredient.nom}
+          {accorderNom(ingredient)}
         </span>
         <span
           className={`shrink-0 text-sm font-medium ${
