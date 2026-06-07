@@ -1,0 +1,75 @@
+// Parcours d'authentification — UI et accessibilité du formulaire (#57, #60).
+//
+// Ces tests s'exécutent DÉCONNECTÉS : le middleware redirige un utilisateur
+// authentifié hors de /login et /signup (vers /planning). On neutralise donc
+// le storageState hérité du projet "setup".
+
+import { test, expect } from "@playwright/test";
+
+test.use({ storageState: { cookies: [], origins: [] } });
+
+test("le bouton œil bascule la visibilité du mot de passe (#60)", async ({
+  page,
+}) => {
+  await page.goto("/login");
+
+  const motDePasse = page.getByLabel("Mot de passe", { exact: true });
+  await motDePasse.fill("secret-123");
+
+  // Masqué par défaut.
+  await expect(motDePasse).toHaveAttribute("type", "password");
+
+  const toggle = page.getByRole("button", { name: "Afficher le mot de passe" });
+  await expect(toggle).toHaveAttribute("aria-pressed", "false");
+  await toggle.click();
+
+  // Révélé : le champ devient du texte et le bouton inverse son libellé/état.
+  await expect(motDePasse).toHaveAttribute("type", "text");
+  await expect(
+    page.getByRole("button", { name: "Masquer le mot de passe" })
+  ).toHaveAttribute("aria-pressed", "true");
+});
+
+test("les champs portent les attributs d'autofill attendus (#60)", async ({
+  page,
+}) => {
+  await page.goto("/login");
+  await expect(page.getByLabel("Email")).toHaveAttribute("autocomplete", "email");
+  await expect(page.getByLabel("Mot de passe", { exact: true })).toHaveAttribute(
+    "autocomplete",
+    "current-password"
+  );
+
+  // L'inscription attend un NOUVEAU mot de passe (gestionnaires de mdp).
+  await page.goto("/signup");
+  await expect(page.getByLabel("Mot de passe", { exact: true })).toHaveAttribute(
+    "autocomplete",
+    "new-password"
+  );
+});
+
+test("le skip link mène au contenu de la page de connexion (#60)", async ({
+  page,
+}) => {
+  await page.goto("/login");
+  // Le <main> porte id="contenu" : cible du skip link du layout (WCAG 2.4.1).
+  await expect(page.locator("main#contenu")).toBeVisible();
+});
+
+test("un échec de connexion affiche une alerte et redonne le focus à l'email (#60)", async ({
+  page,
+}) => {
+  await page.goto("/login");
+  await page.getByLabel("Email").fill("inconnu@example.com");
+  await page
+    .getByLabel("Mot de passe", { exact: true })
+    .fill("mauvais-mot-de-passe");
+  await page.getByRole("button", { name: "Se connecter" }).click();
+
+  // L'erreur est annoncée via role="alert" (le texte exact — anglais Supabase —
+  // sera traduit par #58 ; on ne teste donc que la présence de l'alerte).
+  await expect(page.getByRole("alert")).toBeVisible();
+  // On reste sur /login (pas de navigation) et le focus revient à l'email.
+  await expect(page).toHaveURL(/\/login$/);
+  await expect(page.getByLabel("Email")).toBeFocused();
+});
