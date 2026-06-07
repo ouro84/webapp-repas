@@ -1,19 +1,19 @@
 "use client"
 
 import { createClient } from "@/lib/supabase/client"
+import { traduireErreurAuth } from "@/lib/messages-auth"
 import { FormulaireAuth, LienPied } from "@/components/auth/formulaire-auth"
 
 export default function LoginPage() {
   const supabase = createClient()
 
-  // Renvoie le message d'erreur Supabase, ou null si la connexion réussit.
-  // (La traduction des messages en français est suivie par l'issue #58.)
+  // Renvoie un message d'erreur français actionnable (#58), ou null si succès.
   async function connecter(
     email: string,
     password: string
   ): Promise<string | null> {
     const { error } = await supabase.auth.signInWithPassword({ email, password })
-    return error?.message ?? null
+    return error ? traduireErreurAuth(error) : null
   }
 
   return (

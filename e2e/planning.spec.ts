@@ -332,6 +332,29 @@ test("une génération complète remet tous les repas à 2 personnes (RG-16)", a
   await expect(carteLundi).toContainText("3 pers.");
 
   await page.getByRole("button", { name: "Regénérer" }).click();
-  await expect(page.getByText("Planning généré")).toBeVisible();
+  // .first() : la génération est désormais synchrone (#63), le toast de la 1re
+  // génération peut coexister avec celui de la regénération (même libellé).
+  await expect(page.getByText("Planning généré").first()).toBeVisible();
   await expect(page.locator("main ul > li").first()).toContainText("2 pers.");
+});
+
+test("la grille 7 colonnes n'apparaît qu'à partir du desktop (#64)", async ({
+  page,
+}) => {
+  await page.getByRole("button", { name: "Générer mon planning" }).click();
+  await expect(page.locator("main ul > li")).toHaveCount(7);
+
+  // Mobile (viewport par défaut 390) : liste verticale (jours en toutes
+  // lettres), la grille desktop (jours abrégés) est masquée.
+  await expect(page.getByRole("heading", { name: "Lundi" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Lun", exact: true })
+  ).toBeHidden();
+
+  // Desktop (≥ lg) : la grille 7 colonnes apparaît, la liste mobile disparaît.
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await expect(
+    page.getByRole("heading", { name: "Lun", exact: true })
+  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Lundi" })).toBeHidden();
 });

@@ -143,7 +143,7 @@ export function SelecteurRecette({
                   </span>
                   {/* Doublon éclairé (RG-15) : signalé, jamais bloqué */}
                   {dejaPresente && (
-                    <span className="rounded-full bg-accent-50 px-2 py-0.5 text-xs font-medium text-accent-600">
+                    <span className="rounded-full bg-accent-50 px-2 py-0.5 text-xs font-medium text-accent-700">
                       déjà au planning
                     </span>
                   )}
