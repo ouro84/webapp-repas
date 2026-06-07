@@ -199,3 +199,54 @@ export function remplacerSlot(
 
   return { semaine: planning.semaine, jours }
 }
+
+/**
+ * Remplace un slot par une recette choisie PAR L'UTILISATEUR (US-06, RG-15).
+ *
+ * Contrairement à `remplacerSlot` (aléatoire), la sélection manuelle by-passe
+ * RG-01 (une recette « long » est permise un soir de semaine) et RG-02 (le
+ * doublon est permis) : l'utilisateur arbitre, informé par les badges du
+ * sélecteur. L'opération ne peut donc échouer que si le slot ciblé n'existe
+ * pas (ex: déjeuner en semaine) — cas impossible depuis l'UI, qui n'affiche
+ * un bouton que sur les slots existants.
+ *
+ * Immutabilité : même contrat que `remplacerSlot`.
+ *
+ * @returns le nouveau planning, ou `null` si le slot ciblé n'existe pas.
+ */
+export function remplacerSlotManuel(
+  planning: Planning,
+  jour: Jour,
+  typeRepas: TypeRepas,
+  recette: Recette
+): Planning | null {
+  const jourPlanning = planning.jours.find((jp) => jp.jour === jour)
+  if (!jourPlanning) return null // jour absent du planning
+
+  const actuelle =
+    typeRepas === "diner" ? jourPlanning.diner : jourPlanning.dejeuner
+  if (!actuelle) return null // aucun slot à remplacer (ex: déjeuner lun→ven)
+
+  // Reconstruction immuable : seul le jour ciblé est recréé.
+  const jours: JourPlanning[] = planning.jours.map((jp) => {
+    if (jp.jour !== jour) return jp
+    return typeRepas === "diner"
+      ? { ...jp, diner: recette }
+      : { ...jp, dejeuner: recette }
+  })
+
+  return { semaine: planning.semaine, jours }
+}
+
+/**
+ * Identifiants des recettes présentes dans le planning, tous slots confondus.
+ * Sert au badge « déjà au planning » du sélecteur (US-06, RG-15).
+ */
+export function recettesUtilisees(planning: Planning): Set<string> {
+  const ids = new Set<string>()
+  for (const jp of planning.jours) {
+    ids.add(jp.diner.id)
+    if (jp.dejeuner) ids.add(jp.dejeuner.id)
+  }
+  return ids
+}

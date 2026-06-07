@@ -19,20 +19,21 @@
 import Link from "next/link";
 import { useMemo, useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
-import { genererPlanning, remplacerSlot } from "@/lib/generateur";
+import {
+  genererPlanning,
+  recettesUtilisees,
+  remplacerSlot,
+  remplacerSlotManuel,
+} from "@/lib/generateur";
 import {
   storePlanning,
   sauvegarderPlanningComplet,
   sauvegarderRemplacementSlot,
 } from "@/lib/stockage";
+import { BadgeTemps } from "@/components/planning/badge-temps";
+import { SelecteurRecette } from "@/components/planning/selecteur-recette";
 import recettesJson from "@/data/recettes.json";
-import type {
-  Jour,
-  JourPlanning,
-  Planning,
-  Recette,
-  TempsPreparation,
-} from "@/types";
+import type { Jour, JourPlanning, Planning, Recette } from "@/types";
 
 const RECETTES = recettesJson as Recette[];
 
@@ -52,20 +53,6 @@ const LIBELLES_JOURS: Record<Jour, { complet: string; abrege: string }> = {
   vendredi: { complet: "Vendredi", abrege: "Ven" },
   samedi: { complet: "Samedi", abrege: "Sam" },
   dimanche: { complet: "Dimanche", abrege: "Dim" },
-};
-
-// Badge coloré par temps de préparation : rapide = vert, normal = jaune,
-// long = rouge.
-const STYLES_BADGE: Record<TempsPreparation, string> = {
-  rapide: "bg-brand-50 text-brand-700",
-  normal: "bg-yellow-100 text-yellow-800",
-  long: "bg-red-100 text-red-800",
-};
-
-const LIBELLES_TEMPS: Record<TempsPreparation, string> = {
-  rapide: "Rapide",
-  normal: "Normal",
-  long: "Long",
 };
 
 function cleSlot(jour: Jour, typeRepas: TypeRepas): string {
@@ -132,6 +119,12 @@ export default function PagePlanning() {
   const [transition, setTransition] = useState<Transition>({ statut: "repos" });
   // Slot dont le dernier remplacement a échoué (RG-04) : "jour-typeRepas".
   const [slotIndisponible, setSlotIndisponible] = useState<string | null>(null);
+  // Slot en cours de sélection manuelle (US-06) : le sélecteur est monté
+  // tant que cette valeur est non nulle.
+  const [slotEnSelection, setSlotEnSelection] = useState<{
+    jour: Jour;
+    typeRepas: TypeRepas;
+  } | null>(null);
 
   const planning = useMemo<Planning | null>(() => {
     if (brut === null) return null;
@@ -184,6 +177,23 @@ export default function PagePlanning() {
     // Remplacement individuel : les coches sont conservées, l'invalidation
     // par quantité (RG-12) protège les articles dont l'agrégat change.
     sauvegarderRemplacementSlot(nouveau);
+    setSlotIndisponible(null);
+    toast.success("Recette remplacée");
+  }
+
+  // Sélection manuelle (US-06, RG-15) : remplace le slot par la recette
+  // choisie — by-pass RG-01/RG-02, ne peut pas échouer depuis l'UI.
+  function selectionnerRecette(recette: Recette): void {
+    if (planning === null || slotEnSelection === null) return;
+    const nouveau = remplacerSlotManuel(
+      planning,
+      slotEnSelection.jour,
+      slotEnSelection.typeRepas,
+      recette
+    );
+    if (nouveau === null) return; // slot inexistant : impossible depuis l'UI
+    sauvegarderRemplacementSlot(nouveau);
+    // Un éventuel « Pas de recette disponible » sur ce slot est obsolète (RG-15).
     setSlotIndisponible(null);
     toast.success("Recette remplacée");
   }
@@ -291,6 +301,9 @@ export default function PagePlanning() {
                     slotIndisponible === cleSlot(jp.jour, slot.typeRepas)
                   }
                   onChanger={() => changerSlot(jp.jour, slot.typeRepas)}
+                  onSelectionner={() =>
+                    setSlotEnSelection({ jour: jp.jour, typeRepas: slot.typeRepas })
+                  }
                 />
               ))}
             </div>
@@ -315,30 +328,46 @@ export default function PagePlanning() {
                   slotIndisponible === cleSlot(jp.jour, slot.typeRepas)
                 }
                 onChanger={() => changerSlot(jp.jour, slot.typeRepas)}
+                onSelectionner={() =>
+                  setSlotEnSelection({ jour: jp.jour, typeRepas: slot.typeRepas })
+                }
               />
             ))}
           </section>
         ))}
       </div>
+
+      {/* Sélecteur de recette (US-06) — monté seulement pendant la sélection */}
+      {slotEnSelection && (
+        <SelecteurRecette
+          titre={`${slotEnSelection.typeRepas === "diner" ? "Dîner" : "Déjeuner"} de ${LIBELLES_JOURS[slotEnSelection.jour].complet.toLowerCase()}`}
+          recettes={RECETTES}
+          idsAuPlanning={recettesUtilisees(planning)}
+          onSelectionner={selectionnerRecette}
+          onFermer={() => setSlotEnSelection(null)}
+        />
+      )}
     </main>
   );
 }
 
 // Carte d'un repas : label du slot, nom de la recette, badge de temps de
-// préparation et bouton de remplacement (US-04). Partagée entre les vues
-// mobile et desktop.
+// préparation, remplacement aléatoire (US-04) et sélection manuelle (US-06).
+// Partagée entre les vues mobile et desktop.
 function SlotRepas({
   libelle,
   jourLabel,
   recette,
   indisponible,
   onChanger,
+  onSelectionner,
 }: {
   libelle: string;
   jourLabel: string;
   recette: Recette;
   indisponible: boolean;
   onChanger: () => void;
+  onSelectionner: () => void;
 }) {
   return (
     <div className="rounded-lg border border-brand-100 bg-white p-3 shadow-sm">
@@ -346,24 +375,29 @@ function SlotRepas({
         {libelle}
       </p>
       <p className="mt-1 text-sm font-medium text-brand-900">{recette.nom}</p>
-      <div className="mt-2 flex flex-wrap items-center gap-2">
-        <span
-          className={`rounded-full px-2 py-0.5 text-xs font-medium ${STYLES_BADGE[recette.tempsPreparation]}`}
-        >
-          {LIBELLES_TEMPS[recette.tempsPreparation]}
-        </span>
+      <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
+        <BadgeTemps temps={recette.tempsPreparation} />
         {/*
-          a11y : aria-label contextualisé — 9 boutons "changer" identiques sont
-          indiscernables au lecteur d'écran ; le glyphe ↺ (vocalisé bizarrement)
-          est masqué ; after:-inset-* étend la zone tactile à ≥ 44px.
+          a11y : aria-labels contextualisés — 9 paires de boutons identiques
+          sont indiscernables au lecteur d'écran ; le glyphe ↺ (vocalisé
+          bizarrement) est masqué ; after:-inset-* étend la zone tactile à ≥ 44px.
         */}
         <button
           type="button"
           onClick={onChanger}
           aria-label={`Changer le ${libelle.toLowerCase()} de ${jourLabel.toLowerCase()}`}
-          className="relative px-3 py-2 text-sm text-brand-700/85 underline-offset-2 transition-colors after:absolute after:-inset-1 after:content-[''] hover:text-brand-900 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
+          className="relative px-2 py-2 text-sm text-brand-700/85 underline-offset-2 transition-colors after:absolute after:-inset-1 after:content-[''] hover:text-brand-900 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
         >
           <span aria-hidden="true">↺</span> changer
+        </button>
+        {/* Sélection manuelle (US-06) : ouvre le sélecteur de recettes */}
+        <button
+          type="button"
+          onClick={onSelectionner}
+          aria-label={`Sélectionner le ${libelle.toLowerCase()} de ${jourLabel.toLowerCase()}`}
+          className="relative px-2 py-2 text-sm text-brand-700/85 underline-offset-2 transition-colors after:absolute after:-inset-1 after:content-[''] hover:text-brand-900 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
+        >
+          Sélectionner
         </button>
       </div>
       {/* role="alert" : le message dynamique est annoncé aux lecteurs d'écran */}

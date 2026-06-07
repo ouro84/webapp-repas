@@ -71,3 +71,148 @@ test("l'utilisateur peut remplacer un repas sans toucher au reste du planning", 
     .not.toBe(lundiAvant);
   expect(await carteMardi.innerText()).toBe(mardiAvant);
 });
+
+// ---------------------------------------------------------------------------
+// US-06 — sélection manuelle d'une recette (RG-15).
+// Les assertions restent découplées du contenu de data/recettes.json : les
+// noms de recettes sont lus dynamiquement dans le sélecteur (issue #29).
+// ---------------------------------------------------------------------------
+
+test("sélectionner manuellement une recette remplace le slot visé, le reste est intact", async ({
+  page,
+}) => {
+  await page.getByRole("button", { name: "Générer mon planning" }).click();
+  const jours = page.locator("main ul > li");
+  await expect(jours).toHaveCount(7);
+
+  const carteLundi = jours.first();
+  const carteMardi = jours.nth(1);
+  const mardiAvant = await carteMardi.innerText();
+
+  await carteLundi
+    .getByRole("button", { name: "Sélectionner le dîner de lundi" })
+    .click();
+
+  // Le sélecteur s'ouvre, titré du slot visé, recherche en tête.
+  const selecteur = page.getByRole("dialog");
+  await expect(selecteur).toBeVisible();
+  await expect(
+    selecteur.getByRole("heading", { name: "Dîner de lundi" })
+  ).toBeVisible();
+
+  // Choix dynamique : la première recette de la liste (nom lu, pas codé en dur).
+  const premiereRecette = selecteur.locator("ul button").first();
+  const nomChoisi = (await premiereRecette.locator("span").first().innerText()).trim();
+  await premiereRecette.click();
+
+  // Sélecteur fermé, slot remplacé par la recette choisie, mardi intact.
+  await expect(selecteur).not.toBeVisible();
+  await expect(page.getByText("Recette remplacée")).toBeVisible();
+  await expect(carteLundi).toContainText(nomChoisi);
+  expect(await carteMardi.innerText()).toBe(mardiAvant);
+
+  // Doublon éclairé (RG-15) : la recette posée sur lundi est signalée
+  // quand on rouvre le sélecteur pour un autre slot.
+  await carteMardi
+    .getByRole("button", { name: "Sélectionner le dîner de mardi" })
+    .click();
+  await expect(
+    page
+      .getByRole("dialog")
+      .locator("li", { hasText: nomChoisi })
+      .getByText("déjà au planning")
+  ).toBeVisible();
+});
+
+test("la recherche du sélecteur filtre la liste et gère l'absence de résultat", async ({
+  page,
+}) => {
+  await page.getByRole("button", { name: "Générer mon planning" }).click();
+  await expect(page.locator("main ul > li")).toHaveCount(7);
+
+  await page
+    .getByRole("button", { name: "Sélectionner le dîner de lundi" })
+    .click();
+  const selecteur = page.getByRole("dialog");
+  const lignes = selecteur.locator("ul button");
+  const totalAvant = await lignes.count();
+  expect(totalAvant).toBeGreaterThan(1);
+
+  // Requête = nom complet de la dernière recette de la liste : le filtrage
+  // doit réduire la liste et conserver cette recette.
+  const nomCible = (
+    await lignes.last().locator("span").first().innerText()
+  ).trim();
+  const recherche = selecteur.getByRole("searchbox", {
+    name: "Rechercher une recette",
+  });
+  await recherche.fill(nomCible);
+
+  await expect(selecteur.locator("ul button", { hasText: nomCible }).first()).toBeVisible();
+  expect(await lignes.count()).toBeLessThan(totalAvant);
+
+  // Aucun résultat → état vide explicite, pas de liste fantôme (RG-09).
+  await recherche.fill("zzzzzzzz");
+  await expect(selecteur.getByText(/^Aucune recette ne correspond à/)).toBeVisible();
+  await expect(lignes).toHaveCount(0);
+});
+
+test("fermer le sélecteur avec Échap ne modifie pas le planning", async ({
+  page,
+}) => {
+  await page.getByRole("button", { name: "Générer mon planning" }).click();
+  const carteLundi = page.locator("main ul > li").first();
+  const lundiAvant = await carteLundi.innerText();
+
+  await carteLundi
+    .getByRole("button", { name: "Sélectionner le dîner de lundi" })
+    .click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+
+  await page.keyboard.press("Escape");
+
+  await expect(page.getByRole("dialog")).not.toBeVisible();
+  expect(await carteLundi.innerText()).toBe(lundiAvant);
+});
+
+test("une sélection manuelle conserve les coches de la liste de courses (RG-15/RG-12)", async ({
+  page,
+}) => {
+  // Planning généré, puis un article coché côté courses.
+  // Navigation par les LIENS de l'app (SPA) et non page.goto : un chargement
+  // complet rejouerait l'init script du beforeEach, qui purge le planning.
+  await page.getByRole("button", { name: "Générer mon planning" }).click();
+  await expect(page.locator("main ul > li")).toHaveCount(7);
+
+  await page.getByRole("link", { name: "Liste de courses →" }).click();
+  await page.waitForURL("**/courses");
+  const premierArticle = page.getByRole("checkbox").first();
+  const nomArticle = await premierArticle.evaluate(
+    (input) => input.closest("label")?.querySelector("span")?.textContent ?? ""
+  );
+  await premierArticle.click();
+  await expect(page.getByRole("checkbox", { name: nomArticle }).first()).toBeChecked();
+
+  // Sélection manuelle du dîner de lundi… en re-choisissant LA MÊME recette
+  // (permis par RG-15) : les agrégats de la liste ne bougent pas, le test est
+  // déterministe — on vérifie précisément l'absence de reset global (RG-13),
+  // pas l'invalidation par quantité (couverte en unitaire, RG-12).
+  await page.getByRole("link", { name: "← Planning" }).click();
+  await page.waitForURL("**/planning");
+  const carteLundi = page.locator("main ul > li").first();
+  const nomRecetteLundi = (await carteLundi.locator("p").nth(1).innerText()).trim();
+  await carteLundi
+    .getByRole("button", { name: "Sélectionner le dîner de lundi" })
+    .click();
+  const selecteur = page.getByRole("dialog");
+  await selecteur
+    .getByRole("searchbox", { name: "Rechercher une recette" })
+    .fill(nomRecetteLundi);
+  await selecteur.locator("ul button", { hasText: nomRecetteLundi }).first().click();
+  await expect(page.getByText("Recette remplacée")).toBeVisible();
+
+  // La coche a survécu au remplacement (pas de réinitialisation, RG-13).
+  await page.getByRole("link", { name: "Liste de courses →" }).click();
+  await page.waitForURL("**/courses");
+  await expect(page.getByRole("checkbox", { name: nomArticle }).first()).toBeChecked();
+});

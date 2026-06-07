@@ -164,6 +164,33 @@ Réduire à zéro l'effort de planification hebdomadaire des repas, du choix des
 
 ---
 
+### US-06 — Sélectionner manuellement une recette
+
+> **En tant qu'** utilisateur, je veux pouvoir modifier le repas d'un slot généré, afin de sélectionner une recette spécifique dont j'ai envie.
+
+**Comportement :**
+> **Given** je suis sur le planning  
+> **When** je clique sur « Sélectionner » sur un slot  
+> **Then** un sélecteur s'ouvre (bottom sheet mobile / modale desktop), titré du slot visé, avec un champ de recherche en tête et la liste alphabétique complète des recettes, chacune avec son badge de temps
+
+> **Given** le sélecteur est ouvert  
+> **When** je tape dans le champ de recherche  
+> **Then** la liste est filtrée en direct, insensible à la casse et aux accents
+
+> **Given** le sélecteur est ouvert  
+> **When** je choisis une recette  
+> **Then** le slot visé est remplacé, les autres slots inchangés, le sélecteur se ferme — les coches de la liste de courses sont conservées (RG-12)
+
+> **Given** une recette est déjà présente dans le planning  
+> **When** le sélecteur l'affiche  
+> **Then** elle porte un badge « déjà au planning » et reste sélectionnable (RG-15)
+
+> **Given** le sélecteur est ouvert  
+> **When** je presse Échap, clique sur le fond ou sur le bouton de fermeture  
+> **Then** il se ferme sans modifier le planning, le focus revient au bouton d'origine
+
+---
+
 ## 5. Modèle de données
 
 > Les structures ci-dessous sont exprimées en TypeScript à titre documentaire. Le fichier de données réel est `/data/recettes.json` — format JSON lisible et éditable sans connaissance technique.
@@ -286,6 +313,12 @@ Pour construire la liste de courses depuis un planning :
 5. Trier par `categorie`, puis par nom dans chaque catégorie
 
 > **Cas limite :** si le même ingrédient apparaît dans deux recettes avec des unités différentes (ex: 200g et 1 pièce), les afficher sur deux lignes distinctes sans tenter de conversion.
+
+### RG-15 — Sélection manuelle d'une recette (US-06)
+
+> Les RG-10 à RG-14 (liste de courses cochable) sont en section 7.
+
+La sélection manuelle by-passe **RG-01** (une recette « long » est permise un soir de semaine) et **RG-02** (le doublon est permis) : l'utilisateur arbitre, informé par le badge temps et le badge « déjà au planning ». Elle constitue un remplacement individuel : les coches de la liste de courses sont conservées (RG-12/RG-13) et l'opération ne peut pas échouer — le cas « Pas de recette disponible » (RG-04) n'existe pas dans ce mode, et un message d'indisponibilité affiché précédemment sur le slot est nettoyé après une sélection réussie.
 
 ---
 
