@@ -4,7 +4,20 @@
 
 import { test, expect } from "@playwright/test";
 import { recetteFixture } from "../tests/fixtures/recettes";
+import { nettoyerEtatDistant } from "./helpers";
 import type { Jour, Planning } from "../types";
+
+test.beforeEach(async ({ page, request }) => {
+  // État distant vierge (#6) : sinon un planning persisté réapparaîtrait à
+  // l'hydratation (casse l'état vide attendu par le test « après génération »).
+  // Les clés de sync locales sont purgées avant chaque chargement ; les tests
+  // posent eux-mêmes planning_courant via leur propre addInitScript.
+  await nettoyerEtatDistant(request);
+  await page.addInitScript(() => {
+    localStorage.removeItem("planning_courant_maj");
+    localStorage.removeItem("planning_dirty");
+  });
+});
 
 // Planning déterministe injecté en localStorage (découplage, issue #29).
 // Composition agrégée attendue (fixtures figées) : 7 articles à acheter —

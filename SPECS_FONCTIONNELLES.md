@@ -304,6 +304,19 @@ Réduire à zéro l'effort de planification hebdomadaire des repas, du choix des
 > **When** je clique « Cuisiner » (ou je choisis/remplace une recette)  
 > **Then** le slot redevient un repas cuisiné normal
 
+### US-13 — Synchronisation multi-device
+
+> **En tant qu'** utilisateur connecté, je veux retrouver mon planning et ma liste de courses (avec l'état coché) quel que soit l'appareil, afin de planifier sur ordinateur et faire mes courses sur smartphone.
+
+**Comportement :**
+> **Given** j'ai généré ou édité un planning sur un appareil  
+> **When** je me connecte sur un autre appareil  
+> **Then** j'y retrouve le même planning (la base fait foi ; le dernier changement gagne, RG-23)
+
+> **Given** je coche des articles de ma liste de courses sur un appareil  
+> **When** je consulte la liste sur un autre appareil  
+> **Then** j'y retrouve le même état coché/décoché *(sync des coches : livrée en PR3)*
+
 ---
 
 ## 5. Modèle de données
@@ -395,7 +408,9 @@ type Planning = {
 
 ### 5.6 Persistance
 
-Le planning généré est sauvegardé en `localStorage` sous la clé `planning_courant`. Il est écrasé à chaque nouvelle génération. La persistance multi-device (sync via Supabase) est un nice-to-have lié à l'authentification.
+Le planning généré est sauvegardé en `localStorage` sous la clé `planning_courant`. Il est écrasé à chaque nouvelle génération.
+
+**Synchronisation multi-device (US-13, #6) :** depuis cette feature, la **base Supabase est la source de vérité** du planning ; `localStorage` est un **cache**. Le planning est poussé en base à chaque changement et hydraté au chargement selon un **last-write-wins horodaté** (clé `planning_courant_maj`), avec une **file de rejeu** minimale (clé `planning_dirty`) pour les écritures échouées hors-ligne. La sync des coches est livrée en PR3. (Cf. RG-23, table `planning`/`planning_slot`/`etat_courses`.)
 
 Les coches de la liste de courses (US-05) sont sauvegardées sous la clé `courses_cochees` : un objet `{ [nom|unité]: quantité au moment du cochage }` (cf. RG-12). La clé est effacée à chaque génération complète de planning (RG-13).
 
@@ -554,6 +569,13 @@ Un slot peut être marqué **« restes »** (flag par slot, `restes.dejeuner` / 
 - **Réversible** : marquer/annuler « restes » est une bascule ; remplacer la recette d'un slot (US-04/US-06) **efface** le flag (on recuisine). La recette sous-jacente est conservée tant que le slot est en restes — l'annulation la restitue.
 - **Génération** : la (re)génération produit un planning entièrement cuisiné (aucun restes) ; le marquage est purement manuel et postérieur.
 - **Plusieurs slots** peuvent être en restes simultanément (aucune contrainte d'unicité, RG-02 ne s'applique qu'aux recettes).
+
+### RG-23 — Synchronisation et source de vérité (US-13)
+
+- La **base Supabase est la source de vérité** du planning actif (et des coches, livré en PR3) ; `localStorage` est un cache pour la réactivité et le hors-ligne.
+- **Last-write-wins horodaté** : au chargement, la version la plus récente entre base et cache local gagne (comparaison `updated_at` / `planning_courant_maj`). Un cache **sans horodatage** (planning antérieur à la feature, ou injecté en test) est considéré comme le plus frais — on ne l'écrase pas ; un device au cache **vide** récupère donc le planning distant.
+- **Écriture à chaque changement** (débounce), avec **rejeu** au retour réseau (`planning_dirty`). Pas de temps réel : la propagation se fait au prochain chargement.
+- **Mono-actif** : un seul planning persisté par utilisateur (l'historique multi-semaines est #P08). Le **snapshot d'annulation** (US-09) reste **local**, non synchronisé.
 
 ---
 
