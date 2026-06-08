@@ -17,8 +17,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Repas de la semaine",
-  description: "Génère ton planning de repas hebdomadaire et ta liste de courses",
+  title: "On mange quoi ?",
+  description:
+    "La question du soir a enfin sa réponse : génère ton planning de repas hebdomadaire et ta liste de courses.",
 };
 
 export default function RootLayout({

@@ -10,6 +10,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { Logo } from "@/components/ui/logo";
 
 const LIENS = [
   { href: "/planning", label: "Planning" },
@@ -30,11 +31,11 @@ export function NavBar() {
           {/* Logo / accueil */}
           <Link
             href="/"
-            aria-label="Repas de la semaine — accueil"
+            aria-label="On mange quoi ? — accueil"
             className="flex items-center gap-2 font-semibold text-brand-700 transition-colors hover:text-brand-600"
           >
-            <span aria-hidden="true" className="text-xl">🥗</span>
-            <span className="hidden sm:inline">Repas de la semaine</span>
+            <Logo className="size-6" />
+            <span className="hidden sm:inline">On mange quoi&nbsp;?</span>
           </Link>
 
           {/* Liens de navigation */}

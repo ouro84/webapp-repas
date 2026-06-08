@@ -142,6 +142,8 @@ Format : `type: description courte`
 
 **Design system maison, pas la palette Tailwind** — Trois palettes custom : `brand-*` (vert), `accent-*` (terracotta), `canvas` (fond crème). Les boutons principaux sont `rounded-full bg-brand-600 hover:bg-brand-700`. Utiliser `green-600` ou `bg-white` pour du brand casse la cohérence visuelle ; les états erreur, eux, utilisent bien les `red-*` standard (cf. `app/error.tsx`, état erreur de `app/planning/page.tsx`).
 
+**Logo + icônes : SVG, pas d'emoji (#59)** — L'app s'appelle **« On mange quoi ? »** (baseline « La question du soir a enfin sa réponse »). Le logo est `components/ui/logo.tsx` (mark assiette+fourchette en négatif, `fill="currentColor"`, décoratif `aria-hidden` — le nom est en texte à côté) ; sa couleur se pilote par `text-brand-*`. Favicon = `app/icon.svg` (palette brand-600, sans `currentColor` car hors contexte CSS) ; image OG = `app/opengraph-image.png`. Source vectorielle d'archive : `revueDesign/` (non versionné). **Règle no-emoji-icons** : pas d'emoji ni de glyphe Unicode comme icône — utiliser un SVG inline ou **`lucide-react`** (ex. `RefreshCw` pour « changer », tree-shakable). La police ronde du wordmark viendra avec #P14, l'icône PWA avec #P18.
+
 **`global-error.tsx` n'existe pas (encore)** — `app/error.tsx` couvre les pages, pas le layout racine. C'est l'issue #30 au backlog ; piège documenté dedans : dans `global-error.tsx`, Tailwind n'est pas disponible (globals.css est importé par le layout qui a crashé) → styles inline obligatoires.
 
 ### React / Next.js 16
