@@ -27,6 +27,7 @@ import {
 } from "@/lib/generateur";
 import { storePlanning, sauvegarderRemplacementSlot } from "@/lib/stockage";
 import { BadgeTemps } from "@/components/planning/badge-temps";
+import { BadgeVegetarien } from "@/components/ui/badge-vegetarien";
 import { FormulaireRecette } from "@/components/recettes/formulaire-recette";
 import { ConfirmationSuppression } from "@/components/recettes/confirmation-suppression";
 import type { Planning, Recette } from "@/types";
@@ -69,6 +70,8 @@ function ContenuRecettes() {
   const [recettes, setRecettes] = useState<RecetteGeree[] | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
   const [requete, setRequete] = useState("");
+  // Filtre « végétariennes seulement » (#86, objectif : filtrer les repas végés).
+  const [vegeSeulement, setVegeSeulement] = useState(false);
   // Recette en attente de confirmation de suppression (RG-01), ou null.
   const [aSupprimer, setASupprimer] = useState<RecetteGeree | null>(null);
   const [suppressionEnCours, setSuppressionEnCours] = useState(false);
@@ -117,8 +120,9 @@ function ContenuRecettes() {
     const ids = new Set(trouves.map((r) => r.id));
     return recettes
       .filter((r) => ids.has(r.recette.id))
+      .filter((r) => !vegeSeulement || r.recette.vegetarien === true)
       .sort((a, b) => a.recette.nom.localeCompare(b.recette.nom, "fr"));
-  }, [recettes, requete]);
+  }, [recettes, requete, vegeSeulement]);
 
   async function enregistrerCreation(saisie: SaisieRecette): Promise<void> {
     await creerRecette(saisie);
@@ -157,6 +161,7 @@ function ContenuRecettes() {
     return {
       nom: `${source.nom} (copie)`,
       tempsPreparation: source.tempsPreparation,
+      vegetarien: source.vegetarien ?? false,
       ingredients: source.ingredients,
     };
   }
@@ -239,8 +244,19 @@ function ContenuRecettes() {
             value={requete}
             onChange={(e) => setRequete(e.target.value)}
             placeholder="Rechercher une recette…"
-            className="mb-4 w-full rounded-full border border-brand-200 bg-white px-4 py-2.5 text-sm text-brand-900 placeholder:text-brand-700/50 focus:outline-2 focus:outline-offset-1 focus:outline-brand-600"
+            className="mb-3 w-full rounded-full border border-brand-200 bg-white px-4 py-2.5 text-sm text-brand-900 placeholder:text-brand-700/50 focus:outline-2 focus:outline-offset-1 focus:outline-brand-600"
           />
+
+          {/* Filtre végétariennes (#86) */}
+          <label className="mb-4 flex w-fit items-center gap-2 text-sm text-brand-700">
+            <input
+              type="checkbox"
+              checked={vegeSeulement}
+              onChange={(e) => setVegeSeulement(e.target.checked)}
+              className="size-4 cursor-pointer accent-brand-600"
+            />
+            Végétariennes seulement
+          </label>
 
           {visibles.length === 0 ? (
             <p className="py-8 text-center text-sm text-brand-700/85">
@@ -259,6 +275,7 @@ function ContenuRecettes() {
                     {recette.nom}
                   </span>
                   <BadgeTemps temps={recette.tempsPreparation} />
+                  {recette.vegetarien && <BadgeVegetarien />}
                   {!editable && (
                     <span className="rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700/85">
                       Catalogue

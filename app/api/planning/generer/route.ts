@@ -57,6 +57,7 @@ export async function POST(request: Request) {
       id,
       nom,
       temps_preparation,
+      vegetarien,
       recette_ingredient (
         quantite,
         unite,

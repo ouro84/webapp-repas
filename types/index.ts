@@ -69,6 +69,9 @@ export type Recette = {
   nom: string;
   tempsPreparation: TempsPreparation;
   ingredients: Ingredient[];
+  // Recette végétarienne (#86, P10). Optionnel comme les autres flags du
+  // domaine (absent = false) → fixtures/dataset relisibles sans migration.
+  vegetarien?: boolean;
 };
 
 export type JourPlanning = {
@@ -164,6 +167,7 @@ export type DbRecette = {
   user_id: string;
   nom: string;
   temps_preparation: TempsPreparation;
+  vegetarien: boolean;
   created_at: string;
   recette_ingredient: DbRecetteIngredient[]; // relation imbriquée
 };
