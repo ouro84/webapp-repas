@@ -336,6 +336,10 @@ Réduire à zéro l'effort de planification hebdomadaire des repas, du choix des
 > **When** je quitte l'app puis y reviens (déconnexion/reconnexion)  
 > **Then** ce planning et ses coches sont retrouvés à l'identique (déjà couvert par US-13)
 
+> **Given** j'affiche une semaine **passée** qui a déjà un planning  
+> **When** je régénère le planning ou modifie un de ses repas  
+> **Then** une **confirmation** m'est demandée avant d'écraser ce planning enregistré (RG-24)
+
 ---
 
 ## 5. Modèle de données
@@ -582,8 +586,8 @@ Historique (conservé pour mémoire) : la génération visait une semaine cible 
 - **Navigateur** : sur la page planning, un stepper ‹ semaine précédente / suivante › change la **semaine affichée**. La liste de courses suit la même semaine (n° de semaine affiché en tête de `/courses`, même format que le planning).
 - **Plage** : de **−12 semaines** (rétention) à **+6 semaines** ; validée côté serveur à la génération. La **semaine courante** (offset 0) est **visuellement marquée** (fond brand + libellé « Cette semaine »).
 - **Défaut affiché** : la semaine courante, ou la **prochaine le week-end** (reprise de l'ancien RG-21). Au rechargement complet, on revient à ce défaut (on ne reste pas bloqué sur une semaine parcourue).
-- **Multi-semaines** : chaque semaine a son planning et ses coches en base (`(user, semaine)`). Changer de semaine **flushe** d'abord les écritures en attente (sinon perte), puis charge la cible. Rétention : purge des semaines au-delà de 12 (PR3).
-- **Confirmations** (regénérer / modifier un slot d'une semaine **passée**) : livrées en PR3.
+- **Multi-semaines** : chaque semaine a son planning et ses coches en base (`(user, semaine)`). Changer de semaine **flushe** d'abord les écritures en attente (sinon perte), puis charge la cible. **Rétention** : au chargement de session, les semaines **au-delà de −12** sont **purgées** en base (planning + coches), aligné sur la borne passée du navigateur.
+- **Confirmations** : régénérer ou modifier un slot (changer / sélectionner / restes) d'une semaine **passée** (offset < 0) **disposant d'un planning** demande **confirmation** avant écrasement. Générer une semaine passée **vide** n'en demande pas (rien à écraser). Le **stepper personnes** en est exclu (réglage mineur et fréquent).
 
 ### RG-22 — Repas en « restes » (US-12)
 

@@ -8,6 +8,7 @@
 import { test, expect } from "@playwright/test";
 import { recetteFixture } from "../tests/fixtures/recettes";
 import { nettoyerEtatDistant } from "./helpers";
+import { semaineISO } from "../lib/semaines";
 
 test.beforeEach(async ({ page, request }) => {
   // Base vierge pour le compte de test (planning + coches).
@@ -114,6 +115,60 @@ test("l'historique : un planning généré est retrouvé en revenant sur sa sema
   await expect(page.locator("main ul > li")).toHaveCount(7); // planning retrouvé depuis la base
 });
 
+test("modifier une semaine passée demande confirmation (US-14, RG-24)", async ({
+  page,
+}) => {
+  const label = page.getByText(/^Semaine du /).first();
+
+  // Reculer DEUX fois pour atterrir à coup sûr sur une semaine PASSÉE, quel que
+  // soit le jour du run (le défaut peut être la semaine prochaine le week-end).
+  for (let i = 0; i < 2; i++) {
+    const avant = (await label.innerText()).trim();
+    await page.getByRole("button", { name: "Semaine précédente" }).click();
+    await expect.poll(async () => (await label.innerText()).trim()).not.toBe(avant);
+  }
+  // On est sur une semaine passée : le navigateur affiche un libellé « passé »
+  // (« Semaine dernière » / « Il y a N semaines »), pas « Cette semaine ».
+  await expect(
+    page.getByText(/^(Semaine dernière|Il y a \d+ semaines)$/)
+  ).toBeVisible();
+
+  // Générer cette semaine passée (vide → aucune confirmation, rien à écraser).
+  await page.getByRole("button", { name: "Générer mon planning" }).click();
+  await expect(page.getByText(/^Planning généré — Semaine du /)).toBeVisible();
+  await expect(page.locator("main ul > li")).toHaveCount(7);
+  await expect
+    .poll(async () => page.evaluate(() => localStorage.getItem("planning_dirty")))
+    .toBeNull();
+  const planningAvant = await page.locator("main ul").innerText();
+
+  const modale = page.getByRole("dialog", { name: "Modifier une semaine passée ?" });
+
+  // Regénérer un planning passé → confirmation. Annuler le laisse intact.
+  await page.getByRole("button", { name: "Regénérer" }).click();
+  await expect(modale).toBeVisible();
+  await modale.getByRole("button", { name: "Annuler" }).click();
+  await expect(modale).not.toBeVisible();
+  await expect(page.getByText("Planning regénéré")).toHaveCount(0);
+  expect(await page.locator("main ul").innerText()).toBe(planningAvant);
+
+  // Confirmer régénère réellement.
+  await page.getByRole("button", { name: "Regénérer" }).click();
+  await expect(modale).toBeVisible();
+  await modale.getByRole("button", { name: "Modifier" }).click();
+  await expect(page.getByText("Planning regénéré")).toBeVisible();
+
+  // Modifier un slot d'une semaine passée demande aussi confirmation.
+  await page
+    .locator("main ul > li")
+    .first()
+    .getByRole("button", { name: "Changer le dîner de lundi" })
+    .click();
+  await expect(modale).toBeVisible();
+  await modale.getByRole("button", { name: "Modifier" }).click();
+  await expect(page.getByText("Recette remplacée")).toBeVisible();
+});
+
 // ---------------------------------------------------------------------------
 // US-12 — marquer un repas en « restes » (RG-22). Planning déterministe injecté.
 // ---------------------------------------------------------------------------
@@ -121,7 +176,9 @@ test("marquer un repas en « restes » l'exclut de la liste de courses (US-12)",
   page,
 }) => {
   const planning = {
-    semaine: "2026-W23",
+    // Semaine COURANTE (calculée au run) : un planning injecté daté dans le
+    // passé déclencherait la garde de confirmation #5 (RG-24) à la modif/regen.
+    semaine: semaineISO(),
     jours: [{ jour: "lundi", diner: recetteFixture("omelette-aux-champignons") }],
   };
   await page.addInitScript(
@@ -410,7 +467,9 @@ test("modifier le nombre de personnes met à l'échelle la liste de courses (RG-
 }) => {
   // Planning déterministe : omelette (6 œufs) au dîner de lundi.
   const planning = {
-    semaine: "2026-W23",
+    // Semaine COURANTE (calculée au run) : un planning injecté daté dans le
+    // passé déclencherait la garde de confirmation #5 (RG-24) à la modif/regen.
+    semaine: semaineISO(),
     jours: [{ jour: "lundi", diner: recetteFixture("omelette-aux-champignons") }],
   };
   await page.addInitScript(
@@ -441,7 +500,9 @@ test("modifier les personnes invalide la coche de l'article touché, pas les aut
   page,
 }) => {
   const planning = {
-    semaine: "2026-W23",
+    // Semaine COURANTE (calculée au run) : un planning injecté daté dans le
+    // passé déclencherait la garde de confirmation #5 (RG-24) à la modif/regen.
+    semaine: semaineISO(),
     jours: [{ jour: "lundi", diner: recetteFixture("omelette-aux-champignons") }],
   };
   await page.addInitScript(
@@ -556,7 +617,9 @@ test("la fiche d'une recette s'ouvre au clic sur le nom, à l'échelle du slot e
 }) => {
   // Omelette : œufs + champignons (à acheter), beurre + poivre (fond de placard).
   const planning = {
-    semaine: "2026-W23",
+    // Semaine COURANTE (calculée au run) : un planning injecté daté dans le
+    // passé déclencherait la garde de confirmation #5 (RG-24) à la modif/regen.
+    semaine: semaineISO(),
     jours: [{ jour: "lundi", diner: recetteFixture("omelette-aux-champignons") }],
   };
   await page.addInitScript(

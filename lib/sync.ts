@@ -16,10 +16,11 @@ import { storeCoches, storePlanning } from "@/lib/stockage";
 import {
   chargerCochesDistantes,
   chargerPlanningDistant,
+  purgerSemainesAvant,
   sauvegarderCochesDistantes,
   sauvegarderPlanningDistant,
 } from "@/lib/persistance";
-import { semaineParDefaut } from "@/lib/semaines";
+import { semaineDecalee, semaineISO, semaineParDefaut } from "@/lib/semaines";
 import type { Planning } from "@/types";
 
 // Horodatage de la dernière écriture locale (last-write-wins) et drapeau
@@ -360,6 +361,22 @@ export async function naviguerVers(semaine: string): Promise<void> {
 // rechargement complet (nouveau contexte JS).
 let dejaHydrate = false;
 
+// Rétention de l'historique (#5, RG-24) : on ne conserve en base que les
+// ~12 dernières semaines, alignées sur la borne passée du navigateur. Purge
+// best-effort au chargement de session (fire-and-forget : n'a aucun impact
+// bloquant sur l'hydratation, un échec est simplement journalisé).
+const RETENTION_SEMAINES = 12;
+let dejaPurge = false;
+
+function purgerHistorique(): void {
+  if (dejaPurge) return;
+  dejaPurge = true;
+  const cutoff = semaineDecalee(semaineISO(new Date()), -RETENTION_SEMAINES);
+  void purgerSemainesAvant(cutoff).catch((erreur) => {
+    console.error("Purge de l'historique échouée (sans effet bloquant).", erreur);
+  });
+}
+
 /**
  * Au premier montage : si un planning local non poussé (`dirty`) ou non
  * horodaté (legacy/injecté en test) existe, il fait foi (semaine affichée =
@@ -374,6 +391,7 @@ export async function hydrater(): Promise<void> {
     return;
   }
   dejaHydrate = true;
+  purgerHistorique(); // rétention 12 semaines (#5) — fire-and-forget
 
   const local = planningLocal();
   if (local && (estDirty() || lireMajLocale() === 0)) {

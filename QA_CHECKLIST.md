@@ -47,6 +47,8 @@
 - [ ] Sans planning : `/courses` affiche l'invite "Génère d'abord un planning" avec le lien
 - [ ] Sync multi-device (US-13) : générer/éditer **et cocher** sur un appareil → se connecter sur un autre (ou vider le cache local) → le même planning **et le même état coché** sont retrouvés depuis la base ; indicateur "Sauvegarde…/Hors-ligne" cohérent
 - [ ] Historique (US-14) : navigateur ‹ ← / → › change la semaine (passé/futur) ; semaine courante marquée ; la liste de courses suit la semaine (n° affiché) ; revenir sur une semaine générée la retrouve intacte
+- [ ] Confirmation semaine passée (US-14, RG-24) : régénérer ou modifier un repas (changer/sélectionner/restes) d'une **semaine passée** déjà planifiée ouvre une confirmation ; Annuler laisse intact, Confirmer applique. Générer une semaine passée **vide** ne demande rien ; le stepper personnes non plus
+- [ ] Rétention (US-14, RG-24) : les semaines de plus de 12 semaines ne s'accumulent pas indéfiniment en base (purge au chargement de session)
 
 ## 2. UI / Responsive
 

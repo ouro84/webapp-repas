@@ -56,6 +56,7 @@ const SEMAINES_FUTURES = 6;
 import { BadgeTemps } from "@/components/planning/badge-temps";
 import { SelecteurRecette } from "@/components/planning/selecteur-recette";
 import { FicheRecette } from "@/components/planning/fiche-recette";
+import { ConfirmationModale } from "@/components/ui/confirmation";
 import type { Jour, JourPlanning, Planning, Recette } from "@/types";
 
 type TypeRepas = "dejeuner" | "diner";
@@ -246,6 +247,11 @@ export default function PagePlanning() {
   // annotées `editable` pour le raccourci « Modifier » de la fiche (US-10).
   // Servent aussi le sélecteur manuel (#14) et le remplacement aléatoire.
   const [recettesGerees, setRecettesGerees] = useState<RecetteGeree[]>([]);
+  // Confirmation avant de régénérer/modifier une semaine PASSÉE (US-14, RG-24).
+  // Contient l'action à rejouer (avec `force`) une fois l'utilisateur d'accord.
+  const [confirmation, setConfirmation] = useState<{
+    executer: () => void;
+  } | null>(null);
 
   // Liste plate des recettes (sélecteur, remplacement aléatoire) + ensemble des
   // ids éditables (recettes perso) pour la fiche — dérivés des recettes gérées.
@@ -337,13 +343,30 @@ export default function PagePlanning() {
     if (semaineAffichee) void naviguerVers(semaineDecalee(semaineAffichee, delta));
   }
 
+  // Garde-fou « semaine passée » (US-14, RG-24) : régénérer ou modifier un
+  // planning déjà passé demande confirmation. `reprise` est l'action à rejouer
+  // (avec `force = true`) si l'utilisateur confirme. Renvoie `true` si une
+  // confirmation a été demandée → l'appelant s'arrête là.
+  function confirmerSiPassee(reprise: () => void): boolean {
+    if (offsetAffiche < 0 && planning !== null) {
+      setConfirmation({ executer: reprise });
+      return true;
+    }
+    return false;
+  }
+
   // Génération (US-01) : déléguée au serveur (#2, route /api/planning/generer)
   // qui lit les recettes de l'utilisateur (globales + perso) sous RLS et
   // applique lib/generateur. Le planning renvoyé est persisté en localStorage
   // (la persistance en base est un chantier distinct). Asynchrone → état
   // `enGeneration` pour le retour visuel, sans vider l'écran (#63).
-  async function genererNouveauPlanning(): Promise<void> {
+  async function genererNouveauPlanning(force = false): Promise<void> {
     if (enGeneration) return;
+    // Regénération d'une semaine passée (planning existant) : confirmation
+    // avant écrasement (RG-24). Première génération (planning null) : direct.
+    if (!force && confirmerSiPassee(() => void genererNouveauPlanning(true))) {
+      return;
+    }
     setEnGeneration(true);
     setErreurGeneration(null);
     try {
@@ -392,8 +415,11 @@ export default function PagePlanning() {
 
   // Remplacement d'un slot (US-04, RG-04) : si aucune recette éligible
   // n'est disponible, le slot concerné affiche "Pas de recette disponible".
-  function changerSlot(jour: Jour, typeRepas: TypeRepas): void {
+  function changerSlot(jour: Jour, typeRepas: TypeRepas, force = false): void {
     if (planning === null) return;
+    if (!force && confirmerSiPassee(() => changerSlot(jour, typeRepas, true))) {
+      return;
+    }
     const nouveau = remplacerSlot(planning, jour, typeRepas, recettes);
     if (nouveau === null) {
       // Toast en complément du message inline du slot (RG-04)
@@ -418,10 +444,23 @@ export default function PagePlanning() {
   // choisie — by-pass RG-01/RG-02, ne peut pas échouer depuis l'UI.
   function selectionnerRecette(recette: Recette): void {
     if (planning === null || slotEnSelection === null) return;
+    // Capture du slot : le sélecteur se ferme après le choix (slotEnSelection
+    // repasse à null), or une confirmation différée (semaine passée, RG-24)
+    // s'exécute plus tard → on fige la cible plutôt que de relire l'état.
+    const cible = slotEnSelection;
+    if (confirmerSiPassee(() => appliquerSelection(recette, cible))) return;
+    appliquerSelection(recette, cible);
+  }
+
+  function appliquerSelection(
+    recette: Recette,
+    cible: { jour: Jour; typeRepas: TypeRepas }
+  ): void {
+    if (planning === null) return;
     const nouveau = remplacerSlotManuel(
       planning,
-      slotEnSelection.jour,
-      slotEnSelection.typeRepas,
+      cible.jour,
+      cible.typeRepas,
       recette
     );
     if (nouveau === null) return; // slot inexistant : impossible depuis l'UI
@@ -457,9 +496,16 @@ export default function PagePlanning() {
   function changerRestes(
     jour: Jour,
     typeRepas: TypeRepas,
-    valeur: boolean
+    valeur: boolean,
+    force = false
   ): void {
     if (planning === null) return;
+    if (
+      !force &&
+      confirmerSiPassee(() => changerRestes(jour, typeRepas, valeur, true))
+    ) {
+      return;
+    }
     const nouveau = marquerRestes(planning, jour, typeRepas, valeur);
     if (nouveau === null) return; // slot inexistant : impossible depuis l'UI
     capturerSnapshotAnnulation();
@@ -482,7 +528,7 @@ export default function PagePlanning() {
         </div>
         <button
           type="button"
-          onClick={genererNouveauPlanning}
+          onClick={() => void genererNouveauPlanning()}
           disabled={enGeneration}
           aria-busy={enGeneration}
           className="rounded-full bg-brand-600 px-6 py-3 font-medium text-white transition-colors hover:bg-brand-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 disabled:opacity-60"
@@ -519,7 +565,7 @@ export default function PagePlanning() {
         )}
         <button
           type="button"
-          onClick={genererNouveauPlanning}
+          onClick={() => void genererNouveauPlanning()}
           disabled={enGeneration}
           aria-busy={enGeneration}
           className="rounded-full bg-brand-600 px-8 py-4 text-lg font-medium text-white transition-colors hover:bg-brand-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 disabled:opacity-60"
@@ -562,7 +608,7 @@ export default function PagePlanning() {
         <div className="flex gap-2">
           <button
             type="button"
-            onClick={genererNouveauPlanning}
+            onClick={() => void genererNouveauPlanning()}
             disabled={enGeneration}
             aria-busy={enGeneration}
             className="relative flex-1 rounded-full border border-brand-200 px-4 py-2 text-center text-sm font-medium text-brand-700 transition-colors after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 disabled:opacity-60 sm:flex-none"
@@ -707,6 +753,22 @@ export default function PagePlanning() {
           personnes={ficheOuverte.personnes}
           editable={idsEditables.has(ficheOuverte.recette.id)}
           onFermer={() => setFicheOuverte(null)}
+        />
+      )}
+
+      {/* Confirmation avant de toucher une semaine passée (US-14, RG-24) —
+          montée seulement quand une action a été différée. */}
+      {confirmation && (
+        <ConfirmationModale
+          titre="Modifier une semaine passée ?"
+          message="Cette semaine est déjà passée. Veux-tu vraiment modifier ce planning enregistré ?"
+          libelleConfirmer="Modifier"
+          onConfirmer={() => {
+            const action = confirmation.executer;
+            setConfirmation(null);
+            action();
+          }}
+          onAnnuler={() => setConfirmation(null)}
         />
       )}
     </main>
