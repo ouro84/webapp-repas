@@ -49,7 +49,7 @@ Réduire à zéro l'effort de planification hebdomadaire des repas, du choix des
 | F-01 | Liste de recettes | ~30 recettes stockées dans `/data/recettes.json` |
 | F-02 | Temps de préparation | Chaque recette est classée : Rapide / Normal / Long |
 | F-03 | Flag "fond de placard" | Chaque ingrédient peut être marqué comme fond de placard (sel, huile, épices…) |
-| F-04 | Génération du planning | Génère un planning sur 7 jours : un déjeuner **et** un dîner chaque jour (14 repas) |
+| F-04 | Génération du planning | Génère, pour la semaine choisie (courante → +6), un planning sur 7 jours : un déjeuner **et** un dîner chaque jour (14 repas) |
 | F-05 | Éligibilité par slot | Éligibilité selon le jour **et** le type de repas (RG-01) : dîner de semaine = Rapide ; déjeuner de semaine = Rapide/Normal ; tous les repas de week-end = toutes recettes |
 | F-06 | Pas de répétition | Une même recette n'apparaît pas deux fois dans la même semaine |
 | F-07 | Remplacement d'un repas | Remplacer un slot individuel sans modifier le reste du planning |
@@ -273,6 +273,23 @@ Réduire à zéro l'effort de planification hebdomadaire des repas, du choix des
 > **Given** la fiche d'une recette **personnelle**  
 > **When** je veux la modifier  
 > **Then** un raccourci « Modifier » ouvre son édition ; pour une recette du catalogue global (lecture seule), ce raccourci est absent
+
+### US-11 — Générer pour une semaine future
+
+> **En tant qu'** utilisateur, je veux générer le planning d'une semaine à venir, afin d'anticiper mes courses (les faire le week-end précédant la semaine planifiée).
+
+**Comportement :**
+> **Given** je suis sur la page planning  
+> **When** je choisis une semaine cible (de la semaine courante jusqu'à 6 semaines plus tard) puis je clique sur « Générer »  
+> **Then** le planning généré porte cette semaine et devient le planning actif (RG-21)
+
+> **Given** un planning actif existe pour une autre semaine  
+> **When** je génère pour une nouvelle semaine cible  
+> **Then** il remplace l'actif (réversible via l'annulation, US-09) — une seule semaine est active à la fois
+
+> **Given** je suis un samedi ou un dimanche  
+> **When** j'arrive sur la page planning sans planning actif  
+> **Then** la semaine cible proposée par défaut est la **semaine prochaine** (RG-21)
 
 ---
 
@@ -503,6 +520,14 @@ La fiche affiche **tout ce que l'on connaît** de la recette : titre, temps de p
 - **Groupement** : les ingrédients sont scindés en « à acheter » et « fond de placard (à vérifier) » (cf. RG-14), pour répondre au besoin « puis-je la faire sans rien acheter ».
 - **Édition** : un raccourci « Modifier » n'apparaît que pour une recette **personnelle** (éditable, cf. RLS) ; absent pour le catalogue global.
 - **Saisonnalité : hors périmètre** tant que la donnée n'existe pas (cf. backlog #P12). La fiche n'invente pas de champ ; elle l'affichera quand le modèle le portera.
+
+### RG-21 — Sélection de la semaine cible (US-11)
+
+La génération vise une **semaine cible** (identifiant ISO `AAAA-Wnn`), choisie par l'utilisateur. Règles :
+
+- **Plage** : de la semaine courante jusqu'à **+6 semaines**. Pas de semaine passée. La plage est **validée côté serveur** (la route de génération rejette toute semaine hors plage) — le client n'en est pas l'autorité.
+- **Défaut** : la semaine courante ; **la semaine prochaine si l'on est un samedi ou un dimanche** (aligné sur le JTBD « faire les courses le week-end d'avant »).
+- **Mono-actif** : un seul planning est conservé à la fois (`planning_courant`). Générer pour une autre semaine **remplace** l'actif (effacement des coches, RG-13) — réversible le temps de la fenêtre d'undo (RG-19). La conservation de plusieurs semaines (historique) est une feature distincte (backlog #P08).
 
 ---
 

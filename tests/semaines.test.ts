@@ -1,0 +1,82 @@
+// Tests de la logique calendaire — lib/semaines.ts (US-11, RG-21).
+// Dates explicites pour des assertions déterministes (indépendantes du jour
+// où la suite tourne).
+
+import { describe, expect, it } from "vitest";
+import {
+  formaterSemaine,
+  libelleRelatif,
+  semaineISO,
+  semaineParDefaut,
+  semainesSelectionnables,
+} from "@/lib/semaines";
+
+// Repères : le 1er juin 2026 est un lundi → semaine ISO 2026-W23
+// (cohérent avec l'exemple des SPECS et formaterSemaine).
+const LUNDI_1ER_JUIN = new Date(2026, 5, 1);
+const SAMEDI_6_JUIN = new Date(2026, 5, 6);
+const DIMANCHE_7_JUIN = new Date(2026, 5, 7);
+
+describe("semaineISO", () => {
+  it("calcule l'identifiant ISO d'une date", () => {
+    expect(semaineISO(LUNDI_1ER_JUIN)).toBe("2026-W23");
+  });
+
+  it("gère le bord d'année (année ISO du jeudi)", () => {
+    // Le 1er janvier 2027 est un vendredi → appartient à la semaine 53 de 2026.
+    expect(semaineISO(new Date(2027, 0, 1))).toBe("2026-W53");
+  });
+});
+
+describe("formaterSemaine", () => {
+  it("rend une date lisible en français", () => {
+    expect(formaterSemaine("2026-W23")).toBe("Semaine du 1 juin 2026");
+  });
+
+  it("affiche brut un format inattendu", () => {
+    expect(formaterSemaine("pas-une-semaine")).toBe("Semaine pas-une-semaine");
+  });
+
+  it("est l'inverse de semaineISO pour un lundi", () => {
+    expect(formaterSemaine(semaineISO(LUNDI_1ER_JUIN))).toBe(
+      "Semaine du 1 juin 2026"
+    );
+  });
+});
+
+describe("semainesSelectionnables", () => {
+  it("renvoie la semaine courante + N futures (offsets 0..N)", () => {
+    const options = semainesSelectionnables(LUNDI_1ER_JUIN, 6);
+    expect(options).toHaveLength(7);
+    expect(options.map((o) => o.offset)).toEqual([0, 1, 2, 3, 4, 5, 6]);
+    expect(options[0]!.semaine).toBe("2026-W23");
+    expect(options[1]!.semaine).toBe("2026-W24");
+    expect(options[6]!.semaine).toBe("2026-W29");
+  });
+
+  it("respecte le nombre de semaines futures demandé", () => {
+    expect(semainesSelectionnables(LUNDI_1ER_JUIN, 2)).toHaveLength(3);
+  });
+});
+
+describe("libelleRelatif", () => {
+  it("nomme les offsets proches et numérote au-delà", () => {
+    expect(libelleRelatif(0)).toBe("Cette semaine");
+    expect(libelleRelatif(1)).toBe("Semaine prochaine");
+    expect(libelleRelatif(3)).toBe("Dans 3 semaines");
+  });
+});
+
+describe("semaineParDefaut (RG-21)", () => {
+  it("en semaine, propose la semaine courante", () => {
+    expect(semaineParDefaut(LUNDI_1ER_JUIN)).toBe("2026-W23");
+  });
+
+  it("le samedi, propose la semaine prochaine", () => {
+    expect(semaineParDefaut(SAMEDI_6_JUIN)).toBe("2026-W24");
+  });
+
+  it("le dimanche, propose la semaine prochaine", () => {
+    expect(semaineParDefaut(DIMANCHE_7_JUIN)).toBe("2026-W24");
+  });
+});
