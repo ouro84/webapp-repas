@@ -101,11 +101,14 @@ async function pousser(): Promise<void> {
   if (planning === null) return; // rien à pousser
 
   pushEnCours = true;
+  rePushDemande = false; // toute écriture pendant ce push le repassera à true
   definirEtat("sauvegarde");
   try {
     const majServeur = await sauvegarderPlanningDistant(planning);
     localStorage.setItem(CLE_MAJ, majServeur);
-    localStorage.removeItem(CLE_DIRTY);
+    // Ne lever `dirty` que si AUCUNE écriture locale n'est survenue pendant le
+    // push (sinon le local a re-divergé → on garde dirty et on rejoue).
+    if (!rePushDemande) localStorage.removeItem(CLE_DIRTY);
     definirEtat("synchronise");
   } catch (erreur) {
     definirEtat("hors-ligne");
@@ -125,6 +128,11 @@ async function pousser(): Promise<void> {
 function planifierPush(): void {
   if (hydratationEnCours) return;
   localStorage.setItem(CLE_DIRTY, "1");
+  // Écriture pendant un push en cours : il rejouera (pas de clear de dirty).
+  if (pushEnCours) {
+    rePushDemande = true;
+    return;
+  }
   if (minuteur) clearTimeout(minuteur);
   minuteur = setTimeout(() => void pousser(), DELAI_DEBOUNCE_MS);
 }
@@ -195,11 +203,12 @@ async function pousserCoches(): Promise<void> {
   const serialise = storeCoches.lire() ?? "{}";
 
   pushCochesEnCours = true;
+  rePushCochesDemande = false;
   definirEtat("sauvegarde");
   try {
     const majServeur = await sauvegarderCochesDistantes(serialise);
     localStorage.setItem(CLE_MAJ_COCHES, majServeur);
-    localStorage.removeItem(CLE_DIRTY_COCHES);
+    if (!rePushCochesDemande) localStorage.removeItem(CLE_DIRTY_COCHES);
     definirEtat("synchronise");
   } catch (erreur) {
     definirEtat("hors-ligne");
@@ -216,6 +225,10 @@ async function pousserCoches(): Promise<void> {
 function planifierPushCoches(): void {
   if (hydratationCochesEnCours) return;
   localStorage.setItem(CLE_DIRTY_COCHES, "1");
+  if (pushCochesEnCours) {
+    rePushCochesDemande = true;
+    return;
+  }
   if (minuteurCoches) clearTimeout(minuteurCoches);
   minuteurCoches = setTimeout(() => void pousserCoches(), DELAI_DEBOUNCE_MS);
 }
@@ -250,9 +263,24 @@ async function hydraterCoches(): Promise<void> {
   }
 }
 
-/** Hydrate planning puis coches (l'ordre garantit que les coches s'appliquent
- *  au planning fraîchement tiré ; RG-12 ignore les coches obsolètes). */
+// Hydratation UNE FOIS par session (par chargement complet de page). Les
+// navigations SPA ne re-tirent pas : en session, le local fait foi (évite les
+// courses de clobber entre une édition locale et une hydratation). Un autre
+// device se synchronise à son propre chargement. Réinitialisé à chaque
+// rechargement complet (nouveau contexte JS).
+let dejaHydrate = false;
+
+/** Hydrate planning puis coches au premier montage (l'ordre garantit que les
+ *  coches s'appliquent au planning fraîchement tiré ; RG-12 ignore les coches
+ *  obsolètes). Aux montages suivants (SPA), pousse seulement d'éventuels
+ *  changements locaux en attente — ne re-tire jamais. */
 export async function hydrater(): Promise<void> {
+  if (dejaHydrate) {
+    if (estDirty()) void pousser();
+    if (estDirtyCoches()) void pousserCoches();
+    return;
+  }
+  dejaHydrate = true;
   await hydraterPlanning();
   await hydraterCoches();
 }
