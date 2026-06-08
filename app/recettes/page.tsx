@@ -7,8 +7,9 @@
 // formulaire. À l'édition, le planning courant est mis à jour pour refléter
 // immédiatement le changement dans la liste de courses (RG-03).
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import {
   chargerRecettesGerees,
@@ -61,7 +62,9 @@ function estDansPlanningCourant(id: string): boolean {
   }
 }
 
-export default function PageRecettes() {
+// useSearchParams impose une frontière <Suspense> en Next.js 16 (sinon erreur
+// de build) : le contenu est isolé ici, l'export par défaut l'enveloppe.
+function ContenuRecettes() {
   const [vue, setVue] = useState<Vue>({ mode: "liste" });
   const [recettes, setRecettes] = useState<RecetteGeree[] | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
@@ -76,15 +79,33 @@ export default function PageRecettes() {
       .catch((e) => setErreur(e instanceof Error ? e.message : "Chargement impossible."));
   }
 
+  // Deep-link d'édition (US-10) : `/recettes?edition=<id>` ouvre le formulaire
+  // depuis la fiche de recette du planning. useSearchParams impose la frontière
+  // <Suspense> de l'export par défaut.
+  const searchParams = useSearchParams();
+  const idEdition = searchParams.get("edition");
+
   useEffect(() => {
     let actif = true;
     chargerRecettesGerees()
-      .then((liste) => actif && setRecettes(liste))
+      .then((liste) => {
+        if (!actif) return;
+        setRecettes(liste);
+        // On n'ouvre l'édition que pour une recette éditable (perso) — les
+        // globales restent en lecture seule (RLS). setState dans la promesse
+        // (pas synchrone au montage) → conforme à react-hooks/set-state-in-effect.
+        if (idEdition !== null) {
+          const cible = liste.find(
+            (r) => r.recette.id === idEdition && r.editable
+          );
+          if (cible) setVue({ mode: "edition", recette: cible.recette });
+        }
+      })
       .catch((e) => actif && setErreur(e instanceof Error ? e.message : "Chargement impossible."));
     return () => {
       actif = false;
     };
-  }, []);
+  }, [idEdition]);
 
   // Recherche par nom (réutilise le filtrage du sélecteur, #14).
   const visibles = useMemo(() => {
@@ -297,5 +318,23 @@ export default function PageRecettes() {
         </Link>
       </p>
     </main>
+  );
+}
+
+export default function PageRecettes() {
+  // Frontière Suspense exigée par useSearchParams (ContenuRecettes). Le repli
+  // reprend l'état de chargement de la liste (RG-09).
+  return (
+    <Suspense
+      fallback={
+        <main id="contenu" className="mx-auto w-full max-w-2xl flex-1 p-4 md:p-8">
+          <p role="status" className="animate-pulse text-brand-700/85">
+            Chargement…
+          </p>
+        </main>
+      }
+    >
+      <ContenuRecettes />
+    </Suspense>
   );
 }

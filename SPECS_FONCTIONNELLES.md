@@ -254,6 +254,23 @@ Réduire à zéro l'effort de planification hebdomadaire des repas, du choix des
 
 > **Note :** la même mécanique d'annulation couvre aussi un remplacement de slot (US-04) ou une sélection manuelle (US-06) — cf. RG-19.
 
+### US-10 — Consulter la fiche d'une recette
+
+> **En tant qu'** utilisateur, je veux consulter les ingrédients d'une recette afin de savoir si je peux la faire sans rien avoir à acheter.
+
+**Comportement :**
+> **Given** je suis sur la page planning  
+> **When** je clique sur le nom du plat d'un slot  
+> **Then** la fiche d'identité de la recette s'affiche (titre, temps, ingrédients), sans quitter la page
+
+> **Given** la fiche est ouverte sur un slot réglé à N personnes  
+> **When** je lis les quantités  
+> **Then** elles sont mises à l'échelle pour N personnes (RG-20), cohérentes avec la liste de courses
+
+> **Given** la fiche d'une recette **personnelle**  
+> **When** je veux la modifier  
+> **Then** un raccourci « Modifier » ouvre son édition ; pour une recette du catalogue global (lecture seule), ce raccourci est absent
+
 ---
 
 ## 5. Modèle de données
@@ -467,6 +484,16 @@ Avant toute action destructive sur le planning — regénération (US-09), rempl
 - **Expiration** : le snapshot est horodaté et n'est plus restaurable au-delà de la fenêtre d'undo (~6 s, marge sur les ~5 s du toast). Au-delà, l'undo n'est plus proposé.
 - **Première génération exclue** : aucun snapshot n'est offert quand il n'existait pas de planning préalable (rien à restaurer).
 - **Déclencheurs** : le bouton « Annuler » du toast (sonner) et le raccourci clavier Ctrl/Cmd+Z sur la page planning.
+
+### RG-20 — Contenu et échelle de la fiche de recette (US-10)
+
+La fiche affiche **tout ce que l'on connaît** de la recette : titre, temps de préparation (badge) et liste des ingrédients. Règles :
+
+- **Déclencheur** : le clic sur le **nom du plat** dans la card du planning (pas la card entière, qui porte déjà des contrôles : changer, sélectionner, stepper). La fiche s'ouvre en place (dialog), sans navigation ni appel réseau — la recette est déjà dans le slot du planning.
+- **Échelle** : les quantités sont mises à l'échelle pour le nombre de personnes du slot ouvert, via le même calcul que la liste de courses (RG-17 : ×N/2 puis arrondi par type d'unité) — cohérence garantie. La fiche mentionne « pour N personnes ».
+- **Groupement** : les ingrédients sont scindés en « à acheter » et « fond de placard (à vérifier) » (cf. RG-14), pour répondre au besoin « puis-je la faire sans rien acheter ».
+- **Édition** : un raccourci « Modifier » n'apparaît que pour une recette **personnelle** (éditable, cf. RLS) ; absent pour le catalogue global.
+- **Saisonnalité : hors périmètre** tant que la donnée n'existe pas (cf. backlog #P12). La fiche n'invente pas de champ ; elle l'affichera quand le modèle le portera.
 
 ---
 
