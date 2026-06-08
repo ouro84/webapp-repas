@@ -99,6 +99,8 @@ Format : `type: description courte`
 - `main` = branche de production, toujours déployable
 - Une branche par feature : `feat/generation-planning`, `feat/liste-courses`
 - Jamais de commit direct sur `main`
+- **Jamais de merge avant la CI verte.** Aucune PR n'est mergée tant que tous les tests automatiques (job `test` + checks Vercel) ne sont pas terminés **et** au vert — même si le merge a été explicitement demandé. La protection de branche est indisponible (plan Free, cf. piège dédié), donc cette règle tient par discipline : attendre la fin des checks (`gh pr checks <n> --watch`), pas seulement leur lancement.
+  - **Si un check échoue alors qu'un merge a été demandé** : ne pas merger, ne pas by-passer en silence. Remonter à l'humain les éléments d'arbitrage — quel check, le lien du run, l'extrait de log pertinent, la cause probable, et si l'échec est lié à la PR ou pré-existant/flaky (réseau, staging non seedé…) — puis proposer soit une **correction**, soit un **by-pass justifié**, et laisser l'humain trancher.
 
 ### Secrets
 - `.env.local` dans `.gitignore` — jamais commité
