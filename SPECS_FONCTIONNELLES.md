@@ -235,6 +235,25 @@ Réduire à zéro l'effort de planification hebdomadaire des repas, du choix des
 > **When** la quantité varie  
 > **Then** son nom reste invariable (« 200 g de beurre »)
 
+### US-09 — Annuler une regénération
+
+> **En tant qu'** utilisateur ayant regénéré par erreur, je veux pouvoir annuler afin de retrouver mon planning précédent à l'identique.
+
+**Comportement :**
+> **Given** un planning existant (éventuellement ajusté slot par slot, avec des coches faites sur la liste de courses)  
+> **When** je clique sur « Regénérer »  
+> **Then** un toast « Planning regénéré — Annuler » s'affiche ~5 s
+
+> **Given** ce toast est affiché  
+> **When** je clique « Annuler » (ou je fais Ctrl/Cmd+Z)  
+> **Then** le planning **et** les coches sont restaurés à l'identique (RG-19) et le toast disparaît
+
+> **Given** la première génération (aucun planning préalable)  
+> **When** je génère  
+> **Then** aucun undo n'est proposé — il n'y a rien à restaurer
+
+> **Note :** la même mécanique d'annulation couvre aussi un remplacement de slot (US-04) ou une sélection manuelle (US-06) — cf. RG-19.
+
 ---
 
 ## 5. Modèle de données
@@ -325,6 +344,8 @@ type Planning = {
 Le planning généré est sauvegardé en `localStorage` sous la clé `planning_courant`. Il est écrasé à chaque nouvelle génération. La persistance multi-device (sync via Supabase) est un nice-to-have lié à l'authentification.
 
 Les coches de la liste de courses (US-05) sont sauvegardées sous la clé `courses_cochees` : un objet `{ [nom|unité]: quantité au moment du cochage }` (cf. RG-12). La clé est effacée à chaque génération complète de planning (RG-13).
+
+Un snapshot d'annulation (US-09) est conservé sous la clé `planning_snapshot` : `{ planning, coches, horodatage }`, figeant `planning_courant` et `courses_cochees` avant une action destructive. Transitoire et mono-niveau, il expire après la fenêtre d'undo (cf. RG-19).
 
 ---
 
@@ -432,11 +453,20 @@ Les coches sont persistées en `localStorage` (clé `courses_cochees`), accroch�
 
 ### RG-13 — Cycle de vie des coches
 
-Une génération complète de planning réinitialise toutes les coches. Un remplacement de slot individuel ne déclenche aucune réinitialisation globale : l'invalidation par quantité (RG-12) suffit.
+Une génération complète de planning réinitialise toutes les coches. Un remplacement de slot individuel ne déclenche aucune réinitialisation globale : l'invalidation par quantité (RG-12) suffit. Cette réinitialisation est **réversible** le temps de la fenêtre d'undo : une annulation restaure les coches effacées (cf. RG-19).
 
 ### RG-14 — Fond de placard cochable, hors progression
 
 Les articles du fond de placard sont cochables (même comportement visuel) mais exclus du compteur de progression « n/N », qui ne porte que sur les articles à acheter.
+
+### RG-19 — Snapshot d'annulation (US-09)
+
+Avant toute action destructive sur le planning — regénération (US-09), remplacement de slot (US-04) ou sélection manuelle (US-06) — un snapshot **mono-niveau** est capturé en `localStorage` (clé `planning_snapshot`, cf. 5.6) : il fige à la fois `planning_courant` **et** `courses_cochees`. L'annulation réécrit les deux clés à l'identique — elle **inverse donc l'effacement des coches de RG-13**. Règles :
+
+- **Un seul cran d'undo** : chaque nouvelle action écrase le snapshot précédent ; on ne recule que d'un pas.
+- **Expiration** : le snapshot est horodaté et n'est plus restaurable au-delà de la fenêtre d'undo (~6 s, marge sur les ~5 s du toast). Au-delà, l'undo n'est plus proposé.
+- **Première génération exclue** : aucun snapshot n'est offert quand il n'existait pas de planning préalable (rien à restaurer).
+- **Déclencheurs** : le bouton « Annuler » du toast (sonner) et le raccourci clavier Ctrl/Cmd+Z sur la page planning.
 
 ---
 

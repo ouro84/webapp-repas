@@ -87,3 +87,82 @@ export function sauvegarderPlanningComplet(planning: Planning): void {
 export function sauvegarderRemplacementSlot(planning: Planning): void {
   storePlanning.ecrire(JSON.stringify(planning))
 }
+
+// ============================================================================
+// Annulation (US-09, RG-19) — snapshot mono-niveau du planning ET des coches.
+//
+// Pourquoi figer AUSSI les coches ? Une regénération efface les coches
+// (sauvegarderPlanningComplet → RG-13) : restaurer le seul planning laisserait
+// les coches perdues, l'undo ne serait pas « à l'identique ». La restauration
+// réécrit donc les deux clés directement (sans repasser par
+// sauvegarderPlanningComplet, qui ré-effacerait les coches qu'on veut rendre).
+// ============================================================================
+
+/** Clé localStorage du snapshot d'annulation (SPECS 5.6). */
+const CLE_SNAPSHOT = "planning_snapshot"
+
+/** Fenêtre d'undo : marge au-dessus des ~5 s du toast (RG-19). */
+const FENETRE_UNDO_MS = 6000
+
+type SnapshotAnnulation = {
+  planning: string // valeur de planning_courant figée
+  coches: string | null // valeur de courses_cochees figée (null si aucune)
+  horodatage: number
+}
+
+/**
+ * Fige l'état courant (planning + coches) avant une action destructive
+ * (RG-19). À appeler juste AVANT sauvegarderPlanningComplet /
+ * sauvegarderRemplacementSlot. Ne capture rien s'il n'existe pas de planning
+ * (première génération : rien à annuler — RG-19).
+ */
+export function capturerSnapshotAnnulation(
+  maintenant: number = Date.now()
+): void {
+  const planning = storePlanning.lire()
+  if (planning === null) return
+  const snapshot: SnapshotAnnulation = {
+    planning,
+    coches: storeCoches.lire(),
+    horodatage: maintenant,
+  }
+  localStorage.setItem(CLE_SNAPSHOT, JSON.stringify(snapshot))
+}
+
+/**
+ * Restaure le dernier snapshot (US-09) : réécrit planning ET coches à
+ * l'identique — inverse l'effacement RG-13. Un snapshot expiré (au-delà de
+ * la fenêtre d'undo, RG-19) est purgé sans restauration. Renvoie true si une
+ * restauration a effectivement eu lieu.
+ */
+export function restaurerSnapshotAnnulation(
+  maintenant: number = Date.now()
+): boolean {
+  const brut = localStorage.getItem(CLE_SNAPSHOT)
+  if (brut === null) return false
+
+  let snapshot: SnapshotAnnulation
+  try {
+    snapshot = JSON.parse(brut) as SnapshotAnnulation
+  } catch (erreur) {
+    // Donnée corrompue : on la purge et on signale (jamais de catch muet).
+    console.error(`localStorage["${CLE_SNAPSHOT}"] illisible.`, erreur)
+    localStorage.removeItem(CLE_SNAPSHOT)
+    return false
+  }
+
+  // Snapshot expiré : on le purge sans restaurer (RG-19).
+  if (maintenant - snapshot.horodatage > FENETRE_UNDO_MS) {
+    localStorage.removeItem(CLE_SNAPSHOT)
+    return false
+  }
+
+  storePlanning.ecrire(snapshot.planning)
+  if (snapshot.coches === null) {
+    storeCoches.effacer()
+  } else {
+    storeCoches.ecrire(snapshot.coches)
+  }
+  localStorage.removeItem(CLE_SNAPSHOT)
+  return true
+}
