@@ -21,7 +21,14 @@ import {
   remplacerSlotManuel,
 } from "@/lib/generateur";
 import { RECETTES_FIXTURES } from "@/tests/fixtures/recettes";
-import type { Jour, Planning, Recette, TempsPreparation } from "@/types";
+import { REGLAGES_DEFAUT } from "@/lib/reglages";
+import type {
+  Jour,
+  Planning,
+  Recette,
+  ReglagesGeneration,
+  TempsPreparation,
+} from "@/types";
 
 const RECETTES = RECETTES_FIXTURES;
 const RAPIDES_NORMALES = RECETTES.filter((r) => r.tempsPreparation !== "long");
@@ -515,5 +522,70 @@ describe("analyserVivier — alerte vivier insuffisant (#2)", () => {
     const a = analyserVivier([]);
     expect(a.suffisant).toBe(false);
     expect(a.total).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #45 (P09) — réglages de génération personnalisés (plafonds par créneau +
+// nombre de personnes par défaut). REGLAGES_DEFAUT = comportement antérieur.
+// ---------------------------------------------------------------------------
+describe("genererPlanning — réglages personnalisés (#45)", () => {
+  const TOUT_LONG: ReglagesGeneration = {
+    personnesDefaut: 2,
+    plafonds: {
+      dejeunerSemaine: "long",
+      dinerSemaine: "long",
+      dejeunerWeekend: "long",
+      dinerWeekend: "long",
+    },
+  };
+
+  test("un plafond plus PERMISSIF autorise des recettes longues en semaine", () => {
+    // 14 recettes "long" distinctes : impossible par défaut (les dîners de
+    // semaine exigent "rapide"), possible si tous les créneaux plafonnent "long".
+    const longues = synth("long", 14, "l");
+    expect(() => genererPlanning(longues)).toThrow();
+    const planning = genererPlanning(longues, "2026-W30", TOUT_LONG);
+    expect(tousLesRepas(planning)).toHaveLength(14);
+  });
+
+  test("un plafond plus RESTRICTIF réduit le vivier éligible", () => {
+    // 5 rapides + 9 normales. Par défaut : OK (déjeuners de semaine acceptent
+    // "normal"). Avec déjeuner de semaine plafonné "rapide", les 5 rapides ne
+    // suffisent plus (5 dîners + 5 déjeuners de semaine = 10 slots "rapide").
+    const vivier = [...synth("rapide", 5, "r"), ...synth("normal", 9, "n")];
+    expect(() => genererPlanning(vivier)).not.toThrow();
+    const restrictif: ReglagesGeneration = {
+      ...REGLAGES_DEFAUT,
+      plafonds: { ...REGLAGES_DEFAUT.plafonds, dejeunerSemaine: "rapide" },
+    };
+    expect(() => genererPlanning(vivier, "2026-W30", restrictif)).toThrow();
+  });
+
+  test("les slots générés portent le nombre de personnes par défaut des réglages", () => {
+    const reglages: ReglagesGeneration = { ...REGLAGES_DEFAUT, personnesDefaut: 4 };
+    const planning = genererPlanning(RECETTES, "2026-W30", reglages);
+    for (const jp of planning.jours) {
+      expect(jp.personnes?.dejeuner).toBe(4);
+      expect(jp.personnes?.diner).toBe(4);
+    }
+  });
+});
+
+describe("analyserVivier — réglages personnalisés (#45)", () => {
+  test("plafonds tout 'long' : seul le total compte (14), pas de palier rapide/normal", () => {
+    const toutLong: ReglagesGeneration = {
+      personnesDefaut: 2,
+      plafonds: {
+        dejeunerSemaine: "long",
+        dinerSemaine: "long",
+        dejeunerWeekend: "long",
+        dinerWeekend: "long",
+      },
+    };
+    const longues = synth("long", 14, "l");
+    // Insuffisant par défaut (0 rapide/normal), suffisant si tout plafonne "long".
+    expect(analyserVivier(longues).suffisant).toBe(false);
+    expect(analyserVivier(longues, toutLong).suffisant).toBe(true);
   });
 });
