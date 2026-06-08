@@ -208,6 +208,40 @@ test("regénérer le planning réinitialise toutes les coches (RG-13)", async ({
   await expect(page.getByText(/^0\/[1-9]\d* articles?/)).toBeVisible();
 });
 
+// ---------------------------------------------------------------------------
+// US-13 — synchronisation multi-device des coches (#6 PR3). L'état coché est
+// persisté en base ; un device au cache vide le retrouve à l'hydratation.
+// ---------------------------------------------------------------------------
+test("l'état coché est resynchronisé depuis la base sur un device au cache vide (US-13)", async ({
+  page,
+}) => {
+  await page.addInitScript(
+    (contenu) => localStorage.setItem("planning_courant", contenu),
+    JSON.stringify(planningDeterministe())
+  );
+  await page.goto("/courses");
+
+  await page.getByRole("checkbox", { name: /lardons/ }).click();
+  await expect(page.getByRole("checkbox", { name: /lardons/ })).toBeChecked();
+
+  // Attendre la persistance des coches en base (drapeau dirty effacé).
+  await expect
+    .poll(async () => page.evaluate(() => localStorage.getItem("courses_dirty")))
+    .toBeNull();
+
+  // Simuler un autre device : vider le cache local des coches puis recharger
+  // (l'addInitScript du beforeEach ne touche pas aux clés de coches).
+  await page.evaluate(() => {
+    localStorage.removeItem("courses_cochees");
+    localStorage.removeItem("courses_cochees_maj");
+    localStorage.removeItem("courses_dirty");
+  });
+  await page.reload();
+
+  // La coche est restaurée depuis la base (hydratation des coches).
+  await expect(page.getByRole("checkbox", { name: /lardons/ })).toBeChecked();
+});
+
 test("les libellés s'accordent en nombre selon la quantité (US-08)", async ({
   page,
 }) => {

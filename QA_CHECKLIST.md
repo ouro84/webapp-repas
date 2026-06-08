@@ -45,7 +45,7 @@
 - [ ] Fermer puis rouvrir l'app : le planning généré est toujours là
 - [ ] Un remplacement de repas survit aussi au rechargement
 - [ ] Sans planning : `/courses` affiche l'invite "Génère d'abord un planning" avec le lien
-- [ ] Sync multi-device (US-13) : générer/éditer sur un appareil → se connecter sur un autre (ou vider le cache local) → le même planning est retrouvé depuis la base ; indicateur "Sauvegarde…/Hors-ligne" cohérent
+- [ ] Sync multi-device (US-13) : générer/éditer **et cocher** sur un appareil → se connecter sur un autre (ou vider le cache local) → le même planning **et le même état coché** sont retrouvés depuis la base ; indicateur "Sauvegarde…/Hors-ligne" cohérent
 
 ## 2. UI / Responsive
 

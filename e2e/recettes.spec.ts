@@ -3,36 +3,22 @@
 // recette de test porte le SUFFIXE du run pour être identifiable, et un
 // teardown (afterAll) supprime tout ce que le run a créé — pas d'accumulation.
 
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, request as apiRequest, type Page } from "@playwright/test";
+import { nettoyerRecettesDistantes } from "./helpers";
 
 // Suffixe unique au run (Date.now est autorisé dans les tests Playwright).
 const SUFFIXE = `${Date.now()}`;
 
-// Supprime via l'UI toutes les recettes personnelles dont le nom contient le
-// SUFFIXE du run (teardown). Boucle bornée par sécurité.
-async function nettoyer(page: Page): Promise<void> {
-  await page.goto("/recettes");
-  await page.getByPlaceholder("Rechercher une recette…").fill(SUFFIXE);
-  const boutonsLigne = page.locator("main li").getByRole("button", {
-    name: "Supprimer",
-  });
-  for (let i = 0; i < 30; i++) {
-    if ((await boutonsLigne.count()) === 0) break;
-    await boutonsLigne.first().click();
-    await page
-      .getByRole("dialog")
-      .getByRole("button", { name: "Supprimer" })
-      .click();
-    await expect(page.getByText("Recette supprimée").first()).toBeVisible();
-    // Laisse la liste se rafraîchir avant l'itération suivante.
-    await page.waitForTimeout(300);
+// Teardown : supprime les recettes du run via DELETE REST (rapide, robuste).
+// Remplace l'ancienne suppression par clics UI, dont le re-render de liste
+// faisait dépasser le timeout afterAll (« element detached, retrying »).
+test.afterAll(async () => {
+  const contexte = await apiRequest.newContext();
+  try {
+    await nettoyerRecettesDistantes(contexte, SUFFIXE);
+  } finally {
+    await contexte.dispose();
   }
-}
-
-test.afterAll(async ({ browser }) => {
-  const page = await browser.newPage();
-  await nettoyer(page);
-  await page.close();
 });
 
 // Crée une recette via le formulaire (helper).

@@ -38,7 +38,7 @@ import {
   PERSONNES_MIN,
 } from "@/lib/personnes";
 import { estRestes, marquerRestes } from "@/lib/restes";
-import { useSyncPlanning } from "@/lib/sync";
+import { useSync } from "@/lib/sync";
 import { chargerRecettesGerees, type RecetteGeree } from "@/lib/recettes";
 import {
   formaterSemaine,
@@ -248,7 +248,7 @@ export default function PagePlanning() {
   const hydrate = useHydratation();
   // Synchro multi-device (US-13) : hydrate le planning depuis la base au
   // montage et pousse les changements ; renvoie l'état pour l'indicateur.
-  const etatSync = useSyncPlanning();
+  const etatSync = useSync();
 
   // Chargement des recettes au montage (système externe asynchrone : setState
   // dans une promesse, pas en synchrone au montage → conforme à la règle ESLint).

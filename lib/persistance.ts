@@ -167,10 +167,13 @@ export async function chargerCochesDistantes(): Promise<{
   return { coches: JSON.stringify(data.coches ?? {}), updatedAt: data.updated_at }
 }
 
-/** Persiste l'état des coches (upsert sur la ligne de l'utilisateur). */
+/**
+ * Persiste l'état des coches (upsert sur la ligne de l'utilisateur). Renvoie
+ * l'`updated_at` (horloge de référence du last-write-wins, comme le planning).
+ */
 export async function sauvegarderCochesDistantes(
   cochesSerialise: string
-): Promise<void> {
+): Promise<string> {
   const supabase = createClient()
   const {
     data: { user },
@@ -184,12 +187,14 @@ export async function sauvegarderCochesDistantes(
     coches = {}
   }
 
+  const horodatage = new Date().toISOString()
   const { error } = await supabase.from("etat_courses").upsert({
     user_id: user.id,
     coches,
-    updated_at: new Date().toISOString(),
+    updated_at: horodatage,
   })
   if (error) {
     throw new Error(`Sauvegarde des coches impossible : ${error.message}`)
   }
+  return horodatage
 }
