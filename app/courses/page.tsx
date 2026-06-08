@@ -29,13 +29,13 @@ import {
   trierAvecCoches,
 } from "@/lib/coches";
 import { storeCoches, storePlanning } from "@/lib/stockage";
-import { accorderLibelleUnite, accorderNom } from "@/lib/pluriels";
+import { accorderNom } from "@/lib/pluriels";
+import { formaterQuantite } from "@/lib/unites";
 import type {
   CategorieIngredient,
   Ingredient,
   ListeCourses,
   Planning,
-  Unite,
 } from "@/types";
 
 // Vrai uniquement après hydratation côté navigateur — permet d'afficher
@@ -64,33 +64,8 @@ const LIBELLES_CATEGORIES: Record<CategorieIngredient, string> = {
   autre: "Autre",
 };
 
-// Libellé d'unité affiché à droite de la quantité. Chaîne vide = on
-// n'affiche que le nombre : "piece" (ex: "3"), "autre" (unité précisée
-// dans le nom de l'ingrédient, section 5.3).
-const LIBELLES_UNITES: Record<Unite, string> = {
-  g: "g",
-  kg: "kg",
-  ml: "ml",
-  cl: "cl",
-  l: "l",
-  piece: "",
-  briquette: "briquette",
-  bouteille: "bouteille",
-  boite: "boîte",
-  sachet: "sachet",
-  cas: "c.à.s",
-  cac: "c.à.c",
-  autre: "",
-};
-
-// "400 g", "20 cl", "2 c.à.s" — et juste "3" pour les pièces.
-function formaterQuantite(ingredient: Ingredient): string {
-  const libelle = LIBELLES_UNITES[ingredient.unite];
-  if (libelle === "") return String(ingredient.quantite);
-  // Accord du libellé d'unité conteneur : « 2 sachets » (#33).
-  const accorde = accorderLibelleUnite(libelle, ingredient.unite, ingredient.quantite);
-  return `${ingredient.quantite} ${accorde}`;
-}
+// Le formatage quantité + unité (« 400 g », « 3 ») vit dans lib/unites.ts —
+// partagé avec la fiche de recette (US-10).
 
 // ============================================================================
 // Animation de réordonnancement (View Transitions)

@@ -201,7 +201,11 @@ test("une sélection manuelle conserve les coches de la liste de courses (RG-15/
   await page.getByRole("link", { name: "← Planning" }).click();
   await page.waitForURL("**/planning");
   const carteLundi = page.locator("main ul > li").first();
-  const nomRecetteLundi = (await carteLundi.locator("p").nth(1).innerText()).trim();
+  // Le nom du plat est désormais un bouton (ouvre la fiche, US-10) ; on lit
+  // son libellé sans cliquer.
+  const nomRecetteLundi = (
+    await carteLundi.getByRole("button", { name: /^Voir la recette/ }).innerText()
+  ).trim();
   await carteLundi
     .getByRole("button", { name: "Sélectionner le dîner de lundi" })
     .click();
@@ -395,6 +399,61 @@ test("annuler une regénération restaure aussi les coches effacées (US-09, RG-
   await expect(
     page.getByRole("checkbox", { name: nomArticle }).first()
   ).toBeChecked();
+});
+
+// ---------------------------------------------------------------------------
+// US-10 — consulter la fiche d'une recette (RG-20). Planning déterministe
+// injecté en localStorage : pas de dépendance au catalogue seedé.
+// ---------------------------------------------------------------------------
+
+test("la fiche d'une recette s'ouvre au clic sur le nom, à l'échelle du slot et groupée (US-10, RG-20)", async ({
+  page,
+}) => {
+  // Omelette : œufs + champignons (à acheter), beurre + poivre (fond de placard).
+  const planning = {
+    semaine: "2026-W23",
+    jours: [{ jour: "lundi", diner: recetteFixture("omelette-aux-champignons") }],
+  };
+  await page.addInitScript(
+    (contenu) => localStorage.setItem("planning_courant", contenu),
+    JSON.stringify(planning)
+  );
+  await page.goto("/planning");
+
+  const carteLundi = page.locator("main ul > li").first();
+  // Passer le slot à 4 personnes (×2) avant d'ouvrir la fiche.
+  const plus = carteLundi.getByRole("button", {
+    name: "Plus de personnes pour le dîner de lundi",
+  });
+  await plus.click();
+  await plus.click();
+  await expect(carteLundi).toContainText("4 pers.");
+
+  // Le nom du plat ouvre la fiche.
+  await carteLundi.getByRole("button", { name: /^Voir la recette/ }).click();
+  const fiche = page.getByRole("dialog");
+  await expect(fiche).toBeVisible();
+  await expect(
+    fiche.getByRole("heading", { name: "Omelette aux champignons" })
+  ).toBeVisible();
+  await expect(fiche).toContainText("pour 4 personnes");
+
+  // Quantité mise à l'échelle (RG-20 via RG-17) : champignons 250 g → 500 g.
+  await expect(fiche).toContainText("champignons de Paris");
+  await expect(fiche).toContainText("500 g");
+
+  // Ingrédients groupés (RG-14) : à acheter + fond de placard.
+  await expect(fiche.getByRole("heading", { name: "À acheter" })).toBeVisible();
+  await expect(
+    fiche.getByRole("heading", { name: /^Fond de placard/ })
+  ).toBeVisible();
+
+  // Recette du catalogue (non perso) → pas de raccourci « Modifier ».
+  await expect(fiche.getByText("Modifier la recette")).toHaveCount(0);
+
+  // Fermeture native via Échap.
+  await page.keyboard.press("Escape");
+  await expect(fiche).not.toBeVisible();
 });
 
 test("la grille 7 colonnes n'apparaît qu'à partir du desktop (#64)", async ({

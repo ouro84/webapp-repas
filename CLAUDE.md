@@ -99,6 +99,8 @@ Format : `type: description courte`
 - `main` = branche de production, toujours déployable
 - Une branche par feature : `feat/generation-planning`, `feat/liste-courses`
 - Jamais de commit direct sur `main`
+- **Jamais de merge avant la CI verte.** Aucune PR n'est mergée tant que tous les tests automatiques (job `test` + checks Vercel) ne sont pas terminés **et** au vert — même si le merge a été explicitement demandé. La protection de branche est indisponible (plan Free, cf. piège dédié), donc cette règle tient par discipline : attendre la fin des checks (`gh pr checks <n> --watch`), pas seulement leur lancement.
+  - **Si un check échoue alors qu'un merge a été demandé** : ne pas merger, ne pas by-passer en silence. Remonter à l'humain les éléments d'arbitrage — quel check, le lien du run, l'extrait de log pertinent, la cause probable, et si l'échec est lié à la PR ou pré-existant/flaky (réseau, staging non seedé…) — puis proposer soit une **correction**, soit un **by-pass justifié**, et laisser l'humain trancher.
 
 ### Secrets
 - `.env.local` dans `.gitignore` — jamais commité
@@ -163,6 +165,10 @@ Format : `type: description courte`
 **Catalogue global (lecture seule) + recettes perso** — Les recettes `user_id IS NULL` sont globales (visibles de tous, non éditables) ; celles de l'utilisateur sont privées et modifiables. RLS : SELECT autorise `user_id IS NULL OR auth.uid() = user_id`, mais insert/update/delete restent « propriétaire ». Pour « modifier » une globale, on la **duplique** dans son espace (PR3). Ne pas attendre qu'un `update`/`delete` touche une globale : la RLS le refuse silencieusement.
 
 **Génération côté serveur, liste côté client** — La génération passe par `POST /api/planning/generer` (lit les recettes sous RLS, applique `lib/generateur`, renvoie le planning ; le client le persiste en localStorage). Mais le sélecteur (#14) et le « ↺ changer » ont besoin de la liste : ils la chargent via `lib/recettes.ts` (client). Deux accès distincts, c'est voulu.
+
+**La fiche de recette lit le slot, pas Supabase (US-10)** — La recette complète (avec ses ingrédients) est déjà dans le planning persisté : `FicheRecette` s'affiche directement depuis l'objet du slot, sans appel réseau ni état loading. Déclencheur = le **nom du plat** (un `<button>`), pas la card entière — elle porte déjà changer/sélectionner/stepper (pas d'imbrication d'interactifs). Les quantités sont mises à l'échelle via les mêmes helpers que la liste de courses (`facteurEchelle`/`arrondirQuantite` de `lib/personnes`, formatage `lib/unites.ts`) → ne pas réimplémenter, sous peine de diverger. Le raccourci « Modifier » n'apparaît que pour une recette **perso** : l'éditabilité vient de `chargerRecettesGerees()` (la page planning charge cette variante, pas `chargerRecettes`, pour disposer du flag `editable`). **Pas de champ saisonnalité dans le modèle** : c'est le backlog #P12 — ne pas inventer le champ.
+
+**`useSearchParams` exige une frontière `<Suspense>` (Next 16)** — Le deep-link d'édition `/recettes?edition=<id>` (depuis la fiche) lit le query param via `useSearchParams` ; sans `<Suspense>` parent, le build casse. `app/recettes/page.tsx` isole donc le contenu dans `ContenuRecettes`, l'export par défaut l'enveloppe. L'ouverture du formulaire se fait dans le `.then()` du chargement (pas en synchrone dans l'effet → règle `set-state-in-effect`).
 
 **Les e2e de génération ne valident qu'en CI** — En local, les e2e tapent l'instance de `.env.local` (prod), qui n'a le catalogue global que si la migration y a été appliquée (au merge). Le catalogue est seedé sur **staging** par la CI (migration avant e2e), donc les parcours de génération sont fiables en CI mais peuvent échouer en local si la base pointée n'est pas seedée.
 

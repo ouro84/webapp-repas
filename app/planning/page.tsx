@@ -37,10 +37,11 @@ import {
   PERSONNES_MAX,
   PERSONNES_MIN,
 } from "@/lib/personnes";
-import { chargerRecettes } from "@/lib/recettes";
+import { chargerRecettesGerees, type RecetteGeree } from "@/lib/recettes";
 import { parseApiError } from "@/lib/errors";
 import { BadgeTemps } from "@/components/planning/badge-temps";
 import { SelecteurRecette } from "@/components/planning/selecteur-recette";
+import { FicheRecette } from "@/components/planning/fiche-recette";
 import type { Jour, JourPlanning, Planning, Recette } from "@/types";
 
 type TypeRepas = "dejeuner" | "diner";
@@ -149,18 +150,38 @@ export default function PagePlanning() {
     jour: Jour;
     typeRepas: TypeRepas;
   } | null>(null);
+  // Recette consultée (US-10) : la fiche est montée tant que cette valeur est
+  // non nulle. `personnes` fige l'échelle d'affichage (RG-20) du slot ouvert.
+  const [ficheOuverte, setFicheOuverte] = useState<{
+    recette: Recette;
+    personnes: number;
+  } | null>(null);
   // Recettes de l'utilisateur (globales + perso) chargées depuis Supabase (#2),
-  // pour le sélecteur manuel (#14) et le remplacement aléatoire. Liste vide
-  // tant que le chargement n'a pas abouti.
-  const [recettes, setRecettes] = useState<Recette[]>([]);
+  // annotées `editable` pour le raccourci « Modifier » de la fiche (US-10).
+  // Servent aussi le sélecteur manuel (#14) et le remplacement aléatoire.
+  const [recettesGerees, setRecettesGerees] = useState<RecetteGeree[]>([]);
+
+  // Liste plate des recettes (sélecteur, remplacement aléatoire) + ensemble des
+  // ids éditables (recettes perso) pour la fiche — dérivés des recettes gérées.
+  const recettes = useMemo<Recette[]>(
+    () => recettesGerees.map((r) => r.recette),
+    [recettesGerees]
+  );
+  const idsEditables = useMemo<ReadonlySet<string>>(
+    () =>
+      new Set(
+        recettesGerees.filter((r) => r.editable).map((r) => r.recette.id)
+      ),
+    [recettesGerees]
+  );
 
   // Chargement des recettes au montage (système externe asynchrone : setState
   // dans une promesse, pas en synchrone au montage → conforme à la règle ESLint).
   useEffect(() => {
     let actif = true;
-    chargerRecettes()
+    chargerRecettesGerees()
       .then((liste) => {
-        if (actif) setRecettes(liste);
+        if (actif) setRecettesGerees(liste);
       })
       .catch((erreur) => {
         console.error("Chargement des recettes échoué.", erreur);
@@ -433,6 +454,12 @@ export default function PagePlanning() {
                   onChangerPersonnes={(n) =>
                     changerPersonnes(jp.jour, slot.typeRepas, n)
                   }
+                  onVoir={() =>
+                    setFicheOuverte({
+                      recette: slot.recette,
+                      personnes: personnesDuSlot(jp, slot.typeRepas),
+                    })
+                  }
                 />
               ))}
             </div>
@@ -464,6 +491,12 @@ export default function PagePlanning() {
                 onChangerPersonnes={(n) =>
                   changerPersonnes(jp.jour, slot.typeRepas, n)
                 }
+                onVoir={() =>
+                  setFicheOuverte({
+                    recette: slot.recette,
+                    personnes: personnesDuSlot(jp, slot.typeRepas),
+                  })
+                }
               />
             ))}
           </section>
@@ -478,6 +511,17 @@ export default function PagePlanning() {
           idsAuPlanning={recettesUtilisees(planning)}
           onSelectionner={selectionnerRecette}
           onFermer={() => setSlotEnSelection(null)}
+        />
+      )}
+
+      {/* Fiche de recette (US-10) — montée seulement pendant la consultation.
+          `editable` distingue les recettes perso (modifiables) des globales. */}
+      {ficheOuverte && (
+        <FicheRecette
+          recette={ficheOuverte.recette}
+          personnes={ficheOuverte.personnes}
+          editable={idsEditables.has(ficheOuverte.recette.id)}
+          onFermer={() => setFicheOuverte(null)}
         />
       )}
     </main>
@@ -496,6 +540,7 @@ function SlotRepas({
   onChanger,
   onSelectionner,
   onChangerPersonnes,
+  onVoir,
 }: {
   libelle: string;
   jourLabel: string;
@@ -505,13 +550,24 @@ function SlotRepas({
   onChanger: () => void;
   onSelectionner: () => void;
   onChangerPersonnes: (personnes: number) => void;
+  onVoir: () => void;
 }) {
   return (
     <div className="rounded-lg border border-brand-100 bg-white p-3 shadow-sm">
       <p className="text-xs font-medium uppercase tracking-wide text-brand-700/85">
         {libelle}
       </p>
-      <p className="mt-1 text-sm font-medium text-brand-900">{recette.nom}</p>
+      {/* Nom = déclencheur de la fiche (US-10, RG-20). Bouton plutôt que card
+          entière cliquable : la card porte déjà changer/sélectionner/stepper
+          (pas d'imbrication d'interactifs). text-left + zone tactile étendue. */}
+      <button
+        type="button"
+        onClick={onVoir}
+        aria-label={`Voir la recette : ${recette.nom}`}
+        className="mt-1 block w-full text-left text-sm font-medium text-brand-900 underline-offset-2 transition-colors hover:text-brand-700 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
+      >
+        {recette.nom}
+      </button>
       <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
         <BadgeTemps temps={recette.tempsPreparation} />
         {/*
