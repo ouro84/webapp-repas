@@ -51,9 +51,22 @@ const storeEtatSync = {
 
 // ---------------------------------------------------------------------------
 // Mécanique de synchro
+//
+// Horloge de référence : `planning_courant_maj` = l'`updated_at` RENVOYÉ par la
+// base (jamais l'horloge client) — posé uniquement au pull ou au push réussi.
+// Une édition locale pose seulement `planning_dirty` : tant que dirty, le local
+// fait foi et n'est JAMAIS écrasé par l'hydratation (évite le clobber dû au
+// décalage d'horloges). Un cache non horodaté (legacy/injecté) est aussi
+// considéré le plus frais ; un cache vide récupère la base.
 // ---------------------------------------------------------------------------
 let hydratationEnCours = false;
+let pushEnCours = false;
+let rePushDemande = false;
 let minuteur: ReturnType<typeof setTimeout> | null = null;
+
+function estDirty(): boolean {
+  return localStorage.getItem(CLE_DIRTY) === "1";
+}
 
 function lireMajLocale(): number {
   const valeur = localStorage.getItem(CLE_MAJ);
@@ -70,42 +83,61 @@ function planningLocal(): Planning | null {
   }
 }
 
-// Pousse le planning courant en base. En cas d'échec (réseau), conserve le
-// drapeau `dirty` et bascule l'indicateur en « hors-ligne » : le push sera
-// rejoué au prochain chargement ou au retour en ligne.
+// Pousse le planning courant en base. Sérialisé (garde `pushEnCours`) pour
+// éviter les delete→insert concurrents (duplicate key / RLS). Au succès,
+// l'horodatage local prend la valeur serveur renvoyée et `dirty` est levé ;
+// à l'échec (réseau/hors-ligne), `dirty` reste et le push sera rejoué.
 async function pousser(): Promise<void> {
+  if (pushEnCours) {
+    rePushDemande = true;
+    return;
+  }
   const planning = planningLocal();
   if (planning === null) return; // rien à pousser
+
+  pushEnCours = true;
   definirEtat("sauvegarde");
   try {
-    await sauvegarderPlanningDistant(planning);
+    const majServeur = await sauvegarderPlanningDistant(planning);
+    localStorage.setItem(CLE_MAJ, majServeur);
     localStorage.removeItem(CLE_DIRTY);
     definirEtat("synchronise");
   } catch (erreur) {
-    localStorage.setItem(CLE_DIRTY, "1");
     definirEtat("hors-ligne");
     console.error("Synchronisation du planning échouée (sera rejouée).", erreur);
+  } finally {
+    pushEnCours = false;
+    if (rePushDemande) {
+      rePushDemande = false;
+      void pousser();
+    }
   }
 }
 
-// À chaque écriture locale du planning : horodate, marque dirty, planifie un
-// push débounce. Ignoré pendant l'hydratation (sinon on repousserait en base
-// ce qu'on vient d'en lire).
+// À chaque écriture locale du planning : marque `dirty` (le local diverge) et
+// planifie un push débounce. On NE touche PAS l'horodatage (réservé au serveur).
+// Ignoré pendant l'hydratation (sinon on repousserait ce qu'on vient de lire).
 function planifierPush(): void {
   if (hydratationEnCours) return;
-  localStorage.setItem(CLE_MAJ, new Date().toISOString());
   localStorage.setItem(CLE_DIRTY, "1");
   if (minuteur) clearTimeout(minuteur);
   minuteur = setTimeout(() => void pousser(), DELAI_DEBOUNCE_MS);
 }
 
 /**
- * Hydrate le planning local depuis la base selon un last-write-wins horodaté.
- * Règle : un planning local SANS horodatage (injecté en test, ou antérieur à
- * cette feature) est considéré comme le plus frais — on ne le remplace pas.
- * Un device neuf (localStorage vide) récupère donc le planning distant.
+ * Hydrate le planning local depuis la base. Le local fait foi s'il a des
+ * changements non poussés (`dirty`) ou s'il n'est pas horodaté (legacy/injecté)
+ * — on ne l'écrase jamais dans ces cas. Sinon, la base gagne quand son
+ * `updated_at` est strictement plus récent (comparaison 100 % horloge serveur),
+ * ou quand le cache local est vide (device neuf).
  */
 export async function hydrater(): Promise<void> {
+  // Changements locaux non poussés : le local gagne, on tente de converger.
+  if (estDirty()) {
+    void pousser();
+    return;
+  }
+
   let distant: Awaited<ReturnType<typeof chargerPlanningDistant>>;
   try {
     distant = await chargerPlanningDistant();
@@ -113,29 +145,21 @@ export async function hydrater(): Promise<void> {
     console.error("Chargement du planning distant échoué.", erreur);
     return;
   }
+  if (distant === null) return; // rien à tirer
 
-  if (distant === null) {
-    // Base vide : si on a une écriture locale en attente, la pousser.
-    if (localStorage.getItem(CLE_DIRTY)) void pousser();
-    return;
-  }
-
+  const local = planningLocal();
   const majLocale = lireMajLocale();
-  // Local présent mais non horodaté → considéré le plus frais (cf. règle).
-  if (planningLocal() !== null && majLocale === 0) return;
+  // Local présent mais non horodaté (legacy/injecté) → considéré le plus frais.
+  if (local !== null && majLocale === 0) return;
 
-  const majDistante = Date.parse(distant.updatedAt);
-  if (majDistante > majLocale) {
-    // La base gagne : on hydrate sans déclencher de push.
+  // Cache vide → on adopte la base ; sinon, la base gagne si strictement plus récente.
+  if (local === null || Date.parse(distant.updatedAt) > majLocale) {
     hydratationEnCours = true;
     storePlanning.ecrire(JSON.stringify(distant.planning));
     localStorage.setItem(CLE_MAJ, distant.updatedAt);
     localStorage.removeItem(CLE_DIRTY);
     hydratationEnCours = false;
     definirEtat("synchronise");
-  } else if (majLocale > majDistante) {
-    // Le local est plus récent : on pousse pour converger.
-    void pousser();
   }
 }
 
