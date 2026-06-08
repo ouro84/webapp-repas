@@ -39,16 +39,20 @@ import {
   PERSONNES_MIN,
 } from "@/lib/personnes";
 import { estRestes, marquerRestes } from "@/lib/restes";
-import { useSync } from "@/lib/sync";
+import { naviguerVers, useSemaineAffichee, useSync } from "@/lib/sync";
 import { chargerRecettesGerees, type RecetteGeree } from "@/lib/recettes";
 import {
+  decalageEntre,
   formaterSemaine,
   libelleRelatif,
-  semaineParDefaut,
-  semainesSelectionnables,
-  type SemaineOption,
+  semaineDecalee,
+  semaineISO,
 } from "@/lib/semaines";
 import { parseApiError } from "@/lib/errors";
+
+// Plage de navigation de l'historique (#5) : 12 semaines passées → +6 futures.
+const SEMAINES_PASSEES = 12;
+const SEMAINES_FUTURES = 6;
 import { BadgeTemps } from "@/components/planning/badge-temps";
 import { SelecteurRecette } from "@/components/planning/selecteur-recette";
 import { FicheRecette } from "@/components/planning/fiche-recette";
@@ -90,51 +94,62 @@ function useHydratation(): boolean {
   );
 }
 
-// Sélecteur de la semaine cible de génération (US-11, RG-21) : stepper borné
-// ‹ [libellé relatif + date] ›, motif cohérent avec le stepper de personnes.
-function SelecteurSemaine({
-  options,
-  offsetCible,
-  onChanger,
+// Navigateur de semaines (US-14, #5) : stepper borné ‹ [libellé relatif + date] ›
+// qui change la semaine AFFICHÉE (passé stocké → futur). La semaine courante
+// (offset 0) est visuellement marquée (RG). Remplace le sélecteur de génération
+// #55 (génération = semaine affichée).
+function NavigateurSemaine({
+  semaine,
+  offset,
+  peutReculer,
+  peutAvancer,
+  onPrecedente,
+  onSuivante,
   disabled,
 }: {
-  options: SemaineOption[];
-  offsetCible: number;
-  onChanger: (semaine: string) => void;
+  semaine: string;
+  offset: number; // par rapport à la semaine courante (0 = cette semaine)
+  peutReculer: boolean;
+  peutAvancer: boolean;
+  onPrecedente: () => void;
+  onSuivante: () => void;
   disabled?: boolean;
 }) {
-  const courant = options[offsetCible];
-  if (!courant) return null;
-  const peutReculer = offsetCible > 0;
-  const peutAvancer = offsetCible < options.length - 1;
+  const estCourante = offset === 0;
   const styleFleche =
     "relative flex size-8 items-center justify-center rounded-full border border-brand-200 text-brand-700 transition-colors after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent";
   return (
     <div
       role="group"
-      aria-label="Choisir la semaine à générer"
+      aria-label="Naviguer entre les semaines"
       className="inline-flex items-center gap-2"
     >
       <button
         type="button"
-        onClick={() => onChanger(options[offsetCible - 1]!.semaine)}
+        onClick={onPrecedente}
         disabled={disabled || !peutReculer}
         aria-label="Semaine précédente"
         className={styleFleche}
       >
         <ChevronSemaine direction="gauche" />
       </button>
-      <span aria-live="polite" className="min-w-[10rem] text-center">
-        <span className="block text-sm font-medium text-brand-900">
-          {libelleRelatif(courant.offset)}
+      {/* Semaine courante marquée (RG) : fond brand + texte accentué. */}
+      <span
+        aria-live="polite"
+        className={`min-w-[11rem] rounded-lg px-3 py-1 text-center ${estCourante ? "bg-brand-50" : ""}`}
+      >
+        <span
+          className={`block text-sm font-medium ${estCourante ? "text-brand-700" : "text-brand-900"}`}
+        >
+          {libelleRelatif(offset)}
         </span>
         <span className="block text-xs text-brand-700/85">
-          {formaterSemaine(courant.semaine)}
+          {formaterSemaine(semaine)}
         </span>
       </span>
       <button
         type="button"
-        onClick={() => onChanger(options[offsetCible + 1]!.semaine)}
+        onClick={onSuivante}
         disabled={disabled || !peutAvancer}
         aria-label="Semaine suivante"
         className={styleFleche}
@@ -245,11 +260,12 @@ export default function PagePlanning() {
       ),
     [recettesGerees]
   );
-  const [semaineChoisie, setSemaineChoisie] = useState<string | null>(null);
   const hydrate = useHydratation();
-  // Synchro multi-device (US-13) : hydrate le planning depuis la base au
-  // montage et pousse les changements ; renvoie l'état pour l'indicateur.
+  // Synchro + historique : useSync hydrate la semaine affichée au montage et
+  // pousse les changements (indicateur) ; useSemaineAffichee donne la semaine
+  // courante affichée (navigation #5).
   const etatSync = useSync();
+  const semaineAffichee = useSemaineAffichee();
 
   // Chargement des recettes au montage (système externe asynchrone : setState
   // dans une promesse, pas en synchrone au montage → conforme à la règle ESLint).
@@ -308,25 +324,18 @@ export default function PagePlanning() {
     }
   }, [brut]);
 
-  // Sélecteur de semaine cible (US-11, RG-21). Plage et défaut dépendent de la
-  // date du client → calculés une fois hydraté (motif useHydratation) pour
-  // éviter tout mismatch SSR. Défaut : la semaine du planning actif si elle est
-  // dans la plage (« Regénérer » = même semaine), sinon le défaut RG-21
-  // (semaine courante, ou prochaine le week-end). `semaineChoisie` n'est posé
-  // que par l'utilisateur (clic) — jamais en effet → conforme set-state-in-effect.
-  const semainesDispo = useMemo(
-    () => (hydrate ? semainesSelectionnables() : []),
-    [hydrate]
-  );
-  const defautSemaine = useMemo(() => {
-    if (!hydrate) return null;
-    if (planning && semainesDispo.some((o) => o.semaine === planning.semaine)) {
-      return planning.semaine;
-    }
-    return semaineParDefaut();
-  }, [hydrate, planning, semainesDispo]);
-  const semaineCible = semaineChoisie ?? defautSemaine;
-  const offsetCible = semainesDispo.findIndex((o) => o.semaine === semaineCible);
+  // Navigation entre semaines (US-14, #5). La date courante dépend du client →
+  // calculée une fois hydraté (motif useHydratation, pas de mismatch SSR).
+  // `offsetAffiche` = position de la semaine affichée vs la semaine courante.
+  const navPret = hydrate && semaineAffichee !== null;
+  const offsetAffiche = navPret
+    ? decalageEntre(semaineISO(new Date()), semaineAffichee)
+    : 0;
+  const peutReculer = navPret && offsetAffiche > -SEMAINES_PASSEES;
+  const peutAvancer = navPret && offsetAffiche < SEMAINES_FUTURES;
+  function allerSemaine(delta: number): void {
+    if (semaineAffichee) void naviguerVers(semaineDecalee(semaineAffichee, delta));
+  }
 
   // Génération (US-01) : déléguée au serveur (#2, route /api/planning/generer)
   // qui lit les recettes de l'utilisateur (globales + perso) sous RLS et
@@ -338,11 +347,11 @@ export default function PagePlanning() {
     setEnGeneration(true);
     setErreurGeneration(null);
     try {
-      // Semaine cible (US-11) : envoyée au serveur, qui valide la plage (RG-21).
+      // Génère pour la semaine affichée (US-14) ; le serveur valide la plage.
       const reponse = await fetch("/api/planning/generer", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(semaineCible ? { semaine: semaineCible } : {}),
+        body: JSON.stringify(semaineAffichee ? { semaine: semaineAffichee } : {}),
       });
       if (!reponse.ok) {
         setErreurGeneration(await parseApiError(reponse));
@@ -484,7 +493,7 @@ export default function PagePlanning() {
     );
   }
 
-  // --- État vide (RG-09) : bouton de génération centré (écran 1) ---
+  // --- État vide (RG-09) : semaine affichée sans planning (#5) ---
   if (planning === null) {
     return (
       <main id="contenu" className="flex flex-1 flex-col items-center justify-center gap-8 p-8">
@@ -493,15 +502,18 @@ export default function PagePlanning() {
             Mon planning de la semaine
           </h1>
           <p className="mt-2 text-brand-700/85">
-            Aucun planning pour l&apos;instant — lance la génération !
+            Aucun planning pour cette semaine — lance la génération !
           </p>
         </div>
-        {/* Choix de la semaine cible (US-11) — après hydratation (date client). */}
-        {hydrate && offsetCible >= 0 && (
-          <SelecteurSemaine
-            options={semainesDispo}
-            offsetCible={offsetCible}
-            onChanger={setSemaineChoisie}
+        {/* Navigation entre semaines (#5) — après hydratation (date client). */}
+        {navPret && (
+          <NavigateurSemaine
+            semaine={semaineAffichee!}
+            offset={offsetAffiche}
+            peutReculer={peutReculer}
+            peutAvancer={peutAvancer}
+            onPrecedente={() => allerSemaine(-1)}
+            onSuivante={() => allerSemaine(1)}
             disabled={enGeneration}
           />
         )}
@@ -532,9 +544,7 @@ export default function PagePlanning() {
           <h1 className="text-2xl font-bold text-brand-900">
             Mon planning de la semaine
           </h1>
-          <p className="text-sm text-brand-700/85">
-            {formaterSemaine(planning.semaine)}
-          </p>
+          {/* La semaine s'affiche dans le navigateur ci-dessous (#5). */}
           {/* Indicateur de synchro (US-13, bonus) — discret, seulement hors état nominal */}
           {etatSync !== "synchronise" && (
             <p
@@ -568,15 +578,17 @@ export default function PagePlanning() {
         </div>
       </header>
 
-      {/* Semaine cible de la (re)génération (US-11) : par défaut la semaine du
-          planning affiché — « Regénérer » vise alors la même semaine. */}
-      {hydrate && offsetCible >= 0 && (
-        <div className="mb-6 flex flex-wrap items-center gap-x-3 gap-y-1">
-          <span className="text-sm text-brand-700/85">Générer pour :</span>
-          <SelecteurSemaine
-            options={semainesDispo}
-            offsetCible={offsetCible}
-            onChanger={setSemaineChoisie}
+      {/* Navigateur de semaines (#5) : change la semaine affichée ; la
+          génération/regénération vise la semaine affichée. */}
+      {navPret && (
+        <div className="mb-6">
+          <NavigateurSemaine
+            semaine={semaineAffichee!}
+            offset={offsetAffiche}
+            peutReculer={peutReculer}
+            peutAvancer={peutAvancer}
+            onPrecedente={() => allerSemaine(-1)}
+            onSuivante={() => allerSemaine(1)}
             disabled={enGeneration}
           />
         </div>

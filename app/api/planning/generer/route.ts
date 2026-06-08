@@ -2,8 +2,12 @@ import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { apiError } from "@/lib/errors"
 import { genererPlanning } from "@/lib/generateur"
-import { semaineParDefaut, semainesSelectionnables } from "@/lib/semaines"
+import { decalageEntre, semaineISO, semaineParDefaut } from "@/lib/semaines"
 import { dbRecetteToDomain } from "@/lib/adapters"
+
+// Plage de génération autorisée (#5) : navigation historique −12 → +6 semaines.
+const SEMAINES_PASSEES = 12
+const SEMAINES_FUTURES = 6
 import type { DbRecette } from "@/types"
 
 export async function POST(request: Request) {
@@ -21,21 +25,24 @@ export async function POST(request: Request) {
     )
   }
 
-  // Semaine cible (US-11, RG-21) : lue dans le corps, validée contre la plage
-  // autorisée (courante → +6) calculée côté serveur — le client n'en est pas
-  // l'autorité. Corps absent / sans semaine → défaut (semaine courante, ou
+  // Semaine cible (US-11/US-14) : lue dans le corps, validée contre la plage de
+  // navigation (−12 → +6 semaines) calculée côté serveur — le client n'en est
+  // pas l'autorité. Corps absent / sans semaine → défaut (semaine courante, ou
   // prochaine le week-end).
   const corps = (await request.json().catch(() => null)) as {
     semaine?: unknown
   } | null
   let semaine = semaineParDefaut()
   if (corps && typeof corps.semaine === "string") {
-    const autorisees = semainesSelectionnables().map((o) => o.semaine)
-    if (!autorisees.includes(corps.semaine)) {
+    if (!/^\d{4}-W\d{2}$/.test(corps.semaine)) {
+      return apiError("POST /api/planning/generer", null, "Semaine invalide.", 400)
+    }
+    const decalage = decalageEntre(semaineISO(new Date()), corps.semaine)
+    if (decalage < -SEMAINES_PASSEES || decalage > SEMAINES_FUTURES) {
       return apiError(
         "POST /api/planning/generer",
         null,
-        "Semaine cible invalide (hors de la plage autorisée).",
+        "Semaine cible hors de la plage autorisée.",
         400
       )
     }

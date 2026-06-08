@@ -74,11 +74,20 @@ export function semainesSelectionnables(
   return options
 }
 
-/** Libellé relatif d'un offset de semaine (RG-21, affichage). */
+/** Libellé relatif d'un offset de semaine (affichage navigateur, #5). */
 export function libelleRelatif(offset: number): string {
   if (offset === 0) return "Cette semaine"
   if (offset === 1) return "Semaine prochaine"
-  return `Dans ${offset} semaines`
+  if (offset === -1) return "Semaine dernière"
+  if (offset > 1) return `Dans ${offset} semaines`
+  return `Il y a ${-offset} semaines`
+}
+
+/** Nombre de semaines de `a` vers `b` (b plus tard → positif). */
+export function decalageEntre(a: string, b: string): number {
+  const la = lundiDeSemaine(a).getTime()
+  const lb = lundiDeSemaine(b).getTime()
+  return Math.round((lb - la) / (7 * 86_400_000))
 }
 
 // Lundi (date locale) d'une semaine ISO "AAAA-Wnn" — inverse de semaineISO.

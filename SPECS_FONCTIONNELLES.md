@@ -319,6 +319,23 @@ Réduire à zéro l'effort de planification hebdomadaire des repas, du choix des
 > **When** je consulte la liste sur un autre appareil  
 > **Then** j'y retrouve le même état coché/décoché
 
+### US-14 — Naviguer entre les semaines (historique)
+
+> **En tant qu'** utilisateur, je veux naviguer entre les semaines (passées et futures) afin de consulter un planning antérieur (s'inspirer, vérifier) ou préparer une semaine à venir.
+
+**Comportement :**
+> **Given** je suis sur la page planning  
+> **When** je clique sur « semaine précédente » / « semaine suivante »  
+> **Then** le planning de cette semaine s'affiche (ou un état vide à générer), avec sa liste de courses associée (RG-24)
+
+> **Given** je navigue  
+> **When** j'observe le navigateur  
+> **Then** la **semaine courante** est visuellement identifiable parmi les autres (RG-24)
+
+> **Given** j'ai généré un planning pour une semaine  
+> **When** je quitte l'app puis y reviens (déconnexion/reconnexion)  
+> **Then** ce planning et ses coches sont retrouvés à l'identique (déjà couvert par US-13)
+
 ---
 
 ## 5. Modèle de données
@@ -412,7 +429,7 @@ type Planning = {
 
 Le planning généré est sauvegardé en `localStorage` sous la clé `planning_courant`. Il est écrasé à chaque nouvelle génération.
 
-**Synchronisation multi-device (US-13, #6) :** depuis cette feature, la **base Supabase est la source de vérité** du planning **et des coches** ; `localStorage` est un **cache**. Chaque donnée est poussée en base à chaque changement et hydratée au chargement selon un **last-write-wins horodaté**, avec une **file de rejeu** minimale pour les écritures échouées hors-ligne. Clés de cache : planning (`planning_courant`, horodatage `planning_courant_maj`, file `planning_dirty`) et coches (`courses_cochees`, horodatage `courses_cochees_maj`, file `courses_dirty`). (Cf. RG-23, tables `planning`/`planning_slot`/`etat_courses`.)
+**Synchronisation multi-device (US-13, #6) + historique (US-14, #5) :** la **base Supabase est la source de vérité** du planning **et des coches**, **par semaine** ; `localStorage` cache la **semaine affichée** (clé `semaine_affichee`). Chaque donnée est poussée en base à chaque changement et hydratée selon un **last-write-wins horodaté**, avec **file de rejeu** hors-ligne. Naviguer change la semaine affichée : on **flushe** d'abord les écritures en attente (sinon perte) puis on charge la semaine cible. Clés de cache : planning (`planning_courant`, `planning_courant_maj`, `planning_dirty`) et coches (`courses_cochees`, `courses_cochees_maj`, `courses_dirty`). (Cf. RG-23/RG-24, tables `planning`/`planning_slot`/`etat_courses` clé-vées par `(user, semaine)`.)
 
 Les coches de la liste de courses (US-05) sont sauvegardées sous la clé `courses_cochees` : un objet `{ [nom|unité]: quantité au moment du cochage }` (cf. RG-12). La clé est effacée à chaque génération complète de planning (RG-13).
 
@@ -554,13 +571,19 @@ La fiche affiche **tout ce que l'on connaît** de la recette : titre, temps de p
 - **Édition** : un raccourci « Modifier » n'apparaît que pour une recette **personnelle** (éditable, cf. RLS) ; absent pour le catalogue global.
 - **Saisonnalité : hors périmètre** tant que la donnée n'existe pas (cf. backlog #P12). La fiche n'invente pas de champ ; elle l'affichera quand le modèle le portera.
 
-### RG-21 — Sélection de la semaine cible (US-11)
+### RG-21 — Sélection de la semaine cible (US-11) — absorbée par RG-24
 
-La génération vise une **semaine cible** (identifiant ISO `AAAA-Wnn`), choisie par l'utilisateur. Règles :
+> **Mise à jour #5 :** le sélecteur de semaine cible de #55 est **remplacé par le navigateur de semaines** (RG-24). La génération vise désormais la **semaine affichée** ; la plage de validation serveur passe de « courante → +6 » à « −12 → +6 » (cf. RG-24), et le « mono-actif » est levé (multi-semaines).
 
-- **Plage** : de la semaine courante jusqu'à **+6 semaines**. Pas de semaine passée. La plage est **validée côté serveur** (la route de génération rejette toute semaine hors plage) — le client n'en est pas l'autorité.
-- **Défaut** : la semaine courante ; **la semaine prochaine si l'on est un samedi ou un dimanche** (aligné sur le JTBD « faire les courses le week-end d'avant »).
-- **Mono-actif** : un seul planning est conservé à la fois (`planning_courant`). Générer pour une autre semaine **remplace** l'actif (effacement des coches, RG-13) — réversible le temps de la fenêtre d'undo (RG-19). La conservation de plusieurs semaines (historique) est une feature distincte (backlog #P08).
+Historique (conservé pour mémoire) : la génération visait une semaine cible (courante → +6), validée côté serveur ; défaut = semaine courante, ou prochaine le week-end (logique reprise par le navigateur).
+
+### RG-24 — Navigation entre semaines & historique (US-14)
+
+- **Navigateur** : sur la page planning, un stepper ‹ semaine précédente / suivante › change la **semaine affichée**. La liste de courses suit la même semaine (n° de semaine affiché en tête de `/courses`, même format que le planning).
+- **Plage** : de **−12 semaines** (rétention) à **+6 semaines** ; validée côté serveur à la génération. La **semaine courante** (offset 0) est **visuellement marquée** (fond brand + libellé « Cette semaine »).
+- **Défaut affiché** : la semaine courante, ou la **prochaine le week-end** (reprise de l'ancien RG-21). Au rechargement complet, on revient à ce défaut (on ne reste pas bloqué sur une semaine parcourue).
+- **Multi-semaines** : chaque semaine a son planning et ses coches en base (`(user, semaine)`). Changer de semaine **flushe** d'abord les écritures en attente (sinon perte), puis charge la cible. Rétention : purge des semaines au-delà de 12 (PR3).
+- **Confirmations** (regénérer / modifier un slot d'une semaine **passée**) : livrées en PR3.
 
 ### RG-22 — Repas en « restes » (US-12)
 

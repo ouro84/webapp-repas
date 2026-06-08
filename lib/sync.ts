@@ -19,6 +19,7 @@ import {
   sauvegarderCochesDistantes,
   sauvegarderPlanningDistant,
 } from "@/lib/persistance";
+import { semaineParDefaut } from "@/lib/semaines";
 import type { Planning } from "@/types";
 
 // Horodatage de la dernière écriture locale (last-write-wins) et drapeau
@@ -28,6 +29,9 @@ const CLE_MAJ = "planning_courant_maj";
 const CLE_DIRTY = "planning_dirty";
 const CLE_MAJ_COCHES = "courses_cochees_maj";
 const CLE_DIRTY_COCHES = "courses_dirty";
+// Semaine actuellement affichée (navigation historique #5) — partagée
+// planning ↔ courses.
+const CLE_SEMAINE = "semaine_affichee";
 
 const DELAI_DEBOUNCE_MS = 800;
 
@@ -53,6 +57,39 @@ const storeEtatSync = {
   lire: (): EtatSync => etat,
   lireServeur: (): EtatSync => "synchronise",
 };
+
+// ---------------------------------------------------------------------------
+// Semaine affichée (#5) — store externe adossé à localStorage, partagé entre
+// les pages planning et courses.
+// ---------------------------------------------------------------------------
+const abonnesSemaine = new Set<() => void>();
+
+function definirSemaineAffichee(semaine: string): void {
+  localStorage.setItem(CLE_SEMAINE, semaine);
+  for (const rappel of abonnesSemaine) rappel();
+}
+
+const storeSemaine = {
+  sAbonner(rappel: () => void): () => void {
+    abonnesSemaine.add(rappel);
+    window.addEventListener("storage", rappel);
+    return () => {
+      abonnesSemaine.delete(rappel);
+      window.removeEventListener("storage", rappel);
+    };
+  },
+  lire: (): string | null => localStorage.getItem(CLE_SEMAINE),
+  lireServeur: (): string | null => null,
+};
+
+/** Semaine actuellement affichée (ISO), ou null avant hydratation. */
+export function useSemaineAffichee(): string | null {
+  return useSyncExternalStore(
+    storeSemaine.sAbonner,
+    storeSemaine.lire,
+    storeSemaine.lireServeur
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Mécanique de synchro
@@ -137,44 +174,9 @@ function planifierPush(): void {
   minuteur = setTimeout(() => void pousser(), DELAI_DEBOUNCE_MS);
 }
 
-/**
- * Hydrate le planning local depuis la base. Le local fait foi s'il a des
- * changements non poussés (`dirty`) ou s'il n'est pas horodaté (legacy/injecté)
- * — on ne l'écrase jamais dans ces cas. Sinon, la base gagne quand son
- * `updated_at` est strictement plus récent (comparaison 100 % horloge serveur),
- * ou quand le cache local est vide (device neuf).
- */
-async function hydraterPlanning(): Promise<void> {
-  // Changements locaux non poussés : le local gagne, on tente de converger.
-  if (estDirty()) {
-    void pousser();
-    return;
-  }
-
-  let distant: Awaited<ReturnType<typeof chargerPlanningDistant>>;
-  try {
-    distant = await chargerPlanningDistant();
-  } catch (erreur) {
-    console.error("Chargement du planning distant échoué.", erreur);
-    return;
-  }
-  if (distant === null) return; // rien à tirer
-
-  const local = planningLocal();
-  const majLocale = lireMajLocale();
-  // Local présent mais non horodaté (legacy/injecté) → considéré le plus frais.
-  if (local !== null && majLocale === 0) return;
-
-  // Cache vide → on adopte la base ; sinon, la base gagne si strictement plus récente.
-  if (local === null || Date.parse(distant.updatedAt) > majLocale) {
-    hydratationEnCours = true;
-    storePlanning.ecrire(JSON.stringify(distant.planning));
-    localStorage.setItem(CLE_MAJ, distant.updatedAt);
-    localStorage.removeItem(CLE_DIRTY);
-    hydratationEnCours = false;
-    definirEtat("synchronise");
-  }
-}
+// La logique « le local non poussé/non horodaté fait foi, sinon la base »
+// vit désormais dans hydrater() (cas e2e/offline) et naviguerVers() (chargement
+// d'une semaine précise) — cf. plus bas.
 
 // ---------------------------------------------------------------------------
 // Mécanique des coches (US-13, PR3) — strictement parallèle au planning :
@@ -277,17 +279,94 @@ async function hydraterCoches(): Promise<void> {
   }
 }
 
+// Vide la file d'écritures (planning + coches) avant un changement de semaine,
+// pour ne rien perdre. Déclenche un push si nécessaire puis attend que la file
+// soit vidée (borné). Renvoie true si tout est synchronisé (rien en attente).
+async function attendreSync(): Promise<boolean> {
+  if (estDirty() && !pushEnCours) {
+    if (minuteur) {
+      clearTimeout(minuteur);
+      minuteur = null;
+    }
+    void pousser();
+  }
+  if (estDirtyCoches() && !pushCochesEnCours) {
+    if (minuteurCoches) {
+      clearTimeout(minuteurCoches);
+      minuteurCoches = null;
+    }
+    void pousserCoches();
+  }
+  for (
+    let i = 0;
+    i < 100 && (pushEnCours || pushCochesEnCours || estDirty() || estDirtyCoches());
+    i++
+  ) {
+    await new Promise((r) => setTimeout(r, 30));
+  }
+  return !(estDirty() || estDirtyCoches());
+}
+
+// Charge une semaine dans le cache (planning + coches) SANS flush ni garde, et
+// sans déclencher de push (gardes d'hydratation). Une semaine sans planning
+// vide le cache → état vide. Pose la semaine affichée.
+async function chargerSemaineDansCache(semaine: string): Promise<void> {
+  hydratationEnCours = true;
+  hydratationCochesEnCours = true;
+  try {
+    const distant = await chargerPlanningDistant(semaine);
+    if (distant) {
+      storePlanning.ecrire(JSON.stringify(distant.planning));
+      localStorage.setItem(CLE_MAJ, distant.updatedAt);
+    } else {
+      storePlanning.effacer();
+      localStorage.removeItem(CLE_MAJ);
+    }
+    localStorage.removeItem(CLE_DIRTY);
+
+    const distantCoches = await chargerCochesDistantes(semaine);
+    if (distantCoches) {
+      storeCoches.ecrire(distantCoches.coches);
+      localStorage.setItem(CLE_MAJ_COCHES, distantCoches.updatedAt);
+    } else {
+      storeCoches.effacer();
+      localStorage.removeItem(CLE_MAJ_COCHES);
+    }
+    localStorage.removeItem(CLE_DIRTY_COCHES);
+    definirEtat("synchronise");
+  } catch (erreur) {
+    console.error("Chargement de la semaine échoué.", erreur);
+  } finally {
+    hydratationEnCours = false;
+    hydratationCochesEnCours = false;
+  }
+  definirSemaineAffichee(semaine);
+}
+
+/**
+ * Affiche une autre semaine (navigation historique #5). Flushe d'abord les
+ * écritures en attente de la semaine quittée (sinon perte) ; si le flush échoue
+ * (hors-ligne), la navigation est annulée.
+ */
+export async function naviguerVers(semaine: string): Promise<void> {
+  if (semaine === localStorage.getItem(CLE_SEMAINE)) return; // déjà affichée
+  if (!(await attendreSync())) return; // hors-ligne : ne pas perdre les écritures
+  await chargerSemaineDansCache(semaine);
+}
+
 // Hydratation UNE FOIS par session (par chargement complet de page). Les
-// navigations SPA ne re-tirent pas : en session, le local fait foi (évite les
-// courses de clobber entre une édition locale et une hydratation). Un autre
+// navigations SPA ne re-tirent pas : en session, le local fait foi. Un autre
 // device se synchronise à son propre chargement. Réinitialisé à chaque
 // rechargement complet (nouveau contexte JS).
 let dejaHydrate = false;
 
-/** Hydrate planning puis coches au premier montage (l'ordre garantit que les
- *  coches s'appliquent au planning fraîchement tiré ; RG-12 ignore les coches
- *  obsolètes). Aux montages suivants (SPA), pousse seulement d'éventuels
- *  changements locaux en attente — ne re-tire jamais. */
+/**
+ * Au premier montage : si un planning local non poussé (`dirty`) ou non
+ * horodaté (legacy/injecté en test) existe, il fait foi (semaine affichée =
+ * sa semaine) ; sinon on affiche la **semaine par défaut** (courante, ou
+ * prochaine le week-end) depuis la base. Aux montages suivants (SPA), on pousse
+ * seulement d'éventuels changements en attente — pas de re-tirage.
+ */
 export async function hydrater(): Promise<void> {
   if (dejaHydrate) {
     if (estDirty()) void pousser();
@@ -295,8 +374,19 @@ export async function hydrater(): Promise<void> {
     return;
   }
   dejaHydrate = true;
-  await hydraterPlanning();
-  await hydraterCoches();
+
+  const local = planningLocal();
+  if (local && (estDirty() || lireMajLocale() === 0)) {
+    // Cas e2e/offline : le local fait foi, on ne le remplace pas.
+    definirSemaineAffichee(local.semaine);
+    if (estDirty()) void pousser();
+    await hydraterCoches();
+    return;
+  }
+
+  // Cas nominal : on affiche la semaine par défaut depuis la base (chargement
+  // forcé — pas de garde « déjà affichée », car le cache peut être vide).
+  await chargerSemaineDansCache(semaineParDefaut());
 }
 
 // Démarre la synchro : abonnement aux écritures (planning + coches) + rejeu au

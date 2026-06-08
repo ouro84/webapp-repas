@@ -4,6 +4,7 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  decalageEntre,
   formaterSemaine,
   libelleRelatif,
   semaineDecalee,
@@ -61,10 +62,21 @@ describe("semainesSelectionnables", () => {
 });
 
 describe("libelleRelatif", () => {
-  it("nomme les offsets proches et numérote au-delà", () => {
+  it("nomme les offsets proches et numérote au-delà (passé et futur)", () => {
     expect(libelleRelatif(0)).toBe("Cette semaine");
     expect(libelleRelatif(1)).toBe("Semaine prochaine");
     expect(libelleRelatif(3)).toBe("Dans 3 semaines");
+    expect(libelleRelatif(-1)).toBe("Semaine dernière");
+    expect(libelleRelatif(-4)).toBe("Il y a 4 semaines");
+  });
+});
+
+describe("decalageEntre", () => {
+  it("compte les semaines de a vers b (signé)", () => {
+    expect(decalageEntre("2026-W23", "2026-W23")).toBe(0);
+    expect(decalageEntre("2026-W23", "2026-W26")).toBe(3);
+    expect(decalageEntre("2026-W23", "2026-W20")).toBe(-3);
+    expect(decalageEntre("2026-W53", "2027-W01")).toBe(1);
   });
 });
 
