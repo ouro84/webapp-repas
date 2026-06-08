@@ -342,6 +342,21 @@ Réduire à zéro l'effort de planification hebdomadaire des repas, du choix des
 
 ---
 
+### US-15 — Paramétrer ses règles de génération (#45, P09)
+
+> **En tant qu'** utilisateur, je veux définir mes propres règles de génération afin que l'app respecte mes contraintes personnelles, sans impacter les autres utilisateurs.
+
+**Comportement :**
+> **Given** je suis sur la page de réglages  
+> **When** j'enregistre de nouveaux paramètres (bouton explicite, pas d'enregistrement à la volée)  
+> **Then** la prochaine génération — complète **ou** unitaire — les applique (RG-25)
+
+> **Given** je n'ai jamais touché à mes réglages  
+> **When** j'ouvre la page  
+> **Then** ils sont préremplis avec les valeurs par défaut historiques (RG-25)
+
+---
+
 ## 5. Modèle de données
 
 > Les structures ci-dessous sont exprimées en TypeScript à titre documentaire. Le fichier de données réel est `/data/recettes.json` — format JSON lisible et éditable sans connaissance technique.
@@ -588,6 +603,14 @@ Historique (conservé pour mémoire) : la génération visait une semaine cible 
 - **Défaut affiché** : la semaine courante, ou la **prochaine le week-end** (reprise de l'ancien RG-21). Au rechargement complet, on revient à ce défaut (on ne reste pas bloqué sur une semaine parcourue).
 - **Multi-semaines** : chaque semaine a son planning et ses coches en base (`(user, semaine)`). Changer de semaine **flushe** d'abord les écritures en attente (sinon perte), puis charge la cible. **Rétention** : au chargement de session, les semaines **au-delà de −12** sont **purgées** en base (planning + coches), aligné sur la borne passée du navigateur.
 - **Confirmations** : régénérer ou modifier un slot (changer / sélectionner / restes) d'une semaine **passée** (offset < 0) **disposant d'un planning** demande **confirmation** avant écrasement. Générer une semaine passée **vide** n'en demande pas (rien à écraser). Le **stepper personnes** en est exclu (réglage mineur et fréquent).
+
+### RG-25 — Règles de génération personnalisables (US-15, #45)
+
+- **Par utilisateur** : chaque utilisateur connecté a ses réglages (table `reglages`, RLS propriétaire) ; ils n'impactent personne d'autre. Ligne absente = **valeurs par défaut** (= comportement historique, aucune régression).
+- **Règles modifiables** : le **nombre de personnes par défaut** (borné [1;12], appliqué aux slots fraîchement générés — la base recette reste 2, RG-16) et le **temps de préparation maximum** (« plafond ») de chacun des **4 créneaux** : déjeuner de semaine, dîner de semaine, déjeuner de week-end, dîner de week-end.
+- **Modèle « plafond »** : « durée max » = catégorie plafond parmi `rapide < normal < long` (le modèle de recette est catégoriel, pas en minutes). L'éligibilité d'un slot = recettes de temps **≤ plafond**. Défauts : déjeuner semaine `normal`, dîner semaine `rapide`, week-end `long`.
+- **Prise en compte** : la **prochaine** génération (complète **ou** unitaire « ↺ changer ») applique les réglages — les plannings déjà générés ne sont pas rejoués. Génération complète = lecture serveur (route `/api/planning/generer`) ; remplacement unitaire = lecture client.
+- **Enregistrement explicite** : un bouton « Enregistrer » (pas de sauvegarde à la volée). Une configuration rendant la génération **infaisable** (vivier insuffisant pour 14 slots distincts sous ces plafonds) est **refusée à la sauvegarde** (garde de faisabilité, cf. `analyserVivier`).
 
 ### RG-22 — Repas en « restes » (US-12)
 

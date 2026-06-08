@@ -9,6 +9,7 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ### Ajouté
 
+- Réglages de génération personnalisés — moteur & socle (#45, P09, PR1/2) : la génération (complète et unitaire) lit désormais des **règles par utilisateur** — temps de préparation **maximum autorisé par créneau** (déjeuner/dîner × semaine/week-end) et **nombre de personnes par défaut**. Table `reglages` (RLS propriétaire, contraintes CHECK), `lib/reglages` (cœur pur : ordre des temps, plafond → éligibles, validation, adaptateurs) + `lib/reglages-data` (lecture/écriture client). `genererPlanning`/`remplacerSlot`/`analyserVivier` paramétrés (défaut `REGLAGES_DEFAUT` = comportement antérieur, zéro régression) ; `analyserVivier` généralisé (faisabilité de Hall). **La page de réglages (`/reglages`) + câblage UI arrivent en PR2.**
 - Monitoring d'erreurs Sentry (`@sentry/nextjs`) : erreurs client, serveur (RSC/route handlers via `onRequestError`) et edge ; sans tracing ni session replay pour préserver le quota gratuit. DSN via `NEXT_PUBLIC_SENTRY_DSN`
 - Migrations Supabase CLI : `supabase` en devDependency, `supabase/config.toml`, baseline `20260606225900_init.sql` vérifiée contre le schéma prod ; historique de migrations marqué sur prod et staging
 - `scripts/query-supabase.mjs` : exécution de SQL distant via l'API de management (contourne le blocage Avast du CLI Go en local)

@@ -90,6 +90,31 @@ export type Planning = {
   jours: JourPlanning[]; // 7 entrées
 };
 
+// Réglages de génération personnalisés (#45, P09), par utilisateur connecté.
+// `plafonds` : temps de préparation MAXIMUM autorisé par créneau (jour × repas)
+// — la génération n'y place que des recettes de temps ≤ plafond (l'ordre est
+// rapide < normal < long, cf. lib/reglages.ts). `personnesDefaut` : nombre de
+// personnes dont sont dotés les slots fraîchement générés (RG-16, base recette
+// = 2 inchangée). Défaut applicatif : REGLAGES_DEFAUT (= comportement antérieur).
+export type ReglagesGeneration = {
+  personnesDefaut: number; // borné [1;12]
+  plafonds: {
+    dejeunerSemaine: TempsPreparation;
+    dinerSemaine: TempsPreparation;
+    dejeunerWeekend: TempsPreparation;
+    dinerWeekend: TempsPreparation;
+  };
+};
+
+// Forme DB (snake_case) de la table `reglages` — convertie via lib/reglages.ts.
+export type DbReglages = {
+  personnes_defaut: number;
+  max_dejeuner_semaine: TempsPreparation;
+  max_diner_semaine: TempsPreparation;
+  max_dejeuner_weekend: TempsPreparation;
+  max_diner_weekend: TempsPreparation;
+};
+
 export type LignesCourses = {
   categorie: CategorieIngredient;
   ingredients: Ingredient[];

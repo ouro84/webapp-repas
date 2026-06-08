@@ -4,11 +4,12 @@ import { apiError } from "@/lib/errors"
 import { genererPlanning } from "@/lib/generateur"
 import { decalageEntre, semaineISO, semaineParDefaut } from "@/lib/semaines"
 import { dbRecetteToDomain } from "@/lib/adapters"
+import { dbReglagesToDomain, REGLAGES_DEFAUT } from "@/lib/reglages"
 
 // Plage de génération autorisée (#5) : navigation historique −12 → +6 semaines.
 const SEMAINES_PASSEES = 12
 const SEMAINES_FUTURES = 6
-import type { DbRecette } from "@/types"
+import type { DbRecette, DbReglages } from "@/types"
 
 export async function POST(request: Request) {
   const supabase = await createClient()
@@ -80,8 +81,26 @@ export async function POST(request: Request) {
     dbRecetteToDomain
   )
 
+  // Réglages de génération personnalisés (#45, P09) : la RLS ne renvoie que la
+  // ligne de l'utilisateur (ou aucune → réglages par défaut). Le client n'en
+  // est pas l'autorité (les contraintes DB garantissent la validité). En cas
+  // d'erreur de lecture, on retombe sur les défauts pour ne pas bloquer la
+  // génération (et on le journalise).
+  const { data: dbReglages, error: reglagesError } = await supabase
+    .from("reglages")
+    .select(
+      "personnes_defaut, max_dejeuner_semaine, max_diner_semaine, max_dejeuner_weekend, max_diner_weekend"
+    )
+    .maybeSingle()
+  if (reglagesError) {
+    console.error("Lecture des réglages échouée (défauts appliqués).", reglagesError)
+  }
+  const reglages = dbReglages
+    ? dbReglagesToDomain(dbReglages as DbReglages)
+    : REGLAGES_DEFAUT
+
   try {
-    const planning = genererPlanning(recettesDomain, semaine)
+    const planning = genererPlanning(recettesDomain, semaine, reglages)
     return NextResponse.json({ planning }, { status: 200 })
   } catch (erreur) {
     // genererPlanning lève si le vivier est insuffisant (trop peu de recettes

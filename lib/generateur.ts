@@ -4,12 +4,19 @@
 // Aucune dépendance à React, au navigateur ou à Supabase : testable en isolation.
 
 import { semaineISO } from "@/lib/semaines"
+import {
+  ORDRE_TEMPS,
+  rangTemps,
+  REGLAGES_DEFAUT,
+  tempsAuPlafond,
+} from "@/lib/reglages"
 import type {
   Recette,
   Planning,
   JourPlanning,
   Jour,
   TempsPreparation,
+  ReglagesGeneration,
 } from "@/types"
 
 // Jours de semaine (lundi → vendredi) : l'éligibilité y est restreinte selon
@@ -34,20 +41,40 @@ type Slot = {
   typeRepas: TypeRepas
 }
 
-const TOUS_TEMPS: TempsPreparation[] = ["rapide", "normal", "long"]
-
-// RG-01 — Éligibilité par slot (jour × type de repas). Table data-driven :
-//   - dîner de semaine     → "rapide" uniquement (le soir, au plus court)
-//   - déjeuner de semaine  → "rapide" ou "normal"
-//   - week-end (déj + dîn)  → toutes les recettes (y compris "long")
-// Centraliser la règle ici prépare le terrain pour #P09 (paramétrage par slot).
-function tempsEligibles(jour: Jour, typeRepas: TypeRepas): TempsPreparation[] {
-  if (!JOURS_SEMAINE.includes(jour)) return TOUS_TEMPS // week-end : tout
-  return typeRepas === "diner" ? ["rapide"] : ["rapide", "normal"]
+// RG-01 — Éligibilité par slot (jour × type de repas), paramétrée par les
+// réglages utilisateur (#45, P09). Chaque créneau a un temps de préparation
+// MAXIMUM autorisé (« plafond ») ; une recette est éligible si son temps est ≤
+// plafond. Les réglages par défaut (REGLAGES_DEFAUT) reproduisent l'ancienne
+// table en dur : dîner de semaine "rapide", déjeuner de semaine "normal",
+// week-end "long" (tout).
+function plafondSlot(
+  jour: Jour,
+  typeRepas: TypeRepas,
+  reglages: ReglagesGeneration
+): TempsPreparation {
+  const enSemaine = JOURS_SEMAINE.includes(jour)
+  const p = reglages.plafonds
+  if (enSemaine) return typeRepas === "diner" ? p.dinerSemaine : p.dejeunerSemaine
+  return typeRepas === "diner" ? p.dinerWeekend : p.dejeunerWeekend
 }
 
-function estEligible(recette: Recette, jour: Jour, typeRepas: TypeRepas): boolean {
-  return tempsEligibles(jour, typeRepas).includes(recette.tempsPreparation)
+function tempsEligibles(
+  jour: Jour,
+  typeRepas: TypeRepas,
+  reglages: ReglagesGeneration
+): TempsPreparation[] {
+  return tempsAuPlafond(plafondSlot(jour, typeRepas, reglages))
+}
+
+function estEligible(
+  recette: Recette,
+  jour: Jour,
+  typeRepas: TypeRepas,
+  reglages: ReglagesGeneration
+): boolean {
+  return tempsEligibles(jour, typeRepas, reglages).includes(
+    recette.tempsPreparation
+  )
 }
 
 // RG-03 — Sélection aléatoire parmi les recettes éligibles.
@@ -90,17 +117,20 @@ function cleSlot(jour: Jour, typeRepas: TypeRepas): string {
  */
 export function genererPlanning(
   recettes: Recette[],
-  semaine: string = semaineISO()
+  semaine: string = semaineISO(),
+  reglages: ReglagesGeneration = REGLAGES_DEFAUT
 ): Planning {
   const slots: Slot[] = ORDRE_JOURS.flatMap((jour): Slot[] => [
     { jour, typeRepas: "dejeuner" },
     { jour, typeRepas: "diner" },
   ])
 
-  // Slots contraints (dîners de semaine, puis déjeuners de semaine) d'abord,
-  // slots week-end (qui acceptent tout) ensuite.
+  // Slots contraints (plafond le plus bas → vivier le plus restreint) d'abord,
+  // slots permissifs ensuite (RG-01). Comme toute recette éligible sur un slot
+  // contraint l'est aussi sur un slot plus permissif (plafonds = seuils sur un
+  // ordre total), cet ordre évite d'épuiser à tort un vivier restreint.
   const slotsTries = [...slots].sort(
-    (a, b) => poidsContrainte(a) - poidsContrainte(b)
+    (a, b) => poidsContrainte(a, reglages) - poidsContrainte(b, reglages)
   )
 
   const utilisees = new Set<string>() // RG-02 : ids déjà placés cette semaine
@@ -108,7 +138,9 @@ export function genererPlanning(
 
   for (const slot of slotsTries) {
     const eligibles = recettes.filter(
-      (r) => !utilisees.has(r.id) && estEligible(r, slot.jour, slot.typeRepas)
+      (r) =>
+        !utilisees.has(r.id) &&
+        estEligible(r, slot.jour, slot.typeRepas, reglages)
     )
     if (eligibles.length === 0) {
       throw new Error(
@@ -122,21 +154,28 @@ export function genererPlanning(
   }
 
   // Réassemblage dans l'ordre canonique lundi → dimanche (section 5.5).
-  // Déjeuner ET dîner sont peuplés chaque jour désormais.
+  // Déjeuner ET dîner sont peuplés chaque jour désormais. Chaque slot est doté
+  // du nombre de personnes par défaut des réglages (#45) — base recette 2
+  // inchangée (RG-16), seul le défaut affiché change.
   const jours: JourPlanning[] = ORDRE_JOURS.map((jour) => ({
     jour,
     dejeuner: attributions.get(cleSlot(jour, "dejeuner"))!,
     diner: attributions.get(cleSlot(jour, "diner"))!,
+    personnes: {
+      dejeuner: reglages.personnesDefaut,
+      diner: reglages.personnesDefaut,
+    },
   }))
 
   return { semaine, jours }
 }
 
 // Poids de contrainte d'un slot : plus il est bas, plus le slot est restrictif
-// et doit être servi tôt. On le mesure par la taille du vivier de temps éligibles
-// (RG-01) : 1 (dîner de semaine, rapide) < 2 (déjeuner de semaine) < 3 (week-end).
-function poidsContrainte(slot: Slot): number {
-  return tempsEligibles(slot.jour, slot.typeRepas).length
+// et doit être servi tôt. Mesuré par la taille du vivier de temps éligibles
+// (RG-01) selon le plafond du créneau (1 si plafond "rapide", 2 si "normal",
+// 3 si "long").
+function poidsContrainte(slot: Slot, reglages: ReglagesGeneration): number {
+  return tempsEligibles(slot.jour, slot.typeRepas, reglages).length
 }
 
 /**
@@ -161,7 +200,8 @@ export function remplacerSlot(
   planning: Planning,
   jour: Jour,
   typeRepas: TypeRepas,
-  recettes: Recette[]
+  recettes: Recette[],
+  reglages: ReglagesGeneration = REGLAGES_DEFAUT
 ): Planning | null {
   const jourPlanning = planning.jours.find((jp) => jp.jour === jour)
   if (!jourPlanning) return null // jour absent du planning
@@ -186,7 +226,7 @@ export function remplacerSlot(
     (r) =>
       !utilisees.has(r.id) &&
       r.id !== actuelle.id &&
-      estEligible(r, jour, typeRepas)
+      estEligible(r, jour, typeRepas, reglages)
   )
   if (eligibles.length === 0) return null
 
@@ -257,22 +297,21 @@ export function recettesUtilisees(planning: Planning): Set<string> {
   return ids
 }
 
-// Vivier minimal pour générer une semaine (cf. genererPlanning, RG-01/RG-02) :
-//   - 14 slots distincts au total ;
-//   - 10 slots de semaine réservés aux recettes rapide/normal (5 déjeuners +
-//     5 dîners) ;
-//   - dont 5 dîners de semaine réservés aux recettes rapide.
-// Les 4 slots de week-end absorbent le reste (recettes "long" comprises).
-const SLOTS_TOTAL = 14
-const SLOTS_RAPIDE_NORMAL = 10
-const SLOTS_RAPIDE = 5
+// Nombre de slots par créneau dans une semaine (section 5.5) : 5 jours de
+// semaine + 2 jours de week-end, chacun déjeuner + dîner → 14 slots.
+const SLOTS_PAR_CRENEAU = {
+  dejeunerSemaine: 5,
+  dinerSemaine: 5,
+  dejeunerWeekend: 2,
+  dinerWeekend: 2,
+} as const
 
 export type AnalyseVivier = {
   suffisant: boolean
   total: number
-  /** Recettes rapide ou normale (les 10 slots de semaine). */
+  /** Recettes rapide ou normale (temps ≠ long). */
   rapideNormal: number
-  /** Recettes rapide (les 5 dîners de semaine). */
+  /** Recettes rapide. */
   rapide: number
   /** Message d'alerte si insuffisant, sinon null. */
   message: string | null
@@ -280,34 +319,57 @@ export type AnalyseVivier = {
 
 /**
  * Analyse si le vivier de recettes permet de générer une semaine complète
- * (#2, bonus PR3) — anticipe l'échec « Pas de recette disponible » du
- * générateur en prévenant l'utilisateur avant qu'il ne génère. Le détail par
- * palier (total / rapide-normal / rapide) cible précisément ce qui manque.
+ * (#2, bonus PR3) sous les réglages donnés (#45) — anticipe l'échec « Pas de
+ * recette disponible » du générateur. Sert aussi de garde de faisabilité avant
+ * d'enregistrer des réglages (B3).
+ *
+ * Faisabilité (affectation distincte recette → slot) : comme les temps sont
+ * totalement ordonnés et l'éligibilité est « temps ≤ plafond », les viviers
+ * sont emboîtés. Par le théorème de Hall, il suffit qu'à CHAQUE niveau `k`
+ * (rapide ⊂ rapide+normal ⊂ tout) le nombre de slots de plafond ≤ k ne dépasse
+ * pas le nombre de recettes de temps ≤ k. Avec REGLAGES_DEFAUT, on retrouve
+ * exactement les anciens seuils 14 / 10 / 5.
  */
-export function analyserVivier(recettes: Recette[]): AnalyseVivier {
+export function analyserVivier(
+  recettes: Recette[],
+  reglages: ReglagesGeneration = REGLAGES_DEFAUT
+): AnalyseVivier {
   const total = recettes.length
   const rapide = recettes.filter((r) => r.tempsPreparation === "rapide").length
-  const rapideNormal = recettes.filter(
-    (r) => r.tempsPreparation !== "long"
-  ).length
-  const suffisant =
-    total >= SLOTS_TOTAL &&
-    rapideNormal >= SLOTS_RAPIDE_NORMAL &&
-    rapide >= SLOTS_RAPIDE
+  const rapideNormal = recettes.filter((r) => r.tempsPreparation !== "long").length
+  // Recettes cumulées par niveau (≤ rang) : index 0 = rapide, 1 = +normal, 2 = tout.
+  const recettesCum = [rapide, rapideNormal, total]
 
+  // Slots requis cumulés par niveau : un créneau de plafond de rang r pèse sur
+  // tous les niveaux ≥ r (ses slots ne peuvent piocher que dans temps ≤ r).
+  const besoin = ORDRE_TEMPS.map(() => 0)
+  const p = reglages.plafonds
+  const creneaux: [keyof typeof SLOTS_PAR_CRENEAU, TempsPreparation][] = [
+    ["dejeunerSemaine", p.dejeunerSemaine],
+    ["dinerSemaine", p.dinerSemaine],
+    ["dejeunerWeekend", p.dejeunerWeekend],
+    ["dinerWeekend", p.dinerWeekend],
+  ]
+  for (const [cle, plafond] of creneaux) {
+    for (let k = rangTemps(plafond); k < ORDRE_TEMPS.length; k++) {
+      besoin[k]! += SLOTS_PAR_CRENEAU[cle]
+    }
+  }
+
+  const suffisant = besoin.every((req, k) => req <= recettesCum[k]!)
   if (suffisant) {
     return { suffisant, total, rapideNormal, rapide, message: null }
   }
-  return {
-    suffisant,
-    total,
-    rapideNormal,
-    rapide,
-    message:
-      `Pour générer une semaine (14 repas), il faut au moins ${SLOTS_TOTAL} recettes, ` +
-      `dont ${SLOTS_RAPIDE_NORMAL} rapides/normales, dont ${SLOTS_RAPIDE} rapides. ` +
-      `Tu en as ${total} (dont ${rapideNormal} rapide/normale, dont ${rapide} rapide).`,
-  }
+
+  const reqTotal = besoin[2]! // tous les slots → toujours 14
+  const reqRapideNormal = besoin[1]!
+  const reqRapide = besoin[0]!
+  const message =
+    `Pour générer une semaine (14 repas), il faut au moins ${reqTotal} recettes` +
+    (reqRapideNormal > 0 ? `, dont ${reqRapideNormal} rapides/normales` : ``) +
+    (reqRapide > 0 ? `, dont ${reqRapide} rapides` : ``) +
+    `. Tu en as ${total} (dont ${rapideNormal} rapide/normale, dont ${rapide} rapide).`
+  return { suffisant, total, rapideNormal, rapide, message }
 }
 
 /**
