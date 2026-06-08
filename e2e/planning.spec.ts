@@ -332,10 +332,69 @@ test("une génération complète remet tous les repas à 2 personnes (RG-16)", a
   await expect(carteLundi).toContainText("3 pers.");
 
   await page.getByRole("button", { name: "Regénérer" }).click();
-  // .first() : la génération est désormais synchrone (#63), le toast de la 1re
-  // génération peut coexister avec celui de la regénération (même libellé).
-  await expect(page.getByText("Planning généré").first()).toBeVisible();
+  // La regénération affiche un toast d'annulation « Planning regénéré » (US-09),
+  // distinct du « Planning généré » de la première génération.
+  await expect(page.getByText("Planning regénéré")).toBeVisible();
   await expect(page.locator("main ul > li").first()).toContainText("2 pers.");
+});
+
+// ---------------------------------------------------------------------------
+// US-09 — annuler une regénération (RG-19). Valide en CI (instance staging
+// seedée) ; en local, la génération peut échouer si la base n'est pas seedée.
+// ---------------------------------------------------------------------------
+
+test("annuler une regénération restaure le planning précédent à l'identique (US-09)", async ({
+  page,
+}) => {
+  await page.getByRole("button", { name: "Générer mon planning" }).click();
+  const liste = page.locator("main ul");
+  await expect(page.locator("main ul > li")).toHaveCount(7);
+  const planningInitial = await liste.innerText();
+
+  await page.getByRole("button", { name: "Regénérer" }).click();
+  // Toast d'annulation avec son action « Annuler ».
+  await expect(page.getByText("Planning regénéré")).toBeVisible();
+  await page.getByRole("button", { name: "Annuler" }).click();
+
+  // Confirmation + planning restauré à l'identique (US-09, RG-19).
+  await expect(page.getByText("Annulé")).toBeVisible();
+  await expect.poll(async () => liste.innerText()).toBe(planningInitial);
+});
+
+test("annuler une regénération restaure aussi les coches effacées (US-09, RG-13/RG-19)", async ({
+  page,
+}) => {
+  // Navigation par les LIENS de l'app (SPA) : un page.goto rejouerait
+  // l'addInitScript du beforeEach, qui purge le planning.
+  await page.getByRole("button", { name: "Générer mon planning" }).click();
+  await expect(page.locator("main ul > li")).toHaveCount(7);
+
+  // Cocher un article côté courses.
+  await page.getByRole("link", { name: "Liste de courses →" }).click();
+  await page.waitForURL("**/courses");
+  const premierArticle = page.getByRole("checkbox").first();
+  const nomArticle = await premierArticle.evaluate(
+    (input) => input.closest("label")?.querySelector("span")?.textContent ?? ""
+  );
+  await premierArticle.click();
+  await expect(
+    page.getByRole("checkbox", { name: nomArticle }).first()
+  ).toBeChecked();
+
+  // Regénérer efface les coches (RG-13) ; annuler doit les rendre (RG-19).
+  await page.getByRole("link", { name: "← Planning" }).click();
+  await page.waitForURL("**/planning");
+  await page.getByRole("button", { name: "Regénérer" }).click();
+  await expect(page.getByText("Planning regénéré")).toBeVisible();
+  await page.getByRole("button", { name: "Annuler" }).click();
+  await expect(page.getByText("Annulé")).toBeVisible();
+
+  // La coche est de retour : l'undo est « à l'identique », pas planning seul.
+  await page.getByRole("link", { name: "Liste de courses →" }).click();
+  await page.waitForURL("**/courses");
+  await expect(
+    page.getByRole("checkbox", { name: nomArticle }).first()
+  ).toBeChecked();
 });
 
 test("la grille 7 colonnes n'apparaît qu'à partir du desktop (#64)", async ({

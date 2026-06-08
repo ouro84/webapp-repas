@@ -28,6 +28,8 @@ import {
   storePlanning,
   sauvegarderPlanningComplet,
   sauvegarderRemplacementSlot,
+  capturerSnapshotAnnulation,
+  restaurerSnapshotAnnulation,
 } from "@/lib/stockage";
 import {
   modifierPersonnes,
@@ -103,6 +105,28 @@ function slotsDuJour(
 }
 
 // ============================================================================
+// Annulation (US-09, RG-19)
+// ============================================================================
+
+// Identifiant unique du toast d'annulation : réutiliser le même id fait qu'une
+// nouvelle action remplace le toast précédent (et réarme les ~5 s) — un seul
+// cran d'undo est proposé à la fois (RG-19), ce qui neutralise aussi le
+// double-clic sur « Regénérer ».
+const ID_TOAST_ANNULATION = "annulation-planning";
+
+// Restaure le dernier snapshot (planning + coches, RG-19) et notifie.
+// Renvoie true si une annulation a eu lieu (snapshot présent et non expiré).
+// Partagée par le bouton « Annuler » du toast et par le raccourci Ctrl/Cmd+Z.
+function annulerDerniereAction(): boolean {
+  const restaure = restaurerSnapshotAnnulation();
+  if (restaure) {
+    toast.dismiss(ID_TOAST_ANNULATION);
+    toast.success("Annulé");
+  }
+  return restaure;
+}
+
+// ============================================================================
 // Composant page
 // ============================================================================
 
@@ -146,6 +170,35 @@ export default function PagePlanning() {
     };
   }, []);
 
+  // Raccourci Ctrl/Cmd+Z (US-09, RG-19) : annule la dernière action. On ignore
+  // la frappe dans un champ de saisie (recherche du sélecteur de recette), où
+  // Ctrl+Z doit rester l'annulation native du texte. addEventListener, pas un
+  // setState au montage → conforme à la règle ESLint set-state-in-effect.
+  useEffect(() => {
+    function surTouche(e: KeyboardEvent): void {
+      if (
+        (e.key === "z" || e.key === "Z") &&
+        (e.ctrlKey || e.metaKey) &&
+        !e.shiftKey
+      ) {
+        const cible = e.target as HTMLElement | null;
+        if (
+          cible &&
+          (cible.tagName === "INPUT" ||
+            cible.tagName === "TEXTAREA" ||
+            cible.isContentEditable)
+        ) {
+          return;
+        }
+        // preventDefault uniquement si une annulation a réellement eu lieu,
+        // pour ne pas confisquer Ctrl+Z quand il n'y a rien à annuler.
+        if (annulerDerniereAction()) e.preventDefault();
+      }
+    }
+    window.addEventListener("keydown", surTouche);
+    return () => window.removeEventListener("keydown", surTouche);
+  }, []);
+
   const planning = useMemo<Planning | null>(() => {
     if (brut === null) return null;
     try {
@@ -176,11 +229,24 @@ export default function PagePlanning() {
       const { planning: nouveau } = (await reponse.json()) as {
         planning: Planning;
       };
+      // Regénération (US-09) : un planning existait → on fige l'état (planning
+      // + coches) avant écrasement pour permettre l'undo (RG-19). Première
+      // génération : rien à annuler (capturerSnapshot est alors un no-op).
+      const estRegeneration = storePlanning.lire() !== null;
+      capturerSnapshotAnnulation();
       // Génération complète : réinitialise aussi les coches de la liste
       // de courses (RG-13) — règle centralisée dans lib/stockage.ts.
       sauvegarderPlanningComplet(nouveau);
       setSlotIndisponible(null);
-      toast.success("Planning généré");
+      if (estRegeneration) {
+        toast("Planning regénéré", {
+          id: ID_TOAST_ANNULATION,
+          action: { label: "Annuler", onClick: annulerDerniereAction },
+          duration: 5000,
+        });
+      } else {
+        toast.success("Planning généré");
+      }
     } catch (erreur) {
       console.error("Génération du planning échouée.", erreur);
       setErreurGeneration(
@@ -202,11 +268,17 @@ export default function PagePlanning() {
       toast.error("Pas de recette disponible");
       return;
     }
+    // Snapshot avant écrasement pour l'undo (US-09, RG-19).
+    capturerSnapshotAnnulation();
     // Remplacement individuel : les coches sont conservées, l'invalidation
     // par quantité (RG-12) protège les articles dont l'agrégat change.
     sauvegarderRemplacementSlot(nouveau);
     setSlotIndisponible(null);
-    toast.success("Recette remplacée");
+    toast("Recette remplacée", {
+      id: ID_TOAST_ANNULATION,
+      action: { label: "Annuler", onClick: annulerDerniereAction },
+      duration: 5000,
+    });
   }
 
   // Sélection manuelle (US-06, RG-15) : remplace le slot par la recette
@@ -220,10 +292,16 @@ export default function PagePlanning() {
       recette
     );
     if (nouveau === null) return; // slot inexistant : impossible depuis l'UI
+    // Snapshot avant écrasement pour l'undo (US-09, RG-19).
+    capturerSnapshotAnnulation();
     sauvegarderRemplacementSlot(nouveau);
     // Un éventuel « Pas de recette disponible » sur ce slot est obsolète (RG-15).
     setSlotIndisponible(null);
-    toast.success("Recette remplacée");
+    toast("Recette remplacée", {
+      id: ID_TOAST_ANNULATION,
+      action: { label: "Annuler", onClick: annulerDerniereAction },
+      duration: 5000,
+    });
   }
 
   // Nombre de personnes d'un slot (US-07, RG-16/17) : la liste de courses
