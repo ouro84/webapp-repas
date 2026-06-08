@@ -436,7 +436,11 @@ export default function PagePlanning() {
             <h2 className="mb-3 font-semibold text-brand-900">
               {LIBELLES_JOURS[jp.jour].complet}
             </h2>
-            <div className="space-y-3">
+            {/* Déjeuner + dîner côte à côte dès sm (#3 : 14 repas/semaine —
+                chaque jour tient sur une rangée), empilés sous sm (petits
+                écrans). Au-delà de lg, c'est la grille 7 colonnes qui prend
+                le relais (ul masquée). */}
+            <div className="grid gap-3 sm:grid-cols-2">
               {slotsDuJour(jp).map((slot) => (
                 <SlotRepas
                   key={slot.typeRepas}

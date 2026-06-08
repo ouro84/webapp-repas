@@ -18,8 +18,8 @@
 
 ### Génération du planning (US-01)
 - [ ] "Générer mon planning" produit 7 jours, lundi → dimanche
-- [ ] Un dîner chaque jour ; déjeuner le samedi et le dimanche uniquement (9 repas)
-- [ ] Aucune recette "Long" du lundi au vendredi (RG-01)
+- [ ] Un déjeuner **et** un dîner chaque jour (14 repas)
+- [ ] Dîner de semaine = "Rapide" uniquement ; déjeuner de semaine = "Rapide"/"Normal" ; week-end = toutes recettes (RG-01)
 - [ ] Aucune recette ne se répète dans la semaine (RG-02)
 - [ ] Deux générations successives donnent des plannings différents (RG-03)
 - [ ] "Regénérer" écrase le planning précédent
@@ -28,7 +28,7 @@
 
 ### Remplacement d'un repas (US-04)
 - [ ] "↺ changer" remplace uniquement le slot ciblé, les autres restent intacts
-- [ ] La recette de remplacement respecte la contrainte du jour (pas de "Long" en semaine)
+- [ ] La recette de remplacement respecte la contrainte du slot (jour × type de repas, RG-01)
 - [ ] Toast "Recette remplacée" affiché
 - [ ] Si plus aucune recette éligible : message "Pas de recette disponible" dans le slot + toast d'erreur (RG-04)
 
@@ -75,12 +75,12 @@
 - [ ] Toutes les unités et catégories appartiennent aux référentiels de la section 5 des specs
 - [ ] Toutes les quantités sont strictement positives
 - [ ] Discipline de saisie (section 5.2) : un même ingrédient garde le même flag `fondDePlacard` et la même `categorie` dans toutes les recettes
-- [ ] Assez de recettes "rapide"/"normal" pour 5 dîners de semaine + marge de remplacement
+- [ ] Assez de recettes pour 14 slots : ≥ 14 au total, dont ≥ 10 "rapide"/"normal", dont ≥ 5 "rapide" (+ marge de remplacement)
 
 ## 4. Régressions
 
-- [ ] `npm run test:run` — tests unitaires verts (26 attendus)
-- [ ] `npm run test:e2e` — tests e2e verts (6 attendus)
+- [ ] `npm run test:run` — tests unitaires verts (130 attendus)
+- [ ] `npm run test:e2e` — tests e2e verts
 - [ ] `npx tsc --noEmit` — zéro erreur TypeScript
 - [ ] `npm run lint` — zéro erreur ESLint
 - [ ] `npm run build` — build de production vert

@@ -176,7 +176,11 @@ Format : `type: description courte`
 
 ### Logique métier (`lib/generateur.ts`)
 
-**Ordre de remplissage : slots contraints d'abord** — Les dîners de semaine (limités aux recettes « rapide »/« normal », RG-01) sont attribués avant les slots week-end (qui acceptent tout). Remplir dans l'ordre chronologique pourrait épuiser le vivier rapide/normal sur le week-end et faire échouer un slot de semaine alors qu'une solution existe.
+**14 repas, éligibilité par slot (jour × type de repas)** — Depuis #3, la génération produit un déjeuner ET un dîner chaque jour (14 slots). L'éligibilité (RG-01) dépend du jour **et** du type de repas, centralisée dans `tempsEligibles(jour, typeRepas)` : dîner de semaine = `"rapide"`, déjeuner de semaine = `"rapide"`/`"normal"`, week-end = tout. `estEligible` prend donc `(recette, jour, typeRepas)` — ne pas retomber sur l'ancienne signature « par jour seul ». Cette table est le point d'extension de #P09 (paramétrage par slot).
+
+**Ordre de remplissage : slots contraints d'abord** — `poidsContrainte` = taille du vivier de temps éligibles : dîners de semaine (1, « rapide ») servis avant les déjeuners de semaine (2), eux-mêmes avant le week-end (3, tout). Remplir dans l'ordre chronologique pourrait épuiser un vivier restreint et faire échouer un slot alors qu'une solution existe.
+
+**`dejeuner` reste optionnel dans le type, mais peuplé chaque jour** — Le générateur remplit les 14 slots ; `JourPlanning.dejeuner` est néanmoins gardé `?:` optionnel pour relire sans casse les plannings persistés à 9 repas (antérieurs à #3). `remplacerSlot`/`remplacerSlotManuel`/`modifierPersonnes` renvoient donc encore `null` si le slot demandé est absent d'un vieux planning — ne pas supposer qu'un déjeuner existe toujours.
 
 **Semaine au format ISO 8601 (`"2026-W23"`)** — L'année ISO est celle du jeudi de la semaine : elle peut différer de l'année civile autour du 1er janvier. Tous les calculs de date (génération et affichage `formaterSemaine`) sont en UTC pour neutraliser les fuseaux. Ne pas remplacer par `getFullYear()` + un compteur naïf.
 
