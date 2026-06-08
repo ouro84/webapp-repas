@@ -37,6 +37,7 @@ import {
   PERSONNES_MAX,
   PERSONNES_MIN,
 } from "@/lib/personnes";
+import { estRestes, marquerRestes } from "@/lib/restes";
 import { chargerRecettesGerees, type RecetteGeree } from "@/lib/recettes";
 import {
   formaterSemaine,
@@ -436,6 +437,27 @@ export default function PagePlanning() {
     sauvegarderRemplacementSlot(nouveau);
   }
 
+  // Marque / démarque un slot « restes » (US-12, RG-22). Écriture sans reset
+  // des coches (l'invalidation par quantité RG-12 ajuste la liste de courses).
+  // Snapshot pour l'undo (#62), comme les autres modifications de slot.
+  function changerRestes(
+    jour: Jour,
+    typeRepas: TypeRepas,
+    valeur: boolean
+  ): void {
+    if (planning === null) return;
+    const nouveau = marquerRestes(planning, jour, typeRepas, valeur);
+    if (nouveau === null) return; // slot inexistant : impossible depuis l'UI
+    capturerSnapshotAnnulation();
+    sauvegarderRemplacementSlot(nouveau);
+    setSlotIndisponible(null);
+    toast(valeur ? "Repas marqué « Restes »" : "Repas à cuisiner", {
+      id: ID_TOAST_ANNULATION,
+      action: { label: "Annuler", onClick: annulerDerniereAction },
+      duration: 5000,
+    });
+  }
+
   // --- État erreur (RG-09) ---
   if (erreurGeneration !== null) {
     return (
@@ -584,6 +606,10 @@ export default function PagePlanning() {
                       personnes: personnesDuSlot(jp, slot.typeRepas),
                     })
                   }
+                  restes={estRestes(jp, slot.typeRepas)}
+                  onChangerRestes={(valeur) =>
+                    changerRestes(jp.jour, slot.typeRepas, valeur)
+                  }
                 />
               ))}
             </div>
@@ -621,6 +647,10 @@ export default function PagePlanning() {
                     personnes: personnesDuSlot(jp, slot.typeRepas),
                   })
                 }
+                restes={estRestes(jp, slot.typeRepas)}
+                onChangerRestes={(valeur) =>
+                  changerRestes(jp.jour, slot.typeRepas, valeur)
+                }
               />
             ))}
           </section>
@@ -634,6 +664,9 @@ export default function PagePlanning() {
           recettes={recettes}
           idsAuPlanning={recettesUtilisees(planning)}
           onSelectionner={selectionnerRecette}
+          onRestes={() =>
+            changerRestes(slotEnSelection.jour, slotEnSelection.typeRepas, true)
+          }
           onFermer={() => setSlotEnSelection(null)}
         />
       )}
@@ -665,6 +698,8 @@ function SlotRepas({
   onSelectionner,
   onChangerPersonnes,
   onVoir,
+  restes,
+  onChangerRestes,
 }: {
   libelle: string;
   jourLabel: string;
@@ -675,7 +710,48 @@ function SlotRepas({
   onSelectionner: () => void;
   onChangerPersonnes: (personnes: number) => void;
   onVoir: () => void;
+  restes: boolean;
+  onChangerRestes: (valeur: boolean) => void;
 }) {
+  const slotNom = `${libelle.toLowerCase()} de ${jourLabel.toLowerCase()}`;
+  // Style partagé des actions textuelles (zone tactile ≥ 44px via after:-inset-1).
+  const styleAction =
+    "relative px-2 py-2 text-sm text-brand-700/85 underline-offset-2 transition-colors after:absolute after:-inset-1 after:content-[''] hover:text-brand-900 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600";
+
+  // Slot marqué « restes » (US-12, RG-22) : pas de cuisine → ni badge de temps,
+  // ni stepper, ni fiche. On revient au repas planifié (« Cuisiner ») ou on en
+  // choisit un autre (« Sélectionner »). Style atténué + bordure pointillée.
+  if (restes) {
+    return (
+      <div className="rounded-lg border border-dashed border-brand-200 bg-brand-50/50 p-3 shadow-sm">
+        <p className="text-xs font-medium uppercase tracking-wide text-brand-700/85">
+          {libelle}
+        </p>
+        <p className="mt-1 flex items-center gap-1.5 text-sm font-medium text-brand-700/80">
+          <IconeRestes /> Restes
+        </p>
+        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
+          <button
+            type="button"
+            onClick={() => onChangerRestes(false)}
+            aria-label={`Cuisiner le ${slotNom}`}
+            className={styleAction}
+          >
+            Cuisiner
+          </button>
+          <button
+            type="button"
+            onClick={onSelectionner}
+            aria-label={`Sélectionner le ${slotNom}`}
+            className={styleAction}
+          >
+            Sélectionner
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="rounded-lg border border-brand-100 bg-white p-3 shadow-sm">
       <p className="text-xs font-medium uppercase tracking-wide text-brand-700/85">
@@ -695,15 +771,15 @@ function SlotRepas({
       <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
         <BadgeTemps temps={recette.tempsPreparation} />
         {/*
-          a11y : aria-labels contextualisés — 9 paires de boutons identiques
+          a11y : aria-labels contextualisés — des paires de boutons identiques
           sont indiscernables au lecteur d'écran ; le glyphe ↺ (vocalisé
           bizarrement) est masqué ; after:-inset-* étend la zone tactile à ≥ 44px.
         */}
         <button
           type="button"
           onClick={onChanger}
-          aria-label={`Changer le ${libelle.toLowerCase()} de ${jourLabel.toLowerCase()}`}
-          className="relative px-2 py-2 text-sm text-brand-700/85 underline-offset-2 transition-colors after:absolute after:-inset-1 after:content-[''] hover:text-brand-900 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
+          aria-label={`Changer le ${slotNom}`}
+          className={styleAction}
         >
           <span aria-hidden="true">↺</span> changer
         </button>
@@ -711,16 +787,25 @@ function SlotRepas({
         <button
           type="button"
           onClick={onSelectionner}
-          aria-label={`Sélectionner le ${libelle.toLowerCase()} de ${jourLabel.toLowerCase()}`}
-          className="relative px-2 py-2 text-sm text-brand-700/85 underline-offset-2 transition-colors after:absolute after:-inset-1 after:content-[''] hover:text-brand-900 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
+          aria-label={`Sélectionner le ${slotNom}`}
+          className={styleAction}
         >
           Sélectionner
+        </button>
+        {/* Marquer en « restes » (US-12) : pas de cuisine ce repas-là */}
+        <button
+          type="button"
+          onClick={() => onChangerRestes(true)}
+          aria-label={`Marquer le ${slotNom} en restes`}
+          className={styleAction}
+        >
+          Restes
         </button>
       </div>
       {/* Nombre de personnes (US-07) : la liste de courses se met à l'échelle */}
       <StepperPersonnes
         personnes={personnes}
-        slotLabel={`${libelle.toLowerCase()} de ${jourLabel.toLowerCase()}`}
+        slotLabel={slotNom}
         onChanger={onChangerPersonnes}
       />
       {/* role="alert" : le message dynamique est annoncé aux lecteurs d'écran */}
@@ -730,6 +815,24 @@ function SlotRepas({
         </p>
       )}
     </div>
+  );
+}
+
+// Icône « restes » — bol fumant, SVG inline (pas d'emoji, audit #51).
+function IconeRestes() {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      className="size-4 shrink-0"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M4 12h16M6 12a6 6 0 0 0 12 0M9 3c-.6 1-.6 2 0 3M13 3c-.6 1-.6 2 0 3" />
+    </svg>
   );
 }
 

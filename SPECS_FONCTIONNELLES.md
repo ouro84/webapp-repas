@@ -291,6 +291,19 @@ Réduire à zéro l'effort de planification hebdomadaire des repas, du choix des
 > **When** j'arrive sur la page planning sans planning actif  
 > **Then** la semaine cible proposée par défaut est la **semaine prochaine** (RG-21)
 
+### US-12 — Marquer un repas en « restes »
+
+> **En tant qu'** utilisateur ayant des restes au frigo, je veux marquer un repas comme « restes » afin de ne pas le cuisiner ni l'ajouter à ma liste de courses.
+
+**Comportement :**
+> **Given** un planning est affiché  
+> **When** je marque un slot comme « Restes » (bouton de la card ou option du sélecteur)  
+> **Then** ce slot affiche « Restes », n'est pas cuisiné et ses ingrédients **n'apparaissent pas** dans la liste de courses (RG-22)
+
+> **Given** un slot est en « Restes »  
+> **When** je clique « Cuisiner » (ou je choisis/remplace une recette)  
+> **Then** le slot redevient un repas cuisiné normal
+
 ---
 
 ## 5. Modèle de données
@@ -369,6 +382,9 @@ type JourPlanning = {
   // Nombre de personnes par slot (US-07, RG-16). Optionnel : champ absent = 2
   // (défaut), ce qui rend les plannings persistés antérieurs relisables sans migration.
   personnes?: { dejeuner?: number; diner?: number }
+  // Slots marqués « restes » (US-12, RG-22) : pas cuisinés, exclus de la liste
+  // de courses. Optionnel : champ/valeur absent = repas cuisiné normal.
+  restes?: { dejeuner?: boolean; diner?: boolean }
 }
 
 type Planning = {
@@ -528,6 +544,16 @@ La génération vise une **semaine cible** (identifiant ISO `AAAA-Wnn`), choisie
 - **Plage** : de la semaine courante jusqu'à **+6 semaines**. Pas de semaine passée. La plage est **validée côté serveur** (la route de génération rejette toute semaine hors plage) — le client n'en est pas l'autorité.
 - **Défaut** : la semaine courante ; **la semaine prochaine si l'on est un samedi ou un dimanche** (aligné sur le JTBD « faire les courses le week-end d'avant »).
 - **Mono-actif** : un seul planning est conservé à la fois (`planning_courant`). Générer pour une autre semaine **remplace** l'actif (effacement des coches, RG-13) — réversible le temps de la fenêtre d'undo (RG-19). La conservation de plusieurs semaines (historique) est une feature distincte (backlog #P08).
+
+### RG-22 — Repas en « restes » (US-12)
+
+Un slot peut être marqué **« restes »** (flag par slot, `restes.dejeuner` / `restes.diner`, cf. 5.5) : l'utilisateur mangera ce qu'il a au frigo, sans cuisiner. Règles :
+
+- **Exclu de la liste de courses** : les ingrédients d'un slot en restes ne sont pas collectés (RG-05) — ce repas ne génère aucun article.
+- **Pas de cuisine affichée** : la card montre « Restes », sans badge de temps, sans réglage du nombre de personnes, sans fiche de recette.
+- **Réversible** : marquer/annuler « restes » est une bascule ; remplacer la recette d'un slot (US-04/US-06) **efface** le flag (on recuisine). La recette sous-jacente est conservée tant que le slot est en restes — l'annulation la restitue.
+- **Génération** : la (re)génération produit un planning entièrement cuisiné (aucun restes) ; le marquage est purement manuel et postérieur.
+- **Plusieurs slots** peuvent être en restes simultanément (aucune contrainte d'unicité, RG-02 ne s'applique qu'aux recettes).
 
 ---
 

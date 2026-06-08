@@ -192,12 +192,14 @@ export function remplacerSlot(
 
   const choisie = choisirAleatoire(eligibles)
 
-  // Reconstruction immuable : seul le jour ciblé est recréé.
+  // Reconstruction immuable : seul le jour ciblé est recréé. Remplacer la
+  // recette efface un éventuel marquage « restes » sur ce slot (RG-22 : on
+  // recuisine).
   const jours: JourPlanning[] = planning.jours.map((jp) => {
     if (jp.jour !== jour) return jp
     return typeRepas === "diner"
-      ? { ...jp, diner: choisie }
-      : { ...jp, dejeuner: choisie }
+      ? { ...jp, diner: choisie, restes: { ...jp.restes, diner: false } }
+      : { ...jp, dejeuner: choisie, restes: { ...jp.restes, dejeuner: false } }
   })
 
   return { semaine: planning.semaine, jours }
@@ -230,12 +232,13 @@ export function remplacerSlotManuel(
     typeRepas === "diner" ? jourPlanning.diner : jourPlanning.dejeuner
   if (!actuelle) return null // aucun slot à remplacer (planning antérieur sans ce déjeuner)
 
-  // Reconstruction immuable : seul le jour ciblé est recréé.
+  // Reconstruction immuable : seul le jour ciblé est recréé. Choisir une
+  // recette efface un éventuel marquage « restes » sur ce slot (RG-22).
   const jours: JourPlanning[] = planning.jours.map((jp) => {
     if (jp.jour !== jour) return jp
     return typeRepas === "diner"
-      ? { ...jp, diner: recette }
-      : { ...jp, dejeuner: recette }
+      ? { ...jp, diner: recette, restes: { ...jp.restes, diner: false } }
+      : { ...jp, dejeuner: recette, restes: { ...jp.restes, dejeuner: false } }
   })
 
   return { semaine: planning.semaine, jours }

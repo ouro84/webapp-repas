@@ -15,6 +15,7 @@ import {
   facteurEchelle,
   personnesDuSlot,
 } from "@/lib/personnes"
+import { estRestes } from "@/lib/restes"
 
 // Ordre d'affichage des catégories dans la liste de courses (RG-05, étape 5).
 // Suit le parcours type d'un magasin : frais d'abord, surgelés en dernier.
@@ -71,11 +72,14 @@ export function genererListeCourses(planning: Planning): ListeCourses {
   // l'échelle est appliquée AVANT agrégation, l'arrondi APRÈS (cf. étape 3).
   const ingredients: Ingredient[] = []
   for (const jp of planning.jours) {
-    const facteurDiner = facteurEchelle(personnesDuSlot(jp, "diner"))
-    for (const ing of jp.diner.ingredients) {
-      ingredients.push({ ...ing, quantite: ing.quantite * facteurDiner })
+    // Un slot marqué « restes » n'est pas cuisiné → exclu de la collecte (RG-22).
+    if (!estRestes(jp, "diner")) {
+      const facteurDiner = facteurEchelle(personnesDuSlot(jp, "diner"))
+      for (const ing of jp.diner.ingredients) {
+        ingredients.push({ ...ing, quantite: ing.quantite * facteurDiner })
+      }
     }
-    if (jp.dejeuner) {
+    if (jp.dejeuner && !estRestes(jp, "dejeuner")) {
       const facteurDejeuner = facteurEchelle(personnesDuSlot(jp, "dejeuner"))
       for (const ing of jp.dejeuner.ingredients) {
         ingredients.push({ ...ing, quantite: ing.quantite * facteurDejeuner })

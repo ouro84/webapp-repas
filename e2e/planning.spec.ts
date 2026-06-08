@@ -82,6 +82,56 @@ test("générer pour une semaine future cible bien cette semaine (US-11)", async
   ).toBeVisible();
 });
 
+// ---------------------------------------------------------------------------
+// US-12 — marquer un repas en « restes » (RG-22). Planning déterministe injecté.
+// ---------------------------------------------------------------------------
+test("marquer un repas en « restes » l'exclut de la liste de courses (US-12)", async ({
+  page,
+}) => {
+  const planning = {
+    semaine: "2026-W23",
+    jours: [{ jour: "lundi", diner: recetteFixture("omelette-aux-champignons") }],
+  };
+  await page.addInitScript(
+    (contenu) => localStorage.setItem("planning_courant", contenu),
+    JSON.stringify(planning)
+  );
+  await page.goto("/planning");
+
+  const carteLundi = page.locator("main ul > li").first();
+
+  // Au départ, les œufs de l'omelette sont dans la liste de courses.
+  await page.getByRole("link", { name: "Liste de courses →" }).click();
+  await page.waitForURL("**/courses");
+  await expect(page.getByRole("checkbox", { name: /œufs/ })).toBeVisible();
+
+  // Marquer le dîner de lundi en « restes » (bouton de la card).
+  await page.getByRole("link", { name: "← Planning" }).click();
+  await page.waitForURL("**/planning");
+  await carteLundi
+    .getByRole("button", { name: "Marquer le dîner de lundi en restes" })
+    .click();
+  await expect(page.getByText("Repas marqué « Restes »")).toBeVisible();
+  await expect(
+    carteLundi.getByRole("button", { name: "Cuisiner le dîner de lundi" })
+  ).toBeVisible();
+
+  // Les œufs ont disparu de la liste de courses (RG-22).
+  await page.getByRole("link", { name: "Liste de courses →" }).click();
+  await page.waitForURL("**/courses");
+  await expect(page.getByRole("checkbox", { name: /œufs/ })).toHaveCount(0);
+
+  // « Cuisiner » restaure le repas → les œufs reviennent.
+  await page.getByRole("link", { name: "← Planning" }).click();
+  await page.waitForURL("**/planning");
+  await carteLundi
+    .getByRole("button", { name: "Cuisiner le dîner de lundi" })
+    .click();
+  await page.getByRole("link", { name: "Liste de courses →" }).click();
+  await page.waitForURL("**/courses");
+  await expect(page.getByRole("checkbox", { name: /œufs/ })).toBeVisible();
+});
+
 test("l'utilisateur peut remplacer un repas sans toucher au reste du planning", async ({
   page,
 }) => {

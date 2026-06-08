@@ -39,6 +39,7 @@
 - [ ] Les ingrédients fond de placard sont dans leur section, avec la mention "À vérifier avant d'acheter" (F-09)
 - [ ] Le compteur d'articles correspond au contenu affiché
 - [ ] "← Planning" ramène au planning sans le modifier
+- [ ] Un repas marqué "Restes" (bouton card ou sélecteur) affiche "Restes", sans badge ni stepper, et ses ingrédients disparaissent de la liste de courses ; "Cuisiner" le restaure (US-12)
 
 ### Persistance (F-11)
 - [ ] Fermer puis rouvrir l'app : le planning généré est toujours là
