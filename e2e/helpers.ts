@@ -58,3 +58,45 @@ export async function nettoyerEtatDistant(
     headers,
   });
 }
+
+// Jeton d'accès du compte de test (auth REST par mot de passe).
+async function jetonTest(request: APIRequestContext): Promise<{
+  url: string;
+  headers: Record<string, string>;
+}> {
+  const url = lireEnvLocal("NEXT_PUBLIC_SUPABASE_URL");
+  const anon = lireEnvLocal("NEXT_PUBLIC_SUPABASE_ANON_KEY");
+  const auth = await request.post(`${url}/auth/v1/token?grant_type=password`, {
+    headers: { apikey: anon, "Content-Type": "application/json" },
+    data: { email: E2E_EMAIL, password: E2E_PASSWORD },
+  });
+  if (!auth.ok()) {
+    throw new Error(
+      `Auth REST du compte de test impossible : HTTP ${auth.status()}`
+    );
+  }
+  const { access_token: jeton } = (await auth.json()) as {
+    access_token: string;
+  };
+  return { url, headers: { apikey: anon, Authorization: `Bearer ${jeton}` } };
+}
+
+/**
+ * Supprime les recettes de test du run (nom contenant le suffixe) via DELETE
+ * REST — teardown de recettes.spec. Remplace la suppression via clics UI, qui
+ * dépassait le timeout afterAll (re-render de la liste → « element detached »).
+ * Filtre par suffixe : sans effet sur d'éventuels runs CI concurrents.
+ */
+export async function nettoyerRecettesDistantes(
+  request: APIRequestContext,
+  suffixe: string
+): Promise<void> {
+  const { url, headers } = await jetonTest(request);
+  // RLS « propriétaire » : seules les recettes perso du compte de test sont
+  // supprimées (les globales user_id=null sont épargnées). recette_ingredient
+  // part en cascade.
+  await request.delete(
+    `${url}/rest/v1/recette?nom=like.*${encodeURIComponent(suffixe)}*`,
+    { headers }
+  );
+}
