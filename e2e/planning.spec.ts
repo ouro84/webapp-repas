@@ -207,9 +207,13 @@ test("une sélection manuelle conserve les coches de la liste de courses (RG-15/
   await page.waitForURL("**/planning");
   const carteLundi = page.locator("main ul > li").first();
   // Le nom du plat est désormais un bouton (ouvre la fiche, US-10) ; on lit
-  // son libellé sans cliquer.
+  // son libellé sans cliquer. La carte a 2 repas (déjeuner + dîner, #3) :
+  // .last() vise le dîner (ordre slotsDuJour = déjeuner puis dîner).
   const nomRecetteLundi = (
-    await carteLundi.getByRole("button", { name: /^Voir la recette/ }).innerText()
+    await carteLundi
+      .getByRole("button", { name: /^Voir la recette/ })
+      .last()
+      .innerText()
   ).trim();
   await carteLundi
     .getByRole("button", { name: "Sélectionner le dîner de lundi" })
