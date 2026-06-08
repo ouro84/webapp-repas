@@ -25,7 +25,7 @@ test("l'utilisateur arrive sur un état initial clair avec un bouton de généra
   ).toBeVisible();
 });
 
-test("la génération affiche un planning de 7 jours avec leurs 9 repas", async ({
+test("la génération affiche un planning de 7 jours avec leurs 14 repas", async ({
   page,
 }) => {
   await page.getByRole("button", { name: "Générer mon planning" }).click();
@@ -39,11 +39,16 @@ test("la génération affiche un planning de 7 jours avec leurs 9 repas", async 
   await expect(jours.first()).toContainText("Lundi");
   await expect(jours.last()).toContainText("Dimanche");
 
-  // 9 repas : 7 dîners + 2 déjeuners (samedi, dimanche) — un bouton de
+  // 14 repas : un déjeuner ET un dîner chaque jour (#3) — un bouton de
   // remplacement par slot.
   await expect(
     page.getByRole("button", { name: /^Changer le/ }).filter({ visible: true })
-  ).toHaveCount(9);
+  ).toHaveCount(14);
+
+  // Les déjeuners de semaine existent désormais (US-01, RG-01).
+  await expect(
+    page.getByRole("button", { name: "Changer le déjeuner de lundi" })
+  ).toBeVisible();
 
   // Le numéro de semaine est affiché en clair (« Semaine du 1 juin 2026 »).
   await expect(page.getByText(/^Semaine du /)).toBeVisible();

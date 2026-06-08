@@ -55,12 +55,15 @@ describe("data/recettes.json — intégrité du dataset", () => {
     }
   });
 
-  test("le vivier permet de générer un planning (RG-01 : 5 dîners de semaine)", () => {
-    // Garde-fou métier minimal : assez de recettes au total (9 slots) et
-    // assez de rapides/normales pour les 5 soirs de semaine.
+  test("le vivier permet de générer une semaine (14 slots, RG-01)", () => {
+    // Garde-fou métier minimal (RG-01) : assez de recettes au total (14 slots),
+    // dont assez de rapides/normales pour les 10 slots de semaine, dont assez
+    // de rapides pour les 5 dîners de semaine.
+    const rapides = RECETTES.filter((r) => r.tempsPreparation === "rapide");
     const rapidesNormales = RECETTES.filter((r) => r.tempsPreparation !== "long");
-    expect(RECETTES.length).toBeGreaterThanOrEqual(9);
-    expect(rapidesNormales.length).toBeGreaterThanOrEqual(5);
+    expect(RECETTES.length).toBeGreaterThanOrEqual(14);
+    expect(rapidesNormales.length).toBeGreaterThanOrEqual(10);
+    expect(rapides.length).toBeGreaterThanOrEqual(5);
     expect(() => genererPlanning(RECETTES)).not.toThrow();
   });
 });

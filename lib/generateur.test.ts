@@ -2,10 +2,14 @@
 // (SPECS_FONCTIONNELLES.md section 6) + structure du planning (section 5.5).
 //
 // Données : les fixtures de tests/fixtures/recettes.ts (15 recettes —
-// 12 rapides/normales, 3 longues), parfois filtrées en sous-ensembles
-// pour rendre certains comportements déterministes malgré l'aléatoire (RG-03).
-// Découplé de data/recettes.json (issue #29) : le vrai dataset peut évoluer
-// librement sans casser ces tests.
+// 7 rapides, 5 normales, 3 longues), parfois étendues ou filtrées en
+// sous-ensembles pour rendre certains comportements déterministes malgré
+// l'aléatoire (RG-03). Découplé de data/recettes.json (issue #29) : le vrai
+// dataset peut évoluer librement sans casser ces tests.
+//
+// Modèle d'éligibilité (RG-01, modèle C) : dîner de semaine = "rapide" ;
+// déjeuner de semaine = "rapide"/"normal" ; week-end (déj + dîn) = tout.
+// 14 slots au total (déjeuner + dîner chaque jour).
 
 import { describe, test, expect } from "vitest";
 import {
@@ -17,7 +21,7 @@ import {
   remplacerSlotManuel,
 } from "@/lib/generateur";
 import { RECETTES_FIXTURES } from "@/tests/fixtures/recettes";
-import type { Jour, Planning, Recette } from "@/types";
+import type { Jour, Planning, Recette, TempsPreparation } from "@/types";
 
 const RECETTES = RECETTES_FIXTURES;
 const RAPIDES_NORMALES = RECETTES.filter((r) => r.tempsPreparation !== "long");
@@ -26,6 +30,26 @@ const LONGUES = RECETTES.filter((r) => r.tempsPreparation === "long");
 const JOURS_SEMAINE: Jour[] = ["lundi", "mardi", "mercredi", "jeudi", "vendredi"];
 const ORDRE_JOURS: Jour[] = [...JOURS_SEMAINE, "samedi", "dimanche"];
 
+// Fabrique n recettes synthétiques d'un temps donné (id/nom uniques).
+function synth(temps: TempsPreparation, n: number, prefixe: string): Recette[] {
+  return Array.from({ length: n }, (_, i) => ({
+    id: `${prefixe}-${i}`,
+    nom: `${prefixe}${i}`,
+    tempsPreparation: temps,
+    ingredients: [],
+  }));
+}
+
+// Vivier élargi : 15 fixtures + marge synthétique rapide/normal. Avec 14 slots,
+// les fixtures seules ne laissent qu'une recette libre — pour tester les
+// remplacements (qui exigent un candidat éligible disponible), on garantit du
+// « rab », notamment en "rapide" (les dîners de semaine en consomment 5).
+const RECETTES_PLUS: Recette[] = [
+  ...RECETTES,
+  ...synth("rapide", 6, "rab-rapide"),
+  ...synth("normal", 4, "rab-normal"),
+];
+
 // Tous les repas d'un planning, tous slots confondus.
 function tousLesRepas(planning: Planning): Recette[] {
   return planning.jours.flatMap((jp) =>
@@ -33,16 +57,31 @@ function tousLesRepas(planning: Planning): Recette[] {
   );
 }
 
-// Dîners du lundi au vendredi uniquement.
+// Dîners du lundi au vendredi.
 function dinersDeSemaine(planning: Planning): Recette[] {
   return planning.jours
     .filter((jp) => JOURS_SEMAINE.includes(jp.jour))
     .map((jp) => jp.diner);
 }
 
+// Déjeuners du lundi au vendredi (désormais présents chaque jour).
+function dejeunersDeSemaine(planning: Planning): Recette[] {
+  return planning.jours
+    .filter((jp) => JOURS_SEMAINE.includes(jp.jour))
+    .map((jp) => jp.dejeuner!)
+    .filter(Boolean);
+}
+
+// Ids des repas du week-end (déjeuner + dîner du samedi et du dimanche).
+function idsWeekend(planning: Planning): string[] {
+  return planning.jours
+    .filter((jp) => jp.jour === "samedi" || jp.jour === "dimanche")
+    .flatMap((jp) => [jp.dejeuner!.id, jp.diner.id]);
+}
+
 // ---------------------------------------------------------------------------
 // Section 5.5 — composition du planning : 7 jours lundi → dimanche,
-// un dîner chaque jour, un déjeuner uniquement le samedi et le dimanche.
+// un déjeuner ET un dîner chaque jour (14 repas).
 // ---------------------------------------------------------------------------
 describe("genererPlanning — structure du planning (section 5.5)", () => {
   test("produit 7 jours dans l'ordre lundi → dimanche", () => {
@@ -50,16 +89,13 @@ describe("genererPlanning — structure du planning (section 5.5)", () => {
     expect(planning.jours.map((jp) => jp.jour)).toEqual(ORDRE_JOURS);
   });
 
-  test("sert un dîner chaque jour et un déjeuner uniquement le week-end", () => {
+  test("sert un déjeuner ET un dîner chaque jour (14 repas)", () => {
     const planning = genererPlanning(RECETTES);
     for (const jp of planning.jours) {
+      expect(jp.dejeuner).toBeDefined();
       expect(jp.diner).toBeDefined();
-      if (jp.jour === "samedi" || jp.jour === "dimanche") {
-        expect(jp.dejeuner).toBeDefined();
-      } else {
-        expect(jp.dejeuner).toBeUndefined();
-      }
     }
+    expect(tousLesRepas(planning)).toHaveLength(14);
   });
 
   test("identifie la semaine au format ISO AAAA-Wnn", () => {
@@ -69,33 +105,38 @@ describe("genererPlanning — structure du planning (section 5.5)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// RG-01 — Éligibilité par jour : lundi → vendredi, seules les recettes
-// "rapide" ou "normal" sont éligibles ; le week-end, toutes le sont.
+// RG-01 — Éligibilité par slot (jour × type de repas, modèle C).
 // ---------------------------------------------------------------------------
-describe("genererPlanning — RG-01 éligibilité par jour", () => {
-  test("ne sert jamais de recette longue un soir de semaine", () => {
-    // L'aléatoire (RG-03) impose de répéter : 25 générations sur le vivier complet.
+describe("genererPlanning — RG-01 éligibilité par slot", () => {
+  test("ne sert QUE des recettes 'rapide' aux dîners de semaine", () => {
+    // L'aléatoire (RG-03) impose de répéter : 25 générations.
     for (let i = 0; i < 25; i++) {
       const planning = genererPlanning(RECETTES);
       for (const diner of dinersDeSemaine(planning)) {
-        expect(diner.tempsPreparation).not.toBe("long");
+        expect(diner.tempsPreparation).toBe("rapide");
+      }
+    }
+  });
+
+  test("ne sert jamais de recette longue au déjeuner de semaine", () => {
+    for (let i = 0; i < 25; i++) {
+      const planning = genererPlanning(RECETTES);
+      for (const dejeuner of dejeunersDeSemaine(planning)) {
+        expect(dejeuner.tempsPreparation).not.toBe("long");
       }
     }
   });
 
   test("sert les recettes longues le week-end quand le vivier l'impose", () => {
-    // Vivier de 9 recettes pour 9 slots : 6 rapides/normales + les 3 longues.
-    // Les 5 dîners de semaine consomment 5 rapides/normales : les 3 longues
-    // ne peuvent finir que sur les 4 slots du week-end — et le planning
-    // doit quand même aboutir.
-    const vivier = [...RAPIDES_NORMALES.slice(0, 6), ...LONGUES];
+    // Vivier de 14 recettes pour 14 slots : 11 rapides/normales + les 3 longues.
+    // Les 10 slots de semaine consomment 10 rapides/normales ; les 3 longues
+    // ne peuvent finir que sur les 4 slots du week-end — et le planning aboutit.
+    const vivier = [...RAPIDES_NORMALES.slice(0, 11), ...LONGUES];
     const planning = genererPlanning(vivier);
 
-    const idsWeekend = planning.jours
-      .filter((jp) => jp.jour === "samedi" || jp.jour === "dimanche")
-      .flatMap((jp) => [jp.dejeuner!.id, jp.diner.id]);
+    const ids = idsWeekend(planning);
     for (const longue of LONGUES) {
-      expect(idsWeekend).toContain(longue.id);
+      expect(ids).toContain(longue.id);
     }
   });
 });
@@ -109,7 +150,7 @@ describe("genererPlanning — RG-02 pas de répétition dans la semaine", () => 
     for (let i = 0; i < 25; i++) {
       const repas = tousLesRepas(genererPlanning(RECETTES));
       const ids = repas.map((r) => r.id);
-      expect(new Set(ids).size).toBe(repas.length); // 9 repas, 9 ids distincts
+      expect(new Set(ids).size).toBe(repas.length); // 14 repas, 14 ids distincts
     }
   });
 });
@@ -120,11 +161,11 @@ describe("genererPlanning — RG-02 pas de répétition dans la semaine", () => 
 // ---------------------------------------------------------------------------
 describe("genererPlanning — RG-03 sélection aléatoire", () => {
   test("produit des plannings différents d'une génération à l'autre", () => {
-    // 30 générations sur 15 recettes : la probabilité d'obtenir 30 fois
-    // exactement la même semaine est nulle en pratique.
     const signatures = new Set<string>();
     for (let i = 0; i < 30; i++) {
-      signatures.add(tousLesRepas(genererPlanning(RECETTES)).map((r) => r.id).join("|"));
+      signatures.add(
+        tousLesRepas(genererPlanning(RECETTES)).map((r) => r.id).join("|")
+      );
     }
     expect(signatures.size).toBeGreaterThan(1);
   });
@@ -132,18 +173,23 @@ describe("genererPlanning — RG-03 sélection aléatoire", () => {
 
 // ---------------------------------------------------------------------------
 // Garde-fou du générateur : si le vivier ne permet pas de remplir les
-// 9 slots en respectant RG-01 et RG-02, la génération échoue explicitement
+// 14 slots en respectant RG-01 et RG-02, la génération échoue explicitement
 // (l'UI affiche alors l'état erreur, RG-09).
 // ---------------------------------------------------------------------------
 describe("genererPlanning — vivier insuffisant", () => {
-  test("échoue explicitement avec moins de recettes que de slots", () => {
+  test("échoue explicitement avec moins de recettes que de slots (14)", () => {
     expect(() => genererPlanning(RAPIDES_NORMALES.slice(0, 4))).toThrow();
   });
 
-  test("échoue quand les dîners de semaine manquent de recettes rapides ou normales", () => {
-    // 4 rapides/normales pour 5 dîners de semaine : impossible, même si
-    // les recettes longues abondent pour le week-end.
-    const vivier = [...RAPIDES_NORMALES.slice(0, 4), ...LONGUES];
+  test("échoue quand les dîners de semaine manquent de recettes rapides", () => {
+    // 14 recettes au total, mais seulement 4 rapides : impossible de remplir
+    // les 5 dîners de semaine (réservés au "rapide"), même avec des normales
+    // et des longues en abondance.
+    const vivier = [
+      ...synth("rapide", 4, "r"),
+      ...synth("normal", 7, "n"),
+      ...synth("long", 3, "l"),
+    ];
     expect(() => genererPlanning(vivier)).toThrow();
   });
 });
@@ -155,8 +201,8 @@ describe("genererPlanning — vivier insuffisant", () => {
 // ---------------------------------------------------------------------------
 describe("remplacerSlot — RG-04 remplacement individuel", () => {
   test("remplace le slot ciblé par une recette différente sans toucher aux autres", () => {
-    const planning = genererPlanning(RECETTES);
-    const resultat = remplacerSlot(planning, "mardi", "diner", RECETTES);
+    const planning = genererPlanning(RECETTES_PLUS);
+    const resultat = remplacerSlot(planning, "mardi", "diner", RECETTES_PLUS);
 
     expect(resultat).not.toBeNull();
     const avantMardi = planning.jours.find((jp) => jp.jour === "mardi")!.diner;
@@ -172,52 +218,72 @@ describe("remplacerSlot — RG-04 remplacement individuel", () => {
     }
   });
 
-  test("respecte l'éligibilité du jour : jamais de recette longue un soir de semaine", () => {
+  test("dîner de semaine : ne propose QUE des recettes 'rapide'", () => {
     for (let i = 0; i < 25; i++) {
-      const planning = genererPlanning(RECETTES);
-      const resultat = remplacerSlot(planning, "lundi", "diner", RECETTES);
+      const planning = genererPlanning(RECETTES_PLUS);
+      const resultat = remplacerSlot(planning, "lundi", "diner", RECETTES_PLUS);
       expect(resultat).not.toBeNull();
       const nouveau = resultat!.jours.find((jp) => jp.jour === "lundi")!.diner;
+      expect(nouveau.tempsPreparation).toBe("rapide");
+    }
+  });
+
+  test("déjeuner de semaine : remplaçable, jamais par une recette longue", () => {
+    for (let i = 0; i < 25; i++) {
+      const planning = genererPlanning(RECETTES_PLUS);
+      const resultat = remplacerSlot(planning, "lundi", "dejeuner", RECETTES_PLUS);
+      expect(resultat).not.toBeNull();
+      const nouveau = resultat!.jours.find((jp) => jp.jour === "lundi")!.dejeuner!;
       expect(nouveau.tempsPreparation).not.toBe("long");
     }
   });
 
   test("ne choisit jamais une recette déjà servie ailleurs dans la semaine", () => {
     for (let i = 0; i < 25; i++) {
-      const planning = genererPlanning(RECETTES);
-      const resultat = remplacerSlot(planning, "samedi", "dejeuner", RECETTES);
+      const planning = genererPlanning(RECETTES_PLUS);
+      const resultat = remplacerSlot(planning, "samedi", "dejeuner", RECETTES_PLUS);
       expect(resultat).not.toBeNull();
 
+      const cible = planning.jours.find((jp) => jp.jour === "samedi")!.dejeuner!;
       const nouveau = resultat!.jours.find((jp) => jp.jour === "samedi")!.dejeuner!;
       const idsAutresSlots = tousLesRepas(planning)
         .map((r) => r.id)
-        .filter((id) => id !== planning.jours.find((jp) => jp.jour === "samedi")!.dejeuner!.id);
+        .filter((id) => id !== cible.id);
       expect(idsAutresSlots).not.toContain(nouveau.id);
     }
   });
 
   test("retourne null quand toutes les recettes éligibles sont déjà utilisées", () => {
-    // Vivier de 9 recettes = exactement les 9 slots : aucun remplaçant possible.
-    const vivier = [...RAPIDES_NORMALES.slice(0, 6), ...LONGUES];
+    // Vivier de 14 recettes = exactement les 14 slots : aucun remplaçant.
+    const vivier = [...RAPIDES_NORMALES.slice(0, 11), ...LONGUES];
     const planning = genererPlanning(vivier);
     expect(remplacerSlot(planning, "dimanche", "dejeuner", vivier)).toBeNull();
   });
 
-  test("retourne null pour un slot qui n'existe pas (déjeuner en semaine)", () => {
-    const planning = genererPlanning(RECETTES);
-    expect(remplacerSlot(planning, "lundi", "dejeuner", RECETTES)).toBeNull();
+  test("retourne null pour un slot absent du planning (jour sans ce repas)", () => {
+    // Planning forgé sans déjeuner le lundi (cas d'un planning antérieur).
+    const planning = genererPlanning(RECETTES_PLUS);
+    const sansDejeunerLundi: Planning = {
+      ...planning,
+      jours: planning.jours.map((jp) =>
+        jp.jour === "lundi" ? { jour: jp.jour, diner: jp.diner } : jp
+      ),
+    };
+    expect(
+      remplacerSlot(sansDejeunerLundi, "lundi", "dejeuner", RECETTES_PLUS)
+    ).toBeNull();
   });
 
   test("ne modifie jamais le planning d'origine", () => {
-    const planning = genererPlanning(RECETTES);
+    const planning = genererPlanning(RECETTES_PLUS);
     const instantane = JSON.stringify(planning);
-    remplacerSlot(planning, "jeudi", "diner", RECETTES);
+    remplacerSlot(planning, "jeudi", "diner", RECETTES_PLUS);
     expect(JSON.stringify(planning)).toBe(instantane);
   });
 
   test("conserve l'identifiant de semaine du planning d'origine", () => {
-    const planning = genererPlanning(RECETTES);
-    const resultat = remplacerSlot(planning, "vendredi", "diner", RECETTES);
+    const planning = genererPlanning(RECETTES_PLUS);
+    const resultat = remplacerSlot(planning, "vendredi", "diner", RECETTES_PLUS);
     expect(resultat!.semaine).toBe(planning.semaine);
   });
 });
@@ -254,9 +320,18 @@ describe("remplacerSlotManuel — RG-15 sélection manuelle (US-06)", () => {
     );
   });
 
+  test("by-passe RG-01 : une recette « long » est permise au déjeuner de semaine", () => {
+    const planning = genererPlanning(RECETTES);
+    const longue = LONGUES[0]!;
+    const resultat = remplacerSlotManuel(planning, "lundi", "dejeuner", longue);
+
+    expect(
+      resultat!.jours.find((jp) => jp.jour === "lundi")!.dejeuner!.id
+    ).toBe(longue.id);
+  });
+
   test("by-passe RG-02 : le doublon est permis dans le planning", () => {
     const planning = genererPlanning(RECETTES);
-    // La recette déjà servie au dîner de lundi est posée aussi le jeudi.
     const dejaServie = planning.jours.find((jp) => jp.jour === "lundi")!.diner;
     const resultat = remplacerSlotManuel(planning, "jeudi", "diner", dejaServie);
 
@@ -274,10 +349,16 @@ describe("remplacerSlotManuel — RG-15 sélection manuelle (US-06)", () => {
     ).toBe(choisie.id);
   });
 
-  test("retourne null pour un slot qui n'existe pas (déjeuner en semaine)", () => {
+  test("retourne null pour un slot absent du planning (jour sans ce repas)", () => {
     const planning = genererPlanning(RECETTES);
+    const sansDejeunerLundi: Planning = {
+      ...planning,
+      jours: planning.jours.map((jp) =>
+        jp.jour === "lundi" ? { jour: jp.jour, diner: jp.diner } : jp
+      ),
+    };
     expect(
-      remplacerSlotManuel(planning, "lundi", "dejeuner", RAPIDES_NORMALES[0]!)
+      remplacerSlotManuel(sansDejeunerLundi, "lundi", "dejeuner", RAPIDES_NORMALES[0]!)
     ).toBeNull();
   });
 
@@ -299,12 +380,12 @@ describe("remplacerSlotManuel — RG-15 sélection manuelle (US-06)", () => {
 // recettesUtilisees — alimente le badge « déjà au planning » du sélecteur.
 // ---------------------------------------------------------------------------
 describe("recettesUtilisees — ids des recettes du planning (US-06)", () => {
-  test("retourne les ids de tous les slots, déjeuners de week-end compris", () => {
+  test("retourne les ids de tous les slots (14)", () => {
     const planning = genererPlanning(RECETTES);
     const ids = recettesUtilisees(planning);
 
-    // 9 slots, tous distincts (RG-02 respectée par la génération).
-    expect(ids.size).toBe(9);
+    // 14 slots, tous distincts (RG-02 respectée par la génération).
+    expect(ids.size).toBe(14);
     for (const repas of tousLesRepas(planning)) {
       expect(ids.has(repas.id)).toBe(true);
     }
@@ -315,7 +396,7 @@ describe("recettesUtilisees — ids des recettes du planning (US-06)", () => {
     const dejaServie = planning.jours.find((jp) => jp.jour === "lundi")!.diner;
     const avecDoublon = remplacerSlotManuel(planning, "mardi", "diner", dejaServie)!;
 
-    expect(recettesUtilisees(avecDoublon).size).toBe(8); // 9 slots, 8 recettes
+    expect(recettesUtilisees(avecDoublon).size).toBe(13); // 14 slots, 13 recettes
   });
 });
 
@@ -374,34 +455,40 @@ describe("remplacerRecetteDansPlanning — RG-03 (#2)", () => {
 
 // ---------------------------------------------------------------------------
 // analyserVivier — viabilité du vivier pour générer une semaine (#2 PR3).
-// 9 slots distincts dont 5 dîners de semaine en rapide/normal.
+// 14 slots distincts, dont 10 rapide/normal (slots de semaine) dont 5 rapide
+// (dîners de semaine).
 // ---------------------------------------------------------------------------
 describe("analyserVivier — alerte vivier insuffisant (#2)", () => {
-  function recettesOf(rapideNormal: number, longues: number): Recette[] {
-    const r: Recette[] = [];
-    for (let i = 0; i < rapideNormal; i++)
-      r.push({ id: `rn-${i}`, nom: `rn${i}`, tempsPreparation: "rapide", ingredients: [] });
-    for (let i = 0; i < longues; i++)
-      r.push({ id: `l-${i}`, nom: `l${i}`, tempsPreparation: "long", ingredients: [] });
-    return r;
+  function recettesOf(rapide: number, normal: number, longues: number): Recette[] {
+    return [
+      ...synth("rapide", rapide, "r"),
+      ...synth("normal", normal, "n"),
+      ...synth("long", longues, "l"),
+    ];
   }
 
-  test("suffisant : 9 recettes dont 5 rapides/normales", () => {
-    const a = analyserVivier(recettesOf(5, 4));
+  test("suffisant : 14 recettes dont 10 rapides/normales dont 5 rapides", () => {
+    const a = analyserVivier(recettesOf(5, 5, 4)); // 14 total, r/n=10, rapide=5
     expect(a.suffisant).toBe(true);
     expect(a.message).toBeNull();
   });
 
-  test("insuffisant : total < 9", () => {
-    const a = analyserVivier(recettesOf(8, 0)); // 8 recettes
+  test("insuffisant : total < 14", () => {
+    const a = analyserVivier(recettesOf(13, 0, 0)); // 13 recettes
     expect(a.suffisant).toBe(false);
-    expect(a.message).toMatch(/au moins 9/);
+    expect(a.message).toMatch(/au moins 14/);
   });
 
-  test("insuffisant : pas assez de rapides/normales (< 5)", () => {
-    const a = analyserVivier(recettesOf(4, 6)); // 10 total mais 4 r/n
+  test("insuffisant : pas assez de rapides/normales (< 10)", () => {
+    const a = analyserVivier(recettesOf(5, 0, 9)); // 14 total, r/n=5, rapide=5
     expect(a.suffisant).toBe(false);
-    expect(a.rapideNormal).toBe(4);
+    expect(a.rapideNormal).toBe(5);
+  });
+
+  test("insuffisant : pas assez de rapides (< 5)", () => {
+    const a = analyserVivier(recettesOf(4, 10, 0)); // 14 total, r/n=14, rapide=4
+    expect(a.suffisant).toBe(false);
+    expect(a.rapide).toBe(4);
   });
 
   test("vivier vide", () => {

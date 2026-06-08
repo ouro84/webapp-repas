@@ -49,8 +49,8 @@ Réduire à zéro l'effort de planification hebdomadaire des repas, du choix des
 | F-01 | Liste de recettes | ~30 recettes stockées dans `/data/recettes.json` |
 | F-02 | Temps de préparation | Chaque recette est classée : Rapide / Normal / Long |
 | F-03 | Flag "fond de placard" | Chaque ingrédient peut être marqué comme fond de placard (sel, huile, épices…) |
-| F-04 | Génération du planning | Génère un planning sur 7 jours : dîner chaque soir + déjeuner samedi et dimanche |
-| F-05 | Contrainte semaine/week-end | Lun→Ven : recettes Rapide ou Normal uniquement. Sam→Dim : toutes recettes |
+| F-04 | Génération du planning | Génère un planning sur 7 jours : un déjeuner **et** un dîner chaque jour (14 repas) |
+| F-05 | Éligibilité par slot | Éligibilité selon le jour **et** le type de repas (RG-01) : dîner de semaine = Rapide ; déjeuner de semaine = Rapide/Normal ; tous les repas de week-end = toutes recettes |
 | F-06 | Pas de répétition | Une même recette n'apparaît pas deux fois dans la même semaine |
 | F-07 | Remplacement d'un repas | Remplacer un slot individuel sans modifier le reste du planning |
 | F-08 | Liste de courses agrégée | Ingrédients regroupés par catégorie, quantités additionnées si doublons |
@@ -66,7 +66,6 @@ Réduire à zéro l'effort de planification hebdomadaire des repas, du choix des
 | Feature | Note |
 |---------|------|
 | CRUD recettes | Saisir / modifier / supprimer des recettes via l'interface |
-| Déjeuners en semaine (lun→ven) | Extension naturelle de F-04 |
 | Gestion des portions dynamiques | Adapter les quantités selon le nombre de personnes |
 | Restes / double portion | Cuire pour 4 afin d'avoir des restes |
 | Historique des plannings | Consulter les plannings des semaines passées |
@@ -84,7 +83,7 @@ Réduire à zéro l'effort de planification hebdomadaire des repas, du choix des
 **Comportement :**
 > **Given** l'utilisateur est sur la page d'accueil  
 > **When** il clique sur "Générer mon planning"  
-> **Then** l'app affiche un planning de 7 jours : un dîner par jour du lundi au dimanche, un déjeuner le samedi, un déjeuner le dimanche — sans répétition de recette dans la semaine
+> **Then** l'app affiche un planning de 7 jours : un déjeuner **et** un dîner chaque jour du lundi au dimanche (14 repas) — sans répétition de recette dans la semaine
 
 ---
 
@@ -94,11 +93,15 @@ Réduire à zéro l'effort de planification hebdomadaire des repas, du choix des
 
 **Comportement :**
 > **Given** un planning est en cours de génération  
-> **When** le slot concerné est un dîner de semaine (lundi → vendredi)  
-> **Then** seules les recettes classées "Rapide" ou "Normal" sont éligibles
+> **When** le slot concerné est un **dîner** de semaine (lundi → vendredi)  
+> **Then** seules les recettes "Rapide" sont éligibles (le soir, en semaine, on va au plus court)
 
 > **Given** un planning est en cours de génération  
-> **When** le slot concerné est un repas de week-end (samedi ou dimanche)  
+> **When** le slot concerné est un **déjeuner** de semaine (lundi → vendredi)  
+> **Then** les recettes "Rapide" ou "Normal" sont éligibles
+
+> **Given** un planning est en cours de génération  
+> **When** le slot concerné est un repas de week-end (samedi ou dimanche), déjeuner ou dîner  
 > **Then** toutes les recettes sont éligibles, y compris "Long"
 
 ---
@@ -121,7 +124,7 @@ Réduire à zéro l'effort de planification hebdomadaire des repas, du choix des
 **Comportement :**
 > **Given** un planning est affiché  
 > **When** l'utilisateur clique sur "↺ changer" sur un slot donné  
-> **Then** l'app remplace ce repas par une autre recette éligible (même contrainte de temps de préparation selon le jour), sans modifier les autres slots du planning
+> **Then** l'app remplace ce repas par une autre recette éligible (même contrainte de temps de préparation selon le jour **et** le type de repas, RG-01), sans modifier les autres slots du planning
 
 > **Given** l'utilisateur clique sur "↺ changer"  
 > **When** toutes les recettes éligibles sont déjà utilisées dans la semaine  
@@ -343,7 +346,8 @@ type CategorieIngredient =
 ```ts
 type JourPlanning = {
   jour: "lundi" | "mardi" | "mercredi" | "jeudi" | "vendredi" | "samedi" | "dimanche"
-  dejeuner?: Recette     // uniquement samedi et dimanche en MVP
+  dejeuner?: Recette     // peuplé chaque jour à la génération ; champ gardé optionnel
+                         // pour relire sans migration les plannings antérieurs (9 repas)
   diner: Recette
   // Nombre de personnes par slot (US-07, RG-16). Optionnel : champ absent = 2
   // (défaut), ce qui rend les plannings persistés antérieurs relisables sans migration.
@@ -368,19 +372,24 @@ Un snapshot d'annulation (US-09) est conservé sous la clé `planning_snapshot` 
 
 ## 6. Règles métier du générateur
 
-### RG-01 — Éligibilité par jour
+### RG-01 — Éligibilité par slot (jour × type de repas)
+
+L'éligibilité dépend du **jour** (semaine vs week-end) **et** du **type de repas** (déjeuner vs dîner) :
 
 | Jour | Slot | Recettes éligibles |
 |------|------|--------------------|
-| Lundi → Vendredi | Dîner | `tempsPreparation: "rapide"` ou `"normal"` |
-| Samedi | Déjeuner | Toutes |
-| Samedi | Dîner | Toutes |
-| Dimanche | Déjeuner | Toutes |
-| Dimanche | Dîner | Toutes |
+| Lundi → Vendredi | Déjeuner | `"rapide"` ou `"normal"` |
+| Lundi → Vendredi | Dîner | `"rapide"` |
+| Samedi / Dimanche | Déjeuner | Toutes (`"rapide"`, `"normal"`, `"long"`) |
+| Samedi / Dimanche | Dîner | Toutes |
+
+> **Ordre de remplissage :** les slots les plus contraints sont servis d'abord (dîners de semaine = rapide uniquement, puis déjeuners de semaine = rapide/normal, puis week-end = tout). Comme toute recette éligible sur un slot contraint l'est aussi sur un slot plus permissif, cet ordre évite d'épuiser à tort le vivier restreint et de faire échouer un slot alors qu'une solution existe.
+
+> **Vivier minimal pour générer une semaine (14 slots distincts, RG-02) :** au moins **14 recettes**, dont **≥ 10 rapide/normal** (les 10 slots de semaine) dont **≥ 5 rapide** (les 5 dîners de semaine). Les 4 slots de week-end absorbent le reste (recettes "long" comprises). En deçà, la génération échoue explicitement (RG-09) — l'alerte de vivier le signale en amont.
 
 ### RG-02 — Pas de répétition dans la semaine
 
-Une recette ne peut apparaître qu'une seule fois dans un planning de 7 jours, quel que soit le slot (déjeuner ou dîner).
+Une recette ne peut apparaître qu'une seule fois dans un planning de 7 jours (14 slots), quel que soit le slot (déjeuner ou dîner).
 
 ### RG-03 — Sélection aléatoire
 

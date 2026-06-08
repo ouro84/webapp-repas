@@ -9,7 +9,9 @@
 //
 // Composition voulue — NE PAS MODIFIER sans relire les tests :
 //   - 15 recettes : 12 rapides/normales puis 3 longues (en fin de tableau).
-//     lib/generateur.test.ts dépend de ces comptages (viviers de 9 = 6 + 3).
+//     Détail : 7 rapides, 5 normales, 3 longues. lib/generateur.test.ts dépend
+//     de ces comptages (14 slots = 5 dîners semaine "rapide" + 5 déjeuners
+//     semaine "rapide/normal" + 4 slots week-end ; viviers de 14 = 11 r/n + 3 longues).
 //   - parmesan en "g" dans les 3 premières recettes (agrégation RG-05).
 //   - crème fraîche en "cas" (gratin-de-courgettes) ET en "briquette"
 //     (quiche-aux-lardons) : lignes séparées si unités différentes.
