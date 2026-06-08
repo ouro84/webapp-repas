@@ -360,6 +360,9 @@ test("fermer le sélecteur avec Échap ne modifie pas le planning", async ({
   page,
 }) => {
   await page.getByRole("button", { name: "Générer mon planning" }).click();
+  // Attendre que le planning soit rendu avant de lire la carte (sinon innerText
+  // peut courir avant l'apparition des cartes sur un backend distant lent).
+  await expect(page.locator("main ul > li")).toHaveCount(7);
   const carteLundi = page.locator("main ul > li").first();
   const lundiAvant = await carteLundi.innerText();
 
