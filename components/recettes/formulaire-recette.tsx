@@ -88,7 +88,12 @@ export function FormulaireRecette({
   onAnnuler,
 }: {
   /** Recette à éditer ; absent = création. */
-  valeurInitiale?: { nom: string; tempsPreparation: TempsPreparation; ingredients: Ingredient[] };
+  valeurInitiale?: {
+    nom: string;
+    tempsPreparation: TempsPreparation;
+    vegetarien?: boolean;
+    ingredients: Ingredient[];
+  };
   titre: string;
   onEnregistrer: (saisie: SaisieRecette) => Promise<void>;
   onAnnuler: () => void;
@@ -100,9 +105,17 @@ export function FormulaireRecette({
   const [lignes, setLignes] = useState<LigneSaisie[]>(
     valeurInitiale ? valeurInitiale.ingredients.map(ingredientVersLigne) : [ligneVide()]
   );
+  // Flag végétarien (#86). Pré-cochage heuristique (B3) à la CRÉATION : tant
+  // que l'utilisateur n'y a pas touché, on suit la suggestion « aucun ingrédient
+  // viande/poisson ». À l'édition, on respecte la valeur enregistrée (figée).
+  const [vegetarien, setVegetarien] = useState(valeurInitiale?.vegetarien ?? false);
+  const [vegeTouche, setVegeTouche] = useState(valeurInitiale !== undefined);
   const [erreur, setErreur] = useState<string | null>(null);
   const [enCours, setEnCours] = useState(false);
   const idErreur = useId();
+
+  const suggestionVege = lignes.every((l) => l.categorie !== "viandes-poissons");
+  const vegeEffectif = vegeTouche ? vegetarien : suggestionVege;
 
   function majLigne(index: number, champ: Partial<LigneSaisie>): void {
     setLignes((courantes) =>
@@ -138,7 +151,12 @@ export function FormulaireRecette({
         fondDePlacard: l.fondDePlacard,
       });
     }
-    return { nom: nom.trim(), tempsPreparation: temps, ingredients };
+    return {
+      nom: nom.trim(),
+      tempsPreparation: temps,
+      vegetarien: vegeEffectif,
+      ingredients,
+    };
   }
 
   async function soumettre(evenement: React.FormEvent): Promise<void> {
@@ -194,6 +212,19 @@ export function FormulaireRecette({
           ))}
         </select>
       </div>
+
+      <label className="flex items-center gap-2 text-sm font-medium text-brand-900">
+        <input
+          type="checkbox"
+          checked={vegeEffectif}
+          onChange={(e) => {
+            setVegeTouche(true);
+            setVegetarien(e.target.checked);
+          }}
+          className="size-4 cursor-pointer accent-brand-600"
+        />
+        Recette végétarienne
+      </label>
 
       <fieldset className="flex flex-col gap-3">
         <legend className="mb-1 text-sm font-medium text-brand-900">

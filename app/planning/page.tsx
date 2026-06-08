@@ -56,6 +56,7 @@ import { parseApiError } from "@/lib/errors";
 const SEMAINES_PASSEES = 12;
 const SEMAINES_FUTURES = 6;
 import { BadgeTemps } from "@/components/planning/badge-temps";
+import { BadgeVegetarien } from "@/components/ui/badge-vegetarien";
 import { SelecteurRecette } from "@/components/planning/selecteur-recette";
 import { FicheRecette } from "@/components/planning/fiche-recette";
 import { ConfirmationModale } from "@/components/ui/confirmation";
@@ -874,6 +875,7 @@ function SlotRepas({
       </button>
       <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
         <BadgeTemps temps={recette.tempsPreparation} />
+        {recette.vegetarien && <BadgeVegetarien compact />}
         {/*
           a11y : aria-labels contextualisés — des paires de boutons identiques
           sont indiscernables au lecteur d'écran ; l'icône Lucide RefreshCw

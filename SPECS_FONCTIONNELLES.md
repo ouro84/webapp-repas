@@ -357,6 +357,25 @@ Réduire à zéro l'effort de planification hebdomadaire des repas, du choix des
 
 ---
 
+### US-16 — Repas végétariens (#86, P10)
+
+> **En tant qu'** utilisateur, je veux identifier les recettes végétariennes et privilégier des repas végés sur certains créneaux afin d'améliorer mon mode de vie.
+
+**Comportement :**
+> **Given** je crée ou édite une recette  
+> **When** je la marque « végétarienne »  
+> **Then** le flag est enregistré et affiché (fiche, liste, card du planning) (RG-26)
+
+> **Given** je consulte la liste des recettes  
+> **When** j'active le filtre « végétariennes seulement »  
+> **Then** seules les recettes végétariennes sont listées (RG-26)
+
+> **Given** j'ai réglé « privilégier le végétarien » sur un créneau *(PR2)*  
+> **When** je génère un planning  
+> **Then** ces créneaux reçoivent en priorité des recettes végétariennes ; si le vivier végé est insuffisant, la génération aboutit quand même et **m'avertit** (RG-26)
+
+---
+
 ## 5. Modèle de données
 
 > Les structures ci-dessous sont exprimées en TypeScript à titre documentaire. Le fichier de données réel est `/data/recettes.json` — format JSON lisible et éditable sans connaissance technique.
@@ -611,6 +630,14 @@ Historique (conservé pour mémoire) : la génération visait une semaine cible 
 - **Modèle « plafond »** : « durée max » = catégorie plafond parmi `rapide < normal < long` (le modèle de recette est catégoriel, pas en minutes). L'éligibilité d'un slot = recettes de temps **≤ plafond**. Défauts : déjeuner semaine `normal`, dîner semaine `rapide`, week-end `long`.
 - **Prise en compte** : la **prochaine** génération (complète **ou** unitaire « ↺ changer ») applique les réglages — les plannings déjà générés ne sont pas rejoués. Génération complète = lecture serveur (route `/api/planning/generer`) ; remplacement unitaire = lecture client.
 - **Enregistrement explicite** : un bouton « Enregistrer » (pas de sauvegarde à la volée). Une configuration rendant la génération **infaisable** (vivier insuffisant pour 14 slots distincts sous ces plafonds) est **refusée à la sauvegarde** (garde de faisabilité, cf. `analyserVivier`).
+
+### RG-26 — Recettes végétariennes (US-16, #86)
+
+- **Attribut de recette** : chaque recette porte un flag `vegetarien` (booléen, défaut `false`). Pour une recette **perso**, il est piloté par le formulaire (case « Recette végétarienne ») ; à la création, il est **pré-coché par heuristique** (aucun ingrédient en catégorie `viandes-poissons`), suggestion que l'utilisateur peut corriger.
+- **Catalogue global** : les recettes globales (`user_id IS NULL`, non éditables) sont **auto-taguées** par la même heuristique dans la migration (imparfait — ex. sauce poisson — mais bon défaut).
+- **Affichage** : un badge « Végétarien » (feuille) signale les recettes végé sur la fiche, la liste des recettes et la card du planning.
+- **Filtre** : la liste des recettes propose un filtre « végétariennes seulement ».
+- **Préférence de génération (PR2)** : l'utilisateur peut **privilégier le végétarien** par créneau (réglages, RG-25). C'est une préférence **souple** — si le vivier végé est insuffisant, la génération aboutit quand même et **avertit** que la préférence n'a pu être honorée. Aucune contrainte dure : un planning reste toujours générable.
 
 ### RG-22 — Repas en « restes » (US-12)
 

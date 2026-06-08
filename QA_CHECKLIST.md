@@ -54,6 +54,12 @@
 - [ ] Réglages — effet : la génération complète **et** le « ↺ changer » respectent les plafonds ; un planning généré porte le nombre de personnes par défaut choisi
 - [ ] Réglages — bonus : « Réinitialiser » repositionne sur les défauts (sans sauver) ; l'aperçu « N recettes éligibles » se met à jour ; une config infaisable bloque l'enregistrement avec un message
 
+### Recettes végétariennes (US-16, RG-26)
+- [ ] Création/édition : la case « Recette végétarienne » est **pré-cochée** quand aucun ingrédient n'est « viandes-poissons » ; on peut la corriger manuellement ; le flag persiste (rechargement / round-trip base)
+- [ ] Affichage : un badge « Végétarien » (feuille) apparaît sur la fiche, la liste des recettes et la card du planning pour les recettes végé
+- [ ] Filtre : « végétariennes seulement » dans la liste ne laisse que les recettes végé
+- [ ] Catalogue global : les recettes globales sans viande/poisson portent le badge (auto-tag heuristique)
+
 ## 2. UI / Responsive
 
 ### Mobile (< 768 px — tester en premier, RG-06)

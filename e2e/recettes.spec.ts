@@ -135,6 +135,23 @@ test("une recette du catalogue global est en lecture seule (pas de suppression)"
   ).toHaveCount(0);
 });
 
+test("une recette végétarienne porte le badge et passe le filtre (#86)", async ({
+  page,
+}) => {
+  // `creer` ajoute un ingrédient « légumes-fruits » → l'heuristique pré-coche
+  // « végétarienne » (B3), donc la recette créée est végé.
+  const nom = `E2E Vege ${SUFFIXE}`;
+  await creer(page, nom);
+
+  const ligne = page.locator("li", { hasText: nom });
+  // Le badge reflète la valeur relue depuis la base (round-trip du flag).
+  await expect(ligne.getByText("Végétarien")).toBeVisible();
+
+  // Le filtre « Végétariennes seulement » la conserve.
+  await page.getByLabel("Végétariennes seulement").check();
+  await expect(page.locator("li", { hasText: nom })).toBeVisible();
+});
+
 test("la recherche filtre la liste des recettes", async ({ page }) => {
   await page.goto("/recettes");
   await expect(page.locator("main li").first()).toBeVisible();

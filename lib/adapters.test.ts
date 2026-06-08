@@ -11,6 +11,7 @@ function dbRecette(id: string): DbRecette {
     user_id: "u1",
     nom: id,
     temps_preparation: "rapide",
+    vegetarien: false,
     created_at: "2026-06-01T00:00:00Z",
     recette_ingredient: [
       {

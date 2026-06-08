@@ -19,6 +19,7 @@ import type { DbRecette, Ingredient, Recette } from "@/types"
 export type SaisieRecette = {
   nom: string
   tempsPreparation: Recette["tempsPreparation"]
+  vegetarien: boolean
   ingredients: Ingredient[]
 }
 
@@ -28,6 +29,7 @@ const SELECT_RECETTE = `
   id,
   nom,
   temps_preparation,
+  vegetarien,
   recette_ingredient (
     quantite,
     unite,
@@ -165,6 +167,7 @@ export async function creerRecette(saisie: SaisieRecette): Promise<Recette> {
     .insert({
       nom: saisie.nom,
       temps_preparation: saisie.tempsPreparation,
+      vegetarien: saisie.vegetarien,
       user_id: user.id,
     })
     .select("id")
@@ -180,6 +183,7 @@ export async function creerRecette(saisie: SaisieRecette): Promise<Recette> {
     id: recette.id,
     nom: saisie.nom,
     tempsPreparation: saisie.tempsPreparation,
+    vegetarien: saisie.vegetarien,
     ingredients: saisie.ingredients,
   }
 }
@@ -197,7 +201,11 @@ export async function modifierRecette(
 
   const { error: erreurRecette } = await client
     .from("recette")
-    .update({ nom: saisie.nom, temps_preparation: saisie.tempsPreparation })
+    .update({
+      nom: saisie.nom,
+      temps_preparation: saisie.tempsPreparation,
+      vegetarien: saisie.vegetarien,
+    })
     .eq("id", id)
 
   if (erreurRecette) {
@@ -218,6 +226,7 @@ export async function modifierRecette(
     id,
     nom: saisie.nom,
     tempsPreparation: saisie.tempsPreparation,
+    vegetarien: saisie.vegetarien,
     ingredients: saisie.ingredients,
   }
 }
