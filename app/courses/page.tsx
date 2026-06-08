@@ -29,6 +29,7 @@ import {
   trierAvecCoches,
 } from "@/lib/coches";
 import { storeCoches, storePlanning } from "@/lib/stockage";
+import { useSyncPlanning } from "@/lib/sync";
 import { accorderNom } from "@/lib/pluriels";
 import { formaterQuantite } from "@/lib/unites";
 import type {
@@ -117,6 +118,9 @@ export default function PageCourses() {
     storeCoches.lire,
     storeCoches.lireServeur
   );
+  // Synchro multi-device (US-13) : hydrate le planning depuis la base au
+  // montage (ouvrir /courses sur un device neuf récupère le planning).
+  useSyncPlanning();
 
   // Catégories repliées (US-05) — état volontairement non persisté :
   // réinitialisé à chaque chargement de page. "fond-de-placard" est une

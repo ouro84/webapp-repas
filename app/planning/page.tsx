@@ -38,6 +38,7 @@ import {
   PERSONNES_MIN,
 } from "@/lib/personnes";
 import { estRestes, marquerRestes } from "@/lib/restes";
+import { useSyncPlanning } from "@/lib/sync";
 import { chargerRecettesGerees, type RecetteGeree } from "@/lib/recettes";
 import {
   formaterSemaine,
@@ -245,6 +246,9 @@ export default function PagePlanning() {
   );
   const [semaineChoisie, setSemaineChoisie] = useState<string | null>(null);
   const hydrate = useHydratation();
+  // Synchro multi-device (US-13) : hydrate le planning depuis la base au
+  // montage et pousse les changements ; renvoie l'état pour l'indicateur.
+  const etatSync = useSyncPlanning();
 
   // Chargement des recettes au montage (système externe asynchrone : setState
   // dans une promesse, pas en synchrone au montage → conforme à la règle ESLint).
@@ -530,6 +534,17 @@ export default function PagePlanning() {
           <p className="text-sm text-brand-700/85">
             {formaterSemaine(planning.semaine)}
           </p>
+          {/* Indicateur de synchro (US-13, bonus) — discret, seulement hors état nominal */}
+          {etatSync !== "synchronise" && (
+            <p
+              role="status"
+              className="mt-0.5 text-xs text-brand-700/70"
+            >
+              {etatSync === "sauvegarde"
+                ? "Sauvegarde…"
+                : "Hors-ligne — synchro au retour du réseau"}
+            </p>
+          )}
         </div>
         {/* Actions : pleine largeur partagée sur mobile, compactes dès sm.
             after:-inset-1 étend la zone tactile à ≥ 44px sans changer le visuel. */}

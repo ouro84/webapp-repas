@@ -1,15 +1,23 @@
 // Parcours critique n°1 — le planning (US-01, US-04).
 // Session authentifiée via le projet "setup" (storageState).
 //
-// Chaque test repart d'un localStorage sans planning : l'état initial
-// est donc déterministe (état vide, RG-09) malgré la persistance (F-11).
+// Chaque test repart d'un état vierge : localStorage purgé ET planning/coches
+// distants supprimés (#6 — sinon l'hydratation depuis la base ferait
+// réapparaître un planning d'un test précédent et casserait l'état vide).
 
 import { test, expect } from "@playwright/test";
 import { recetteFixture } from "../tests/fixtures/recettes";
+import { nettoyerEtatDistant } from "./helpers";
 
-test.beforeEach(async ({ page }) => {
-  // Purge le planning persisté AVANT le chargement de la page.
-  await page.addInitScript(() => localStorage.removeItem("planning_courant"));
+test.beforeEach(async ({ page, request }) => {
+  // Base vierge pour le compte de test (planning + coches).
+  await nettoyerEtatDistant(request);
+  // Purge le cache local AVANT le chargement de la page (planning + clés de sync).
+  await page.addInitScript(() => {
+    localStorage.removeItem("planning_courant");
+    localStorage.removeItem("planning_courant_maj");
+    localStorage.removeItem("planning_dirty");
+  });
   await page.goto("/planning");
 });
 
@@ -130,6 +138,32 @@ test("marquer un repas en « restes » l'exclut de la liste de courses (US-12)",
   await page.getByRole("link", { name: "Liste de courses →" }).click();
   await page.waitForURL("**/courses");
   await expect(page.getByRole("checkbox", { name: /œufs/ })).toBeVisible();
+});
+
+// ---------------------------------------------------------------------------
+// US-13 — synchronisation multi-device (#6). Le planning généré est persisté
+// en base ; un device au cache vide le retrouve à l'hydratation.
+// ---------------------------------------------------------------------------
+test("le planning généré est resynchronisé depuis la base sur un device au cache vide (US-13)", async ({
+  page,
+}) => {
+  await page.getByRole("button", { name: "Générer mon planning" }).click();
+  const liste = page.locator("main ul");
+  await expect(page.locator("main ul > li")).toHaveCount(7);
+  const planningGenere = await liste.innerText();
+
+  // Attendre que l'écriture en base soit effective (drapeau dirty effacé).
+  await expect
+    .poll(async () => page.evaluate(() => localStorage.getItem("planning_dirty")))
+    .toBeNull();
+
+  // Simuler un autre device : l'addInitScript du beforeEach repurge le cache
+  // local à chaque chargement → au reload, localStorage est vide et le planning
+  // est réhydraté depuis la base.
+  await page.reload();
+
+  await expect(page.locator("main ul > li")).toHaveCount(7);
+  await expect.poll(async () => liste.innerText()).toBe(planningGenere);
 });
 
 test("l'utilisateur peut remplacer un repas sans toucher au reste du planning", async ({

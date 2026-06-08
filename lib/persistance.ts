@@ -107,7 +107,7 @@ function construireSlots(
  */
 export async function sauvegarderPlanningDistant(
   planning: Planning
-): Promise<void> {
+): Promise<string> {
   const supabase = createClient()
   const {
     data: { user },
@@ -122,10 +122,16 @@ export async function sauvegarderPlanningDistant(
     throw new Error(`Sauvegarde du planning impossible : ${erreurSuppression.message}`)
   }
 
+  // updated_at posé explicitement (et renvoyé) : il sert d'horloge de référence
+  // au last-write-wins, côté serveur uniquement (#6, RG-23).
   const { data: cree, error: erreurInsertion } = await supabase
     .from("planning")
-    .insert({ user_id: user.id, semaine: planning.semaine })
-    .select("id")
+    .insert({
+      user_id: user.id,
+      semaine: planning.semaine,
+      updated_at: new Date().toISOString(),
+    })
+    .select("id, updated_at")
     .single()
   if (erreurInsertion || !cree) {
     throw new Error(
@@ -139,6 +145,8 @@ export async function sauvegarderPlanningDistant(
   if (erreurSlots) {
     throw new Error(`Sauvegarde des repas impossible : ${erreurSlots.message}`)
   }
+
+  return cree.updated_at as string
 }
 
 /** Coches distantes de l'utilisateur (sérialisées comme localStorage) + horodatage, ou null. */
