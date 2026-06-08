@@ -59,6 +59,8 @@
 - [ ] Affichage : un badge « Végétarien » (feuille) apparaît sur la fiche, la liste des recettes et la card du planning pour les recettes végé
 - [ ] Filtre : « végétariennes seulement » dans la liste ne laisse que les recettes végé
 - [ ] Catalogue global : les recettes globales sans viande/poisson portent le badge (auto-tag heuristique)
+- [ ] Préférence de génération (RG-26) : sur `/reglages`, activer « privilégier le végétarien » sur un créneau, enregistrer → après génération, ce créneau reçoit des recettes végé en priorité ; l'aperçu « N recettes végétariennes éligibles » s'affiche quand l'interrupteur est actif ; le réglage persiste (rechargement)
+- [ ] Avertissement végé souple : avec trop peu de recettes végé, la génération aboutit quand même et un toast signale le nombre de repas non végé ; « ↺ changer » sur un créneau végé sans recette végé disponible remplace quand même et prévient
 
 ## 2. UI / Responsive
 

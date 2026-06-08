@@ -81,6 +81,27 @@ test("sans Enregistrer, un changement n'est pas persisté (RG-25)", async ({
   await expect(page.getByText("3 pers.")).toHaveCount(0);
 });
 
+test("activer et enregistrer une préférence végé la persiste (#86 PR2)", async ({
+  page,
+}) => {
+  await page.goto("/reglages");
+
+  // L'interrupteur « Dîner en semaine » de la section végé (switch accessible).
+  const toggle = page.getByRole("switch", { name: "Dîner en semaine" });
+  await expect(toggle).toHaveAttribute("aria-checked", "false");
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-checked", "true");
+
+  await page.getByRole("button", { name: "Enregistrer" }).click();
+  await expect(page.getByText("Réglages enregistrés")).toBeVisible();
+
+  // Persistance : un rechargement complet relit la base.
+  await page.reload();
+  await expect(
+    page.getByRole("switch", { name: "Dîner en semaine" })
+  ).toHaveAttribute("aria-checked", "true");
+});
+
 test("la génération applique le nombre de personnes par défaut (US-15)", async ({
   page,
 }) => {

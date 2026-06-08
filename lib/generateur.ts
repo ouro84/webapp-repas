@@ -47,15 +47,53 @@ type Slot = {
 // plafond. Les réglages par défaut (REGLAGES_DEFAUT) reproduisent l'ancienne
 // table en dur : dîner de semaine "rapide", déjeuner de semaine "normal",
 // week-end "long" (tout).
+type CleCreneau = keyof ReglagesGeneration["plafonds"]
+
+// Créneau (jour × type de repas) → clé des réglages. Partagé par le plafond de
+// temps (#45) et la préférence végé (#86 PR2) pour éviter de dupliquer la
+// logique semaine/week-end.
+function creneauSlot(jour: Jour, typeRepas: TypeRepas): CleCreneau {
+  const enSemaine = JOURS_SEMAINE.includes(jour)
+  if (enSemaine) return typeRepas === "diner" ? "dinerSemaine" : "dejeunerSemaine"
+  return typeRepas === "diner" ? "dinerWeekend" : "dejeunerWeekend"
+}
+
 function plafondSlot(
   jour: Jour,
   typeRepas: TypeRepas,
   reglages: ReglagesGeneration
 ): TempsPreparation {
-  const enSemaine = JOURS_SEMAINE.includes(jour)
-  const p = reglages.plafonds
-  if (enSemaine) return typeRepas === "diner" ? p.dinerSemaine : p.dejeunerSemaine
-  return typeRepas === "diner" ? p.dinerWeekend : p.dejeunerWeekend
+  return reglages.plafonds[creneauSlot(jour, typeRepas)]
+}
+
+/**
+ * Vrai si l'utilisateur a demandé de privilégier le végétarien sur ce créneau
+ * (#86 PR2, RG-26). Préférence SOUPLE : exploitée comme biais de sélection, pas
+ * comme contrainte. Absente (réglages sans `vegetarienPrefere`) = false.
+ */
+export function prefereVegeSlot(
+  jour: Jour,
+  typeRepas: TypeRepas,
+  reglages: ReglagesGeneration
+): boolean {
+  return reglages.vegetarienPrefere?.[creneauSlot(jour, typeRepas)] ?? false
+}
+
+/**
+ * Restreint des candidats éligibles au sous-ensemble végétarien SI le créneau
+ * privilégie le végé ET qu'au moins une recette végé est disponible ; sinon
+ * renvoie les candidats tels quels (repli souple, RG-26). Le biais reste dans
+ * le même palier de temps → la faisabilité de la génération est inchangée.
+ */
+function biaiserVege(
+  candidats: Recette[],
+  jour: Jour,
+  typeRepas: TypeRepas,
+  reglages: ReglagesGeneration
+): Recette[] {
+  if (!prefereVegeSlot(jour, typeRepas, reglages)) return candidats
+  const vege = candidats.filter((r) => r.vegetarien === true)
+  return vege.length > 0 ? vege : candidats
 }
 
 function tempsEligibles(
@@ -129,9 +167,17 @@ export function genererPlanning(
   // slots permissifs ensuite (RG-01). Comme toute recette éligible sur un slot
   // contraint l'est aussi sur un slot plus permissif (plafonds = seuils sur un
   // ordre total), cet ordre évite d'épuiser à tort un vivier restreint.
-  const slotsTries = [...slots].sort(
-    (a, b) => poidsContrainte(a, reglages) - poidsContrainte(b, reglages)
-  )
+  // À palier de contrainte égal, les créneaux « privilégier végé » (#86 PR2)
+  // passent en premier pour capter les recettes végé avant les autres slots
+  // (meilleur taux d'honoring de la préférence souple ; sans incidence sur la
+  // faisabilité, cf. biaiserVege).
+  const slotsTries = [...slots].sort((a, b) => {
+    const d = poidsContrainte(a, reglages) - poidsContrainte(b, reglages)
+    if (d !== 0) return d
+    const va = prefereVegeSlot(a.jour, a.typeRepas, reglages) ? 0 : 1
+    const vb = prefereVegeSlot(b.jour, b.typeRepas, reglages) ? 0 : 1
+    return va - vb
+  })
 
   const utilisees = new Set<string>() // RG-02 : ids déjà placés cette semaine
   const attributions = new Map<string, Recette>()
@@ -148,7 +194,11 @@ export function genererPlanning(
           `(slot ${slot.jour} ${slot.typeRepas}).`
       )
     }
-    const choisie = choisirAleatoire(eligibles)
+    // RG-26 — préférence végé souple : on tire parmi les éligibles végé si le
+    // créneau le demande et qu'il en reste, sinon parmi tous les éligibles.
+    const choisie = choisirAleatoire(
+      biaiserVege(eligibles, slot.jour, slot.typeRepas, reglages)
+    )
     utilisees.add(choisie.id)
     attributions.set(cleSlot(slot.jour, slot.typeRepas), choisie)
   }
@@ -230,7 +280,10 @@ export function remplacerSlot(
   )
   if (eligibles.length === 0) return null
 
-  const choisie = choisirAleatoire(eligibles)
+  // RG-26 — même préférence végé souple que la génération complète (Q4).
+  const choisie = choisirAleatoire(
+    biaiserVege(eligibles, jour, typeRepas, reglages)
+  )
 
   // Reconstruction immuable : seul le jour ciblé est recréé. Remplacer la
   // recette efface un éventuel marquage « restes » sur ce slot (RG-22 : on
@@ -295,6 +348,38 @@ export function recettesUtilisees(planning: Planning): Set<string> {
     if (jp.dejeuner) ids.add(jp.dejeuner.id)
   }
   return ids
+}
+
+/**
+ * Slots dont le créneau privilégie le végétarien mais qui portent une recette
+ * NON végétarienne (#86 PR2, RG-26) — c.-à-d. les cas où la préférence souple
+ * n'a pas pu être honorée (vivier végé insuffisant). Calculé depuis le planning
+ * final : indépendant de l'aléatoire de génération, et valable aussi bien après
+ * une génération complète qu'après un remplacement unitaire. Sert à avertir
+ * l'utilisateur sans bloquer (la génération aboutit toujours).
+ */
+export function slotsVegeNonHonores(
+  planning: Planning,
+  reglages: ReglagesGeneration
+): Slot[] {
+  const slots: Slot[] = []
+  for (const jp of planning.jours) {
+    if (
+      jp.dejeuner &&
+      prefereVegeSlot(jp.jour, "dejeuner", reglages) &&
+      jp.dejeuner.vegetarien !== true
+    ) {
+      slots.push({ jour: jp.jour, typeRepas: "dejeuner" })
+    }
+    if (
+      jp.diner &&
+      prefereVegeSlot(jp.jour, "diner", reglages) &&
+      jp.diner.vegetarien !== true
+    ) {
+      slots.push({ jour: jp.jour, typeRepas: "diner" })
+    }
+  }
+  return slots
 }
 
 // Nombre de slots par créneau dans une semaine (section 5.5) : 5 jours de

@@ -370,8 +370,8 @@ Réduire à zéro l'effort de planification hebdomadaire des repas, du choix des
 > **When** j'active le filtre « végétariennes seulement »  
 > **Then** seules les recettes végétariennes sont listées (RG-26)
 
-> **Given** j'ai réglé « privilégier le végétarien » sur un créneau *(PR2)*  
-> **When** je génère un planning  
+> **Given** j'ai réglé « privilégier le végétarien » sur un créneau (page Réglages)  
+> **When** je génère un planning (ou remplace un repas via « ↺ changer »)  
 > **Then** ces créneaux reçoivent en priorité des recettes végétariennes ; si le vivier végé est insuffisant, la génération aboutit quand même et **m'avertit** (RG-26)
 
 ---
@@ -637,7 +637,7 @@ Historique (conservé pour mémoire) : la génération visait une semaine cible 
 - **Catalogue global** : les recettes globales (`user_id IS NULL`, non éditables) sont **auto-taguées** par la même heuristique dans la migration (imparfait — ex. sauce poisson — mais bon défaut).
 - **Affichage** : un badge « Végétarien » (feuille) signale les recettes végé sur la fiche, la liste des recettes et la card du planning.
 - **Filtre** : la liste des recettes propose un filtre « végétariennes seulement ».
-- **Préférence de génération (PR2)** : l'utilisateur peut **privilégier le végétarien** par créneau (réglages, RG-25). C'est une préférence **souple** — si le vivier végé est insuffisant, la génération aboutit quand même et **avertit** que la préférence n'a pu être honorée. Aucune contrainte dure : un planning reste toujours générable.
+- **Préférence de génération** : l'utilisateur peut **privilégier le végétarien** par créneau (page Réglages, à côté des plafonds — RG-25, 4 interrupteurs). C'est une préférence **souple** : la génération complète **et** le remplacement unitaire « ↺ changer » biaisent le tirage vers les recettes végé sur ces créneaux, sans jamais bloquer. Le biais reste dans le même palier de temps → la faisabilité (et donc l'analyse de vivier RG-25) est inchangée. Si le vivier végé est insuffisant, le repas est tout de même généré et l'utilisateur est **averti** du nombre de repas non honorés.
 
 ### RG-22 — Repas en « restes » (US-12)
 
