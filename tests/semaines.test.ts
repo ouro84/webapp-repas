@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import {
   formaterSemaine,
   libelleRelatif,
+  semaineDecalee,
   semaineISO,
   semaineParDefaut,
   semainesSelectionnables,
@@ -64,6 +65,20 @@ describe("libelleRelatif", () => {
     expect(libelleRelatif(0)).toBe("Cette semaine");
     expect(libelleRelatif(1)).toBe("Semaine prochaine");
     expect(libelleRelatif(3)).toBe("Dans 3 semaines");
+  });
+});
+
+describe("semaineDecalee (#5)", () => {
+  it("avance et recule de N semaines", () => {
+    expect(semaineDecalee("2026-W23", 0)).toBe("2026-W23");
+    expect(semaineDecalee("2026-W23", 1)).toBe("2026-W24");
+    expect(semaineDecalee("2026-W23", -12)).toBe("2026-W11");
+  });
+
+  it("franchit les bords d'année", () => {
+    // 2026 compte 53 semaines ISO → W53 + 1 = première semaine 2027.
+    expect(semaineDecalee("2026-W53", 1)).toBe("2027-W01");
+    expect(semaineDecalee("2027-W01", -1)).toBe("2026-W53");
   });
 });
 

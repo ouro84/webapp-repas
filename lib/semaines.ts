@@ -81,6 +81,29 @@ export function libelleRelatif(offset: number): string {
   return `Dans ${offset} semaines`
 }
 
+// Lundi (date locale) d'une semaine ISO "AAAA-Wnn" — inverse de semaineISO.
+function lundiDeSemaine(semaine: string): Date {
+  const m = /^(\d{4})-W(\d{2})$/.exec(semaine)
+  if (!m) return new Date()
+  const annee = Number(m[1])
+  const numero = Number(m[2])
+  const quatreJanvier = new Date(annee, 0, 4)
+  const jour = quatreJanvier.getDay() || 7
+  const lundi = new Date(quatreJanvier)
+  lundi.setDate(quatreJanvier.getDate() - (jour - 1) + (numero - 1) * 7)
+  return lundi
+}
+
+/**
+ * Semaine ISO décalée de `n` semaines (négatif = passé). Utilisé pour la
+ * navigation dans l'historique (#5) et le cutoff de rétention.
+ */
+export function semaineDecalee(semaine: string, n: number): string {
+  const lundi = lundiDeSemaine(semaine)
+  lundi.setDate(lundi.getDate() + n * 7)
+  return semaineISO(lundi)
+}
+
 /**
  * Semaine cible par défaut (RG-21) : la semaine courante en règle générale,
  * mais la **semaine prochaine** si l'on est un samedi ou un dimanche (on fait

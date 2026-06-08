@@ -194,9 +194,20 @@ function lireMajCoches(): number {
   return valeur ? Date.parse(valeur) : 0;
 }
 
+// Les coches sont propres à une semaine (#5) : celle du planning actif.
+function semaineActive(): string | null {
+  return planningLocal()?.semaine ?? null;
+}
+
 async function pousserCoches(): Promise<void> {
   if (pushCochesEnCours) {
     rePushCochesDemande = true;
+    return;
+  }
+  // Pas de planning actif → pas de semaine à laquelle rattacher les coches.
+  const semaine = semaineActive();
+  if (semaine === null) {
+    localStorage.removeItem(CLE_DIRTY_COCHES);
     return;
   }
   // Coches absentes (effacées par RG-13) → on synchronise l'état vide.
@@ -206,7 +217,7 @@ async function pousserCoches(): Promise<void> {
   rePushCochesDemande = false;
   definirEtat("sauvegarde");
   try {
-    const majServeur = await sauvegarderCochesDistantes(serialise);
+    const majServeur = await sauvegarderCochesDistantes(semaine, serialise);
     localStorage.setItem(CLE_MAJ_COCHES, majServeur);
     if (!rePushCochesDemande) localStorage.removeItem(CLE_DIRTY_COCHES);
     definirEtat("synchronise");
@@ -238,10 +249,13 @@ async function hydraterCoches(): Promise<void> {
     void pousserCoches();
     return;
   }
+  // Sans planning actif, aucune semaine de coches à hydrater.
+  const semaine = semaineActive();
+  if (semaine === null) return;
 
   let distant: Awaited<ReturnType<typeof chargerCochesDistantes>>;
   try {
-    distant = await chargerCochesDistantes();
+    distant = await chargerCochesDistantes(semaine);
   } catch (erreur) {
     console.error("Chargement des coches distantes échoué.", erreur);
     return;
