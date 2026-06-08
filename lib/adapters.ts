@@ -11,8 +11,21 @@ import type {
   DbPlanningSlot,
   Recette,
   Ingredient,
+  Jour,
   JourPlanning,
+  Planning,
 } from "@/types"
+
+// Ordre canonique des jours (section 5.5).
+const ORDRE_JOURS: Jour[] = [
+  "lundi",
+  "mardi",
+  "mercredi",
+  "jeudi",
+  "vendredi",
+  "samedi",
+  "dimanche",
+]
 
 export function dbIngredientToDomain(
   ri: DbRecette["recette_ingredient"][number]
@@ -47,9 +60,38 @@ export function dbSlotToJourPlanning(
     throw new Error(`Slot dîner manquant pour le jour : ${jour}`)
   }
 
-  return {
+  const jp: JourPlanning = {
     jour,
     diner: dbRecetteToDomain(diner.recette),
-    ...(dejeuner ? { dejeuner: dbRecetteToDomain(dejeuner.recette) } : {}),
   }
+  if (dejeuner) jp.dejeuner = dbRecetteToDomain(dejeuner.recette)
+
+  // personnes / restes : on n'attache que les valeurs non-défaut, pour produire
+  // un objet domaine minimal identique à la sortie du générateur (défaut 2 /
+  // false géré côté lecture, US-07/US-12).
+  const personnes: { dejeuner?: number; diner?: number } = {}
+  if (diner.personnes !== 2) personnes.diner = diner.personnes
+  if (dejeuner && dejeuner.personnes !== 2) personnes.dejeuner = dejeuner.personnes
+  if (personnes.diner !== undefined || personnes.dejeuner !== undefined) {
+    jp.personnes = personnes
+  }
+
+  const restes: { dejeuner?: boolean; diner?: boolean } = {}
+  if (diner.restes) restes.diner = true
+  if (dejeuner?.restes) restes.dejeuner = true
+  if (restes.diner || restes.dejeuner) jp.restes = restes
+
+  return jp
+}
+
+// Reconstruit un planning domaine complet depuis sa semaine et ses slots DB.
+// Ne garde que les jours pourvus d'un dîner (slot obligatoire, section 5.5).
+export function dbPlanningToDomain(
+  semaine: string,
+  slots: DbPlanningSlot[]
+): Planning {
+  const jours: JourPlanning[] = ORDRE_JOURS.filter((jour) =>
+    slots.some((s) => s.jour === jour && s.type_repas === "diner")
+  ).map((jour) => dbSlotToJourPlanning(slots, jour))
+  return { semaine, jours }
 }
