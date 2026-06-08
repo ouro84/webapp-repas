@@ -125,6 +125,15 @@ export type DbRecetteIngredient = {
   ingredient: DbIngredient; // relation imbriquée via Supabase select
 };
 
+// État des coches de la liste de courses, par utilisateur (US-13, sync #6).
+// `coches` est le même objet que localStorage["courses_cochees"] : un mapping
+// { "nom|unité": quantité au moment du cochage } (RG-12), stocké en JSONB.
+export type DbEtatCourses = {
+  user_id: string;
+  coches: Record<string, number>;
+  updated_at: string;
+};
+
 export type DbRecette = {
   id: string;
   user_id: string;
@@ -139,6 +148,7 @@ export type DbPlanning = {
   user_id: string;
   semaine: string;
   created_at: string;
+  updated_at: string; // last-write-wins entre devices (#6)
 };
 
 export type DbPlanningSlot = {
@@ -147,5 +157,7 @@ export type DbPlanningSlot = {
   recette_id: string;
   jour: Jour;
   type_repas: "dejeuner" | "diner";
+  personnes: number; // nombre de personnes du slot (US-07)
+  restes: boolean; // slot marqué « restes » (US-12)
   recette: DbRecette; // relation imbriquée
 };
