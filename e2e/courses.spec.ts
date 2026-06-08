@@ -14,8 +14,15 @@ test.beforeEach(async ({ page, request }) => {
   // posent eux-mêmes planning_courant via leur propre addInitScript.
   await nettoyerEtatDistant(request);
   await page.addInitScript(() => {
-    localStorage.removeItem("planning_courant_maj");
-    localStorage.removeItem("planning_dirty");
+    for (const c of [
+      "planning_courant_maj",
+      "planning_dirty",
+      "courses_cochees_maj",
+      "courses_dirty",
+      "semaine_affichee",
+    ]) {
+      localStorage.removeItem(c);
+    }
   });
 });
 

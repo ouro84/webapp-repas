@@ -12,11 +12,19 @@ import { nettoyerEtatDistant } from "./helpers";
 test.beforeEach(async ({ page, request }) => {
   // Base vierge pour le compte de test (planning + coches).
   await nettoyerEtatDistant(request);
-  // Purge le cache local AVANT le chargement de la page (planning + clés de sync).
+  // Purge le cache local AVANT le chargement de la page (toutes les clés de sync).
   await page.addInitScript(() => {
-    localStorage.removeItem("planning_courant");
-    localStorage.removeItem("planning_courant_maj");
-    localStorage.removeItem("planning_dirty");
+    for (const c of [
+      "planning_courant",
+      "planning_courant_maj",
+      "planning_dirty",
+      "courses_cochees",
+      "courses_cochees_maj",
+      "courses_dirty",
+      "semaine_affichee",
+    ]) {
+      localStorage.removeItem(c);
+    }
   });
   await page.goto("/planning");
 });
@@ -27,7 +35,7 @@ test("l'utilisateur arrive sur un état initial clair avec un bouton de généra
   await expect(
     page.getByRole("heading", { name: "Mon planning de la semaine" })
   ).toBeVisible();
-  await expect(page.getByText("Aucun planning pour l'instant")).toBeVisible();
+  await expect(page.getByText("Aucun planning pour cette semaine")).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Générer mon planning" })
   ).toBeVisible();
@@ -58,36 +66,52 @@ test("la génération affiche un planning de 7 jours avec leurs 14 repas", async
     page.getByRole("button", { name: "Changer le déjeuner de lundi" })
   ).toBeVisible();
 
-  // Le numéro de semaine est affiché en clair dans le header (« Semaine du … »).
-  // Scopé au header : le sélecteur de semaine affiche aussi un « Semaine du … ».
-  await expect(page.locator("header").getByText(/^Semaine du /)).toBeVisible();
+  // Le numéro de semaine s'affiche dans le navigateur (« Semaine du … »).
+  await expect(page.getByText(/^Semaine du /).first()).toBeVisible();
 });
 
 // ---------------------------------------------------------------------------
-// US-11 — générer pour une semaine future (RG-21). Assertions relatives pour
-// rester robustes à la date du run.
+// US-14 — navigation entre semaines + génération de la semaine affichée (#5).
+// Assertions relatives pour rester robustes à la date du run.
 // ---------------------------------------------------------------------------
-test("générer pour une semaine future cible bien cette semaine (US-11)", async ({
+test("naviguer vers une autre semaine et y générer un planning (US-14)", async ({
   page,
 }) => {
-  // État vide (beforeEach a purgé) : le sélecteur de semaine est visible.
-  const suivante = page.getByRole("button", { name: "Semaine suivante" });
-  await suivante.click();
-  await suivante.click();
+  const label = page.getByText(/^Semaine du /).first();
+  const depart = (await label.innerText()).trim();
 
-  // Libellé de la semaine cible choisie (lu dans le sélecteur).
-  const cible = (await page.getByText(/^Semaine du /).innerText()).trim();
+  // Avancer d'une semaine (navigation asynchrone → on attend le changement).
+  await page.getByRole("button", { name: "Semaine suivante" }).click();
+  await expect.poll(async () => (await label.innerText()).trim()).not.toBe(depart);
+  const cible = (await label.innerText()).trim();
 
+  // Générer pour la semaine affichée.
   await page.getByRole("button", { name: "Générer mon planning" }).click();
-
-  // Toast contextualisé par la semaine + planning généré.
   await expect(page.getByText(/^Planning généré — Semaine du /)).toBeVisible();
   await expect(page.locator("main ul > li")).toHaveCount(7);
+  // La semaine affichée reste la cible.
+  await expect(page.getByText(cible).first()).toBeVisible();
+});
 
-  // Le header affiche bien la semaine cible choisie (et non la semaine courante).
-  await expect(
-    page.locator("header").getByText(cible, { exact: true })
-  ).toBeVisible();
+test("l'historique : un planning généré est retrouvé en revenant sur sa semaine (US-14)", async ({
+  page,
+}) => {
+  // Générer la semaine par défaut, attendre la persistance.
+  await page.getByRole("button", { name: "Générer mon planning" }).click();
+  await expect(page.locator("main ul > li")).toHaveCount(7);
+  await expect
+    .poll(async () => page.evaluate(() => localStorage.getItem("planning_dirty")))
+    .toBeNull();
+  const defaut = (await page.getByText(/^Semaine du /).first().innerText()).trim();
+
+  // Avancer (semaine future vide), puis revenir → le planning est retrouvé.
+  await page.getByRole("button", { name: "Semaine suivante" }).click();
+  await expect.poll(async () => (await page.getByText(/^Semaine du /).first().innerText()).trim()).not.toBe(defaut);
+  await expect(page.locator("main ul > li")).toHaveCount(0); // semaine vide
+
+  await page.getByRole("button", { name: "Semaine précédente" }).click();
+  await expect.poll(async () => (await page.getByText(/^Semaine du /).first().innerText()).trim()).toBe(defaut);
+  await expect(page.locator("main ul > li")).toHaveCount(7); // planning retrouvé depuis la base
 });
 
 // ---------------------------------------------------------------------------

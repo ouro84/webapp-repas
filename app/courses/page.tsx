@@ -30,6 +30,7 @@ import {
 } from "@/lib/coches";
 import { storeCoches, storePlanning } from "@/lib/stockage";
 import { useSync } from "@/lib/sync";
+import { formaterSemaine } from "@/lib/semaines";
 import { accorderNom } from "@/lib/pluriels";
 import { formaterQuantite } from "@/lib/unites";
 import type {
@@ -140,6 +141,16 @@ export default function PageCourses() {
     }
   }, [brutPlanning]);
 
+  // Semaine du planning affiché (#5) — affichée en tête, même format que le planning.
+  const semainePlanning = useMemo<string | null>(() => {
+    if (brutPlanning === null) return null;
+    try {
+      return (JSON.parse(brutPlanning) as Planning).semaine;
+    } catch {
+      return null;
+    }
+  }, [brutPlanning]);
+
   // Coches valides ou non : parserCoches tolère l'absence et la corruption.
   const coches = useMemo(() => parserCoches(brutCoches), [brutCoches]);
 
@@ -206,6 +217,12 @@ export default function PageCourses() {
       <header className="mb-6 flex flex-wrap items-center gap-3">
         <div className="min-w-0 flex-1">
           <h1 className="text-2xl font-bold text-brand-900">Liste de courses</h1>
+          {/* N° de semaine (RG #5) : même format que le planning */}
+          {semainePlanning && (
+            <p className="text-xs text-brand-700/85">
+              {formaterSemaine(semainePlanning)}
+            </p>
+          )}
           {/* aria-live : la progression est annoncée à chaque coche */}
           <p aria-live="polite" className="text-sm text-brand-700/85">
             {progression.coches}/{progression.total} article

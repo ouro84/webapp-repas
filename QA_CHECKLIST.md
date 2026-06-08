@@ -46,6 +46,7 @@
 - [ ] Un remplacement de repas survit aussi au rechargement
 - [ ] Sans planning : `/courses` affiche l'invite "Génère d'abord un planning" avec le lien
 - [ ] Sync multi-device (US-13) : générer/éditer **et cocher** sur un appareil → se connecter sur un autre (ou vider le cache local) → le même planning **et le même état coché** sont retrouvés depuis la base ; indicateur "Sauvegarde…/Hors-ligne" cohérent
+- [ ] Historique (US-14) : navigateur ‹ ← / → › change la semaine (passé/futur) ; semaine courante marquée ; la liste de courses suit la semaine (n° affiché) ; revenir sur une semaine générée la retrouve intacte
 
 ## 2. UI / Responsive
 
