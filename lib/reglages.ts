@@ -43,6 +43,22 @@ function estTemps(valeur: unknown): valeur is TempsPreparation {
   return typeof valeur === "string" && ORDRE_TEMPS.includes(valeur as TempsPreparation)
 }
 
+// Normalise la préférence végé par créneau (#86 PR2). Optionnelle : `undefined`
+// reste `undefined` (= aucune préférence). Si présente, chaque créneau absent
+// ou non booléen est ramené à `false` (tolérant : la préférence est souple).
+function normaliserVegePrefere(
+  brut: unknown
+): ReglagesGeneration["vegetarienPrefere"] {
+  if (typeof brut !== "object" || brut === null) return undefined
+  const v = brut as Record<string, unknown>
+  return {
+    dejeunerSemaine: v.dejeunerSemaine === true,
+    dinerSemaine: v.dinerSemaine === true,
+    dejeunerWeekend: v.dejeunerWeekend === true,
+    dinerWeekend: v.dinerWeekend === true,
+  }
+}
+
 /**
  * Valide/normalise des réglages issus d'une saisie (formulaire) ou d'une
  * source non fiable. Renvoie les réglages validés, ou `null` si invalides
@@ -75,9 +91,14 @@ export function validerReglages(brut: unknown): ReglagesGeneration | null {
     return null
   }
 
+  // La préférence végé est optionnelle : absente → on ne la pose pas (pas de
+  // régression). Présente → normalisée en 4 booléens.
+  const vegetarienPrefere = normaliserVegePrefere(o.vegetarienPrefere)
+
   return {
     personnesDefaut: personnes,
     plafonds: { dejeunerSemaine, dinerSemaine, dejeunerWeekend, dinerWeekend },
+    ...(vegetarienPrefere ? { vegetarienPrefere } : {}),
   }
 }
 
@@ -92,15 +113,26 @@ export function dbReglagesToDomain(db: DbReglages): ReglagesGeneration {
       dejeunerWeekend: db.max_dejeuner_weekend,
       dinerWeekend: db.max_diner_weekend,
     },
+    vegetarienPrefere: {
+      dejeunerSemaine: db.vege_dejeuner_semaine,
+      dinerSemaine: db.vege_diner_semaine,
+      dejeunerWeekend: db.vege_dejeuner_weekend,
+      dinerWeekend: db.vege_diner_weekend,
+    },
   }
 }
 
 export function reglagesToDb(r: ReglagesGeneration): DbReglages {
+  const v = r.vegetarienPrefere
   return {
     personnes_defaut: r.personnesDefaut,
     max_dejeuner_semaine: r.plafonds.dejeunerSemaine,
     max_diner_semaine: r.plafonds.dinerSemaine,
     max_dejeuner_weekend: r.plafonds.dejeunerWeekend,
     max_diner_weekend: r.plafonds.dinerWeekend,
+    vege_dejeuner_semaine: v?.dejeunerSemaine ?? false,
+    vege_diner_semaine: v?.dinerSemaine ?? false,
+    vege_dejeuner_weekend: v?.dejeunerWeekend ?? false,
+    vege_diner_weekend: v?.dinerWeekend ?? false,
   }
 }

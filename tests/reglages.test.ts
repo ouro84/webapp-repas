@@ -62,6 +62,24 @@ describe("validerReglages", () => {
     expect(validerReglages(valide)).toEqual(valide);
   });
 
+  test("normalise la préférence végé (#86 PR2) quand elle est présente", () => {
+    const avecVege = validerReglages({
+      ...valide,
+      vegetarienPrefere: { dejeunerSemaine: true, dinerSemaine: false },
+    });
+    // Les créneaux absents ou non booléens sont ramenés à false.
+    expect(avecVege?.vegetarienPrefere).toEqual({
+      dejeunerSemaine: true,
+      dinerSemaine: false,
+      dejeunerWeekend: false,
+      dinerWeekend: false,
+    });
+  });
+
+  test("absente, la préférence végé n'est pas ajoutée (pas de régression)", () => {
+    expect(validerReglages(valide)?.vegetarienPrefere).toBeUndefined();
+  });
+
   test("refuse un plafond hors enum", () => {
     expect(
       validerReglages({
@@ -93,9 +111,13 @@ describe("adaptateurs DB ↔ domaine", () => {
     max_diner_semaine: "rapide",
     max_dejeuner_weekend: "long",
     max_diner_weekend: "long",
+    vege_dejeuner_semaine: true,
+    vege_diner_semaine: false,
+    vege_dejeuner_weekend: false,
+    vege_diner_weekend: true,
   };
 
-  test("dbReglagesToDomain mappe les colonnes", () => {
+  test("dbReglagesToDomain mappe les colonnes (plafonds + préférence végé)", () => {
     expect(dbReglagesToDomain(db)).toEqual({
       personnesDefaut: 3,
       plafonds: {
@@ -103,6 +125,12 @@ describe("adaptateurs DB ↔ domaine", () => {
         dinerSemaine: "rapide",
         dejeunerWeekend: "long",
         dinerWeekend: "long",
+      },
+      vegetarienPrefere: {
+        dejeunerSemaine: true,
+        dinerSemaine: false,
+        dejeunerWeekend: false,
+        dinerWeekend: true,
       },
     });
   });

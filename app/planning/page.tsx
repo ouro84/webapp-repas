@@ -21,6 +21,7 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
 import { RefreshCw } from "lucide-react";
 import {
+  prefereVegeSlot,
   recettesUtilisees,
   remplacerSlot,
   remplacerSlotManuel,
@@ -395,8 +396,9 @@ export default function PagePlanning() {
         setErreurGeneration(await parseApiError(reponse));
         return;
       }
-      const { planning: nouveau } = (await reponse.json()) as {
+      const { planning: nouveau, vegeNonHonore = 0 } = (await reponse.json()) as {
         planning: Planning;
+        vegeNonHonore?: number;
       };
       // Regénération (US-09) : un planning existait → on fige l'état (planning
       // + coches) avant écrasement pour permettre l'undo (RG-19). Première
@@ -417,6 +419,15 @@ export default function PagePlanning() {
         });
       } else {
         toast.success(`Planning généré — ${libelleSemaine}`);
+      }
+      // RG-26 — préférence végé souple non honorée sur certains repas (vivier
+      // végé insuffisant) : on informe sans bloquer (#86 PR2).
+      if (vegeNonHonore > 0) {
+        toast.warning(
+          vegeNonHonore === 1
+            ? "1 repas n’a pas pu être végétarien (pas assez de recettes végé)."
+            : `${vegeNonHonore} repas n’ont pas pu être végétariens (pas assez de recettes végé).`
+        );
       }
     } catch (erreur) {
       console.error("Génération du planning échouée.", erreur);
@@ -453,6 +464,18 @@ export default function PagePlanning() {
       action: { label: "Annuler", onClick: annulerDerniereAction },
       duration: 5000,
     });
+    // RG-26 — préférence végé souple non honorée sur ce créneau (aucune recette
+    // végé disponible) : on informe sans bloquer le remplacement (#86 PR2).
+    const remplacante =
+      typeRepas === "diner"
+        ? nouveau.jours.find((jp) => jp.jour === jour)?.diner
+        : nouveau.jours.find((jp) => jp.jour === jour)?.dejeuner;
+    if (
+      prefereVegeSlot(jour, typeRepas, reglages) &&
+      remplacante?.vegetarien !== true
+    ) {
+      toast.warning("Pas de recette végétarienne disponible pour ce repas.");
+    }
   }
 
   // Sélection manuelle (US-06, RG-15) : remplace le slot par la recette

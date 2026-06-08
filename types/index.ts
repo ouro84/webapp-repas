@@ -107,6 +107,16 @@ export type ReglagesGeneration = {
     dejeunerWeekend: TempsPreparation;
     dinerWeekend: TempsPreparation;
   };
+  // Préférence « privilégier le végétarien » par créneau (#86 PR2, US-16,
+  // RG-26). Optionnel (absent = aucune préférence = comportement antérieur),
+  // comme Recette.vegetarien. Préférence SOUPLE : la génération biaise vers les
+  // recettes végé sans jamais échouer si le vivier végé est insuffisant.
+  vegetarienPrefere?: {
+    dejeunerSemaine: boolean;
+    dinerSemaine: boolean;
+    dejeunerWeekend: boolean;
+    dinerWeekend: boolean;
+  };
 };
 
 // Forme DB (snake_case) de la table `reglages` — convertie via lib/reglages.ts.
@@ -116,6 +126,10 @@ export type DbReglages = {
   max_diner_semaine: TempsPreparation;
   max_dejeuner_weekend: TempsPreparation;
   max_diner_weekend: TempsPreparation;
+  vege_dejeuner_semaine: boolean;
+  vege_diner_semaine: boolean;
+  vege_dejeuner_weekend: boolean;
+  vege_diner_weekend: boolean;
 };
 
 export type LignesCourses = {

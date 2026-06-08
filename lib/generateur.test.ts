@@ -15,10 +15,12 @@ import { describe, test, expect } from "vitest";
 import {
   analyserVivier,
   genererPlanning,
+  prefereVegeSlot,
   recettesUtilisees,
   remplacerRecetteDansPlanning,
   remplacerSlot,
   remplacerSlotManuel,
+  slotsVegeNonHonores,
 } from "@/lib/generateur";
 import { RECETTES_FIXTURES } from "@/tests/fixtures/recettes";
 import { REGLAGES_DEFAUT } from "@/lib/reglages";
@@ -569,6 +571,133 @@ describe("genererPlanning — réglages personnalisés (#45)", () => {
       expect(jp.personnes?.dejeuner).toBe(4);
       expect(jp.personnes?.diner).toBe(4);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #86 (P10) PR2 — préférence « privilégier le végétarien » par créneau (RG-26).
+// Préférence SOUPLE : biais de sélection, jamais une contrainte qui bloque.
+// ---------------------------------------------------------------------------
+describe("genererPlanning — préférence végétarienne souple (#86 PR2)", () => {
+  // Marque n recettes synthétiques comme végé (ou non).
+  function synthVege(
+    temps: TempsPreparation,
+    n: number,
+    prefixe: string,
+    vegetarien: boolean
+  ): Recette[] {
+    return synth(temps, n, prefixe).map((r) => ({ ...r, vegetarien }));
+  }
+
+  const TOUS_VEGE: ReglagesGeneration = {
+    ...REGLAGES_DEFAUT,
+    vegetarienPrefere: {
+      dejeunerSemaine: true,
+      dinerSemaine: true,
+      dejeunerWeekend: true,
+      dinerWeekend: true,
+    },
+  };
+
+  test("biaise vers le végé quand le vivier végé suffit (tous créneaux)", () => {
+    // 14 recettes végé (10 rapides + 4 normales, compatibles avec les plafonds
+    // par défaut) + des leurres non végé qui ne doivent jamais être choisis.
+    const vivier = [
+      ...synthVege("rapide", 10, "vr", true),
+      ...synthVege("normal", 4, "vn", true),
+      ...synthVege("rapide", 5, "xr", false),
+    ];
+    for (let i = 0; i < 25; i++) {
+      const planning = genererPlanning(vivier, "2026-W30", TOUS_VEGE);
+      for (const repas of tousLesRepas(planning)) {
+        expect(repas.vegetarien).toBe(true);
+      }
+      expect(slotsVegeNonHonores(planning, TOUS_VEGE)).toHaveLength(0);
+    }
+  });
+
+  test("n'échoue jamais et signale les repas non honorés si le vivier végé manque", () => {
+    // Aucune recette végé : la génération aboutit (préférence souple), mais les
+    // 5 dîners de semaine (créneau privilégié) ne sont pas végé → signalés.
+    const reglages: ReglagesGeneration = {
+      ...REGLAGES_DEFAUT,
+      vegetarienPrefere: {
+        dejeunerSemaine: false,
+        dinerSemaine: true,
+        dejeunerWeekend: false,
+        dinerWeekend: false,
+      },
+    };
+    const vivier = [
+      ...synthVege("rapide", 10, "r", false),
+      ...synthVege("normal", 4, "n", false),
+    ];
+    const planning = genererPlanning(vivier, "2026-W30", reglages);
+    expect(tousLesRepas(planning)).toHaveLength(14);
+
+    const nonHonores = slotsVegeNonHonores(planning, reglages);
+    expect(nonHonores).toHaveLength(5);
+    for (const slot of nonHonores) {
+      expect(slot.typeRepas).toBe("diner");
+      expect(JOURS_SEMAINE).toContain(slot.jour);
+    }
+  });
+
+  test("remplacerSlot applique le même biais végé (Q4)", () => {
+    // Dîner de semaine privilégié végé ; vivier avec assez de végé rapides.
+    const reglages: ReglagesGeneration = {
+      ...REGLAGES_DEFAUT,
+      vegetarienPrefere: {
+        dejeunerSemaine: false,
+        dinerSemaine: true,
+        dejeunerWeekend: false,
+        dinerWeekend: false,
+      },
+    };
+    // Marge « rapide » large pour qu'un remplaçant rapide végé reste toujours
+    // disponible (RG-04), comme RECETTES_PLUS pour les autres tests.
+    const vivier = [
+      ...synthVege("rapide", 20, "vr", true),
+      ...synthVege("normal", 4, "vn", true),
+    ];
+    for (let i = 0; i < 25; i++) {
+      const planning = genererPlanning(vivier, "2026-W30", reglages);
+      const resultat = remplacerSlot(planning, "lundi", "diner", vivier, reglages);
+      expect(resultat).not.toBeNull();
+      const nouveau = resultat!.jours.find((jp) => jp.jour === "lundi")!.diner;
+      expect(nouveau.vegetarien).toBe(true);
+    }
+  });
+
+  test("réglages par défaut (sans préférence) : aucun slot signalé non honoré", () => {
+    const planning = genererPlanning(RECETTES);
+    expect(slotsVegeNonHonores(planning, REGLAGES_DEFAUT)).toHaveLength(0);
+  });
+});
+
+describe("prefereVegeSlot — mappe créneau → préférence (#86 PR2)", () => {
+  const reglages: ReglagesGeneration = {
+    ...REGLAGES_DEFAUT,
+    vegetarienPrefere: {
+      dejeunerSemaine: false,
+      dinerSemaine: true,
+      dejeunerWeekend: false,
+      dinerWeekend: true,
+    },
+  };
+
+  test("dîner de semaine et dîner de week-end sont privilégiés", () => {
+    expect(prefereVegeSlot("mardi", "diner", reglages)).toBe(true);
+    expect(prefereVegeSlot("samedi", "diner", reglages)).toBe(true);
+  });
+
+  test("déjeuners et créneaux non cochés ne le sont pas", () => {
+    expect(prefereVegeSlot("mardi", "dejeuner", reglages)).toBe(false);
+    expect(prefereVegeSlot("dimanche", "dejeuner", reglages)).toBe(false);
+  });
+
+  test("réglages sans préférence : toujours false", () => {
+    expect(prefereVegeSlot("mardi", "diner", REGLAGES_DEFAUT)).toBe(false);
   });
 });
 

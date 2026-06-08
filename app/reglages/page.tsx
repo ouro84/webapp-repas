@@ -76,6 +76,36 @@ function SegmentPlafond({
   );
 }
 
+// Interrupteur on/off (switch accessible) — préférence « privilégier végé ».
+function Bascule({
+  libelleId,
+  actif,
+  onChange,
+}: {
+  libelleId: string;
+  actif: boolean;
+  onChange: (actif: boolean) => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={actif}
+      aria-labelledby={libelleId}
+      onClick={() => onChange(!actif)}
+      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 ${
+        actif ? "bg-brand-600" : "bg-brand-200"
+      }`}
+    >
+      <span
+        className={`inline-block size-5 transform rounded-full bg-white shadow transition-transform ${
+          actif ? "translate-x-5" : "translate-x-0.5"
+        }`}
+      />
+    </button>
+  );
+}
+
 // Stepper − / + borné [1;12], réutilise le motif de la page planning.
 function StepperPersonnes({
   valeur,
@@ -170,6 +200,33 @@ export default function PageReglages() {
     return recettes.filter((r) => rangTemps(r.tempsPreparation) <= max).length;
   }
 
+  // Préférence végé d'un créneau (#86 PR2) — absente = false.
+  function vegeActif(cle: CleCreneau): boolean {
+    return form?.vegetarienPrefere?.[cle] ?? false;
+  }
+
+  function definirVegePrefere(cle: CleCreneau, valeur: boolean): void {
+    setForm((f) => {
+      if (!f) return f;
+      const base = f.vegetarienPrefere ?? {
+        dejeunerSemaine: false,
+        dinerSemaine: false,
+        dejeunerWeekend: false,
+        dinerWeekend: false,
+      };
+      return { ...f, vegetarienPrefere: { ...base, [cle]: valeur } };
+    });
+  }
+
+  // B2 (végé) — recettes végétariennes éligibles à un plafond (temps ≤ plafond).
+  function nbVegeEligibles(plafond: TempsPreparation): number | null {
+    if (recettes === null) return null;
+    const max = rangTemps(plafond);
+    return recettes.filter(
+      (r) => r.vegetarien === true && rangTemps(r.tempsPreparation) <= max
+    ).length;
+  }
+
   async function enregistrer(): Promise<void> {
     if (form === null || !modifie || !faisable) return;
     setEnregistrement(true);
@@ -250,6 +307,50 @@ export default function PageReglages() {
                   libelleId={`plafond-${cle}`}
                   valeur={form.plafonds[cle]}
                   onChange={(t) => definirPlafond(cle, t)}
+                />
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* Section — privilégier le végétarien par créneau (#86 PR2, RG-26) */}
+      <section className="mb-8" aria-labelledby="section-vege">
+        <h2 id="section-vege" className="mb-1 text-lg font-semibold text-brand-900">
+          Privilégier les repas végétariens
+        </h2>
+        <p className="mb-4 text-sm text-brand-700/85">
+          Préférence souple : la génération choisit en priorité des recettes
+          végétariennes sur ces créneaux. Si le vivier végé est insuffisant, le
+          repas reste généré et tu es prévenu.
+        </p>
+        <div className="flex flex-col gap-5">
+          {CRENEAUX.map(({ cle, libelle }) => {
+            const actif = vegeActif(cle);
+            const eligibles = actif ? nbVegeEligibles(form.plafonds[cle]) : null;
+            return (
+              <div
+                key={cle}
+                className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div className="flex flex-col">
+                  <span
+                    id={`vege-${cle}`}
+                    className="text-sm font-medium text-brand-900"
+                  >
+                    {libelle}
+                  </span>
+                  {eligibles !== null && (
+                    <span className="text-xs text-brand-700/70">
+                      {eligibles} recette{eligibles > 1 ? "s" : ""} végétarienne
+                      {eligibles > 1 ? "s" : ""} éligible{eligibles > 1 ? "s" : ""}
+                    </span>
+                  )}
+                </div>
+                <Bascule
+                  libelleId={`vege-${cle}`}
+                  actif={actif}
+                  onChange={(v) => definirVegePrefere(cle, v)}
                 />
               </div>
             );
