@@ -10,6 +10,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { Settings } from "lucide-react";
 import { Logo } from "@/components/ui/logo";
 
 const LIENS = [
@@ -39,7 +40,7 @@ export function NavBar() {
           </Link>
 
           {/* Liens de navigation */}
-          <div className="flex gap-1">
+          <div className="flex items-center gap-1">
             {LIENS.map(({ href, label }) => {
               const actif = pathname.startsWith(href);
               return (
@@ -59,6 +60,24 @@ export function NavBar() {
                 </Link>
               );
             })}
+            {/* Réglages (#45) : icône engrenage, distincte des liens texte. */}
+            {(() => {
+              const actif = pathname.startsWith("/reglages");
+              return (
+                <Link
+                  href="/reglages"
+                  aria-label="Réglages"
+                  aria-current={actif ? "page" : undefined}
+                  className={`relative flex size-9 items-center justify-center rounded-full transition-colors after:absolute after:-inset-1 after:content-[''] ${
+                    actif
+                      ? "bg-brand-600 text-white"
+                      : "text-brand-700 hover:bg-brand-50"
+                  }`}
+                >
+                  <Settings className="size-5" aria-hidden="true" />
+                </Link>
+              );
+            })()}
           </div>
         </div>
       </nav>
