@@ -19,6 +19,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
+import { RefreshCw } from "lucide-react";
 import {
   recettesUtilisees,
   remplacerSlot,
@@ -787,16 +788,17 @@ function SlotRepas({
         <BadgeTemps temps={recette.tempsPreparation} />
         {/*
           a11y : aria-labels contextualisés — des paires de boutons identiques
-          sont indiscernables au lecteur d'écran ; le glyphe ↺ (vocalisé
-          bizarrement) est masqué ; after:-inset-* étend la zone tactile à ≥ 44px.
+          sont indiscernables au lecteur d'écran ; l'icône Lucide RefreshCw
+          (#59, fin du glyphe ↺) est décorative ; after:-inset-* étend la zone
+          tactile à ≥ 44px.
         */}
         <button
           type="button"
           onClick={onChanger}
           aria-label={`Changer le ${slotNom}`}
-          className={styleAction}
+          className={`${styleAction} inline-flex items-center gap-1`}
         >
-          <span aria-hidden="true">↺</span> changer
+          <RefreshCw aria-hidden="true" className="size-3.5" /> changer
         </button>
         {/* Sélection manuelle (US-06) : ouvre le sélecteur de recettes */}
         <button

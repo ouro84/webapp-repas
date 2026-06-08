@@ -8,6 +8,8 @@
 
 ## 1. Contexte & objectif
 
+> **Identité produit (#59) :** l'app s'appelle **« On mange quoi ? »** (abrégée « OMQ »), baseline **« La question du soir a enfin sa réponse »**. Logo : assiette + fourchette en négatif, aux couleurs `brand`.
+
 ### Problème
 
 Chaque semaine, planifier les repas et établir la liste de courses est chronophage et répétitif. Le manque d'inspiration entraîne des repas qui reviennent trop souvent.

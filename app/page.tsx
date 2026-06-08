@@ -1,15 +1,16 @@
 import Link from "next/link";
+import { Logo } from "@/components/ui/logo";
 
 export default function Accueil() {
   return (
     <main id="contenu" className="flex flex-1 flex-col items-center justify-center gap-10 p-8">
-      <div className="text-center">
-        <div className="mb-4 text-5xl" aria-hidden="true">🥗</div>
+      <div className="flex flex-col items-center text-center">
+        <Logo className="mb-5 size-24 text-brand-600" />
         <h1 className="text-3xl font-bold text-brand-900">
-          Repas de la semaine
+          On mange quoi&nbsp;?
         </h1>
         <p className="mt-3 max-w-sm text-brand-700/85">
-          Génère ton planning et ta liste de courses en un clic
+          La question du soir a enfin sa réponse
         </p>
       </div>
 

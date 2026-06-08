@@ -67,6 +67,7 @@
 ### Design system & accessibilité
 - [ ] Badges temps de préparation : Rapide = vert, Normal = jaune, Long = rouge, avec libellé texte
 - [ ] NavBar : lien actif mis en évidence, navigation Planning/Courses fonctionnelle
+- [ ] Identité de marque (#59) : logo SVG (nav + hero) au vert brand, nom « On mange quoi ? » + baseline ; aucun emoji (🥗 supprimé) ; bouton « changer » avec icône Lucide (plus de glyphe ↺) ; favicon et image OG affichés
 - [ ] Navigation au clavier : skip link "Aller au contenu" au premier Tab, focus visible partout
 - [ ] Toasts affichés en bas au centre, lisibles, disparaissent seuls
 
