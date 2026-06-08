@@ -38,6 +38,13 @@ import {
   PERSONNES_MIN,
 } from "@/lib/personnes";
 import { chargerRecettesGerees, type RecetteGeree } from "@/lib/recettes";
+import {
+  formaterSemaine,
+  libelleRelatif,
+  semaineParDefaut,
+  semainesSelectionnables,
+  type SemaineOption,
+} from "@/lib/semaines";
 import { parseApiError } from "@/lib/errors";
 import { BadgeTemps } from "@/components/planning/badge-temps";
 import { SelecteurRecette } from "@/components/planning/selecteur-recette";
@@ -66,30 +73,91 @@ function cleSlot(jour: Jour, typeRepas: TypeRepas): string {
   return `${jour}-${typeRepas}`;
 }
 
-// "2026-W23" → "Semaine du 1 juin 2026" — bien plus lisible que l'identifiant
-// ISO brut. Norme ISO 8601 : le 4 janvier appartient toujours à la semaine 1 ;
-// on en déduit le lundi de la semaine 1, puis on avance de N-1 semaines.
-// Tout est calculé en UTC pour être insensible au fuseau horaire.
-function formaterSemaine(semaine: string): string {
-  const correspondance = /^(\d{4})-W(\d{2})$/.exec(semaine);
-  if (!correspondance) return `Semaine ${semaine}`; // format inattendu : affichage brut
-  const annee = Number(correspondance[1]);
-  const numero = Number(correspondance[2]);
+// formaterSemaine ("2026-W23" → "Semaine du 1 juin 2026") vit dans lib/semaines.ts.
 
-  const quatreJanvier = new Date(Date.UTC(annee, 0, 4));
-  const jourSemaine = quatreJanvier.getUTCDay() || 7; // ISO : lundi = 1 … dimanche = 7
-  const lundi = new Date(quatreJanvier);
-  lundi.setUTCDate(
-    quatreJanvier.getUTCDate() - (jourSemaine - 1) + (numero - 1) * 7
+// Vrai uniquement après hydratation côté navigateur — sans setState (motif
+// partagé avec la page courses). Le sélecteur de semaine (US-11) dépend de la
+// date du client (défaut week-end → semaine prochaine) : on ne le rend
+// qu'après hydratation pour éviter tout mismatch SSR.
+function useHydratation(): boolean {
+  return useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false
   );
+}
 
-  const date = lundi.toLocaleDateString("fr-FR", {
-    timeZone: "UTC",
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  });
-  return `Semaine du ${date}`;
+// Sélecteur de la semaine cible de génération (US-11, RG-21) : stepper borné
+// ‹ [libellé relatif + date] ›, motif cohérent avec le stepper de personnes.
+function SelecteurSemaine({
+  options,
+  offsetCible,
+  onChanger,
+  disabled,
+}: {
+  options: SemaineOption[];
+  offsetCible: number;
+  onChanger: (semaine: string) => void;
+  disabled?: boolean;
+}) {
+  const courant = options[offsetCible];
+  if (!courant) return null;
+  const peutReculer = offsetCible > 0;
+  const peutAvancer = offsetCible < options.length - 1;
+  const styleFleche =
+    "relative flex size-8 items-center justify-center rounded-full border border-brand-200 text-brand-700 transition-colors after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent";
+  return (
+    <div
+      role="group"
+      aria-label="Choisir la semaine à générer"
+      className="inline-flex items-center gap-2"
+    >
+      <button
+        type="button"
+        onClick={() => onChanger(options[offsetCible - 1]!.semaine)}
+        disabled={disabled || !peutReculer}
+        aria-label="Semaine précédente"
+        className={styleFleche}
+      >
+        <ChevronSemaine direction="gauche" />
+      </button>
+      <span aria-live="polite" className="min-w-[10rem] text-center">
+        <span className="block text-sm font-medium text-brand-900">
+          {libelleRelatif(courant.offset)}
+        </span>
+        <span className="block text-xs text-brand-700/85">
+          {formaterSemaine(courant.semaine)}
+        </span>
+      </span>
+      <button
+        type="button"
+        onClick={() => onChanger(options[offsetCible + 1]!.semaine)}
+        disabled={disabled || !peutAvancer}
+        aria-label="Semaine suivante"
+        className={styleFleche}
+      >
+        <ChevronSemaine direction="droite" />
+      </button>
+    </div>
+  );
+}
+
+// Chevron gauche/droite — SVG inline (pas de glyphe texte, cf. audit #51).
+function ChevronSemaine({ direction }: { direction: "gauche" | "droite" }) {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 16 16"
+      className="size-4"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d={direction === "gauche" ? "M10 4l-4 4 4 4" : "M6 4l4 4-4 4"} />
+    </svg>
+  );
 }
 
 // Slots d'un jour dans l'ordre d'affichage : déjeuner (week-end) puis dîner.
@@ -174,6 +242,8 @@ export default function PagePlanning() {
       ),
     [recettesGerees]
   );
+  const [semaineChoisie, setSemaineChoisie] = useState<string | null>(null);
+  const hydrate = useHydratation();
 
   // Chargement des recettes au montage (système externe asynchrone : setState
   // dans une promesse, pas en synchrone au montage → conforme à la règle ESLint).
@@ -232,6 +302,26 @@ export default function PagePlanning() {
     }
   }, [brut]);
 
+  // Sélecteur de semaine cible (US-11, RG-21). Plage et défaut dépendent de la
+  // date du client → calculés une fois hydraté (motif useHydratation) pour
+  // éviter tout mismatch SSR. Défaut : la semaine du planning actif si elle est
+  // dans la plage (« Regénérer » = même semaine), sinon le défaut RG-21
+  // (semaine courante, ou prochaine le week-end). `semaineChoisie` n'est posé
+  // que par l'utilisateur (clic) — jamais en effet → conforme set-state-in-effect.
+  const semainesDispo = useMemo(
+    () => (hydrate ? semainesSelectionnables() : []),
+    [hydrate]
+  );
+  const defautSemaine = useMemo(() => {
+    if (!hydrate) return null;
+    if (planning && semainesDispo.some((o) => o.semaine === planning.semaine)) {
+      return planning.semaine;
+    }
+    return semaineParDefaut();
+  }, [hydrate, planning, semainesDispo]);
+  const semaineCible = semaineChoisie ?? defautSemaine;
+  const offsetCible = semainesDispo.findIndex((o) => o.semaine === semaineCible);
+
   // Génération (US-01) : déléguée au serveur (#2, route /api/planning/generer)
   // qui lit les recettes de l'utilisateur (globales + perso) sous RLS et
   // applique lib/generateur. Le planning renvoyé est persisté en localStorage
@@ -242,7 +332,12 @@ export default function PagePlanning() {
     setEnGeneration(true);
     setErreurGeneration(null);
     try {
-      const reponse = await fetch("/api/planning/generer", { method: "POST" });
+      // Semaine cible (US-11) : envoyée au serveur, qui valide la plage (RG-21).
+      const reponse = await fetch("/api/planning/generer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(semaineCible ? { semaine: semaineCible } : {}),
+      });
       if (!reponse.ok) {
         setErreurGeneration(await parseApiError(reponse));
         return;
@@ -259,14 +354,16 @@ export default function PagePlanning() {
       // de courses (RG-13) — règle centralisée dans lib/stockage.ts.
       sauvegarderPlanningComplet(nouveau);
       setSlotIndisponible(null);
+      // Toast contextualisé par la semaine générée (US-11, bonus).
+      const libelleSemaine = formaterSemaine(nouveau.semaine);
       if (estRegeneration) {
-        toast("Planning regénéré", {
+        toast(`Planning regénéré — ${libelleSemaine}`, {
           id: ID_TOAST_ANNULATION,
           action: { label: "Annuler", onClick: annulerDerniereAction },
           duration: 5000,
         });
       } else {
-        toast.success("Planning généré");
+        toast.success(`Planning généré — ${libelleSemaine}`);
       }
     } catch (erreur) {
       console.error("Génération du planning échouée.", erreur);
@@ -372,6 +469,15 @@ export default function PagePlanning() {
             Aucun planning pour l&apos;instant — lance la génération !
           </p>
         </div>
+        {/* Choix de la semaine cible (US-11) — après hydratation (date client). */}
+        {hydrate && offsetCible >= 0 && (
+          <SelecteurSemaine
+            options={semainesDispo}
+            offsetCible={offsetCible}
+            onChanger={setSemaineChoisie}
+            disabled={enGeneration}
+          />
+        )}
         <button
           type="button"
           onClick={genererNouveauPlanning}
@@ -423,6 +529,20 @@ export default function PagePlanning() {
           </Link>
         </div>
       </header>
+
+      {/* Semaine cible de la (re)génération (US-11) : par défaut la semaine du
+          planning affiché — « Regénérer » vise alors la même semaine. */}
+      {hydrate && offsetCible >= 0 && (
+        <div className="mb-6 flex flex-wrap items-center gap-x-3 gap-y-1">
+          <span className="text-sm text-brand-700/85">Générer pour :</span>
+          <SelecteurSemaine
+            options={semainesDispo}
+            offsetCible={offsetCible}
+            onChanger={setSemaineChoisie}
+            disabled={enGeneration}
+          />
+        </div>
+      )}
 
       {/* Vue mobile + tablette (RG-08, #64) : liste verticale jusqu'à lg.
           La grille 7 colonnes ne s'active qu'à ≥ 1024px, où chaque cellule

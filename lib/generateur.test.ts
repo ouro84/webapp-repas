@@ -102,6 +102,11 @@ describe("genererPlanning — structure du planning (section 5.5)", () => {
     const planning = genererPlanning(RECETTES);
     expect(planning.semaine).toMatch(/^\d{4}-W\d{2}$/);
   });
+
+  test("génère pour la semaine cible fournie (US-11)", () => {
+    const planning = genererPlanning(RECETTES, "2026-W30");
+    expect(planning.semaine).toBe("2026-W30");
+  });
 });
 
 // ---------------------------------------------------------------------------

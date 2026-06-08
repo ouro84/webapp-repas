@@ -3,6 +3,7 @@
 // Implémente les règles métier RG-01 à RG-04 de SPECS_FONCTIONNELLES.md (section 6).
 // Aucune dépendance à React, au navigateur ou à Supabase : testable en isolation.
 
+import { semaineISO } from "@/lib/semaines"
 import type {
   Recette,
   Planning,
@@ -60,24 +61,8 @@ function cleSlot(jour: Jour, typeRepas: TypeRepas): string {
   return `${jour}-${typeRepas}`
 }
 
-// Numéro de semaine ISO 8601 au format "AAAA-Wnn" (ex: "2026-W23").
-// L'année renvoyée est l'année ISO (celle du jeudi de la semaine), qui peut
-// différer de l'année civile autour du 1er janvier / 31 décembre.
-function numeroSemaineISO(date: Date = new Date()): string {
-  // On se place à midi UTC pour neutraliser les effets de fuseau horaire.
-  const cible = new Date(
-    Date.UTC(date.getFullYear(), date.getMonth(), date.getDate())
-  )
-  // ISO : le lundi vaut 1, le dimanche vaut 7 (et non 0).
-  const jourSemaine = cible.getUTCDay() || 7
-  // On décale jusqu'au jeudi de la semaine courante : il porte l'année ISO.
-  cible.setUTCDate(cible.getUTCDate() + 4 - jourSemaine)
-  const debutAnnee = new Date(Date.UTC(cible.getUTCFullYear(), 0, 1))
-  const numero = Math.ceil(
-    ((cible.getTime() - debutAnnee.getTime()) / 86_400_000 + 1) / 7
-  )
-  return `${cible.getUTCFullYear()}-W${String(numero).padStart(2, "0")}`
-}
+// Le calcul de l'identifiant de semaine ISO vit dans lib/semaines.ts
+// (semaineISO), partagé avec la page planning.
 
 /**
  * Génère un planning complet pour la semaine.
@@ -98,10 +83,15 @@ function numeroSemaineISO(date: Date = new Date()): string {
  * d'épuiser à tort un vivier restreint et de faire échouer un slot alors qu'une
  * solution existe : il n'échoue que si aucune attribution valide n'existe.
  *
+ * @param semaine identifiant ISO "AAAA-Wnn" de la semaine cible (US-11, RG-21).
+ *                Défaut : la semaine courante.
  * @throws {Error} si le vivier de recettes éligibles est insuffisant pour remplir
  *                 les 14 slots sans répétition.
  */
-export function genererPlanning(recettes: Recette[]): Planning {
+export function genererPlanning(
+  recettes: Recette[],
+  semaine: string = semaineISO()
+): Planning {
   const slots: Slot[] = ORDRE_JOURS.flatMap((jour): Slot[] => [
     { jour, typeRepas: "dejeuner" },
     { jour, typeRepas: "diner" },
@@ -139,7 +129,7 @@ export function genererPlanning(recettes: Recette[]): Planning {
     diner: attributions.get(cleSlot(jour, "diner"))!,
   }))
 
-  return { semaine: numeroSemaineISO(), jours }
+  return { semaine, jours }
 }
 
 // Poids de contrainte d'un slot : plus il est bas, plus le slot est restrictif

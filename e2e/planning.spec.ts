@@ -50,8 +50,36 @@ test("la génération affiche un planning de 7 jours avec leurs 14 repas", async
     page.getByRole("button", { name: "Changer le déjeuner de lundi" })
   ).toBeVisible();
 
-  // Le numéro de semaine est affiché en clair (« Semaine du 1 juin 2026 »).
-  await expect(page.getByText(/^Semaine du /)).toBeVisible();
+  // Le numéro de semaine est affiché en clair dans le header (« Semaine du … »).
+  // Scopé au header : le sélecteur de semaine affiche aussi un « Semaine du … ».
+  await expect(page.locator("header").getByText(/^Semaine du /)).toBeVisible();
+});
+
+// ---------------------------------------------------------------------------
+// US-11 — générer pour une semaine future (RG-21). Assertions relatives pour
+// rester robustes à la date du run.
+// ---------------------------------------------------------------------------
+test("générer pour une semaine future cible bien cette semaine (US-11)", async ({
+  page,
+}) => {
+  // État vide (beforeEach a purgé) : le sélecteur de semaine est visible.
+  const suivante = page.getByRole("button", { name: "Semaine suivante" });
+  await suivante.click();
+  await suivante.click();
+
+  // Libellé de la semaine cible choisie (lu dans le sélecteur).
+  const cible = (await page.getByText(/^Semaine du /).innerText()).trim();
+
+  await page.getByRole("button", { name: "Générer mon planning" }).click();
+
+  // Toast contextualisé par la semaine + planning généré.
+  await expect(page.getByText(/^Planning généré — Semaine du /)).toBeVisible();
+  await expect(page.locator("main ul > li")).toHaveCount(7);
+
+  // Le header affiche bien la semaine cible choisie (et non la semaine courante).
+  await expect(
+    page.locator("header").getByText(cible, { exact: true })
+  ).toBeVisible();
 });
 
 test("l'utilisateur peut remplacer un repas sans toucher au reste du planning", async ({

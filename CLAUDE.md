@@ -182,7 +182,9 @@ Format : `type: description courte`
 
 **`dejeuner` reste optionnel dans le type, mais peuplé chaque jour** — Le générateur remplit les 14 slots ; `JourPlanning.dejeuner` est néanmoins gardé `?:` optionnel pour relire sans casse les plannings persistés à 9 repas (antérieurs à #3). `remplacerSlot`/`remplacerSlotManuel`/`modifierPersonnes` renvoient donc encore `null` si le slot demandé est absent d'un vieux planning — ne pas supposer qu'un déjeuner existe toujours.
 
-**Semaine au format ISO 8601 (`"2026-W23"`)** — L'année ISO est celle du jeudi de la semaine : elle peut différer de l'année civile autour du 1er janvier. Tous les calculs de date (génération et affichage `formaterSemaine`) sont en UTC pour neutraliser les fuseaux. Ne pas remplacer par `getFullYear()` + un compteur naïf.
+**Semaine au format ISO 8601 (`"2026-W23"`)** — L'année ISO est celle du jeudi de la semaine : elle peut différer de l'année civile autour du 1er janvier. Tous les calculs de date sont en UTC pour neutraliser les fuseaux. Ne pas remplacer par `getFullYear()` + un compteur naïf. **Toute la logique calendaire vit dans `lib/semaines.ts`** (depuis #55) : `semaineISO` (calcul), `formaterSemaine` (affichage), `semainesSelectionnables`/`semaineParDefaut`/`libelleRelatif` (sélecteur US-11). `generateur.ts` et la page planning l'importent — ne pas redéfinir ces fonctions en local.
+
+**Semaine cible : plage validée côté serveur (US-11, RG-21)** — `genererPlanning(recettes, semaine?)` accepte une semaine cible ; `POST /api/planning/generer` lit `{ semaine }` dans le corps et **rejette (400) toute semaine hors de `semainesSelectionnables()`** (courante → +6). Le client n'est pas l'autorité. Le sélecteur de semaine (page planning) est rendu **après hydratation** (`useHydratation`) car son défaut dépend de la date du client (week-end → semaine prochaine) — sinon mismatch SSR. Mono-actif : une seule semaine en `planning_courant` (l'historique multi-semaines = #P08).
 
 ### Migrations Supabase
 
