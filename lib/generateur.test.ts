@@ -291,6 +291,21 @@ describe("remplacerSlot — RG-04 remplacement individuel", () => {
     const resultat = remplacerSlot(planning, "vendredi", "diner", RECETTES_PLUS);
     expect(resultat!.semaine).toBe(planning.semaine);
   });
+
+  test("efface le marquage « restes » du slot remplacé (RG-22)", () => {
+    const base = genererPlanning(RECETTES_PLUS);
+    // Dîner de mardi marqué restes.
+    const planning: Planning = {
+      ...base,
+      jours: base.jours.map((jp) =>
+        jp.jour === "mardi" ? { ...jp, restes: { diner: true } } : jp
+      ),
+    };
+    const resultat = remplacerSlot(planning, "mardi", "diner", RECETTES_PLUS)!;
+    expect(resultat.jours.find((jp) => jp.jour === "mardi")!.restes?.diner).toBe(
+      false
+    );
+  });
 });
 
 // ---------------------------------------------------------------------------

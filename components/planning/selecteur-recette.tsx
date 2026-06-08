@@ -26,6 +26,7 @@ export function SelecteurRecette({
   recettes,
   idsAuPlanning,
   onSelectionner,
+  onRestes,
   onFermer,
 }: {
   titre: string;
@@ -33,6 +34,8 @@ export function SelecteurRecette({
   /** Badge « déjà au planning » (RG-15) — le doublon reste permis. */
   idsAuPlanning: ReadonlySet<string>;
   onSelectionner: (recette: Recette) => void;
+  /** Marquer le slot en « restes » (US-12) — option proposée en tête. */
+  onRestes?: () => void;
   onFermer: () => void;
 }) {
   const refDialog = useRef<HTMLDialogElement>(null);
@@ -66,6 +69,11 @@ export function SelecteurRecette({
     onSelectionner(recette);
     // close() déclenche onClose → onFermer → démontage par le parent,
     // avec restitution native du focus au bouton « Sélectionner » d'origine.
+    refDialog.current?.close();
+  }
+
+  function choisirRestes(): void {
+    onRestes?.();
     refDialog.current?.close();
   }
 
@@ -121,6 +129,30 @@ export function SelecteurRecette({
         <p aria-live="polite" className="sr-only">
           {visibles.length} recette{visibles.length > 1 ? "s" : ""}
         </p>
+
+        {/* Option « Restes » (US-12) : ne pas cuisiner ce repas. Hors liste de
+            recettes (toujours visible, non filtrée par la recherche). */}
+        {onRestes && (
+          <button
+            type="button"
+            onClick={choisirRestes}
+            className="mt-3 flex w-full items-center gap-2 rounded-full border border-dashed border-brand-200 px-4 py-2 text-sm font-medium text-brand-700 transition-colors hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
+          >
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 24 24"
+              className="size-4 shrink-0"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M4 12h16M6 12a6 6 0 0 0 12 0M9 3c-.6 1-.6 2 0 3M13 3c-.6 1-.6 2 0 3" />
+            </svg>
+            Restes (je ne cuisine pas)
+          </button>
+        )}
       </div>
 
       {/* État vide de la recherche (RG-09 : tout écran gère son état vide) */}

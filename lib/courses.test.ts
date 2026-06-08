@@ -212,6 +212,28 @@ describe("genererListeCourses — immutabilité", () => {
 });
 
 // ---------------------------------------------------------------------------
+// RG-22 — un slot marqué « restes » est exclu de la liste de courses (US-12).
+// ---------------------------------------------------------------------------
+describe("genererListeCourses — RG-22 slots en restes (US-12)", () => {
+  test("n'ajoute pas les ingrédients d'un slot marqué restes", () => {
+    const omelette = recetteFixture("omelette-aux-champignons"); // contient des œufs
+    const tagliatelles = recetteFixture("tagliatelles-au-parmesan");
+    const planning: Planning = {
+      semaine: "2026-W23",
+      jours: [
+        { jour: "lundi", diner: omelette, restes: { diner: true } },
+        { jour: "mardi", diner: tagliatelles },
+      ],
+    };
+    const lignes = toutesLesLignes(planning);
+    // Les ingrédients de l'omelette (restes) sont absents…
+    expect(lignes.some((i) => i.nom.toLowerCase() === "oeufs")).toBe(false);
+    // …mais ceux du mardi (cuisiné) sont bien là.
+    expect(lignes.some((i) => i.nom.toLowerCase() === "tagliatelles")).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // RG-17 — mise à l'échelle selon le nombre de personnes (US-07).
 // L'échelle s'applique par slot AVANT agrégation, l'arrondi APRÈS.
 // ---------------------------------------------------------------------------
