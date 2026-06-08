@@ -8,6 +8,7 @@
 import { test, expect } from "@playwright/test";
 import { recetteFixture } from "../tests/fixtures/recettes";
 import { nettoyerEtatDistant } from "./helpers";
+import { semaineISO } from "../lib/semaines";
 
 test.beforeEach(async ({ page, request }) => {
   // Base vierge pour le compte de test (planning + coches).
@@ -126,8 +127,11 @@ test("modifier une semaine passée demande confirmation (US-14, RG-24)", async (
     await page.getByRole("button", { name: "Semaine précédente" }).click();
     await expect.poll(async () => (await label.innerText()).trim()).not.toBe(avant);
   }
-  // Cette semaine passée est vide → le libellé n'est pas « Cette semaine ».
-  await expect(page.getByText("Cette semaine")).toHaveCount(0);
+  // On est sur une semaine passée : le navigateur affiche un libellé « passé »
+  // (« Semaine dernière » / « Il y a N semaines »), pas « Cette semaine ».
+  await expect(
+    page.getByText(/^(Semaine dernière|Il y a \d+ semaines)$/)
+  ).toBeVisible();
 
   // Générer cette semaine passée (vide → aucune confirmation, rien à écraser).
   await page.getByRole("button", { name: "Générer mon planning" }).click();
@@ -172,7 +176,9 @@ test("marquer un repas en « restes » l'exclut de la liste de courses (US-12)",
   page,
 }) => {
   const planning = {
-    semaine: "2026-W23",
+    // Semaine COURANTE (calculée au run) : un planning injecté daté dans le
+    // passé déclencherait la garde de confirmation #5 (RG-24) à la modif/regen.
+    semaine: semaineISO(),
     jours: [{ jour: "lundi", diner: recetteFixture("omelette-aux-champignons") }],
   };
   await page.addInitScript(
@@ -461,7 +467,9 @@ test("modifier le nombre de personnes met à l'échelle la liste de courses (RG-
 }) => {
   // Planning déterministe : omelette (6 œufs) au dîner de lundi.
   const planning = {
-    semaine: "2026-W23",
+    // Semaine COURANTE (calculée au run) : un planning injecté daté dans le
+    // passé déclencherait la garde de confirmation #5 (RG-24) à la modif/regen.
+    semaine: semaineISO(),
     jours: [{ jour: "lundi", diner: recetteFixture("omelette-aux-champignons") }],
   };
   await page.addInitScript(
@@ -492,7 +500,9 @@ test("modifier les personnes invalide la coche de l'article touché, pas les aut
   page,
 }) => {
   const planning = {
-    semaine: "2026-W23",
+    // Semaine COURANTE (calculée au run) : un planning injecté daté dans le
+    // passé déclencherait la garde de confirmation #5 (RG-24) à la modif/regen.
+    semaine: semaineISO(),
     jours: [{ jour: "lundi", diner: recetteFixture("omelette-aux-champignons") }],
   };
   await page.addInitScript(
@@ -607,7 +617,9 @@ test("la fiche d'une recette s'ouvre au clic sur le nom, à l'échelle du slot e
 }) => {
   // Omelette : œufs + champignons (à acheter), beurre + poivre (fond de placard).
   const planning = {
-    semaine: "2026-W23",
+    // Semaine COURANTE (calculée au run) : un planning injecté daté dans le
+    // passé déclencherait la garde de confirmation #5 (RG-24) à la modif/regen.
+    semaine: semaineISO(),
     jours: [{ jour: "lundi", diner: recetteFixture("omelette-aux-champignons") }],
   };
   await page.addInitScript(

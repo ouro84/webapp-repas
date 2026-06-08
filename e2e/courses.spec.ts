@@ -5,6 +5,7 @@
 import { test, expect } from "@playwright/test";
 import { recetteFixture } from "../tests/fixtures/recettes";
 import { nettoyerEtatDistant } from "./helpers";
+import { semaineISO } from "../lib/semaines";
 import type { Jour, Planning } from "../types";
 
 test.beforeEach(async ({ page, request }) => {
@@ -40,7 +41,9 @@ function planningDeterministe(): Planning {
   ];
   const jours: Jour[] = ["lundi", "mardi", "mercredi"];
   return {
-    semaine: "2026-W23",
+    // Semaine COURANTE (calculée au run) : un planning injecté daté dans le
+    // passé déclencherait la garde de confirmation #5 (RG-24) à la modif/regen.
+    semaine: semaineISO(),
     jours: choisies.map((recette, i) => ({ jour: jours[i]!, diner: recette })),
   };
 }
@@ -256,7 +259,9 @@ test("les libellés s'accordent en nombre selon la quantité (US-08)", async ({
   // un nom de masse invariable (200 g). La page lit le planning brut depuis
   // localStorage — pas besoin que la recette existe dans le dataset (#29).
   const planning = {
-    semaine: "2026-W23",
+    // Semaine COURANTE (calculée au run) : un planning injecté daté dans le
+    // passé déclencherait la garde de confirmation #5 (RG-24) à la modif/regen.
+    semaine: semaineISO(),
     jours: [
       {
         jour: "lundi",
