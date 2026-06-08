@@ -49,6 +49,10 @@
 - [ ] Historique (US-14) : navigateur ‹ ← / → › change la semaine (passé/futur) ; semaine courante marquée ; la liste de courses suit la semaine (n° affiché) ; revenir sur une semaine générée la retrouve intacte
 - [ ] Confirmation semaine passée (US-14, RG-24) : régénérer ou modifier un repas (changer/sélectionner/restes) d'une **semaine passée** déjà planifiée ouvre une confirmation ; Annuler laisse intact, Confirmer applique. Générer une semaine passée **vide** ne demande rien ; le stepper personnes non plus
 - [ ] Rétention (US-14, RG-24) : les semaines de plus de 12 semaines ne s'accumulent pas indéfiniment en base (purge au chargement de session)
+- [ ] Réglages (US-15, RG-25) : l'engrenage de la nav ouvre `/reglages` ; on règle le plafond de chaque créneau (segmenté Rapide/Normal/Long) et le nombre de personnes par défaut
+- [ ] Réglages — enregistrement explicite : « Enregistrer » est désactivé tant que rien ne change ; un changement non enregistré est perdu au rechargement ; après enregistrement, la valeur persiste (rechargement / autre appareil)
+- [ ] Réglages — effet : la génération complète **et** le « ↺ changer » respectent les plafonds ; un planning généré porte le nombre de personnes par défaut choisi
+- [ ] Réglages — bonus : « Réinitialiser » repositionne sur les défauts (sans sauver) ; l'aperçu « N recettes éligibles » se met à jour ; une config infaisable bloque l'enregistrement avec un message
 
 ## 2. UI / Responsive
 

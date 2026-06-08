@@ -59,6 +59,21 @@ export async function nettoyerEtatDistant(
   });
 }
 
+/**
+ * Supprime les réglages de génération du compte de test (#45) via DELETE REST.
+ * À appeler en beforeEach ET afterAll de reglages.spec : le compte étant
+ * partagé, un réglage non nettoyé ferait diverger les specs qui supposent le
+ * comportement par défaut (ex. « génération = 2 personnes »).
+ */
+export async function nettoyerReglagesDistants(
+  request: APIRequestContext
+): Promise<void> {
+  const { url, headers } = await jetonTest(request);
+  await request.delete(`${url}/rest/v1/reglages?user_id=not.is.null`, {
+    headers,
+  });
+}
+
 // Jeton d'accès du compte de test (auth REST par mot de passe).
 async function jetonTest(request: APIRequestContext): Promise<{
   url: string;

@@ -41,6 +41,8 @@ import {
 import { estRestes, marquerRestes } from "@/lib/restes";
 import { naviguerVers, useSemaineAffichee, useSync } from "@/lib/sync";
 import { chargerRecettesGerees, type RecetteGeree } from "@/lib/recettes";
+import { chargerReglages } from "@/lib/reglages-data";
+import { REGLAGES_DEFAUT } from "@/lib/reglages";
 import {
   decalageEntre,
   formaterSemaine,
@@ -247,6 +249,10 @@ export default function PagePlanning() {
   // annotées `editable` pour le raccourci « Modifier » de la fiche (US-10).
   // Servent aussi le sélecteur manuel (#14) et le remplacement aléatoire.
   const [recettesGerees, setRecettesGerees] = useState<RecetteGeree[]>([]);
+  // Réglages de génération (#45) : pilotent l'éligibilité du remplacement
+  // unitaire « ↺ changer » (la génération complète les lit côté serveur).
+  // Défaut tant que non chargés = comportement antérieur.
+  const [reglages, setReglages] = useState(REGLAGES_DEFAUT);
   // Confirmation avant de régénérer/modifier une semaine PASSÉE (US-14, RG-24).
   // Contient l'action à rejouer (avec `force`) une fois l'utilisateur d'accord.
   const [confirmation, setConfirmation] = useState<{
@@ -283,6 +289,14 @@ export default function PagePlanning() {
       })
       .catch((erreur) => {
         console.error("Chargement des recettes échoué.", erreur);
+      });
+    // Réglages de génération (#45) : indépendants des recettes, défauts si échec.
+    chargerReglages()
+      .then((r) => {
+        if (actif) setReglages(r);
+      })
+      .catch((erreur) => {
+        console.error("Chargement des réglages échoué (défauts appliqués).", erreur);
       });
     return () => {
       actif = false;
@@ -420,7 +434,7 @@ export default function PagePlanning() {
     if (!force && confirmerSiPassee(() => changerSlot(jour, typeRepas, true))) {
       return;
     }
-    const nouveau = remplacerSlot(planning, jour, typeRepas, recettes);
+    const nouveau = remplacerSlot(planning, jour, typeRepas, recettes, reglages);
     if (nouveau === null) {
       // Toast en complément du message inline du slot (RG-04)
       setSlotIndisponible(cleSlot(jour, typeRepas));

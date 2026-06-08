@@ -14,6 +14,15 @@ export default defineConfig({
   // Un seul worker : les tests partagent le même serveur dev et manipulent
   // le localStorage — la sérialisation évite tout aléa.
   workers: 1,
+  // Les e2e tapent une vraie instance Supabase (staging en CI) : la latence
+  // réseau peut faire dépasser ponctuellement un timeout (lecture après
+  // écriture, rendu après génération). En CI, on réessaie les tests
+  // transitoirement rouges (chaque test repart d'un état propre en beforeEach,
+  // donc le rejeu est sûr) ; en local, pas de retry pour voir les vrais échecs.
+  retries: process.env.CI ? 2 : 0,
+  // Marge sur les assertions pour absorber la latence du backend distant
+  // (défaut 5 s → 10 s) ; les vrais bugs échouent toujours, juste un peu plus tard.
+  expect: { timeout: 10_000 },
   use: {
     baseURL: "http://localhost:3000",
     // L'antivirus du poste de dev (Avast) intercepte le TLS : les requêtes
