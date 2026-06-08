@@ -315,7 +315,7 @@ Réduire à zéro l'effort de planification hebdomadaire des repas, du choix des
 
 > **Given** je coche des articles de ma liste de courses sur un appareil  
 > **When** je consulte la liste sur un autre appareil  
-> **Then** j'y retrouve le même état coché/décoché *(sync des coches : livrée en PR3)*
+> **Then** j'y retrouve le même état coché/décoché
 
 ---
 
@@ -410,7 +410,7 @@ type Planning = {
 
 Le planning généré est sauvegardé en `localStorage` sous la clé `planning_courant`. Il est écrasé à chaque nouvelle génération.
 
-**Synchronisation multi-device (US-13, #6) :** depuis cette feature, la **base Supabase est la source de vérité** du planning ; `localStorage` est un **cache**. Le planning est poussé en base à chaque changement et hydraté au chargement selon un **last-write-wins horodaté** (clé `planning_courant_maj`), avec une **file de rejeu** minimale (clé `planning_dirty`) pour les écritures échouées hors-ligne. La sync des coches est livrée en PR3. (Cf. RG-23, table `planning`/`planning_slot`/`etat_courses`.)
+**Synchronisation multi-device (US-13, #6) :** depuis cette feature, la **base Supabase est la source de vérité** du planning **et des coches** ; `localStorage` est un **cache**. Chaque donnée est poussée en base à chaque changement et hydratée au chargement selon un **last-write-wins horodaté**, avec une **file de rejeu** minimale pour les écritures échouées hors-ligne. Clés de cache : planning (`planning_courant`, horodatage `planning_courant_maj`, file `planning_dirty`) et coches (`courses_cochees`, horodatage `courses_cochees_maj`, file `courses_dirty`). (Cf. RG-23, tables `planning`/`planning_slot`/`etat_courses`.)
 
 Les coches de la liste de courses (US-05) sont sauvegardées sous la clé `courses_cochees` : un objet `{ [nom|unité]: quantité au moment du cochage }` (cf. RG-12). La clé est effacée à chaque génération complète de planning (RG-13).
 
@@ -572,7 +572,7 @@ Un slot peut être marqué **« restes »** (flag par slot, `restes.dejeuner` / 
 
 ### RG-23 — Synchronisation et source de vérité (US-13)
 
-- La **base Supabase est la source de vérité** du planning actif (et des coches, livré en PR3) ; `localStorage` est un cache pour la réactivité et le hors-ligne.
+- La **base Supabase est la source de vérité** du planning actif **et des coches** ; `localStorage` est un cache pour la réactivité et le hors-ligne.
 - **Last-write-wins horodaté** : au chargement, la version la plus récente entre base et cache local gagne (comparaison `updated_at` / `planning_courant_maj`). Un cache **sans horodatage** (planning antérieur à la feature, ou injecté en test) est considéré comme le plus frais — on ne l'écrase pas ; un device au cache **vide** récupère donc le planning distant.
 - **Écriture à chaque changement** (débounce), avec **rejeu** au retour réseau (`planning_dirty`). Pas de temps réel : la propagation se fait au prochain chargement.
 - **Mono-actif** : un seul planning persisté par utilisateur (l'historique multi-semaines est #P08). Le **snapshot d'annulation** (US-09) reste **local**, non synchronisé.
