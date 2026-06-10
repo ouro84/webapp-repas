@@ -7,6 +7,8 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-06-10
+
 ### Ajouté
 
 - Repas végétariens — préférence de génération (#86, P10, PR2/2) : nouvelle préférence **« privilégier le végétarien »** par créneau (4 interrupteurs sur la page `/reglages`, à côté des plafonds de temps). Préférence **souple** : la génération complète **et** le remplacement unitaire « ↺ changer » biaisent le tirage vers les recettes végé sur ces créneaux, sans jamais bloquer (le biais reste dans le même palier de temps → faisabilité inchangée). Si le vivier végé est insuffisant, le repas est généré quand même et l'utilisateur est **averti** (toast indiquant le nombre de repas non honorés). Aperçu du nombre de recettes végétariennes éligibles par créneau. Table `reglages` étendue de 4 booléens (migration), e2e dédié. **Clôture de #86.**
@@ -86,6 +88,7 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 - CI GitHub Actions (Vitest + Playwright)
 - Déploiement Vercel avec preview deployments
 
-[Unreleased]: https://github.com/ouro84/webapp-repas/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/ouro84/webapp-repas/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/ouro84/webapp-repas/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/ouro84/webapp-repas/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/ouro84/webapp-repas/releases/tag/v1.0.0
