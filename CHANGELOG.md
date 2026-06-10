@@ -7,6 +7,10 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+### Ajouté
+
+- Hero d'accueil illustré (#68, P16) : l'accueil montre désormais la **promesse produit** — une mini-grille décorative de 3 cartes repas (Lundi/Mardi/Mercredi) insérée entre la tagline et le CTA. Nouveau composant `components/ui/apercu-planning.tsx`, **purement décoratif** (`aria-hidden`, aucune donnée réelle ni élément interactif) qui **réutilise les vrais composants** `BadgeTemps` et `BadgeVegetarien` pour rester fidèle au planning et cohérent avec la palette (vert brand + accent terracotta sur Normal/Long). Sobre, responsive (compact sur mobile, élargi sur desktop). Les animations d'entrée restent du ressort de #69.
+
 ### Modifié
 
 - Identité de marque — palette accent terracotta (#67, P15) : la section **« Fond de placard »** de la liste de courses passe de `amber-*` (Tailwind brut) à la palette de marque **`accent-*`** (terracotta/épice) — fond, header, sous-titre, séparateurs, nom et quantité d'article. Le compteur **« · N à vérifier »** du header est teinté en `accent-700` (lien visuel header ↔ section). Nouveau token **`--color-accent-800`** (terracotta foncé, contraste AAA) pour le nom d'article. Les encadrés `amber-*` d'**avertissement** (suppression, configuration de réglages infaisable, vivier de recettes insuffisant) **restent en amber** : `amber = prudence`, sémantique distincte de l'accent de marque (même logique que `red = erreur`). Les badges de temps « normal »/« long » utilisaient déjà l'accent (#61).

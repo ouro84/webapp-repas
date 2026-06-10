@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { Logo } from "@/components/ui/logo";
+import { ApercuPlanning } from "@/components/ui/apercu-planning";
 
 export default function Accueil() {
   return (
-    <main id="contenu" className="flex flex-1 flex-col items-center justify-center gap-10 p-8">
+    <main id="contenu" className="flex flex-1 flex-col items-center justify-center gap-8 p-8">
       <div className="flex flex-col items-center text-center">
         <Logo className="mb-5 size-24 text-brand-600" />
         <h1 className="font-display text-3xl font-semibold text-brand-900">
@@ -13,6 +14,10 @@ export default function Accueil() {
           La question du soir a enfin sa réponse
         </p>
       </div>
+
+      {/* Aperçu décoratif (#68) : montre la promesse produit (un planning de la
+          semaine) entre la tagline et le CTA — promesse → aperçu → action. */}
+      <ApercuPlanning />
 
       <Link
         href="/planning"
