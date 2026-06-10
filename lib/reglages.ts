@@ -95,10 +95,18 @@ export function validerReglages(brut: unknown): ReglagesGeneration | null {
   // régression). Présente → normalisée en 4 booléens.
   const vegetarienPrefere = normaliserVegePrefere(o.vegetarienPrefere)
 
+  // Mix accompagnement (#49 PR2) : optionnel comme la préférence végé. Booléen
+  // présent → on le pose ; absent → on ne le pose pas (= désactivé).
+  const mixAccompagnementJour =
+    typeof o.mixAccompagnementJour === "boolean"
+      ? o.mixAccompagnementJour
+      : undefined
+
   return {
     personnesDefaut: personnes,
     plafonds: { dejeunerSemaine, dinerSemaine, dejeunerWeekend, dinerWeekend },
     ...(vegetarienPrefere ? { vegetarienPrefere } : {}),
+    ...(mixAccompagnementJour !== undefined ? { mixAccompagnementJour } : {}),
   }
 }
 
@@ -119,6 +127,7 @@ export function dbReglagesToDomain(db: DbReglages): ReglagesGeneration {
       dejeunerWeekend: db.vege_dejeuner_weekend,
       dinerWeekend: db.vege_diner_weekend,
     },
+    mixAccompagnementJour: db.mix_accompagnement_jour,
   }
 }
 
@@ -134,5 +143,6 @@ export function reglagesToDb(r: ReglagesGeneration): DbReglages {
     vege_diner_semaine: v?.dinerSemaine ?? false,
     vege_dejeuner_weekend: v?.dejeunerWeekend ?? false,
     vege_diner_weekend: v?.dinerWeekend ?? false,
+    mix_accompagnement_jour: r.mixAccompagnementJour ?? false,
   }
 }

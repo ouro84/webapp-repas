@@ -127,6 +127,12 @@ export type ReglagesGeneration = {
     dejeunerWeekend: boolean;
     dinerWeekend: boolean;
   };
+  // Préférence « au moins un repas légumes par jour » (#49 PR2, US-17, RG-27).
+  // Optionnel (absent = désactivé = comportement antérieur). Préférence SOUPLE
+  // et JOINTE par jour : la génération biaise pour qu'au moins un des deux repas
+  // d'une journée soit « légumes », sans jamais échouer si le vivier ne le
+  // permet pas. Sans incidence sur la faisabilité (analyserVivier).
+  mixAccompagnementJour?: boolean;
 };
 
 // Forme DB (snake_case) de la table `reglages` — convertie via lib/reglages.ts.
@@ -140,6 +146,8 @@ export type DbReglages = {
   vege_diner_semaine: boolean;
   vege_dejeuner_weekend: boolean;
   vege_diner_weekend: boolean;
+  // #49 PR2 — « au moins un repas légumes par jour » (not null default false).
+  mix_accompagnement_jour: boolean;
 };
 
 export type LignesCourses = {

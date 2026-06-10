@@ -80,6 +80,15 @@ describe("validerReglages", () => {
     expect(validerReglages(valide)?.vegetarienPrefere).toBeUndefined();
   });
 
+  test("mix accompagnement (#49 PR2) : présent posé, absent ignoré", () => {
+    expect(
+      validerReglages({ ...valide, mixAccompagnementJour: true })
+        ?.mixAccompagnementJour
+    ).toBe(true);
+    // Absent → non posé (pas de régression).
+    expect(validerReglages(valide)?.mixAccompagnementJour).toBeUndefined();
+  });
+
   test("refuse un plafond hors enum", () => {
     expect(
       validerReglages({
@@ -115,9 +124,10 @@ describe("adaptateurs DB ↔ domaine", () => {
     vege_diner_semaine: false,
     vege_dejeuner_weekend: false,
     vege_diner_weekend: true,
+    mix_accompagnement_jour: true,
   };
 
-  test("dbReglagesToDomain mappe les colonnes (plafonds + préférence végé)", () => {
+  test("dbReglagesToDomain mappe les colonnes (plafonds + préférence végé + mix)", () => {
     expect(dbReglagesToDomain(db)).toEqual({
       personnesDefaut: 3,
       plafonds: {
@@ -132,6 +142,7 @@ describe("adaptateurs DB ↔ domaine", () => {
         dejeunerWeekend: false,
         dinerWeekend: true,
       },
+      mixAccompagnementJour: true,
     });
   });
 

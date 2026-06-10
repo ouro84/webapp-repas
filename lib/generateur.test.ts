@@ -15,6 +15,7 @@ import { describe, test, expect } from "vitest";
 import {
   analyserVivier,
   genererPlanning,
+  joursSansLegume,
   prefereVegeSlot,
   recettesUtilisees,
   remplacerRecetteDansPlanning,
@@ -672,6 +673,84 @@ describe("genererPlanning — préférence végétarienne souple (#86 PR2)", () 
   test("réglages par défaut (sans préférence) : aucun slot signalé non honoré", () => {
     const planning = genererPlanning(RECETTES);
     expect(slotsVegeNonHonores(planning, REGLAGES_DEFAUT)).toHaveLength(0);
+  });
+});
+
+describe("genererPlanning — mix « ≥1 légume/jour » souple, joint (#49 PR2)", () => {
+  // Marque n recettes synthétiques avec un accompagnement donné.
+  function synthAccomp(
+    temps: TempsPreparation,
+    n: number,
+    prefixe: string,
+    accompagnement: "feculents" | "legumes" | undefined
+  ): Recette[] {
+    return synth(temps, n, prefixe).map((r) =>
+      accompagnement ? { ...r, accompagnement } : r
+    );
+  }
+
+  const MIX: ReglagesGeneration = {
+    ...REGLAGES_DEFAUT,
+    mixAccompagnementJour: true,
+  };
+
+  // Vivier garantissant un légume par jour sous les plafonds par défaut :
+  // 5 rapides-légumes (1 par dîner de semaine) + 2 longs-légumes (week-end),
+  // complétés de fillers non-légumes pour la faisabilité (14 distincts).
+  const VIVIER_MIX_OK: Recette[] = [
+    ...synthAccomp("rapide", 5, "rl", "legumes"),
+    ...synthAccomp("long", 2, "ll", "legumes"),
+    ...synthAccomp("normal", 5, "nf", "feculents"),
+    ...synthAccomp("long", 2, "lf", "feculents"),
+  ];
+
+  test("chaque jour reçoit au moins un repas légumes quand le vivier suffit", () => {
+    for (let i = 0; i < 25; i++) {
+      const planning = genererPlanning(VIVIER_MIX_OK, "2026-W30", MIX);
+      expect(tousLesRepas(planning)).toHaveLength(14);
+      for (const jp of planning.jours) {
+        const aLegume =
+          jp.dejeuner?.accompagnement === "legumes" ||
+          jp.diner?.accompagnement === "legumes";
+        expect(aLegume, `jour ${jp.jour} sans légume`).toBe(true);
+      }
+      expect(joursSansLegume(planning, MIX)).toHaveLength(0);
+    }
+  });
+
+  test("n'échoue jamais et signale les jours non honorés si aucun légume", () => {
+    // Aucune recette « légumes » : la génération aboutit (préférence souple),
+    // mais les 7 jours sont signalés non honorés.
+    const vivier = [
+      ...synthAccomp("rapide", 10, "r", "feculents"),
+      ...synthAccomp("normal", 4, "n", "feculents"),
+    ];
+    const planning = genererPlanning(vivier, "2026-W30", MIX);
+    expect(tousLesRepas(planning)).toHaveLength(14);
+    expect(joursSansLegume(planning, MIX)).toHaveLength(7);
+  });
+
+  test("remplacerSlot biaise vers légume si le repas frère ne l'est pas", () => {
+    // Marge large de rapides-légumes pour qu'un remplaçant reste disponible.
+    const vivier = [
+      ...synthAccomp("rapide", 20, "rl", "legumes"),
+      ...synthAccomp("normal", 4, "nf", "feculents"),
+    ];
+    for (let i = 0; i < 25; i++) {
+      const planning = genererPlanning(vivier, "2026-W30", MIX);
+      const resultat = remplacerSlot(planning, "lundi", "diner", vivier, MIX);
+      expect(resultat).not.toBeNull();
+      const lundi = resultat!.jours.find((jp) => jp.jour === "lundi")!;
+      const aLegume =
+        lundi.dejeuner?.accompagnement === "legumes" ||
+        lundi.diner?.accompagnement === "legumes";
+      expect(aLegume).toBe(true);
+    }
+  });
+
+  test("préférence inactive (défaut) : aucun jour signalé", () => {
+    const planning = genererPlanning(RECETTES);
+    expect(joursSansLegume(planning, REGLAGES_DEFAUT)).toHaveLength(0);
   });
 });
 

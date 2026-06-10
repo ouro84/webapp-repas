@@ -21,6 +21,7 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
 import { RefreshCw } from "lucide-react";
 import {
+  joursSansLegume,
   prefereVegeSlot,
   recettesUtilisees,
   remplacerSlot,
@@ -397,9 +398,14 @@ export default function PagePlanning() {
         setErreurGeneration(await parseApiError(reponse));
         return;
       }
-      const { planning: nouveau, vegeNonHonore = 0 } = (await reponse.json()) as {
+      const {
+        planning: nouveau,
+        vegeNonHonore = 0,
+        mixNonHonore = 0,
+      } = (await reponse.json()) as {
         planning: Planning;
         vegeNonHonore?: number;
+        mixNonHonore?: number;
       };
       // Regénération (US-09) : un planning existait → on fige l'état (planning
       // + coches) avant écrasement pour permettre l'undo (RG-19). Première
@@ -428,6 +434,15 @@ export default function PagePlanning() {
           vegeNonHonore === 1
             ? "1 repas n’a pas pu être végétarien (pas assez de recettes végé)."
             : `${vegeNonHonore} repas n’ont pas pu être végétariens (pas assez de recettes végé).`
+        );
+      }
+      // RG-27 — préférence « ≥1 légume/jour » souple non honorée (vivier légumes
+      // insuffisant) : on informe sans bloquer (#49 PR2).
+      if (mixNonHonore > 0) {
+        toast.warning(
+          mixNonHonore === 1
+            ? "1 jour n’a pas de repas « légumes » (pas assez de recettes légumes)."
+            : `${mixNonHonore} jours n’ont pas de repas « légumes » (pas assez de recettes légumes).`
         );
       }
     } catch (erreur) {
@@ -476,6 +491,11 @@ export default function PagePlanning() {
       remplacante?.vegetarien !== true
     ) {
       toast.warning("Pas de recette végétarienne disponible pour ce repas.");
+    }
+    // RG-27 — mix « ≥1 légume/jour » : si après remplacement ce jour n'a
+    // toujours aucun repas « légumes », on prévient (sans bloquer, #49 PR2).
+    if (joursSansLegume(nouveau, reglages).includes(jour)) {
+      toast.warning("Ce jour n’a pas de repas « légumes » (pas assez de recettes légumes).");
     }
   }
 

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { apiError } from "@/lib/errors"
-import { genererPlanning, slotsVegeNonHonores } from "@/lib/generateur"
+import { genererPlanning, joursSansLegume, slotsVegeNonHonores } from "@/lib/generateur"
 import { decalageEntre, semaineISO, semaineParDefaut } from "@/lib/semaines"
 import { dbRecetteToDomain } from "@/lib/adapters"
 import { dbReglagesToDomain, REGLAGES_DEFAUT } from "@/lib/reglages"
@@ -91,7 +91,7 @@ export async function POST(request: Request) {
   const { data: dbReglages, error: reglagesError } = await supabase
     .from("reglages")
     .select(
-      "personnes_defaut, max_dejeuner_semaine, max_diner_semaine, max_dejeuner_weekend, max_diner_weekend, vege_dejeuner_semaine, vege_diner_semaine, vege_dejeuner_weekend, vege_diner_weekend"
+      "personnes_defaut, max_dejeuner_semaine, max_diner_semaine, max_dejeuner_weekend, max_diner_weekend, vege_dejeuner_semaine, vege_diner_semaine, vege_dejeuner_weekend, vege_diner_weekend, mix_accompagnement_jour"
     )
     .maybeSingle()
   if (reglagesError) {
@@ -107,7 +107,13 @@ export async function POST(request: Request) {
     // pas pu être végétariens (vivier insuffisant) sans bloquer la génération.
     // Le client en fait un toast d'information (#86 PR2).
     const vegeNonHonore = slotsVegeNonHonores(planning, reglages).length
-    return NextResponse.json({ planning, vegeNonHonore }, { status: 200 })
+    // RG-27 — préférence « ≥1 légume/jour » souple : on signale le NOMBRE de
+    // jours sans aucun repas « légumes » (vivier insuffisant), idem (#49 PR2).
+    const mixNonHonore = joursSansLegume(planning, reglages).length
+    return NextResponse.json(
+      { planning, vegeNonHonore, mixNonHonore },
+      { status: 200 }
+    )
   } catch (erreur) {
     // genererPlanning lève si le vivier est insuffisant (trop peu de recettes
     // rapide/normal pour remplir la semaine) — message actionnable (RG-09).
