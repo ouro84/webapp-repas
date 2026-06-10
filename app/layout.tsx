@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
@@ -20,6 +20,16 @@ export const metadata: Metadata = {
   title: "On mange quoi ?",
   description:
     "La question du soir a enfin sa réponse : génère ton planning de repas hebdomadaire et ta liste de courses.",
+};
+
+// Clavier mobile (#98) : par défaut Android/Chrome ne redimensionne que le
+// visual viewport à l'ouverture du clavier — un bottom sheet ancré en bas
+// (`dvh` + `mb-0`) glisse alors DERRIÈRE le clavier, masquant les résultats.
+// `resizes-content` fait réduire le viewport de layout par le clavier : le
+// sheet reste au-dessus. iOS/Safari n'implémente pas `interactive-widget`,
+// d'où le complément côté sélecteur via l'API visualViewport (lib/clavier.ts).
+export const viewport: Viewport = {
+  interactiveWidget: "resizes-content",
 };
 
 export default function RootLayout({
