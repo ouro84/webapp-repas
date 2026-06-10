@@ -240,6 +240,12 @@ export default function PageReglages() {
       ? null
       : recettes.filter((r) => r.accompagnement === "legumes").length;
 
+  // Saisonnalité (#23 PR2) — ON par défaut (absent vaut actif).
+  const saisonnaliteActif = form?.saisonnalite !== false;
+  function definirSaisonnalite(valeur: boolean): void {
+    setForm((f) => (f ? { ...f, saisonnalite: valeur } : f));
+  }
+
   async function enregistrer(): Promise<void> {
     if (form === null || !modifie || !faisable) return;
     setEnregistrement(true);
@@ -401,6 +407,28 @@ export default function PageReglages() {
             libelleId="mix-legume"
             actif={mixActif}
             onChange={definirMix}
+          />
+        </div>
+      </section>
+
+      {/* Section — saisonnalité (#23 PR2, RG-28) */}
+      <section className="mb-8" aria-labelledby="section-saison">
+        <h2 id="section-saison" className="mb-1 text-lg font-semibold text-brand-900">
+          Recettes de saison
+        </h2>
+        <p className="mb-4 text-sm text-brand-700/85">
+          La génération ne propose que des recettes de la saison de la semaine
+          planifiée. Si le vivier de saison est insuffisant, le planning est
+          complété avec d’autres recettes et tu es prévenu.
+        </p>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <span id="saisonnalite" className="text-sm font-medium text-brand-900">
+            Ne proposer que des recettes de saison
+          </span>
+          <Bascule
+            libelleId="saisonnalite"
+            actif={saisonnaliteActif}
+            onChange={definirSaisonnalite}
           />
         </div>
       </section>

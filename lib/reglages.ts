@@ -102,11 +102,17 @@ export function validerReglages(brut: unknown): ReglagesGeneration | null {
       ? o.mixAccompagnementJour
       : undefined
 
+  // Saisonnalité (#23 PR2) : booléen présent → on le pose ; absent → on ne le
+  // pose pas (l'absence vaut ON par défaut côté générateur, cf. `!== false`).
+  const saisonnalite =
+    typeof o.saisonnalite === "boolean" ? o.saisonnalite : undefined
+
   return {
     personnesDefaut: personnes,
     plafonds: { dejeunerSemaine, dinerSemaine, dejeunerWeekend, dinerWeekend },
     ...(vegetarienPrefere ? { vegetarienPrefere } : {}),
     ...(mixAccompagnementJour !== undefined ? { mixAccompagnementJour } : {}),
+    ...(saisonnalite !== undefined ? { saisonnalite } : {}),
   }
 }
 
@@ -128,6 +134,7 @@ export function dbReglagesToDomain(db: DbReglages): ReglagesGeneration {
       dinerWeekend: db.vege_diner_weekend,
     },
     mixAccompagnementJour: db.mix_accompagnement_jour,
+    saisonnalite: db.saisonnalite,
   }
 }
 
@@ -144,5 +151,7 @@ export function reglagesToDb(r: ReglagesGeneration): DbReglages {
     vege_dejeuner_weekend: v?.dejeunerWeekend ?? false,
     vege_diner_weekend: v?.dinerWeekend ?? false,
     mix_accompagnement_jour: r.mixAccompagnementJour ?? false,
+    // Saisonnalité : absente = ON par défaut (≠ les préférences ci-dessus).
+    saisonnalite: r.saisonnalite ?? true,
   }
 }
