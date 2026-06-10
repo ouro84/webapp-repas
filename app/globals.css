@@ -30,6 +30,7 @@
   --color-accent-500: #d4683a;   /* éléments accent */
   --color-accent-600: #b85530;   /* accent hover */
   --color-accent-700: #8a3f20;   /* texte accent sur fond clair — contraste AA (≥ 4.5:1 sur accent-50/100) */
+  --color-accent-800: #5f2c15;   /* texte accent fort (nom d'article placard) — contraste AAA sur accent-50 */
 
   /* ---- Canvas — fond crème ---- */
   --color-canvas: #fafaf5;

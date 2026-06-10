@@ -227,8 +227,12 @@ export default function PageCourses() {
           <p aria-live="polite" className="text-sm text-brand-700/85">
             {progression.coches}/{progression.total} article
             {progression.total > 1 ? "s" : ""}
-            {liste.fondDePlacard.length > 0 &&
-              ` · ${liste.fondDePlacard.length} à vérifier`}
+            {liste.fondDePlacard.length > 0 && (
+              <span className="text-accent-700">
+                {" · "}
+                {liste.fondDePlacard.length} à vérifier
+              </span>
+            )}
           </p>
         </div>
         {aDesCoches(liste, coches) && (
@@ -286,13 +290,13 @@ export default function PageCourses() {
         {/* Section fond de placard (F-09) : cochable aussi, mais hors
             compteur de progression (RG-14). */}
         {liste.fondDePlacard.length > 0 && (
-          <section className="rounded-lg bg-amber-50 p-4">
+          <section className="rounded-lg bg-accent-50 p-4">
             <h2>
               <button
                 type="button"
                 onClick={() => basculerSection("fond-de-placard")}
                 aria-expanded={!replies.has("fond-de-placard")}
-                className="flex min-h-11 w-full cursor-pointer items-center justify-between gap-2 text-sm font-semibold uppercase tracking-wide text-amber-800 transition-colors hover:text-amber-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
+                className="flex min-h-11 w-full cursor-pointer items-center justify-between gap-2 text-sm font-semibold uppercase tracking-wide text-accent-700 transition-colors hover:text-accent-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
               >
                 Fond de placard
                 <Chevron repliee={replies.has("fond-de-placard")} />
@@ -300,10 +304,10 @@ export default function PageCourses() {
             </h2>
             {!replies.has("fond-de-placard") && (
               <>
-                <p className="mb-2 text-xs text-amber-700">
+                <p className="mb-2 text-xs text-accent-700">
                   À vérifier avant d&apos;acheter
                 </p>
-                <ul className="divide-y divide-amber-100">
+                <ul className="divide-y divide-accent-100">
                   {trierAvecCoches(liste.fondDePlacard, coches).map((ingredient) => (
                     <ArticleCochable
                       key={`${ingredient.nom}-${ingredient.unite}`}
@@ -337,9 +341,9 @@ function ArticleCochable({
   onBasculer: () => void;
   placard?: boolean;
 }) {
-  const couleurNom = placard ? "text-amber-900" : "text-brand-900";
+  const couleurNom = placard ? "text-accent-800" : "text-brand-900";
   const couleurQuantite = placard
-    ? "text-amber-700"
+    ? "text-accent-700"
     : "text-brand-700/85";
   return (
     <li style={{ viewTransitionName: nomTransition(ingredient) }}>
