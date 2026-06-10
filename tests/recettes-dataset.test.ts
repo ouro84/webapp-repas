@@ -8,8 +8,15 @@
 
 import { describe, test, expect } from "vitest";
 import { genererPlanning } from "@/lib/generateur";
+import { suggererAccompagnement } from "@/lib/accompagnement";
 import recettesJson from "@/data/recettes.json";
-import type { CategorieIngredient, Recette, TempsPreparation, Unite } from "@/types";
+import type {
+  Accompagnement,
+  CategorieIngredient,
+  Recette,
+  TempsPreparation,
+  Unite,
+} from "@/types";
 
 const RECETTES = recettesJson as Recette[];
 
@@ -65,5 +72,24 @@ describe("data/recettes.json — intégrité du dataset", () => {
     expect(rapidesNormales.length).toBeGreaterThanOrEqual(10);
     expect(rapides.length).toBeGreaterThanOrEqual(5);
     expect(() => genererPlanning(RECETTES)).not.toThrow();
+  });
+
+  // #49 — l'heuristique d'accompagnement (qui auto-tague le catalogue global via
+  // la migration) doit produire une valeur valide (ou null) sur chaque recette,
+  // et caractériser une nette majorité du dataset (garde-fou si les recettes
+  // évoluent : un effondrement de la couverture signalerait une régression des
+  // motifs). On ne fige PAS la valeur précise par recette — elle peut évoluer.
+  test("l'heuristique d'accompagnement couvre l'essentiel du dataset (#49)", () => {
+    const VALEURS: Accompagnement[] = ["feculents", "legumes"];
+    let caracterisees = 0;
+    for (const r of RECETTES) {
+      const a = suggererAccompagnement(r.ingredients);
+      if (a !== null) {
+        expect(VALEURS, `accompagnement invalide : ${r.id}`).toContain(a);
+        caracterisees++;
+      }
+    }
+    // Au moins 70 % des recettes sont caractérisées (féculent ou légume).
+    expect(caracterisees).toBeGreaterThanOrEqual(Math.ceil(RECETTES.length * 0.7));
   });
 });

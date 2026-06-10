@@ -8,18 +8,27 @@
 
 import { useId, useState } from "react";
 import type {
+  Accompagnement,
   CategorieIngredient,
   Ingredient,
   TempsPreparation,
   Unite,
 } from "@/types";
 import type { SaisieRecette } from "@/lib/recettes";
+import { suggererAccompagnement } from "@/lib/accompagnement";
 
 // Options des selects (côté saisie : toutes les valeurs du domaine).
 const TEMPS: { valeur: TempsPreparation; libelle: string }[] = [
   { valeur: "rapide", libelle: "Rapide (< 20 min)" },
   { valeur: "normal", libelle: "Normal (20–45 min)" },
   { valeur: "long", libelle: "Long (> 45 min)" },
+];
+
+// Options du select accompagnement (#49) : "" = aucun (non caractérisé).
+const ACCOMPAGNEMENTS: { valeur: Accompagnement | ""; libelle: string }[] = [
+  { valeur: "", libelle: "Aucun / non précisé" },
+  { valeur: "feculents", libelle: "Féculents" },
+  { valeur: "legumes", libelle: "Légumes" },
 ];
 
 const UNITES: { valeur: Unite; libelle: string }[] = [
@@ -92,6 +101,7 @@ export function FormulaireRecette({
     nom: string;
     tempsPreparation: TempsPreparation;
     vegetarien?: boolean;
+    accompagnement?: Accompagnement;
     ingredients: Ingredient[];
   };
   titre: string;
@@ -110,12 +120,22 @@ export function FormulaireRecette({
   // viande/poisson ». À l'édition, on respecte la valeur enregistrée (figée).
   const [vegetarien, setVegetarien] = useState(valeurInitiale?.vegetarien ?? false);
   const [vegeTouche, setVegeTouche] = useState(valeurInitiale !== undefined);
+  // Accompagnement (#49). Même mécanique de pré-cochage heuristique (Bonus B)
+  // que le végé : tant que l'utilisateur n'y a pas touché (création), on suit la
+  // suggestion par nom d'ingrédient ; à l'édition, on respecte la valeur figée.
+  const [accompagnement, setAccompagnement] = useState<Accompagnement | "">(
+    valeurInitiale?.accompagnement ?? ""
+  );
+  const [accompTouche, setAccompTouche] = useState(valeurInitiale !== undefined);
   const [erreur, setErreur] = useState<string | null>(null);
   const [enCours, setEnCours] = useState(false);
   const idErreur = useId();
 
   const suggestionVege = lignes.every((l) => l.categorie !== "viandes-poissons");
   const vegeEffectif = vegeTouche ? vegetarien : suggestionVege;
+
+  const suggestionAccomp = suggererAccompagnement(lignes) ?? "";
+  const accompEffectif = accompTouche ? accompagnement : suggestionAccomp;
 
   function majLigne(index: number, champ: Partial<LigneSaisie>): void {
     setLignes((courantes) =>
@@ -155,6 +175,7 @@ export function FormulaireRecette({
       nom: nom.trim(),
       tempsPreparation: temps,
       vegetarien: vegeEffectif,
+      accompagnement: accompEffectif === "" ? null : accompEffectif,
       ingredients,
     };
   }
@@ -225,6 +246,30 @@ export function FormulaireRecette({
         />
         Recette végétarienne
       </label>
+
+      <div className="flex flex-col gap-1">
+        <label
+          htmlFor="accompagnement-recette"
+          className="text-sm font-medium text-brand-900"
+        >
+          Accompagnement
+        </label>
+        <select
+          id="accompagnement-recette"
+          value={accompEffectif}
+          onChange={(e) => {
+            setAccompTouche(true);
+            setAccompagnement(e.target.value as Accompagnement | "");
+          }}
+          className={`${INPUT} cursor-pointer`}
+        >
+          {ACCOMPAGNEMENTS.map((a) => (
+            <option key={a.valeur} value={a.valeur}>
+              {a.libelle}
+            </option>
+          ))}
+        </select>
+      </div>
 
       <fieldset className="flex flex-col gap-3">
         <legend className="mb-1 text-sm font-medium text-brand-900">

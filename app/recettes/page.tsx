@@ -28,6 +28,7 @@ import {
 import { storePlanning, sauvegarderRemplacementSlot } from "@/lib/stockage";
 import { BadgeTemps } from "@/components/planning/badge-temps";
 import { BadgeVegetarien } from "@/components/ui/badge-vegetarien";
+import { BadgeAccompagnement } from "@/components/ui/badge-accompagnement";
 import { FormulaireRecette } from "@/components/recettes/formulaire-recette";
 import { ConfirmationSuppression } from "@/components/recettes/confirmation-suppression";
 import type { Planning, Recette } from "@/types";
@@ -162,6 +163,7 @@ function ContenuRecettes() {
       nom: `${source.nom} (copie)`,
       tempsPreparation: source.tempsPreparation,
       vegetarien: source.vegetarien ?? false,
+      accompagnement: source.accompagnement,
       ingredients: source.ingredients,
     };
   }
@@ -276,6 +278,9 @@ function ContenuRecettes() {
                   </span>
                   <BadgeTemps temps={recette.tempsPreparation} />
                   {recette.vegetarien && <BadgeVegetarien />}
+                  {recette.accompagnement && (
+                    <BadgeAccompagnement accompagnement={recette.accompagnement} />
+                  )}
                   {!editable && (
                     <span className="rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700/85">
                       Catalogue

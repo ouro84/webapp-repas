@@ -44,6 +44,12 @@ export type CategorieIngredient =
 export type TempsPreparation = "rapide" | "normal" | "long";
 // rapide : < 20 min | normal : 20–45 min | long : > 45 min
 
+// Accompagnement dominant d'une recette (#49, P11) : féculent (pâtes, riz,
+// pommes de terre…) ou légume (plat tourné légumes). Optionnel côté domaine :
+// beaucoup de plats n'en ont pas (plat unique, viande seule…) — absent = non
+// caractérisé.
+export type Accompagnement = "feculents" | "legumes";
+
 export type Jour =
   | "lundi" | "mardi" | "mercredi" | "jeudi"
   | "vendredi" | "samedi" | "dimanche";
@@ -72,6 +78,10 @@ export type Recette = {
   // Recette végétarienne (#86, P10). Optionnel comme les autres flags du
   // domaine (absent = false) → fixtures/dataset relisibles sans migration.
   vegetarien?: boolean;
+  // Accompagnement dominant (#49, P11). Optionnel : absent = non caractérisé
+  // (ni féculent ni légume identifié). Cf. lib/accompagnement.ts pour la
+  // suggestion par heuristique.
+  accompagnement?: Accompagnement;
 };
 
 export type JourPlanning = {
@@ -182,6 +192,9 @@ export type DbRecette = {
   nom: string;
   temps_preparation: TempsPreparation;
   vegetarien: boolean;
+  // Accompagnement (#49, P11) : `null` en base = non caractérisé (mappé vers
+  // `undefined` côté domaine).
+  accompagnement: Accompagnement | null;
   created_at: string;
   recette_ingredient: DbRecetteIngredient[]; // relation imbriquée
 };

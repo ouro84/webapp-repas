@@ -40,13 +40,17 @@ export function dbIngredientToDomain(
 }
 
 export function dbRecetteToDomain(dbRecette: DbRecette): Recette {
-  return {
+  const recette: Recette = {
     id: dbRecette.id,
     nom: dbRecette.nom,
     tempsPreparation: dbRecette.temps_preparation,
     vegetarien: dbRecette.vegetarien,
     ingredients: dbRecette.recette_ingredient.map(dbIngredientToDomain),
   }
+  // Accompagnement (#49) : `null` en base = non caractérisé → champ absent côté
+  // domaine (cohérent avec l'optionnalité de Recette.accompagnement).
+  if (dbRecette.accompagnement) recette.accompagnement = dbRecette.accompagnement
+  return recette
 }
 
 export function dbSlotToJourPlanning(

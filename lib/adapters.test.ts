@@ -2,7 +2,11 @@
 // planning persisté (#6) : personnes (US-07) et restes (US-12) par slot.
 
 import { describe, expect, it } from "vitest";
-import { dbPlanningToDomain, dbSlotToJourPlanning } from "@/lib/adapters";
+import {
+  dbPlanningToDomain,
+  dbRecetteToDomain,
+  dbSlotToJourPlanning,
+} from "@/lib/adapters";
 import type { DbPlanningSlot, DbRecette } from "@/types";
 
 function dbRecette(id: string): DbRecette {
@@ -12,6 +16,7 @@ function dbRecette(id: string): DbRecette {
     nom: id,
     temps_preparation: "rapide",
     vegetarien: false,
+    accompagnement: null,
     created_at: "2026-06-01T00:00:00Z",
     recette_ingredient: [
       {
@@ -86,6 +91,19 @@ describe("dbSlotToJourPlanning", () => {
     expect(() =>
       dbSlotToJourPlanning([dbSlot("lundi", "dejeuner", "r")], "lundi")
     ).toThrow();
+  });
+});
+
+describe("dbRecetteToDomain — accompagnement (#49)", () => {
+  it("mappe null en champ absent (non caractérisé)", () => {
+    const r = dbRecetteToDomain(dbRecette("r"));
+    expect(r.accompagnement).toBeUndefined();
+    expect("accompagnement" in r).toBe(false);
+  });
+
+  it("conserve une valeur d'accompagnement", () => {
+    const r = dbRecetteToDomain({ ...dbRecette("r"), accompagnement: "legumes" });
+    expect(r.accompagnement).toBe("legumes");
   });
 });
 
