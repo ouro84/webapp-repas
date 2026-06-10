@@ -1,0 +1,8 @@
+# Fichiers de travail de l'analyse Understand-Anything — non versionnés.
+# On versionne le graphe (knowledge-graph.json), la config (config.json,
+# .understandignore) et la provenance (meta.json) ; le reste est regénéré
+# à chaque run.
+intermediate/
+tmp/
+.trash-*/
+fingerprints.json
