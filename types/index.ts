@@ -141,6 +141,13 @@ export type ReglagesGeneration = {
   // d'une journée soit « légumes », sans jamais échouer si le vivier ne le
   // permet pas. Sans incidence sur la faisabilité (analyserVivier).
   mixAccompagnementJour?: boolean;
+  // Saisonnalité (#23 PR2, US-18, RG-28). ⚠️ INVERSION de défaut vs les deux
+  // préférences ci-dessus : ON par défaut → on teste `saisonnalite !== false`
+  // (absent OU true = actif ; seul `false` désactive). Filtre DUR à dégradation
+  // gracieuse : la génération ne propose que des recettes de la saison de la
+  // semaine cible, mais complète hors-saison (sans jamais échouer) si le vivier
+  // de saison est insuffisant.
+  saisonnalite?: boolean;
 };
 
 // Forme DB (snake_case) de la table `reglages` — convertie via lib/reglages.ts.
@@ -156,6 +163,8 @@ export type DbReglages = {
   vege_diner_weekend: boolean;
   // #49 PR2 — « au moins un repas légumes par jour » (not null default false).
   mix_accompagnement_jour: boolean;
+  // #23 PR2 — saisonnalité (not null default TRUE : ON par défaut).
+  saisonnalite: boolean;
 };
 
 export type LignesCourses = {

@@ -3,7 +3,8 @@
 // Implémente les règles métier RG-01 à RG-04 de SPECS_FONCTIONNELLES.md (section 6).
 // Aucune dépendance à React, au navigateur ou à Supabase : testable en isolation.
 
-import { semaineISO } from "@/lib/semaines"
+import { saisonDeSemaine, semaineISO } from "@/lib/semaines"
+import { estDeSaison } from "@/lib/saisons"
 import {
   ORDRE_TEMPS,
   rangTemps,
@@ -15,6 +16,7 @@ import type {
   Planning,
   JourPlanning,
   Jour,
+  Saison,
   TempsPreparation,
   ReglagesGeneration,
 } from "@/types"
@@ -94,6 +96,34 @@ function biaiserVege(
   if (!prefereVegeSlot(jour, typeRepas, reglages)) return candidats
   const vege = candidats.filter((r) => r.vegetarien === true)
   return vege.length > 0 ? vege : candidats
+}
+
+/**
+ * Vrai si la saisonnalité est active (#23 PR2, RG-28). ⚠️ ON par défaut :
+ * `undefined` (REGLAGES_DEFAUT, ligne DB absente) compte comme actif ; seul
+ * `false` désactive — inverse des préférences végé/mix.
+ */
+function saisonnaliteActive(reglages: ReglagesGeneration): boolean {
+  return reglages.saisonnalite !== false
+}
+
+/**
+ * Filtre DUR « recettes de saison » à dégradation gracieuse (#23 PR2, RG-28).
+ * Si la saisonnalité est active, on restreint aux recettes de la saison cible ;
+ * mais s'il n'en reste AUCUNE (vivier de saison épuisé pour ce slot), on replie
+ * sur tous les candidats (= complétion hors-saison). Ce repli est la dégradation
+ * gracieuse : la génération n'échoue jamais à cause de la saison, exactement
+ * comme les biais souples. Les recettes sans saison déclarée sont de toute
+ * saison (estDeSaison).
+ */
+function biaiserSaison(
+  candidats: Recette[],
+  saison: Saison,
+  reglages: ReglagesGeneration
+): Recette[] {
+  if (!saisonnaliteActive(reglages)) return candidats
+  const deSaison = candidats.filter((r) => estDeSaison(r, saison))
+  return deSaison.length > 0 ? deSaison : candidats
 }
 
 /** Vrai si un repas « légumes » a déjà été attribué à ce jour (l'un des 2 slots). */
@@ -217,6 +247,8 @@ export function genererPlanning(
 
   const utilisees = new Set<string>() // RG-02 : ids déjà placés cette semaine
   const attributions = new Map<string, Recette>()
+  // RG-28 — saison de la semaine cible (filtre dur à dégradation gracieuse).
+  const saison = saisonDeSemaine(semaine)
 
   for (const slot of slotsTries) {
     const eligibles = recettes.filter(
@@ -230,12 +262,17 @@ export function genererPlanning(
           `(slot ${slot.jour} ${slot.typeRepas}).`
       )
     }
-    // RG-26 / RG-27 — préférences souples composées : on biaise d'abord vers le
-    // végé (par créneau), puis vers « légumes » (joint par jour) à l'intérieur
-    // du résultat. Chaque biais replie sur l'ensemble s'il ne trouve rien → le
-    // végé reste prioritaire en cas de conflit, et aucun ne peut vider le vivier.
+    // RG-28 / RG-26 / RG-27 — filtres composés, chacun avec repli :
+    //  1. saison (filtre dur, mais repli hors-saison = dégradation gracieuse) ;
+    //  2. végé (par créneau) ; 3. légumes (joint par jour), à l'intérieur.
+    // Le repli évite tout échec et garde la faisabilité inchangée.
     const candidats = biaiserMixLegume(
-      biaiserVege(eligibles, slot.jour, slot.typeRepas, reglages),
+      biaiserVege(
+        biaiserSaison(eligibles, saison, reglages),
+        slot.jour,
+        slot.typeRepas,
+        reglages
+      ),
       slot.jour,
       attributions,
       reglages
@@ -322,13 +359,20 @@ export function remplacerSlot(
   )
   if (eligibles.length === 0) return null
 
-  // RG-26 / RG-27 — mêmes préférences souples que la génération complète. Pour
-  // le mix « légumes » (joint par jour), on regarde le repas FRÈRE déjà présent
-  // ce jour-là : s'il est déjà « légumes », la journée est honorée → pas de
-  // biais ; sinon on biaise le remplaçant vers « légumes » (repli souple).
+  // RG-28 / RG-26 / RG-27 — mêmes filtres que la génération complète. On applique
+  // d'abord le filtre de saison (dur, repli hors-saison = dégradation gracieuse),
+  // la saison étant celle de la semaine du planning. Puis le biais végé. Pour le
+  // mix « légumes » (joint par jour), on regarde le repas FRÈRE déjà présent ce
+  // jour-là : s'il est déjà « légumes », la journée est honorée → pas de biais ;
+  // sinon on biaise le remplaçant vers « légumes » (repli souple).
   const frere =
     typeRepas === "diner" ? jourPlanning.dejeuner : jourPlanning.diner
-  let candidats = biaiserVege(eligibles, jour, typeRepas, reglages)
+  let candidats = biaiserVege(
+    biaiserSaison(eligibles, saisonDeSemaine(planning.semaine), reglages),
+    jour,
+    typeRepas,
+    reglages
+  )
   if (
     reglages.mixAccompagnementJour &&
     frere?.accompagnement !== "legumes"
@@ -456,6 +500,32 @@ export function joursSansLegume(
     if (!aLegume) jours.push(jp.jour)
   }
   return jours
+}
+
+/**
+ * Slots dont la recette n'est PAS de la saison de la semaine alors que la
+ * saisonnalité est active (#23 PR2, RG-28) — c.-à-d. les repas complétés
+ * hors-saison par dégradation gracieuse (vivier de saison insuffisant). Calculé
+ * depuis le planning final : indépendant de l'aléatoire, valable après une
+ * génération complète comme après un remplacement. Saisonnalité inactive →
+ * liste vide. Sert à avertir sans bloquer.
+ */
+export function reposNonSaison(
+  planning: Planning,
+  reglages: ReglagesGeneration
+): Slot[] {
+  if (!saisonnaliteActive(reglages)) return []
+  const saison = saisonDeSemaine(planning.semaine)
+  const slots: Slot[] = []
+  for (const jp of planning.jours) {
+    if (jp.dejeuner && !estDeSaison(jp.dejeuner, saison)) {
+      slots.push({ jour: jp.jour, typeRepas: "dejeuner" })
+    }
+    if (jp.diner && !estDeSaison(jp.diner, saison)) {
+      slots.push({ jour: jp.jour, typeRepas: "diner" })
+    }
+  }
+  return slots
 }
 
 // Nombre de slots par créneau dans une semaine (section 5.5) : 5 jours de

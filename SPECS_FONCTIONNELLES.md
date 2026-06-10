@@ -413,7 +413,7 @@ Réduire à zéro l'effort de planification hebdomadaire des repas, du choix des
 > **When** je filtre par saison  
 > **Then** seules les recettes de cette saison (saison incluse ou toute-l'année) sont listées (RG-28)
 
-**Comportement (volet génération — PR2) :**
+**Comportement (volet génération) :**
 > **Given** la saisonnalité est activée (réglage, ON par défaut)  
 > **When** je génère (ou régénère, ou « ↺ change » un repas) pour une semaine donnée  
 > **Then** seules les recettes de la saison de cette semaine sont proposées ; si le vivier de saison est insuffisant, le planning est complété hors-saison et **je suis averti** (RG-28)
@@ -706,7 +706,7 @@ Historique (conservé pour mémoire) : la génération visait une semaine cible 
 - **Attribut de recette** : `saisons` (liste, RG-01 : plusieurs saisons possibles) ; **absent/vide = disponible toute l'année** (pâtes, viandes… → aucune contrainte, pas de régression). Recette **perso** : saisie au formulaire (cases printemps/été/automne/hiver), **pré-suggérée par heuristique** à la création.
 - **Catalogue global** : auto-tagué par heuristique dans la migration — table **produit → saisons** (~26 produits), saison recette = **intersection** des saisons de ses produits saisonniers (aromates / produits de garde = toute l'année, ne contraignent pas) ; intersection vide (produits incompatibles) ⇒ toute l'année. Imparfaite, « à compléter ».
 - **Affichage** : un badge saison (icônes par saison) sur la fiche, la liste et la card du planning ; filtre par saison sur la page Recettes.
-- **Génération (PR2)** : pilotée par un **interrupteur** sur la page Réglages (« ne proposer que des recettes de saison »), **activé par défaut**. Quand il est actif, la génération complète **et** le remplacement « ↺ changer » ne proposent que des recettes de la saison de la **semaine cible**. **Dégradation gracieuse** : si le vivier de saison ne suffit pas à remplir la semaine, on complète avec des recettes hors-saison (la génération **n'échoue jamais**) et l'utilisateur est **averti** du nombre de repas hors-saison. La faisabilité ne dépend donc pas de la saison.
+- **Génération** : pilotée par un **interrupteur** sur la page Réglages (« ne proposer que des recettes de saison »), **activé par défaut**. Quand il est actif, la génération complète **et** le remplacement « ↺ changer » ne proposent que des recettes de la saison de la **semaine cible**. **Dégradation gracieuse** : si le vivier de saison ne suffit pas à remplir la semaine, on complète avec des recettes hors-saison (la génération **n'échoue jamais**) et l'utilisateur est **averti** du nombre de repas hors-saison. La faisabilité ne dépend donc pas de la saison.
 - **Sélection manuelle non filtrée (RG-03 de #23)** : le sélecteur de recette (US-06) continue de proposer **toutes** les recettes, hors saison comprises — l'utilisateur arbitre.
 
 ### RG-22 — Repas en « restes » (US-12)

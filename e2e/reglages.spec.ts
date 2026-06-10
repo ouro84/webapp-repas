@@ -125,6 +125,29 @@ test("activer et enregistrer « ≥1 légume/jour » le persiste (#49 PR2)", asy
   ).toHaveAttribute("aria-checked", "true");
 });
 
+test("désactiver et enregistrer la saisonnalité la persiste (#23 PR2)", async ({
+  page,
+}) => {
+  await page.goto("/reglages");
+
+  // Switch « recettes de saison » : ON par défaut (≠ végé/mix).
+  const toggle = page.getByRole("switch", {
+    name: "Ne proposer que des recettes de saison",
+  });
+  await expect(toggle).toHaveAttribute("aria-checked", "true");
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-checked", "false");
+
+  await page.getByRole("button", { name: "Enregistrer" }).click();
+  await expect(page.getByText("Réglages enregistrés")).toBeVisible();
+
+  // Persistance : un rechargement complet relit la base.
+  await page.reload();
+  await expect(
+    page.getByRole("switch", { name: "Ne proposer que des recettes de saison" })
+  ).toHaveAttribute("aria-checked", "false");
+});
+
 test("la génération applique le nombre de personnes par défaut (US-15)", async ({
   page,
 }) => {

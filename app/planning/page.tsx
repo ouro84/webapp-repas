@@ -26,6 +26,7 @@ import {
   recettesUtilisees,
   remplacerSlot,
   remplacerSlotManuel,
+  reposNonSaison,
 } from "@/lib/generateur";
 import {
   storePlanning,
@@ -403,10 +404,12 @@ export default function PagePlanning() {
         planning: nouveau,
         vegeNonHonore = 0,
         mixNonHonore = 0,
+        saisonNonHonore = 0,
       } = (await reponse.json()) as {
         planning: Planning;
         vegeNonHonore?: number;
         mixNonHonore?: number;
+        saisonNonHonore?: number;
       };
       // Regénération (US-09) : un planning existait → on fige l'état (planning
       // + coches) avant écrasement pour permettre l'undo (RG-19). Première
@@ -444,6 +447,15 @@ export default function PagePlanning() {
           mixNonHonore === 1
             ? "1 jour n’a pas de repas « légumes » (pas assez de recettes légumes)."
             : `${mixNonHonore} jours n’ont pas de repas « légumes » (pas assez de recettes légumes).`
+        );
+      }
+      // RG-28 — saisonnalité : repas complétés hors-saison faute de recettes de
+      // saison (dégradation gracieuse) : on informe sans bloquer (#23 PR2).
+      if (saisonNonHonore > 0) {
+        toast.warning(
+          saisonNonHonore === 1
+            ? "1 repas est hors saison (pas assez de recettes de saison)."
+            : `${saisonNonHonore} repas sont hors saison (pas assez de recettes de saison).`
         );
       }
     } catch (erreur) {
@@ -497,6 +509,15 @@ export default function PagePlanning() {
     // toujours aucun repas « légumes », on prévient (sans bloquer, #49 PR2).
     if (joursSansLegume(nouveau, reglages).includes(jour)) {
       toast.warning("Ce jour n’a pas de repas « légumes » (pas assez de recettes légumes).");
+    }
+    // RG-28 — saison : si le remplaçant est hors saison (aucune recette de
+    // saison dispo pour ce slot), on prévient sans bloquer (#23 PR2).
+    if (
+      reposNonSaison(nouveau, reglages).some(
+        (s) => s.jour === jour && s.typeRepas === typeRepas
+      )
+    ) {
+      toast.warning("Ce repas est hors saison (pas assez de recettes de saison).");
     }
   }
 

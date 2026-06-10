@@ -17,6 +17,7 @@ import {
   genererPlanning,
   joursSansLegume,
   prefereVegeSlot,
+  reposNonSaison,
   recettesUtilisees,
   remplacerRecetteDansPlanning,
   remplacerSlot,
@@ -25,6 +26,7 @@ import {
 } from "@/lib/generateur";
 import { RECETTES_FIXTURES } from "@/tests/fixtures/recettes";
 import { REGLAGES_DEFAUT } from "@/lib/reglages";
+import { saisonDeSemaine } from "@/lib/semaines";
 import type {
   Jour,
   Planning,
@@ -751,6 +753,84 @@ describe("genererPlanning — mix « ≥1 légume/jour » souple, joint (#49 PR2
   test("préférence inactive (défaut) : aucun jour signalé", () => {
     const planning = genererPlanning(RECETTES);
     expect(joursSansLegume(planning, REGLAGES_DEFAUT)).toHaveLength(0);
+  });
+});
+
+describe("genererPlanning — saisonnalité, filtre dur à dégradation (#23 PR2)", () => {
+  // Semaine d'été (mi-juillet) et sa saison, dérivée par la logique calendaire.
+  const SEMAINE_ETE = "2026-W28";
+  const SAISON_ETE = saisonDeSemaine(SEMAINE_ETE);
+  const SAISON_AUTRE = SAISON_ETE === "ete" ? "hiver" : "ete";
+
+  function synthSaison(
+    temps: TempsPreparation,
+    n: number,
+    prefixe: string,
+    saisons: ("ete" | "automne" | "hiver" | "printemps")[]
+  ): Recette[] {
+    return synth(temps, n, prefixe).map((r) => ({ ...r, saisons }));
+  }
+
+  // Saisonnalité ON (défaut) ; OFF explicite pour le test de non-filtrage.
+  const SAISON_OFF: ReglagesGeneration = { ...REGLAGES_DEFAUT, saisonnalite: false };
+
+  test("ne propose que des recettes de saison quand le vivier suffit", () => {
+    const vivier = [
+      ...synthSaison("rapide", 10, "re", [SAISON_ETE]),
+      ...synthSaison("normal", 4, "ne", [SAISON_ETE]),
+      ...synthSaison("rapide", 5, "rx", [SAISON_AUTRE]), // leurres hors saison
+    ];
+    for (let i = 0; i < 20; i++) {
+      const planning = genererPlanning(vivier, SEMAINE_ETE, REGLAGES_DEFAUT);
+      for (const repas of tousLesRepas(planning)) {
+        expect(repas.saisons).toContain(SAISON_ETE);
+      }
+      expect(reposNonSaison(planning, REGLAGES_DEFAUT)).toHaveLength(0);
+    }
+  });
+
+  test("dégradation gracieuse : complète hors-saison et le signale", () => {
+    // 5 recettes de saison seulement, le reste hors saison ; toutes rapides pour
+    // garantir la faisabilité temporelle. La génération aboutit (14 repas) et
+    // 9 repas sont hors-saison.
+    const vivier = [
+      ...synthSaison("rapide", 5, "re", [SAISON_ETE]),
+      ...synthSaison("rapide", 9, "rx", [SAISON_AUTRE]),
+    ];
+    const planning = genererPlanning(vivier, SEMAINE_ETE, REGLAGES_DEFAUT);
+    expect(tousLesRepas(planning)).toHaveLength(14);
+    expect(reposNonSaison(planning, REGLAGES_DEFAUT)).toHaveLength(9);
+  });
+
+  test("saisonnalité désactivée : aucun filtre ni signalement", () => {
+    const vivier = [
+      ...synthSaison("rapide", 10, "rx", [SAISON_AUTRE]),
+      ...synthSaison("normal", 4, "nx", [SAISON_AUTRE]),
+    ];
+    const planning = genererPlanning(vivier, SEMAINE_ETE, SAISON_OFF);
+    expect(tousLesRepas(planning)).toHaveLength(14);
+    expect(reposNonSaison(planning, SAISON_OFF)).toHaveLength(0);
+  });
+
+  test("recettes sans saison = toute l'année (pas de régression)", () => {
+    // RECETTES (fixtures) n'ont pas de saisons → de saison partout, même avec
+    // la saisonnalité ON par défaut.
+    const planning = genererPlanning(RECETTES, SEMAINE_ETE, REGLAGES_DEFAUT);
+    expect(reposNonSaison(planning, REGLAGES_DEFAUT)).toHaveLength(0);
+  });
+
+  test("remplacerSlot filtre aussi par saison", () => {
+    const vivier = [
+      ...synthSaison("rapide", 20, "re", [SAISON_ETE]),
+      ...synthSaison("rapide", 5, "rx", [SAISON_AUTRE]),
+    ];
+    for (let i = 0; i < 20; i++) {
+      const planning = genererPlanning(vivier, SEMAINE_ETE, REGLAGES_DEFAUT);
+      const resultat = remplacerSlot(planning, "lundi", "diner", vivier, REGLAGES_DEFAUT);
+      expect(resultat).not.toBeNull();
+      const remplacante = resultat!.jours.find((jp) => jp.jour === "lundi")!.diner;
+      expect(remplacante.saisons).toContain(SAISON_ETE);
+    }
   });
 });
 
