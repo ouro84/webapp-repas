@@ -18,6 +18,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { filtrerRecettes } from "@/lib/recherche";
+import { useClavierVirtuel } from "@/lib/clavier";
 import { BadgeTemps } from "@/components/planning/badge-temps";
 import type { Recette } from "@/types";
 
@@ -40,6 +41,20 @@ export function SelecteurRecette({
 }) {
   const refDialog = useRef<HTMLDialogElement>(null);
   const [requete, setRequete] = useState("");
+
+  // Clavier mobile (#98) : sur iOS (où `interactive-widget` n'est pas
+  // implémenté) le clavier recouvre le bas du viewport. On soulève le sheet
+  // au-dessus du clavier et on borne sa hauteur à la zone visible pour que les
+  // résultats restent atteignables. Clavier fermé / desktop / SSR → {0,0},
+  // aucun style inline (on retombe sur le `max-h-[85dvh]` du className).
+  const { hauteurClavier, hauteurVisible } = useClavierVirtuel();
+  const styleClavier =
+    hauteurClavier > 0
+      ? {
+          marginBottom: `${hauteurClavier}px`,
+          maxHeight: `${Math.round(hauteurVisible * 0.92)}px`,
+        }
+      : undefined;
 
   // Liste alphabétique stable (US-06) — l'ordre du JSON n'est pas garanti.
   const triees = useMemo(
@@ -83,6 +98,7 @@ export function SelecteurRecette({
       onClose={onFermer}
       onClick={surClic}
       aria-labelledby="titre-selecteur"
+      style={styleClavier}
       className="fixed mx-auto mb-0 mt-auto flex max-h-[85dvh] w-full flex-col rounded-t-2xl bg-white p-0 text-brand-900 shadow-xl backdrop:bg-brand-900/50 md:my-auto md:max-w-lg md:rounded-2xl"
     >
       <header className="flex items-center justify-between gap-3 border-b border-brand-100 p-4">
