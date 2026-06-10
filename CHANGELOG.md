@@ -7,6 +7,10 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+### Ajouté
+
+- Accompagnement des recettes — flag & affichage (#49, P11, PR1/2) : nouvel attribut **`accompagnement`** ∈ { Féculents, Légumes } (optionnel, absent = non caractérisé ; colonne `recette.accompagnement`). Saisie via un **select** du formulaire, **pré-suggéré par heuristique** sur le nom des ingrédients à la création (priorité au féculent ; cœur pur `lib/accompagnement.ts`, réutilisé par le formulaire). Le **catalogue global** est auto-tagué par la même règle (migration `..._recette_accompagnement.sql`, regex SQL accent-tolérante via `translate`). Affichage : **badge** sur la fiche, la liste des recettes et la card du planning — **Féculents** (épi de blé, ton terracotta `accent`) / **Légumes** (carotte, ton vert `brand`). **Le réglage « au moins un légume par jour » + le biais de génération arrivent en PR2.**
+
 ## [1.1.0] - 2026-06-10
 
 ### Ajouté

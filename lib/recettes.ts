@@ -12,7 +12,7 @@
 
 import { createClient } from "@/lib/supabase/client"
 import { dbRecetteToDomain } from "@/lib/adapters"
-import type { DbRecette, Ingredient, Recette } from "@/types"
+import type { Accompagnement, DbRecette, Ingredient, Recette } from "@/types"
 
 // Données d'un formulaire de recette (création/édition) — sans id (généré par
 // la base) ni user_id (posé à l'enregistrement depuis la session).
@@ -20,6 +20,9 @@ export type SaisieRecette = {
   nom: string
   tempsPreparation: Recette["tempsPreparation"]
   vegetarien: boolean
+  // Accompagnement (#49) : `null` = non caractérisé (l'utilisateur peut laisser
+  // « Aucun »).
+  accompagnement: Accompagnement | null
   ingredients: Ingredient[]
 }
 
@@ -30,6 +33,7 @@ const SELECT_RECETTE = `
   nom,
   temps_preparation,
   vegetarien,
+  accompagnement,
   recette_ingredient (
     quantite,
     unite,
@@ -168,6 +172,7 @@ export async function creerRecette(saisie: SaisieRecette): Promise<Recette> {
       nom: saisie.nom,
       temps_preparation: saisie.tempsPreparation,
       vegetarien: saisie.vegetarien,
+      accompagnement: saisie.accompagnement,
       user_id: user.id,
     })
     .select("id")
@@ -179,13 +184,21 @@ export async function creerRecette(saisie: SaisieRecette): Promise<Recette> {
 
   await lierIngredients(client, recette.id, saisie.ingredients)
 
-  return {
-    id: recette.id,
+  return saisieVersRecette(recette.id, saisie)
+}
+
+// Reconstruit une Recette domaine depuis une saisie enregistrée, en omettant
+// l'accompagnement quand il est `null` (cohérent avec l'optionnalité du champ).
+function saisieVersRecette(id: string, saisie: SaisieRecette): Recette {
+  const recette: Recette = {
+    id,
     nom: saisie.nom,
     tempsPreparation: saisie.tempsPreparation,
     vegetarien: saisie.vegetarien,
     ingredients: saisie.ingredients,
   }
+  if (saisie.accompagnement) recette.accompagnement = saisie.accompagnement
+  return recette
 }
 
 /**
@@ -205,6 +218,7 @@ export async function modifierRecette(
       nom: saisie.nom,
       temps_preparation: saisie.tempsPreparation,
       vegetarien: saisie.vegetarien,
+      accompagnement: saisie.accompagnement,
     })
     .eq("id", id)
 
@@ -222,13 +236,7 @@ export async function modifierRecette(
   }
   await lierIngredients(client, id, saisie.ingredients)
 
-  return {
-    id,
-    nom: saisie.nom,
-    tempsPreparation: saisie.tempsPreparation,
-    vegetarien: saisie.vegetarien,
-    ingredients: saisie.ingredients,
-  }
+  return saisieVersRecette(id, saisie)
 }
 
 /**

@@ -376,6 +376,26 @@ Réduire à zéro l'effort de planification hebdomadaire des repas, du choix des
 
 ---
 
+### US-17 — Accompagnement & au moins un légume par jour (#49, P11)
+
+> **En tant qu'** utilisateur, je veux identifier l'accompagnement de mes recettes (féculents / légumes) et garantir au moins un repas « légumes » par jour afin d'avoir une alimentation équilibrée.
+
+**Comportement (volet recette — PR1) :**
+> **Given** je crée ou édite une recette  
+> **When** je choisis son accompagnement (« Féculents », « Légumes » ou « Aucun / non précisé »)  
+> **Then** le choix est enregistré et affiché (fiche, liste, card du planning) (RG-27)
+
+> **Given** je crée une recette  
+> **When** le formulaire s'ouvre  
+> **Then** l'accompagnement est **pré-suggéré par heuristique** (nom des ingrédients), suggestion que je peux corriger ou effacer (RG-27)
+
+**Comportement (volet génération — PR2) :**
+> **Given** j'ai activé « au moins un repas légumes par jour » (page Réglages)  
+> **When** je génère un planning (ou remplace un repas via « ↺ changer »)  
+> **Then** chaque jour reçoit si possible au moins un repas « légumes » ; si le vivier est insuffisant, la génération aboutit quand même et **m'avertit** (RG-27)
+
+---
+
 ## 5. Modèle de données
 
 > Les structures ci-dessous sont exprimées en TypeScript à titre documentaire. Le fichier de données réel est `/data/recettes.json` — format JSON lisible et éditable sans connaissance technique.
@@ -389,7 +409,10 @@ type Recette = {
   tempsPreparation: "rapide"      // < 20 min
                   | "normal"      // 20–45 min
                   | "long"        // > 45 min
-  ingredients: Ingredient[]
+  vegetarien?: boolean            // #86 — flag végétarien (absent = false)
+  accompagnement?: "feculents"    // #49 — accompagnement dominant ; optionnel :
+                  | "legumes"     // absent = non caractérisé (plat unique,
+  ingredients: Ingredient[]       // viande seule…). Cf. RG-27.
 }
 ```
 
@@ -638,6 +661,13 @@ Historique (conservé pour mémoire) : la génération visait une semaine cible 
 - **Affichage** : un badge « Végétarien » (feuille) signale les recettes végé sur la fiche, la liste des recettes et la card du planning.
 - **Filtre** : la liste des recettes propose un filtre « végétariennes seulement ».
 - **Préférence de génération** : l'utilisateur peut **privilégier le végétarien** par créneau (page Réglages, à côté des plafonds — RG-25, 4 interrupteurs). C'est une préférence **souple** : la génération complète **et** le remplacement unitaire « ↺ changer » biaisent le tirage vers les recettes végé sur ces créneaux, sans jamais bloquer. Le biais reste dans le même palier de temps → la faisabilité (et donc l'analyse de vivier RG-25) est inchangée. Si le vivier végé est insuffisant, le repas est tout de même généré et l'utilisateur est **averti** du nombre de repas non honorés.
+
+### RG-27 — Accompagnement & au moins un légume par jour (US-17, #49)
+
+- **Attribut de recette** : chaque recette porte un accompagnement optionnel `accompagnement` ∈ { `feculents`, `legumes` } (absent = **non caractérisé** : plat unique, viande seule, ambigu…). Pour une recette **perso**, il est piloté par le formulaire (select « Féculents / Légumes / Aucun ») ; à la création, il est **pré-suggéré par heuristique** sur le **nom des ingrédients** (priorité au féculent : un plat « riz + tomates » est tagué féculent), suggestion que l'utilisateur peut corriger.
+- **Catalogue global** : les recettes globales (`user_id IS NULL`, non éditables) sont **auto-taguées** par la même heuristique dans la migration (imparfaite et « à compléter » — faute de catégorie « féculents » et parce que `legumes-fruits` mêle légumes, aromates et fruits — mais bon défaut).
+- **Affichage** : un badge signale l'accompagnement sur la fiche, la liste des recettes et la card du planning — **Féculents** (épi de blé, ton terracotta) et **Légumes** (carotte, ton vert), aux couleurs du design system.
+- **Préférence de génération (PR2)** : l'utilisateur pourra activer « au moins un repas légumes par jour » (page Réglages, RG-25). Préférence **souple** : la génération biaise pour qu'au moins un des deux repas de chaque jour soit « légumes », sans jamais bloquer ; le biais reste dans le même palier de temps → la faisabilité (analyse de vivier RG-25) est inchangée. Si le vivier ne le permet pas, le planning aboutit quand même et l'utilisateur est **averti** du nombre de jours non honorés.
 
 ### RG-22 — Repas en « restes » (US-12)
 

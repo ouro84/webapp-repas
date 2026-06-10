@@ -58,6 +58,7 @@ export async function POST(request: Request) {
       nom,
       temps_preparation,
       vegetarien,
+      accompagnement,
       recette_ingredient (
         quantite,
         unite,
