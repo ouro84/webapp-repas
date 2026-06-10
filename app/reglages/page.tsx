@@ -227,6 +227,19 @@ export default function PageReglages() {
     ).length;
   }
 
+  // Mix accompagnement (#49 PR2) — préférence unique, toute la semaine.
+  const mixActif = form?.mixAccompagnementJour ?? false;
+  function definirMix(valeur: boolean): void {
+    setForm((f) => (f ? { ...f, mixAccompagnementJour: valeur } : f));
+  }
+
+  // Aperçu (Bonus C) — nombre de recettes « légumes » du vivier (tous temps :
+  // un jour peut placer un légume sur n'importe quel créneau).
+  const nbLegumes =
+    recettes === null
+      ? null
+      : recettes.filter((r) => r.accompagnement === "legumes").length;
+
   async function enregistrer(): Promise<void> {
     if (form === null || !modifie || !faisable) return;
     setEnregistrement(true);
@@ -355,6 +368,40 @@ export default function PageReglages() {
               </div>
             );
           })}
+        </div>
+      </section>
+
+      {/* Section — au moins un repas légumes par jour (#49 PR2, RG-27) */}
+      <section className="mb-8" aria-labelledby="section-mix">
+        <h2 id="section-mix" className="mb-1 text-lg font-semibold text-brand-900">
+          Équilibre des accompagnements
+        </h2>
+        <p className="mb-4 text-sm text-brand-700/85">
+          Préférence souple : la génération s’arrange pour qu’au moins un des
+          deux repas de chaque journée soit à base de légumes. Si le vivier de
+          recettes « légumes » est insuffisant, le planning est généré quand
+          même et tu es prévenu.
+        </p>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col">
+            <span
+              id="mix-legume"
+              className="text-sm font-medium text-brand-900"
+            >
+              Au moins un repas légumes par jour
+            </span>
+            {mixActif && nbLegumes !== null && (
+              <span className="text-xs text-brand-700/70">
+                {nbLegumes} recette{nbLegumes > 1 ? "s" : ""} « légumes » dans ton
+                vivier
+              </span>
+            )}
+          </div>
+          <Bascule
+            libelleId="mix-legume"
+            actif={mixActif}
+            onChange={definirMix}
+          />
         </div>
       </section>
 

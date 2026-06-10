@@ -96,6 +96,42 @@ function biaiserVege(
   return vege.length > 0 ? vege : candidats
 }
 
+/** Vrai si un repas « légumes » a déjà été attribué à ce jour (l'un des 2 slots). */
+function jourADejaLegume(jour: Jour, attributions: Map<string, Recette>): boolean {
+  const dej = attributions.get(cleSlot(jour, "dejeuner"))
+  const din = attributions.get(cleSlot(jour, "diner"))
+  return dej?.accompagnement === "legumes" || din?.accompagnement === "legumes"
+}
+
+/**
+ * Biais « au moins un repas légumes par jour » (#49 PR2, RG-27). Préférence
+ * SOUPLE et JOINTE, en deux temps selon l'état de la journée :
+ *  - journée PAS encore pourvue d'un légume → on restreint aux candidats
+ *    « légumes » s'il en reste (sinon repli sur tous) → on sécurise le jour ;
+ *  - journée DÉJÀ pourvue → **anti-biais** : on préfère les candidats NON
+ *    « légumes » (sinon repli sur tous) pour **préserver le vivier de légumes
+ *    aux jours pas encore sécurisés** — sans cela, le 2ᵉ slot d'un jour déjà
+ *    honoré pourrait consommer le dernier légume dont un autre jour a besoin.
+ *
+ * Chaque branche replie toujours sur l'ensemble des candidats et reste dans le
+ * même palier de temps → la faisabilité (Hall, analyserVivier) est inchangée :
+ * la génération n'échoue jamais à cause de cette préférence.
+ */
+function biaiserMixLegume(
+  candidats: Recette[],
+  jour: Jour,
+  attributions: Map<string, Recette>,
+  reglages: ReglagesGeneration
+): Recette[] {
+  if (!reglages.mixAccompagnementJour) return candidats
+  if (jourADejaLegume(jour, attributions)) {
+    const nonLegumes = candidats.filter((r) => r.accompagnement !== "legumes")
+    return nonLegumes.length > 0 ? nonLegumes : candidats
+  }
+  const legumes = candidats.filter((r) => r.accompagnement === "legumes")
+  return legumes.length > 0 ? legumes : candidats
+}
+
 function tempsEligibles(
   jour: Jour,
   typeRepas: TypeRepas,
@@ -194,11 +230,17 @@ export function genererPlanning(
           `(slot ${slot.jour} ${slot.typeRepas}).`
       )
     }
-    // RG-26 — préférence végé souple : on tire parmi les éligibles végé si le
-    // créneau le demande et qu'il en reste, sinon parmi tous les éligibles.
-    const choisie = choisirAleatoire(
-      biaiserVege(eligibles, slot.jour, slot.typeRepas, reglages)
+    // RG-26 / RG-27 — préférences souples composées : on biaise d'abord vers le
+    // végé (par créneau), puis vers « légumes » (joint par jour) à l'intérieur
+    // du résultat. Chaque biais replie sur l'ensemble s'il ne trouve rien → le
+    // végé reste prioritaire en cas de conflit, et aucun ne peut vider le vivier.
+    const candidats = biaiserMixLegume(
+      biaiserVege(eligibles, slot.jour, slot.typeRepas, reglages),
+      slot.jour,
+      attributions,
+      reglages
     )
+    const choisie = choisirAleatoire(candidats)
     utilisees.add(choisie.id)
     attributions.set(cleSlot(slot.jour, slot.typeRepas), choisie)
   }
@@ -280,10 +322,21 @@ export function remplacerSlot(
   )
   if (eligibles.length === 0) return null
 
-  // RG-26 — même préférence végé souple que la génération complète (Q4).
-  const choisie = choisirAleatoire(
-    biaiserVege(eligibles, jour, typeRepas, reglages)
-  )
+  // RG-26 / RG-27 — mêmes préférences souples que la génération complète. Pour
+  // le mix « légumes » (joint par jour), on regarde le repas FRÈRE déjà présent
+  // ce jour-là : s'il est déjà « légumes », la journée est honorée → pas de
+  // biais ; sinon on biaise le remplaçant vers « légumes » (repli souple).
+  const frere =
+    typeRepas === "diner" ? jourPlanning.dejeuner : jourPlanning.diner
+  let candidats = biaiserVege(eligibles, jour, typeRepas, reglages)
+  if (
+    reglages.mixAccompagnementJour &&
+    frere?.accompagnement !== "legumes"
+  ) {
+    const legumes = candidats.filter((r) => r.accompagnement === "legumes")
+    if (legumes.length > 0) candidats = legumes
+  }
+  const choisie = choisirAleatoire(candidats)
 
   // Reconstruction immuable : seul le jour ciblé est recréé. Remplacer la
   // recette efface un éventuel marquage « restes » sur ce slot (RG-22 : on
@@ -380,6 +433,29 @@ export function slotsVegeNonHonores(
     }
   }
   return slots
+}
+
+/**
+ * Jours dont aucun des deux repas n'est « légumes » alors que la préférence
+ * « au moins un légume par jour » est active (#49 PR2, RG-27) — c.-à-d. les
+ * jours où la préférence souple n'a pas pu être honorée (vivier « légumes »
+ * insuffisant). Calculé depuis le planning final : indépendant de l'aléatoire,
+ * valable après une génération complète comme après un remplacement unitaire.
+ * Préférence inactive → liste vide. Sert à avertir sans bloquer.
+ */
+export function joursSansLegume(
+  planning: Planning,
+  reglages: ReglagesGeneration
+): Jour[] {
+  if (!reglages.mixAccompagnementJour) return []
+  const jours: Jour[] = []
+  for (const jp of planning.jours) {
+    const aLegume =
+      jp.dejeuner?.accompagnement === "legumes" ||
+      jp.diner?.accompagnement === "legumes"
+    if (!aLegume) jours.push(jp.jour)
+  }
+  return jours
 }
 
 // Nombre de slots par créneau dans une semaine (section 5.5) : 5 jours de

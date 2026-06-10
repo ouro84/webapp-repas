@@ -102,6 +102,29 @@ test("activer et enregistrer une préférence végé la persiste (#86 PR2)", asy
   ).toHaveAttribute("aria-checked", "true");
 });
 
+test("activer et enregistrer « ≥1 légume/jour » le persiste (#49 PR2)", async ({
+  page,
+}) => {
+  await page.goto("/reglages");
+
+  // Switch unique de la section mix accompagnement.
+  const toggle = page.getByRole("switch", {
+    name: "Au moins un repas légumes par jour",
+  });
+  await expect(toggle).toHaveAttribute("aria-checked", "false");
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-checked", "true");
+
+  await page.getByRole("button", { name: "Enregistrer" }).click();
+  await expect(page.getByText("Réglages enregistrés")).toBeVisible();
+
+  // Persistance : un rechargement complet relit la base.
+  await page.reload();
+  await expect(
+    page.getByRole("switch", { name: "Au moins un repas légumes par jour" })
+  ).toHaveAttribute("aria-checked", "true");
+});
+
 test("la génération applique le nombre de personnes par défaut (US-15)", async ({
   page,
 }) => {

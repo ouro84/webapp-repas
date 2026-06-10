@@ -25,7 +25,8 @@ const SELECT_REGLAGES = `
   vege_dejeuner_semaine,
   vege_diner_semaine,
   vege_dejeuner_weekend,
-  vege_diner_weekend
+  vege_diner_weekend,
+  mix_accompagnement_jour
 ` as const
 
 /**
