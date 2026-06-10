@@ -6,7 +6,7 @@ export default function Accueil() {
     <main id="contenu" className="flex flex-1 flex-col items-center justify-center gap-10 p-8">
       <div className="flex flex-col items-center text-center">
         <Logo className="mb-5 size-24 text-brand-600" />
-        <h1 className="text-3xl font-bold text-brand-900">
+        <h1 className="font-display text-3xl font-semibold text-brand-900">
           On mange quoi&nbsp;?
         </h1>
         <p className="mt-3 max-w-sm text-brand-700/85">

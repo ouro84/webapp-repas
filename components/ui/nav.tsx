@@ -36,7 +36,10 @@ export function NavBar() {
             className="flex items-center gap-2 font-semibold text-brand-700 transition-colors hover:text-brand-600"
           >
             <Logo className="size-6" />
-            <span className="hidden sm:inline">On mange quoi&nbsp;?</span>
+            {/* Wordmark en Fredoka (#66, P14) — signature de marque */}
+            <span className="hidden font-display text-[1.05rem] sm:inline">
+              On mange quoi&nbsp;?
+            </span>
           </Link>
 
           {/* Liens de navigation */}

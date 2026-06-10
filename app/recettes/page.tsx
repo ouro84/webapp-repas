@@ -209,7 +209,7 @@ function ContenuRecettes() {
   return (
     <main id="contenu" className="mx-auto w-full max-w-2xl flex-1 p-4 md:p-8">
       <header className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center">
-        <h1 className="flex-1 text-2xl font-bold text-brand-900">Mes recettes</h1>
+        <h1 className="flex-1 font-display text-2xl font-semibold text-brand-900">Mes recettes</h1>
         <button
           type="button"
           onClick={() => setVue({ mode: "creation" })}

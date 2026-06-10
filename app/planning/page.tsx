@@ -625,7 +625,7 @@ export default function PagePlanning() {
     return (
       <main id="contenu" className="flex flex-1 flex-col items-center justify-center gap-8 p-8">
         <div className="text-center">
-          <h1 className="text-2xl font-bold text-brand-900">
+          <h1 className="font-display text-2xl font-semibold text-brand-900">
             Mon planning de la semaine
           </h1>
           <p className="mt-2 text-brand-700/85">
@@ -668,7 +668,7 @@ export default function PagePlanning() {
       */}
       <header className="mb-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
         <div className="min-w-0 flex-1">
-          <h1 className="text-2xl font-bold text-brand-900">
+          <h1 className="font-display text-2xl font-semibold text-brand-900">
             Mon planning de la semaine
           </h1>
           {/* La semaine s'affiche dans le navigateur ci-dessous (#5). */}

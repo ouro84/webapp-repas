@@ -34,8 +34,13 @@
   /* ---- Canvas — fond crème ---- */
   --color-canvas: #fafaf5;
 
-  /* ---- Typographie ---- */
-  --font-sans: var(--font-geist-sans);
+  /* ---- Typographie (#66, P14) ----
+     Pairing rond et chaleureux. Nunito porte le corps (--font-sans, appliqué
+     par `body`) ; Fredoka habille la marque + les titres de page via la classe
+     utilitaire `font-display` (générée par ce token). Geist_Mono est conservé
+     pour le digest d'erreur (app/error.tsx). */
+  --font-sans: var(--font-nunito);
+  --font-display: var(--font-fredoka);
   --font-mono: var(--font-geist-mono);
 }
 

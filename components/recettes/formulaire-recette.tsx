@@ -223,7 +223,7 @@ export function FormulaireRecette({
 
   return (
     <form onSubmit={soumettre} className="flex flex-col gap-5">
-      <h1 className="text-2xl font-bold text-brand-900">{titre}</h1>
+      <h1 className="font-display text-2xl font-semibold text-brand-900">{titre}</h1>
 
       <div className="flex flex-col gap-1">
         <label htmlFor="nom-recette" className="text-sm font-medium text-brand-900">
