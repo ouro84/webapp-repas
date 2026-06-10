@@ -12,7 +12,13 @@
 
 import { createClient } from "@/lib/supabase/client"
 import { dbRecetteToDomain } from "@/lib/adapters"
-import type { Accompagnement, DbRecette, Ingredient, Recette } from "@/types"
+import type {
+  Accompagnement,
+  DbRecette,
+  Ingredient,
+  Recette,
+  Saison,
+} from "@/types"
 
 // Données d'un formulaire de recette (création/édition) — sans id (généré par
 // la base) ni user_id (posé à l'enregistrement depuis la session).
@@ -23,6 +29,8 @@ export type SaisieRecette = {
   // Accompagnement (#49) : `null` = non caractérisé (l'utilisateur peut laisser
   // « Aucun »).
   accompagnement: Accompagnement | null
+  // Saisons (#23) : liste (éventuellement vide = toute l'année).
+  saisons: Saison[]
   ingredients: Ingredient[]
 }
 
@@ -34,6 +42,7 @@ const SELECT_RECETTE = `
   temps_preparation,
   vegetarien,
   accompagnement,
+  saisons,
   recette_ingredient (
     quantite,
     unite,
@@ -173,6 +182,7 @@ export async function creerRecette(saisie: SaisieRecette): Promise<Recette> {
       temps_preparation: saisie.tempsPreparation,
       vegetarien: saisie.vegetarien,
       accompagnement: saisie.accompagnement,
+      saisons: saisie.saisons.length > 0 ? saisie.saisons : null,
       user_id: user.id,
     })
     .select("id")
@@ -198,6 +208,7 @@ function saisieVersRecette(id: string, saisie: SaisieRecette): Recette {
     ingredients: saisie.ingredients,
   }
   if (saisie.accompagnement) recette.accompagnement = saisie.accompagnement
+  if (saisie.saisons.length > 0) recette.saisons = saisie.saisons
   return recette
 }
 
@@ -219,6 +230,7 @@ export async function modifierRecette(
       temps_preparation: saisie.tempsPreparation,
       vegetarien: saisie.vegetarien,
       accompagnement: saisie.accompagnement,
+      saisons: saisie.saisons.length > 0 ? saisie.saisons : null,
     })
     .eq("id", id)
 

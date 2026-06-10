@@ -11,11 +11,13 @@ import type {
   Accompagnement,
   CategorieIngredient,
   Ingredient,
+  Saison,
   TempsPreparation,
   Unite,
 } from "@/types";
 import type { SaisieRecette } from "@/lib/recettes";
 import { suggererAccompagnement } from "@/lib/accompagnement";
+import { LIBELLE_SAISON, SAISONS, suggererSaisons } from "@/lib/saisons";
 
 // Options des selects (côté saisie : toutes les valeurs du domaine).
 const TEMPS: { valeur: TempsPreparation; libelle: string }[] = [
@@ -102,6 +104,7 @@ export function FormulaireRecette({
     tempsPreparation: TempsPreparation;
     vegetarien?: boolean;
     accompagnement?: Accompagnement;
+    saisons?: Saison[];
     ingredients: Ingredient[];
   };
   titre: string;
@@ -136,6 +139,24 @@ export function FormulaireRecette({
 
   const suggestionAccomp = suggererAccompagnement(lignes) ?? "";
   const accompEffectif = accompTouche ? accompagnement : suggestionAccomp;
+
+  // Saisons (#23). Même mécanique de pré-suggestion : tant que l'utilisateur n'y
+  // a pas touché (création), on suit la suggestion dérivée des ingrédients
+  // (intersection des saisons des produits) ; à l'édition, on respecte la valeur
+  // figée. Vide = toute l'année.
+  const [saisons, setSaisons] = useState<Saison[]>(valeurInitiale?.saisons ?? []);
+  const [saisonsTouche, setSaisonsTouche] = useState(valeurInitiale !== undefined);
+  const suggestionSaisons = suggererSaisons(lignes);
+  const saisonsEffectif = saisonsTouche ? saisons : suggestionSaisons;
+
+  function basculerSaison(s: Saison): void {
+    setSaisonsTouche(true);
+    setSaisons(
+      saisonsEffectif.includes(s)
+        ? saisonsEffectif.filter((x) => x !== s)
+        : [...saisonsEffectif, s]
+    );
+  }
 
   function majLigne(index: number, champ: Partial<LigneSaisie>): void {
     setLignes((courantes) =>
@@ -176,6 +197,7 @@ export function FormulaireRecette({
       tempsPreparation: temps,
       vegetarien: vegeEffectif,
       accompagnement: accompEffectif === "" ? null : accompEffectif,
+      saisons: saisonsEffectif,
       ingredients,
     };
   }
@@ -270,6 +292,34 @@ export function FormulaireRecette({
           ))}
         </select>
       </div>
+
+      <fieldset className="flex flex-col gap-2">
+        <legend className="text-sm font-medium text-brand-900">Saisons</legend>
+        <p className="text-xs text-brand-700/85">
+          Saisons où la recette est de saison. Laisser vide = toute l’année.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {SAISONS.map((s) => {
+            const actif = saisonsEffectif.includes(s);
+            return (
+              <button
+                key={s}
+                type="button"
+                role="checkbox"
+                aria-checked={actif}
+                onClick={() => basculerSaison(s)}
+                className={`rounded-full border px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 ${
+                  actif
+                    ? "border-brand-600 bg-brand-600 text-white"
+                    : "border-brand-200 text-brand-700 hover:bg-brand-50"
+                }`}
+              >
+                {LIBELLE_SAISON[s]}
+              </button>
+            );
+          })}
+        </div>
+      </fieldset>
 
       <fieldset className="flex flex-col gap-3">
         <legend className="mb-1 text-sm font-medium text-brand-900">

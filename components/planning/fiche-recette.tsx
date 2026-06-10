@@ -19,6 +19,7 @@ import Link from "next/link";
 import { BadgeTemps } from "@/components/planning/badge-temps";
 import { BadgeVegetarien } from "@/components/ui/badge-vegetarien";
 import { BadgeAccompagnement } from "@/components/ui/badge-accompagnement";
+import { BadgeSaison } from "@/components/ui/badge-saison";
 import { arrondirQuantite, facteurEchelle } from "@/lib/personnes";
 import { accorderNom } from "@/lib/pluriels";
 import { formaterQuantite } from "@/lib/unites";
@@ -83,6 +84,9 @@ export function FicheRecette({
             {recette.vegetarien && <BadgeVegetarien />}
             {recette.accompagnement && (
               <BadgeAccompagnement accompagnement={recette.accompagnement} />
+            )}
+            {recette.saisons && recette.saisons.length > 0 && (
+              <BadgeSaison saisons={recette.saisons} />
             )}
             <span className="text-xs text-brand-700/85">
               pour {personnes} personne{personnes > 1 ? "s" : ""}

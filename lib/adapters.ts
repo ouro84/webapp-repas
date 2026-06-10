@@ -50,6 +50,11 @@ export function dbRecetteToDomain(dbRecette: DbRecette): Recette {
   // Accompagnement (#49) : `null` en base = non caractérisé → champ absent côté
   // domaine (cohérent avec l'optionnalité de Recette.accompagnement).
   if (dbRecette.accompagnement) recette.accompagnement = dbRecette.accompagnement
+  // Saisons (#23) : `null`/vide en base = toute l'année → champ absent côté
+  // domaine (cohérent avec l'optionnalité de Recette.saisons).
+  if (dbRecette.saisons && dbRecette.saisons.length > 0) {
+    recette.saisons = dbRecette.saisons
+  }
   return recette
 }
 

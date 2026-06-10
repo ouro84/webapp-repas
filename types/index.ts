@@ -50,6 +50,11 @@ export type TempsPreparation = "rapide" | "normal" | "long";
 // caractérisé.
 export type Accompagnement = "feculents" | "legumes";
 
+// Saison d'une recette (#23, P12). Mapping mois → saison défini par RG-02
+// (cf. lib/saisons.ts). Une recette peut appartenir à plusieurs saisons
+// (RG-01) ; absente/vide = disponible toute l'année (pâtes, viandes…).
+export type Saison = "ete" | "automne" | "hiver" | "printemps";
+
 export type Jour =
   | "lundi" | "mardi" | "mercredi" | "jeudi"
   | "vendredi" | "samedi" | "dimanche";
@@ -82,6 +87,9 @@ export type Recette = {
   // (ni féculent ni légume identifié). Cf. lib/accompagnement.ts pour la
   // suggestion par heuristique.
   accompagnement?: Accompagnement;
+  // Saisons de la recette (#23, P12). Optionnel : absent ou vide = disponible
+  // toute l'année (aucune contrainte saisonnière). Cf. lib/saisons.ts.
+  saisons?: Saison[];
 };
 
 export type JourPlanning = {
@@ -203,6 +211,8 @@ export type DbRecette = {
   // Accompagnement (#49, P11) : `null` en base = non caractérisé (mappé vers
   // `undefined` côté domaine).
   accompagnement: Accompagnement | null;
+  // Saisons (#23, P12) : tableau Postgres text[] ; `null` ou `[]` = toute saison.
+  saisons: Saison[] | null;
   created_at: string;
   recette_ingredient: DbRecetteIngredient[]; // relation imbriquée
 };

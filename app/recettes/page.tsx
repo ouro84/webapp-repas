@@ -29,9 +29,11 @@ import { storePlanning, sauvegarderRemplacementSlot } from "@/lib/stockage";
 import { BadgeTemps } from "@/components/planning/badge-temps";
 import { BadgeVegetarien } from "@/components/ui/badge-vegetarien";
 import { BadgeAccompagnement } from "@/components/ui/badge-accompagnement";
+import { BadgeSaison } from "@/components/ui/badge-saison";
+import { estDeSaison, LIBELLE_SAISON, SAISONS } from "@/lib/saisons";
 import { FormulaireRecette } from "@/components/recettes/formulaire-recette";
 import { ConfirmationSuppression } from "@/components/recettes/confirmation-suppression";
-import type { Planning, Recette } from "@/types";
+import type { Planning, Recette, Saison } from "@/types";
 
 type Vue =
   | { mode: "liste" }
@@ -73,6 +75,9 @@ function ContenuRecettes() {
   const [requete, setRequete] = useState("");
   // Filtre « végétariennes seulement » (#86, objectif : filtrer les repas végés).
   const [vegeSeulement, setVegeSeulement] = useState(false);
+  // Filtre saison (#23) : "toutes" = pas de filtre ; sinon recettes de saison
+  // pour la saison choisie (les recettes toute-saison restent affichées).
+  const [saisonFiltre, setSaisonFiltre] = useState<Saison | "toutes">("toutes");
   // Recette en attente de confirmation de suppression (RG-01), ou null.
   const [aSupprimer, setASupprimer] = useState<RecetteGeree | null>(null);
   const [suppressionEnCours, setSuppressionEnCours] = useState(false);
@@ -122,8 +127,11 @@ function ContenuRecettes() {
     return recettes
       .filter((r) => ids.has(r.recette.id))
       .filter((r) => !vegeSeulement || r.recette.vegetarien === true)
+      .filter(
+        (r) => saisonFiltre === "toutes" || estDeSaison(r.recette, saisonFiltre)
+      )
       .sort((a, b) => a.recette.nom.localeCompare(b.recette.nom, "fr"));
-  }, [recettes, requete, vegeSeulement]);
+  }, [recettes, requete, vegeSeulement, saisonFiltre]);
 
   async function enregistrerCreation(saisie: SaisieRecette): Promise<void> {
     await creerRecette(saisie);
@@ -164,6 +172,7 @@ function ContenuRecettes() {
       tempsPreparation: source.tempsPreparation,
       vegetarien: source.vegetarien ?? false,
       accompagnement: source.accompagnement,
+      saisons: source.saisons,
       ingredients: source.ingredients,
     };
   }
@@ -249,16 +258,35 @@ function ContenuRecettes() {
             className="mb-3 w-full rounded-full border border-brand-200 bg-white px-4 py-2.5 text-sm text-brand-900 placeholder:text-brand-700/50 focus:outline-2 focus:outline-offset-1 focus:outline-brand-600"
           />
 
-          {/* Filtre végétariennes (#86) */}
-          <label className="mb-4 flex w-fit items-center gap-2 text-sm text-brand-700">
-            <input
-              type="checkbox"
-              checked={vegeSeulement}
-              onChange={(e) => setVegeSeulement(e.target.checked)}
-              className="size-4 cursor-pointer accent-brand-600"
-            />
-            Végétariennes seulement
-          </label>
+          {/* Filtres (#86 végé, #23 saison) */}
+          <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2">
+            <label className="flex w-fit items-center gap-2 text-sm text-brand-700">
+              <input
+                type="checkbox"
+                checked={vegeSeulement}
+                onChange={(e) => setVegeSeulement(e.target.checked)}
+                className="size-4 cursor-pointer accent-brand-600"
+              />
+              Végétariennes seulement
+            </label>
+            <label className="flex w-fit items-center gap-2 text-sm text-brand-700">
+              De saison&nbsp;:
+              <select
+                value={saisonFiltre}
+                onChange={(e) =>
+                  setSaisonFiltre(e.target.value as Saison | "toutes")
+                }
+                className="cursor-pointer rounded-full border border-brand-200 bg-white px-3 py-1.5 text-sm text-brand-900 focus:outline-2 focus:outline-offset-1 focus:outline-brand-600"
+              >
+                <option value="toutes">Toutes saisons</option>
+                {SAISONS.map((s) => (
+                  <option key={s} value={s}>
+                    {LIBELLE_SAISON[s]}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
 
           {visibles.length === 0 ? (
             <p className="py-8 text-center text-sm text-brand-700/85">
@@ -280,6 +308,9 @@ function ContenuRecettes() {
                   {recette.vegetarien && <BadgeVegetarien />}
                   {recette.accompagnement && (
                     <BadgeAccompagnement accompagnement={recette.accompagnement} />
+                  )}
+                  {recette.saisons && recette.saisons.length > 0 && (
+                    <BadgeSaison saisons={recette.saisons} />
                   )}
                   {!editable && (
                     <span className="rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700/85">

@@ -7,6 +7,7 @@ import {
   decalageEntre,
   formaterSemaine,
   libelleRelatif,
+  saisonDeSemaine,
   semaineDecalee,
   semaineISO,
   semaineParDefaut,
@@ -91,6 +92,19 @@ describe("semaineDecalee (#5)", () => {
     // 2026 compte 53 semaines ISO → W53 + 1 = première semaine 2027.
     expect(semaineDecalee("2026-W53", 1)).toBe("2027-W01");
     expect(semaineDecalee("2027-W01", -1)).toBe("2026-W53");
+  });
+});
+
+describe("saisonDeSemaine (#23, RG-02)", () => {
+  it("dérive la saison du jeudi de la semaine", () => {
+    // 2026-W23 = semaine du lundi 1er juin → jeudi 4 juin → été.
+    expect(saisonDeSemaine("2026-W23")).toBe("ete");
+    // Semaine de fin décembre → hiver.
+    expect(saisonDeSemaine(semaineISO(new Date(2026, 11, 15)))).toBe("hiver");
+    // Mi-octobre → automne.
+    expect(saisonDeSemaine(semaineISO(new Date(2026, 9, 15)))).toBe("automne");
+    // Mi-avril → printemps.
+    expect(saisonDeSemaine(semaineISO(new Date(2026, 3, 15)))).toBe("printemps");
   });
 });
 

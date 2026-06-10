@@ -9,11 +9,13 @@
 import { describe, test, expect } from "vitest";
 import { genererPlanning } from "@/lib/generateur";
 import { suggererAccompagnement } from "@/lib/accompagnement";
+import { estDeSaison, SAISONS, suggererSaisons } from "@/lib/saisons";
 import recettesJson from "@/data/recettes.json";
 import type {
   Accompagnement,
   CategorieIngredient,
   Recette,
+  Saison,
   TempsPreparation,
   Unite,
 } from "@/types";
@@ -91,5 +93,29 @@ describe("data/recettes.json — intégrité du dataset", () => {
     }
     // Au moins 70 % des recettes sont caractérisées (féculent ou légume).
     expect(caracterisees).toBeGreaterThanOrEqual(Math.ceil(RECETTES.length * 0.7));
+  });
+
+  // #23 — l'heuristique de saison (qui auto-tague le catalogue global via la
+  // migration) doit produire des saisons valides, et — c'est le point critique
+  // pour le filtre dur (avec dégradation) — laisser CHAQUE saison capable de
+  // remplir une semaine sans dégradation. On ne fige PAS les saisons par recette.
+  test("l'heuristique de saison laisse chaque saison générable (#23)", () => {
+    for (const r of RECETTES) {
+      for (const s of suggererSaisons(r.ingredients)) {
+        expect(SAISONS, `saison invalide : ${r.id}`).toContain(s);
+      }
+    }
+    // Pour chaque saison, les recettes de saison (saison incluse OU toute-année)
+    // doivent permettre une génération sans lever (vivier suffisant).
+    for (const saison of SAISONS) {
+      const deSaison = RECETTES.filter((r) => {
+        const tags = suggererSaisons(r.ingredients) as Saison[];
+        return estDeSaison({ saisons: tags }, saison);
+      });
+      expect(
+        () => genererPlanning(deSaison),
+        `vivier insuffisant en ${saison}`
+      ).not.toThrow();
+    }
   });
 });

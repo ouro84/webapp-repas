@@ -396,6 +396,34 @@ Réduire à zéro l'effort de planification hebdomadaire des repas, du choix des
 
 ---
 
+### US-18 — Recettes de saison (#23, P12)
+
+> **En tant qu'** utilisateur, je veux que le planning privilégie les fruits et légumes de saison afin de consommer de façon responsable.
+
+**Comportement (volet recette — PR1) :**
+> **Given** je crée ou édite une recette  
+> **When** je sélectionne ses saisons (printemps / été / automne / hiver, plusieurs possibles — RG-01)  
+> **Then** elles sont enregistrées et affichées (fiche, liste, card) ; laisser vide = toute l'année (RG-28)
+
+> **Given** je crée une recette  
+> **When** le formulaire s'ouvre  
+> **Then** les saisons sont **pré-suggérées par heuristique** (à partir des ingrédients), suggestion que je peux corriger (RG-28)
+
+> **Given** je consulte la liste des recettes  
+> **When** je filtre par saison  
+> **Then** seules les recettes de cette saison (saison incluse ou toute-l'année) sont listées (RG-28)
+
+**Comportement (volet génération — PR2) :**
+> **Given** la saisonnalité est activée (réglage, ON par défaut)  
+> **When** je génère (ou régénère, ou « ↺ change » un repas) pour une semaine donnée  
+> **Then** seules les recettes de la saison de cette semaine sont proposées ; si le vivier de saison est insuffisant, le planning est complété hors-saison et **je suis averti** (RG-28)
+
+> **Given** j'ouvre le sélecteur manuel d'une recette (US-06)  
+> **When** je choisis une recette  
+> **Then** **toutes** les recettes restent proposées, hors saison comprises (RG-03 de #23 → RG-28)
+
+---
+
 ## 5. Modèle de données
 
 > Les structures ci-dessous sont exprimées en TypeScript à titre documentaire. Le fichier de données réel est `/data/recettes.json` — format JSON lisible et éditable sans connaissance technique.
@@ -412,7 +440,10 @@ type Recette = {
   vegetarien?: boolean            // #86 — flag végétarien (absent = false)
   accompagnement?: "feculents"    // #49 — accompagnement dominant ; optionnel :
                   | "legumes"     // absent = non caractérisé (plat unique,
-  ingredients: Ingredient[]       // viande seule…). Cf. RG-27.
+                                  // viande seule…). Cf. RG-27.
+  saisons?: ("ete" | "automne"    // #23 — saisons de la recette (RG-01 multi) ;
+          | "hiver" | "printemps")[] // optionnel : absent/vide = toute l'année.
+  ingredients: Ingredient[]       // Cf. RG-28.
 }
 ```
 
@@ -668,6 +699,15 @@ Historique (conservé pour mémoire) : la génération visait une semaine cible 
 - **Catalogue global** : les recettes globales (`user_id IS NULL`, non éditables) sont **auto-taguées** par la même heuristique dans la migration (imparfaite et « à compléter » — faute de catégorie « féculents » et parce que `legumes-fruits` mêle légumes, aromates et fruits — mais bon défaut).
 - **Affichage** : un badge signale l'accompagnement sur la fiche, la liste des recettes et la card du planning — **Féculents** (épi de blé, ton terracotta) et **Légumes** (carotte, ton vert), aux couleurs du design system.
 - **Préférence de génération** : l'utilisateur peut activer **« au moins un repas légumes par jour »** (page Réglages, un seul interrupteur pour toute la semaine — RG-25). Préférence **souple** et **jointe par jour** : la génération complète **et** le remplacement unitaire « ↺ changer » biaisent pour qu'au moins un des deux repas de chaque journée soit « légumes », sans jamais bloquer. Mécanique : on biaise le premier slot non encore pourvu d'un jour vers « légumes », et — une fois la journée pourvue — on **anti-biaise** son second slot (préférence non-légume) pour **préserver le vivier de légumes aux jours non encore servis**. Le biais reste dans le même palier de temps → la faisabilité (analyse de vivier RG-25) est inchangée. Si le vivier ne le permet pas, le planning aboutit quand même et l'utilisateur est **averti** du nombre de jours non honorés.
+
+### RG-28 — Saisonnalité des recettes (US-18, #23)
+
+- **Mapping mois → saison** : Été = juin–septembre ; Automne = octobre–novembre ; Hiver = décembre–mars ; Printemps = avril–mai. La saison d'une **semaine** est celle de son **jeudi** (jour d'ancrage ISO).
+- **Attribut de recette** : `saisons` (liste, RG-01 : plusieurs saisons possibles) ; **absent/vide = disponible toute l'année** (pâtes, viandes… → aucune contrainte, pas de régression). Recette **perso** : saisie au formulaire (cases printemps/été/automne/hiver), **pré-suggérée par heuristique** à la création.
+- **Catalogue global** : auto-tagué par heuristique dans la migration — table **produit → saisons** (~26 produits), saison recette = **intersection** des saisons de ses produits saisonniers (aromates / produits de garde = toute l'année, ne contraignent pas) ; intersection vide (produits incompatibles) ⇒ toute l'année. Imparfaite, « à compléter ».
+- **Affichage** : un badge saison (icônes par saison) sur la fiche, la liste et la card du planning ; filtre par saison sur la page Recettes.
+- **Génération (PR2)** : pilotée par un **interrupteur** sur la page Réglages (« ne proposer que des recettes de saison »), **activé par défaut**. Quand il est actif, la génération complète **et** le remplacement « ↺ changer » ne proposent que des recettes de la saison de la **semaine cible**. **Dégradation gracieuse** : si le vivier de saison ne suffit pas à remplir la semaine, on complète avec des recettes hors-saison (la génération **n'échoue jamais**) et l'utilisateur est **averti** du nombre de repas hors-saison. La faisabilité ne dépend donc pas de la saison.
+- **Sélection manuelle non filtrée (RG-03 de #23)** : le sélecteur de recette (US-06) continue de proposer **toutes** les recettes, hors saison comprises — l'utilisateur arbitre.
 
 ### RG-22 — Repas en « restes » (US-12)
 
