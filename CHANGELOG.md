@@ -7,6 +7,10 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+### Modifié
+
+- Identité de marque — police display ronde (#66, P14) : remplacement de **Geist** (police « outil de dev », neutre) par un pairing chaleureux. **Fredoka** habille la marque (wordmark de la nav, hero d'accueil) et les **titres de page** (`h1`) via une classe utilitaire `font-display` (token `--font-display`) ; **Nunito** porte tout le **corps de texte** (token `--font-sans`). Les `h2` de section/dialog restent en corps (scannabilité). `Geist_Mono` est conservé pour le seul digest d'erreur (`app/error.tsx`). Polices chargées via `next/font/google` (size-adjust automatique → CLS minimal). Titres passés en `font-semibold` (les rondes paraissent lourdes en 700).
+
 ### Ajouté
 
 - Saisonnalité des recettes — filtre de génération (#23, P12, PR2/2) : nouvel **interrupteur « ne proposer que des recettes de saison »** sur `/reglages`, **activé par défaut** (à l'inverse des préférences végé/mix). Quand il est actif, la génération complète **et** le remplacement « ↺ changer » ne proposent que des recettes de la saison de la **semaine cible** (`saisonDeSemaine`). **Dégradation gracieuse** : si le vivier de saison est insuffisant, le planning est complété hors-saison (la génération **n'échoue jamais**) et l'utilisateur est **averti** du nombre de repas hors-saison (`reposNonSaison`, toast). La sélection manuelle (US-06) reste **non filtrée** (RG-03). Table `reglages` étendue d'un booléen (migration `not null default true`), e2e dédié. **Clôture de #23.**

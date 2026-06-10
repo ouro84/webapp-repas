@@ -195,7 +195,7 @@ export default function PageCourses() {
     return (
       <main id="contenu" className="flex flex-1 flex-col items-center justify-center gap-8 p-8">
         <div className="text-center">
-          <h1 className="text-2xl font-bold text-brand-900">Liste de courses</h1>
+          <h1 className="font-display text-2xl font-semibold text-brand-900">Liste de courses</h1>
           <p className="mt-2 text-brand-700/85">Génère d&apos;abord un planning</p>
         </div>
         <Link
@@ -216,7 +216,7 @@ export default function PageCourses() {
     <main id="contenu" className="mx-auto flex-1 w-full max-w-2xl p-4 md:p-8">
       <header className="mb-6 flex flex-wrap items-center gap-3">
         <div className="min-w-0 flex-1">
-          <h1 className="text-2xl font-bold text-brand-900">Liste de courses</h1>
+          <h1 className="font-display text-2xl font-semibold text-brand-900">Liste de courses</h1>
           {/* N° de semaine (RG #5) : même format que le planning */}
           {semainePlanning && (
             <p className="text-xs text-brand-700/85">

@@ -1,13 +1,24 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Fredoka, Nunito, Geist_Mono } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import { Toaster } from "sonner";
 import "./globals.css";
 import { NavBar } from "@/components/ui/nav";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+// Identité de marque (#66, P14) — pairing rond et chaleureux qui remplace Geist
+// (police « outil de dev », neutre). Fredoka habille le wordmark et les titres
+// de page (classe `font-display`) ; Nunito porte tout le corps de texte
+// (--font-sans). Polices variables : next/font gère l'axe de poids et le
+// size-adjust (CLS minimal). Geist_Mono est conservé : seul `app/error.tsx`
+// l'utilise (digest d'erreur en font-mono).
+const fredoka = Fredoka({
+  variable: "--font-fredoka",
+  subsets: ["latin"],
+});
+
+const nunito = Nunito({
+  variable: "--font-nunito",
   subsets: ["latin"],
 });
 
@@ -41,7 +52,7 @@ export default function RootLayout({
     // lang="fr" corrigé : important pour les lecteurs d'écran et le SEO
     <html
       lang="fr"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${fredoka.variable} ${nunito.variable} ${geistMono.variable} h-full antialiased`}
     >
       {/*
         body en flex flex-col h-full : la NavBar prend sa hauteur naturelle,

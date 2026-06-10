@@ -69,7 +69,7 @@ export function FormulaireAuth({
       className="flex min-h-[80dvh] flex-1 items-center justify-center p-4"
     >
       <div className="w-full max-w-sm">
-        <h1 className="mb-6 text-2xl font-bold text-brand-900">{titre}</h1>
+        <h1 className="mb-6 font-display text-2xl font-semibold text-brand-900">{titre}</h1>
 
         <form onSubmit={soumettre} className="flex flex-col gap-4" noValidate>
           <div className="flex flex-col gap-1">

@@ -263,7 +263,7 @@ export default function PageReglages() {
   if (erreur !== null) {
     return (
       <main id="contenu" className="mx-auto w-full max-w-2xl flex-1 p-4 md:p-8">
-        <h1 className="mb-4 text-2xl font-bold text-brand-900">Réglages</h1>
+        <h1 className="mb-4 font-display text-2xl font-semibold text-brand-900">Réglages</h1>
         <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
           {erreur}
         </p>
@@ -274,7 +274,7 @@ export default function PageReglages() {
   if (form === null) {
     return (
       <main id="contenu" className="mx-auto w-full max-w-2xl flex-1 p-4 md:p-8">
-        <h1 className="mb-4 text-2xl font-bold text-brand-900">Réglages</h1>
+        <h1 className="mb-4 font-display text-2xl font-semibold text-brand-900">Réglages</h1>
         <p role="status" className="animate-pulse text-brand-700/85">
           Chargement…
         </p>
@@ -284,7 +284,7 @@ export default function PageReglages() {
 
   return (
     <main id="contenu" className="mx-auto w-full max-w-2xl flex-1 p-4 md:p-8">
-      <h1 className="mb-2 text-2xl font-bold text-brand-900">
+      <h1 className="mb-2 font-display text-2xl font-semibold text-brand-900">
         Réglages de génération
       </h1>
       <p className="mb-6 text-sm text-brand-700/85">
