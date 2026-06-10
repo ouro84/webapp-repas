@@ -17,6 +17,7 @@ function dbRecette(id: string): DbRecette {
     temps_preparation: "rapide",
     vegetarien: false,
     accompagnement: null,
+    saisons: null,
     created_at: "2026-06-01T00:00:00Z",
     recette_ingredient: [
       {
@@ -104,6 +105,23 @@ describe("dbRecetteToDomain — accompagnement (#49)", () => {
   it("conserve une valeur d'accompagnement", () => {
     const r = dbRecetteToDomain({ ...dbRecette("r"), accompagnement: "legumes" });
     expect(r.accompagnement).toBe("legumes");
+  });
+});
+
+describe("dbRecetteToDomain — saisons (#23)", () => {
+  it("mappe null/[] en champ absent (toute l'année)", () => {
+    expect(dbRecetteToDomain(dbRecette("r")).saisons).toBeUndefined();
+    expect(
+      dbRecetteToDomain({ ...dbRecette("r"), saisons: [] }).saisons
+    ).toBeUndefined();
+  });
+
+  it("conserve une liste de saisons non vide", () => {
+    const r = dbRecetteToDomain({
+      ...dbRecette("r"),
+      saisons: ["automne", "hiver"],
+    });
+    expect(r.saisons).toEqual(["automne", "hiver"]);
   });
 });
 

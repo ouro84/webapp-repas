@@ -60,6 +60,7 @@ const SEMAINES_FUTURES = 6;
 import { BadgeTemps } from "@/components/planning/badge-temps";
 import { BadgeVegetarien } from "@/components/ui/badge-vegetarien";
 import { BadgeAccompagnement } from "@/components/ui/badge-accompagnement";
+import { BadgeSaison } from "@/components/ui/badge-saison";
 import { SelecteurRecette } from "@/components/planning/selecteur-recette";
 import { FicheRecette } from "@/components/planning/fiche-recette";
 import { ConfirmationModale } from "@/components/ui/confirmation";
@@ -922,6 +923,9 @@ function SlotRepas({
         {recette.vegetarien && <BadgeVegetarien compact />}
         {recette.accompagnement && (
           <BadgeAccompagnement accompagnement={recette.accompagnement} compact />
+        )}
+        {recette.saisons && recette.saisons.length > 0 && (
+          <BadgeSaison saisons={recette.saisons} compact />
         )}
         {/*
           a11y : aria-labels contextualisés — des paires de boutons identiques

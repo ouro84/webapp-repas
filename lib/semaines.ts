@@ -5,6 +5,9 @@
 // de semaines sélectionnables et défaut (US-11, RG-21). Partagé entre le
 // générateur (lib/generateur.ts) et la page planning.
 
+import { saisonDuMois } from "@/lib/saisons"
+import type { Saison } from "@/types"
+
 // Numéro de semaine ISO 8601 au format "AAAA-Wnn" (ex: "2026-W23").
 // L'année renvoyée est l'année ISO (celle du jeudi de la semaine), qui peut
 // différer de l'année civile autour du 1er janvier / 31 décembre.
@@ -101,6 +104,17 @@ function lundiDeSemaine(semaine: string): Date {
   const lundi = new Date(quatreJanvier)
   lundi.setDate(quatreJanvier.getDate() - (jour - 1) + (numero - 1) * 7)
   return lundi
+}
+
+/**
+ * Saison d'une semaine ISO (#23, P12) : on prend la saison du **jeudi** de la
+ * semaine — le jeudi porte déjà l'année ISO (cf. semaineISO), donc c'est le
+ * jour d'ancrage cohérent quand une semaine est à cheval sur deux mois/saisons.
+ */
+export function saisonDeSemaine(semaine: string): Saison {
+  const jeudi = lundiDeSemaine(semaine)
+  jeudi.setDate(jeudi.getDate() + 3) // lundi + 3 = jeudi
+  return saisonDuMois(jeudi.getMonth())
 }
 
 /**
