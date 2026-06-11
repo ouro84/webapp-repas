@@ -80,10 +80,11 @@ test("dupliquer une recette du catalogue crée une copie personnelle", async ({
   const nomCopie = `E2E Copie ${SUFFIXE}`;
   await page.goto("/recettes");
 
-  // Première recette du catalogue (lecture seule) → Dupliquer.
+  // Première recette du catalogue (par défaut) = ligne SANS bouton « Modifier »
+  // (réservé aux perso jusqu'à #105 PR2 ; plus de badge « Catalogue ») → Dupliquer.
   const ligneCatalogue = page
     .locator("main li")
-    .filter({ hasText: "Catalogue" })
+    .filter({ hasNot: page.getByRole("button", { name: "Modifier" }) })
     .first();
   await ligneCatalogue.getByRole("button", { name: "Dupliquer" }).click();
 
