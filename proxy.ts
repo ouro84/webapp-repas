@@ -1,7 +1,11 @@
+// Proxy (Next.js 16) — anciennement « middleware » (#12). Le fichier `proxy.ts`
+// et la fonction exportée `proxy` remplacent la convention `middleware`/`middleware`
+// dépréciée en Next 16. Gère le rafraîchissement de session Supabase et les
+// redirections d'accès (routes protégées / routes d'auth).
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
     request,
   })

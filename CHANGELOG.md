@@ -7,6 +7,10 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+### Modifié
+
+- Migration `middleware` → `proxy` (#12) : le fichier `middleware.ts` est renommé `proxy.ts` et la fonction exportée `middleware` devient `proxy`, conformément à la convention Next.js 16 (l'ancien nom déclenchait un avertissement de dépréciation au démarrage). Aucun changement de comportement : rafraîchissement de session Supabase et redirections (routes protégées / routes d'auth) identiques, `export const config = { matcher }` inchangé. Solde l'avertissement de build.
+
 ## [1.2.0] - 2026-06-11
 
 ### Ajouté
