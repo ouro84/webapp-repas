@@ -1,6 +1,6 @@
 // Parcours d'authentification — UI et accessibilité du formulaire (#57, #60).
 //
-// Ces tests s'exécutent DÉCONNECTÉS : le middleware redirige un utilisateur
+// Ces tests s'exécutent DÉCONNECTÉS : le proxy (ex-middleware) redirige un utilisateur
 // authentifié hors de /login et /signup (vers /planning). On neutralise donc
 // le storageState hérité du projet "setup".
 

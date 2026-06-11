@@ -3,7 +3,7 @@ import { defineConfig } from "@playwright/test";
 // Configuration Playwright — tests e2e des parcours critiques (ADR-05).
 //
 // Particularités du projet :
-// - /planning et /courses sont protégées par le middleware Supabase :
+// - /planning et /courses sont protégées par le proxy Supabase (ex-middleware) :
 //   un projet "setup" s'authentifie une fois et sauvegarde la session
 //   (e2e/.auth/user.json), réutilisée par tous les tests.
 // - Chromium uniquement : suffisant pour un MVP à usage personnel.

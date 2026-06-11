@@ -46,7 +46,7 @@ setup("authentification du compte de test", async ({ page, request }) => {
   await page.getByLabel("Mot de passe", { exact: true }).fill(MOT_DE_PASSE);
   await page.getByRole("button", { name: "Se connecter" }).click();
 
-  // La redirection post-login prouve que le middleware valide la session.
+  // La redirection post-login prouve que le proxy (ex-middleware) valide la session.
   await page.waitForURL("**/planning");
   await expect(page.getByRole("heading", { name: "Mon planning de la semaine" })).toBeVisible();
 
