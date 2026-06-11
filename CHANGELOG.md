@@ -9,6 +9,7 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ### Ajouté
 
+- Micro-interactions (#69, P17) : la génération anime désormais l'**apparition séquentielle** des cartes jours (stagger 40 ms/carte), le **nom de recette** fait un **fondu** lors d'un remplacement (au lieu d'une bascule sèche), l'**icône « changer »** fait un tour sur elle-même au clic, et les **boutons** s'enfoncent légèrement à l'appui (`active:scale`). Animations en **tokens `@theme`** (`--animate-apparition` / `--animate-crossfade` / `--animate-spin-once`), **transform/opacity uniquement** (zéro reflow). **`prefers-reduced-motion`** respecté partout : reset CSS global + variantes `motion-safe:`/`motion-reduce:` → rendu instantané si l'utilisateur a réduit les animations.
 - Hero d'accueil illustré (#68, P16) : l'accueil montre désormais la **promesse produit** — une mini-grille décorative de 3 cartes repas (Lundi/Mardi/Mercredi) insérée entre la tagline et le CTA. Nouveau composant `components/ui/apercu-planning.tsx`, **purement décoratif** (`aria-hidden`, aucune donnée réelle ni élément interactif) qui **réutilise les vrais composants** `BadgeTemps` et `BadgeVegetarien` pour rester fidèle au planning et cohérent avec la palette (vert brand + accent terracotta sur Normal/Long). Sobre, responsive (compact sur mobile, élargi sur desktop). Les animations d'entrée restent du ressort de #69.
 
 ### Modifié

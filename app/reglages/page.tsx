@@ -115,7 +115,7 @@ function StepperPersonnes({
   onChange: (n: number) => void;
 }) {
   const styleBouton =
-    "flex size-9 items-center justify-center rounded-full border border-brand-200 text-lg leading-none text-brand-700 transition-colors hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent";
+    "flex size-9 items-center justify-center rounded-full border border-brand-200 text-lg leading-none text-brand-700 transition hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.92] motion-reduce:active:scale-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent";
   return (
     <div className="inline-flex items-center gap-3">
       <button
@@ -469,7 +469,7 @@ export default function PageReglages() {
               plafonds: { ...REGLAGES_DEFAUT.plafonds },
             })
           }
-          className="rounded-full border border-brand-200 px-5 py-2.5 text-sm font-medium text-brand-700 transition-colors hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
+          className="rounded-full border border-brand-200 px-5 py-2.5 text-sm font-medium text-brand-700 transition hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100"
         >
           Réinitialiser
         </button>
@@ -478,7 +478,7 @@ export default function PageReglages() {
           onClick={enregistrer}
           disabled={!modifie || !faisable || enregistrement}
           aria-busy={enregistrement}
-          className="rounded-full bg-brand-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded-full bg-brand-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {enregistrement ? "Enregistrement…" : "Enregistrer"}
         </button>

@@ -63,7 +63,7 @@ export function ConfirmationSuppression({
             type="button"
             onClick={() => refDialog.current?.close()}
             disabled={enCours}
-            className="rounded-full border border-brand-200 px-5 py-2.5 text-sm font-medium text-brand-700 transition-colors hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 disabled:opacity-60"
+            className="rounded-full border border-brand-200 px-5 py-2.5 text-sm font-medium text-brand-700 transition hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100 disabled:opacity-60"
           >
             Annuler
           </button>
@@ -72,7 +72,7 @@ export function ConfirmationSuppression({
             onClick={onConfirmer}
             disabled={enCours}
             aria-busy={enCours}
-            className="rounded-full bg-red-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-red-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600 disabled:opacity-60"
+            className="rounded-full bg-red-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-red-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600 active:scale-[0.97] motion-reduce:active:scale-100 disabled:opacity-60"
           >
             {enCours ? "Suppression…" : "Supprimer"}
           </button>
