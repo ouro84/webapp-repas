@@ -11,6 +11,12 @@
 -- foyer » : on naît solo, on INVITE (génère un code, déjà en PR1) pour que le
 -- foyer devienne partagé, ou on REJOINT le foyer d'un autre.
 
+-- ⚠️ Bug latent corrigé dans la migration SUIVANTE (`..._corriger_search_path_code_invitation.sql`,
+-- 20260611170000) : `generer_code_invitation` (PR1) avait `search_path = public`
+-- alors que pgcrypto (`gen_random_bytes`) vit dans le schéma `extensions` sur
+-- Supabase. Le correctif est dans un fichier séparé car CETTE migration est déjà
+-- appliquée sur staging (db push ne la rejouerait pas).
+
 -- ============================================================================
 -- REJOINDRE un foyer par code (US-19 scénario 2, RG-29, RG-33)
 -- ============================================================================
