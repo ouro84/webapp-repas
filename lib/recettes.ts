@@ -97,26 +97,27 @@ export async function chargerRecettes(): Promise<Recette[]> {
 export type RecetteGeree = { recette: Recette; editable: boolean }
 
 /**
- * Charge les recettes pour la page de gestion (#2), en marquant celles qui
- * appartiennent à l'utilisateur (les globales, user_id NULL, sont en lecture
- * seule — cf. RLS).
+ * Charge les recettes pour la page de gestion (#2), en marquant celles qui sont
+ * éditables. Depuis le scope foyer (#56 PR2), une recette est éditable par TOUT
+ * membre du foyer (RG-30) → `editable` = « c'est une recette du foyer », càd
+ * `foyer_id !== null` (les globales, foyer_id NULL, restent en lecture seule —
+ * cf. RLS). Plus besoin de comparer au user courant.
  */
 export async function chargerRecettesGerees(): Promise<RecetteGeree[]> {
   const supabase = createClient()
-  const [{ data, error }, { data: { user } }, masques] = await Promise.all([
-    supabase.from("recette").select(`user_id, ${SELECT_RECETTE}`),
-    supabase.auth.getUser(),
+  const [{ data, error }, masques] = await Promise.all([
+    supabase.from("recette").select(`foyer_id, ${SELECT_RECETTE}`),
     chargerIdsMasques(supabase),
   ])
 
   if (error) {
     throw new Error(`Chargement des recettes impossible : ${error.message}`)
   }
-  return (data as unknown as (DbRecette & { user_id: string | null })[])
+  return (data as unknown as (DbRecette & { foyer_id: string | null })[])
     .filter((db) => !masques.has(db.id))
     .map((db) => ({
       recette: dbRecetteToDomain(db),
-      editable: db.user_id !== null && db.user_id === user?.id,
+      editable: db.foyer_id !== null,
     }))
 }
 
@@ -304,14 +305,12 @@ export async function supprimerRecette(id: string): Promise<void> {
  */
 export async function masquerRecette(recetteId: string): Promise<void> {
   const client = createClient()
-  const {
-    data: { user },
-  } = await client.auth.getUser()
-  if (!user) throw new Error("Tu dois être connecté pour supprimer une recette.")
-
+  // foyer_id est rempli par le default mon_foyer() (#56 PR2) ; le masquage
+  // devient propre au foyer. La RLS insert (with check foyer_id = mon_foyer())
+  // rejette si non connecté.
   const { error } = await client
     .from("recette_masquee")
-    .insert({ user_id: user.id, recette_id: recetteId })
+    .insert({ recette_id: recetteId })
   if (error) {
     throw new Error(`Suppression impossible : ${error.message}`)
   }

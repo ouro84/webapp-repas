@@ -86,35 +86,29 @@ export async function listerSemainesDistantes(): Promise<string[]> {
 
 /** Purge l'historique : supprime plannings (slots en cascade) et coches des
  *  semaines strictement antérieures à `cutoff` (rétention, #5). La comparaison
- *  lexicographique des id ISO "AAAA-Wnn" (zéro-paddés) = ordre chronologique. */
+ *  lexicographique des id ISO "AAAA-Wnn" (zéro-paddés) = ordre chronologique.
+ *  La RLS « foyer » (#56) restreint déjà aux lignes du foyer courant : pas de
+ *  filtre d'appartenance ici, juste la borne (qui satisfait aussi l'exigence
+ *  PostgREST d'un filtre sur tout DELETE). */
 export async function purgerSemainesAvant(cutoff: string): Promise<void> {
   const supabase = createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user) return
 
   const { error: e1 } = await supabase
     .from("planning")
     .delete()
-    .eq("user_id", user.id)
     .lt("semaine", cutoff)
   if (e1) throw new Error(`Purge des plannings impossible : ${e1.message}`)
 
   const { error: e2 } = await supabase
     .from("etat_courses")
     .delete()
-    .eq("user_id", user.id)
     .lt("semaine", cutoff)
   if (e2) throw new Error(`Purge des coches impossible : ${e2.message}`)
 }
 
-// Construit les lignes planning_slot à insérer depuis un planning domaine.
-function construireSlots(
-  planningId: string,
-  planning: Planning
-): Array<{
-  planning_id: string
+// Construit les slots à passer à la RPC sauvegarder_planning (sans planning_id :
+// la RPC crée/retrouve la ligne planning et rattache les slots côté serveur).
+function construireSlots(planning: Planning): Array<{
   recette_id: string
   jour: string
   type_repas: "dejeuner" | "diner"
@@ -125,7 +119,6 @@ function construireSlots(
   for (const jp of planning.jours) {
     if (jp.dejeuner) {
       slots.push({
-        planning_id: planningId,
         recette_id: jp.dejeuner.id,
         jour: jp.jour,
         type_repas: "dejeuner" as const,
@@ -134,7 +127,6 @@ function construireSlots(
       })
     }
     slots.push({
-      planning_id: planningId,
       recette_id: jp.diner.id,
       jour: jp.jour,
       type_repas: "diner" as const,
@@ -146,55 +138,29 @@ function construireSlots(
 }
 
 /**
- * Persiste le planning d'une semaine : remplace SEULEMENT la semaine concernée
- * (delete (user, semaine) → insert ; les slots partent en cascade). Les autres
- * semaines sont conservées (historique, #5). Non transactionnel côté PostgREST
- * — la robustesse (file de rejeu) vit dans lib/sync.
+ * Persiste le planning d'une semaine via la RPC ATOMIQUE `sauvegarder_planning`
+ * (#56 PR2) : upsert de la ligne planning (par foyer+semaine, conserve la même
+ * ligne → la colonne `version` s'incrémente) + remplacement intégral des slots,
+ * le tout en une transaction côté serveur. Le foyer est dérivé de mon_foyer()
+ * (SECURITY DEFINER) — le client n'a pas à le connaître. Remplace l'ancien
+ * delete→insert client non atomique (race cross-device à deux appareils).
+ * Renvoie l'updated_at posé par le trigger serveur (#104), horloge de référence
+ * du last-write-wins (#6, RG-23). Les autres semaines sont conservées (#5).
  */
 export async function sauvegarderPlanningDistant(
   planning: Planning
 ): Promise<string> {
   const supabase = createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user) throw new Error("Tu dois être connecté pour sauvegarder le planning.")
-
-  const { error: erreurSuppression } = await supabase
-    .from("planning")
-    .delete()
-    .eq("user_id", user.id)
-    .eq("semaine", planning.semaine)
-  if (erreurSuppression) {
-    throw new Error(`Sauvegarde du planning impossible : ${erreurSuppression.message}`)
-  }
-
-  // updated_at n'est PAS fourni par le client : un trigger SQL le pose à now()
-  // (horloge serveur) à l'insert (#104). On récupère cette valeur via le
-  // RETURNING (.select(), qui reflète les triggers BEFORE) et on la renvoie —
-  // elle sert d'horloge de référence au last-write-wins (#6, RG-23).
-  const { data: cree, error: erreurInsertion } = await supabase
-    .from("planning")
-    .insert({
-      user_id: user.id,
-      semaine: planning.semaine,
-    })
-    .select("id, updated_at")
-    .single()
-  if (erreurInsertion || !cree) {
+  const { data, error } = await supabase.rpc("sauvegarder_planning", {
+    p_semaine: planning.semaine,
+    p_slots: construireSlots(planning),
+  })
+  if (error || !data) {
     throw new Error(
-      `Sauvegarde du planning impossible : ${erreurInsertion?.message ?? "réponse vide"}`
+      `Sauvegarde du planning impossible : ${error?.message ?? "réponse vide"}`
     )
   }
-
-  const { error: erreurSlots } = await supabase
-    .from("planning_slot")
-    .insert(construireSlots(cree.id, planning))
-  if (erreurSlots) {
-    throw new Error(`Sauvegarde des repas impossible : ${erreurSlots.message}`)
-  }
-
-  return cree.updated_at as string
+  return data as string
 }
 
 /** Coches distantes d'une semaine (sérialisées comme localStorage) + horodatage, ou null. */
@@ -217,18 +183,16 @@ export async function chargerCochesDistantes(semaine: string): Promise<{
 }
 
 /**
- * Persiste l'état des coches d'une semaine (upsert sur (user, semaine)). Renvoie
- * l'`updated_at` (horloge de référence du last-write-wins, comme le planning).
+ * Persiste l'état des coches d'une semaine via la RPC `sauvegarder_coches`
+ * (#56 PR2 ; upsert par foyer+semaine, foyer dérivé de mon_foyer()). Renvoie
+ * l'`updated_at` posé par le trigger serveur (#104), horloge de référence du
+ * last-write-wins (comme le planning).
  */
 export async function sauvegarderCochesDistantes(
   semaine: string,
   cochesSerialise: string
 ): Promise<string> {
   const supabase = createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user) throw new Error("Tu dois être connecté pour sauvegarder les coches.")
 
   let coches: Record<string, number>
   try {
@@ -237,22 +201,14 @@ export async function sauvegarderCochesDistantes(
     coches = {}
   }
 
-  // updated_at posé par le trigger SQL (now(), horloge serveur) — #104. On le
-  // récupère via le RETURNING (.select()) et on le renvoie comme horloge de
-  // référence du last-write-wins (signature inchangée).
-  const { data: ligne, error } = await supabase
-    .from("etat_courses")
-    .upsert({
-      user_id: user.id,
-      semaine,
-      coches,
-    })
-    .select("updated_at")
-    .single()
-  if (error || !ligne) {
+  const { data, error } = await supabase.rpc("sauvegarder_coches", {
+    p_semaine: semaine,
+    p_coches: coches,
+  })
+  if (error || !data) {
     throw new Error(
       `Sauvegarde des coches impossible : ${error?.message ?? "réponse vide"}`
     )
   }
-  return ligne.updated_at as string
+  return data as string
 }
