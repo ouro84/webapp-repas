@@ -7,6 +7,10 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+### Ajouté
+
+- Error boundary racine (#30, P21) : nouveau `app/global-error.tsx` qui attrape les erreurs de rendu du **layout racine** et de ses enfants directs (barre de nav, polices, toaster, analytics) — celles que `app/error.tsx` ne couvre pas (il ne protège que les pages, à l'intérieur du layout). Affiche un écran de repli (« Quelque chose s'est mal passé », bouton **Réessayer**, **référence digest** en prod) au lieu d'une page blanche. Comme il **remplace le layout entier**, il rend ses propres `<html>`/`<body>` et ses **styles sont 100 % autonomes** (valeurs hex du design system en dur, fallback Arial) : `globals.css`/Tailwind ne sont pas garantis quand le layout a crashé. Erreur loggée (`console.error`) et remontée à **Sentry**. **N'est actif qu'en production** (en dev, l'overlay Next prend le dessus). **Clôture de #30.**
+
 ## [1.2.0] - 2026-06-11
 
 ### Ajouté
