@@ -44,7 +44,7 @@ import type { Planning, Recette, Saison, ReglagesGeneration } from "@/types";
 type Vue =
   | { mode: "liste" }
   | { mode: "creation" }
-  | { mode: "edition"; recette: Recette }
+  | { mode: "edition"; geree: RecetteGeree }
   | { mode: "duplication"; source: Recette };
 
 // Un seul cran d'undo à la fois (id de toast partagé, comme l'undo planning) :
@@ -99,15 +99,14 @@ function ContenuRecettes() {
       .then((liste) => {
         if (!actif) return;
         setRecettes(liste);
-        // On n'ouvre l'édition que pour une recette éditable (perso) — les
-        // recettes par défaut restent non éditables jusqu'à #105 PR2. setState
-        // dans la promesse (pas synchrone au montage) → conforme à
+        // Deep-link d'édition (US-10) : on ouvre le formulaire pour la recette
+        // ciblée, perso OU par défaut (#105 PR2 : « Modifier » est uniforme —
+        // une recette par défaut sera dupliquée + masquée à l'enregistrement).
+        // setState dans la promesse (pas synchrone au montage) → conforme à
         // react-hooks/set-state-in-effect.
         if (idEdition !== null) {
-          const cible = liste.find(
-            (r) => r.recette.id === idEdition && r.editable
-          );
-          if (cible) setVue({ mode: "edition", recette: cible.recette });
+          const cible = liste.find((r) => r.recette.id === idEdition);
+          if (cible) setVue({ mode: "edition", geree: cible });
         }
       })
       .catch((e) => actif && setErreur(e instanceof Error ? e.message : "Chargement impossible."));
@@ -146,9 +145,22 @@ function ContenuRecettes() {
     recharger();
   }
 
-  async function enregistrerEdition(id: string, saisie: SaisieRecette): Promise<void> {
-    const recette = await modifierRecette(id, saisie);
-    repercuterSurPlanning(recette); // RG-03
+  async function enregistrerEdition(
+    geree: RecetteGeree,
+    saisie: SaisieRecette
+  ): Promise<void> {
+    if (geree.editable) {
+      const recette = await modifierRecette(geree.recette.id, saisie);
+      repercuterSurPlanning(recette); // RG-03
+    } else {
+      // Recette par défaut (#105 PR2) : impossible à éditer en place (catalogue
+      // partagé en lecture seule, RLS). « Modifier » = créer une copie perso
+      // éditable PUIS masquer l'originale, de façon transparente (RG-F/RG-G).
+      // Copie d'abord : si le masquage échoue, on a au pire un doublon visible
+      // (récupérable), jamais une recette perdue.
+      await creerRecette(saisie);
+      await masquerRecette(geree.recette.id);
+    }
     toast.success("Recette modifiée");
     setVue({ mode: "liste" });
     recharger();
@@ -244,8 +256,8 @@ function ContenuRecettes() {
       <main id="contenu" className="mx-auto w-full max-w-2xl flex-1 p-4 md:p-8">
         <FormulaireRecette
           titre="Modifier la recette"
-          valeurInitiale={vue.recette}
-          onEnregistrer={(saisie) => enregistrerEdition(vue.recette.id, saisie)}
+          valeurInitiale={vue.geree.recette}
+          onEnregistrer={(saisie) => enregistrerEdition(vue.geree, saisie)}
           onAnnuler={() => setVue({ mode: "liste" })}
         />
       </main>
@@ -344,7 +356,7 @@ function ContenuRecettes() {
           ) : (
             <ul className="divide-y divide-brand-100 rounded-lg border border-brand-100 bg-surface">
               {visibles.map((geree) => {
-                const { recette, editable } = geree;
+                const { recette } = geree;
                 return (
                   <li
                     key={recette.id}
@@ -370,16 +382,15 @@ function ContenuRecettes() {
                     >
                       Dupliquer
                     </button>
-                    {/* « Modifier » reste perso-only jusqu'à #105 PR2 */}
-                    {editable && (
-                      <button
-                        type="button"
-                        onClick={() => setVue({ mode: "edition", recette })}
-                        className="rounded-full px-3 py-2 text-sm font-medium text-brand-700 underline-offset-2 transition-colors hover:bg-brand-50 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
-                      >
-                        Modifier
-                      </button>
-                    )}
+                    {/* « Modifier » uniforme (#105 PR2) : perso = édition en
+                        place ; par défaut = duplication + masquage au save. */}
+                    <button
+                      type="button"
+                      onClick={() => setVue({ mode: "edition", geree })}
+                      className="rounded-full px-3 py-2 text-sm font-medium text-brand-700 underline-offset-2 transition-colors hover:bg-brand-50 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
+                    >
+                      Modifier
+                    </button>
                     {/* « Supprimer » uniforme (#105) : perso = vraie suppression,
                         par défaut = masquage. Undo via le toast. */}
                     <button
