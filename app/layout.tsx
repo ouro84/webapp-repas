@@ -50,9 +50,20 @@ export const metadata: Metadata = {
 // d'où le complément côté sélecteur via l'API visualViewport (lib/clavier.ts).
 export const viewport: Viewport = {
   interactiveWidget: "resizes-content",
-  // Barre système teintée en vert brand quand l'app tourne en standalone (#71).
-  themeColor: "#3d7a44",
+  // Barre système (#71/#72) : vert brand en clair, charbon sombre en dark
+  // (suit prefers-color-scheme de l'OS ; le toggle manuel ne pilote pas cette
+  // meta, c'est un détail mineur acceptable).
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#3d7a44" },
+    { media: "(prefers-color-scheme: dark)", color: "#141815" },
+  ],
 };
+
+// Script anti-FOUC (#72, P19) : résout la préférence de thème (clair/sombre/
+// système) AVANT le premier paint et pose data-theme sur <html>. « système »
+// → suit prefers-color-scheme ; un choix manuel le force. try/catch : si
+// localStorage est inaccessible, on retombe sur le mode clair par défaut.
+const SCRIPT_THEME = `(function(){try{var t=localStorage.getItem('theme');var d=t==='dark'||((!t||t==='system')&&matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.dataset.theme=d?'dark':'light';}catch(e){}})();`;
 
 export default function RootLayout({
   children,
@@ -64,17 +75,20 @@ export default function RootLayout({
     <html
       lang="fr"
       className={`${fredoka.variable} ${nunito.variable} ${geistMono.variable} h-full antialiased`}
+      suppressHydrationWarning
     >
       {/*
         body en flex flex-col h-full : la NavBar prend sa hauteur naturelle,
         le contenu (children) remplit le reste via flex-1 sur chaque page.
       */}
       <body className="flex min-h-full flex-col">
+        {/* Anti-FOUC dark mode (#72) : pose data-theme avant le paint du body. */}
+        <script dangerouslySetInnerHTML={{ __html: SCRIPT_THEME }} />
         {/* Skip link (WCAG 2.4.1) : visible uniquement au focus clavier,
             permet de sauter la NavBar pour atteindre le contenu directement */}
         <a
           href="#contenu"
-          className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[100] focus:rounded-full focus:bg-brand-600 focus:px-4 focus:py-2 focus:text-white"
+          className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[100] focus:rounded-full focus:bg-primary focus:px-4 focus:py-2 focus:text-white"
         >
           Aller au contenu
         </a>
@@ -87,7 +101,7 @@ export default function RootLayout({
           position="bottom-center"
           toastOptions={{
             style: {
-              background: "#ffffff",
+              background: "var(--color-surface)",
               border: "1px solid var(--color-brand-100)",
               color: "var(--color-brand-900)",
             },

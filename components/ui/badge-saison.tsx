@@ -49,7 +49,7 @@ export function BadgeSaison({
   }
 
   return (
-    <span className="inline-flex items-center gap-1 rounded-full border border-brand-200 bg-white px-2 py-0.5 text-xs font-medium text-brand-700">
+    <span className="inline-flex items-center gap-1 rounded-full border border-brand-200 bg-surface px-2 py-0.5 text-xs font-medium text-brand-700">
       {ordonnees.map((s) => {
         const Icone = ICONE[s];
         return <Icone key={s} className="size-3.5 text-brand-600" aria-hidden="true" />;

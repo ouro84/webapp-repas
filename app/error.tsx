@@ -44,7 +44,7 @@ export default function Error({
       <button
         type="button"
         onClick={reset}
-        className="rounded-full bg-brand-600 px-6 py-3 font-medium text-white transition-colors hover:bg-brand-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
+        className="rounded-full bg-primary px-6 py-3 font-medium text-white transition-colors hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
       >
         Réessayer
       </button>

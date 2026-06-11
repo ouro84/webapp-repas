@@ -99,7 +99,7 @@ export function SelecteurRecette({
       onClick={surClic}
       aria-labelledby="titre-selecteur"
       style={styleClavier}
-      className="fixed mx-auto mb-0 mt-auto flex max-h-[85dvh] w-full flex-col rounded-t-2xl bg-white p-0 text-brand-900 shadow-xl backdrop:bg-brand-900/50 md:my-auto md:max-w-lg md:rounded-2xl"
+      className="fixed mx-auto mb-0 mt-auto flex max-h-[85dvh] w-full flex-col rounded-t-2xl bg-surface p-0 text-brand-900 shadow-xl backdrop:bg-black/50 md:my-auto md:max-w-lg md:rounded-2xl"
     >
       <header className="flex items-center justify-between gap-3 border-b border-brand-100 p-4">
         <h2 id="titre-selecteur" className="text-lg font-bold text-brand-900">
@@ -139,7 +139,7 @@ export function SelecteurRecette({
           value={requete}
           onChange={(evenement) => setRequete(evenement.target.value)}
           placeholder="Rechercher une recette…"
-          className="w-full rounded-full border border-brand-200 bg-white px-4 py-2.5 text-sm text-brand-900 placeholder:text-brand-700/50 focus:outline-2 focus:outline-offset-1 focus:outline-brand-600"
+          className="w-full rounded-full border border-brand-200 bg-surface px-4 py-2.5 text-sm text-brand-900 placeholder:text-brand-700/50 focus:outline-2 focus:outline-offset-1 focus:outline-brand-600"
         />
         {/* Annonce du nombre de résultats aux lecteurs d'écran */}
         <p aria-live="polite" className="sr-only">

@@ -200,7 +200,7 @@ export default function PageCourses() {
         </div>
         <Link
           href="/planning"
-          className="rounded-full bg-brand-600 px-8 py-4 text-lg font-medium text-white transition hover:bg-brand-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100"
+          className="rounded-full bg-primary px-8 py-4 text-lg font-medium text-white transition hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100"
         >
           Aller au planning
         </Link>
@@ -272,7 +272,7 @@ export default function PageCourses() {
                 </button>
               </h2>
               {!repliee && (
-                <ul className="divide-y divide-brand-100 rounded-lg border border-brand-100 bg-white">
+                <ul className="divide-y divide-brand-100 rounded-lg border border-brand-100 bg-surface">
                   {trierAvecCoches(ligne.ingredients, coches).map((ingredient) => (
                     <ArticleCochable
                       key={`${ingredient.nom}-${ingredient.unite}`}

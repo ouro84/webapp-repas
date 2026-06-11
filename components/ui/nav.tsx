@@ -12,6 +12,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Settings } from "lucide-react";
 import { Logo } from "@/components/ui/logo";
+import { BasculeTheme } from "@/components/ui/bascule-theme";
 
 const LIENS = [
   { href: "/planning", label: "Planning" },
@@ -26,7 +27,7 @@ export function NavBar() {
     <header role="banner">
       <nav
         aria-label="Navigation principale"
-        className="sticky top-0 z-50 border-b border-brand-100 bg-white/90 backdrop-blur-sm"
+        className="sticky top-0 z-50 border-b border-brand-100 bg-surface/90 backdrop-blur-sm"
       >
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
           {/* Logo / accueil */}
@@ -55,7 +56,7 @@ export function NavBar() {
                   // (inset-x-0 pour ne pas chevaucher le lien voisin, gap-1)
                   className={`relative rounded-full px-4 py-1.5 text-sm font-medium transition-colors after:absolute after:inset-x-0 after:-inset-y-2 after:content-[''] ${
                     actif
-                      ? "bg-brand-600 text-white"
+                      ? "bg-primary text-white"
                       : "text-brand-700 hover:bg-brand-50"
                   }`}
                 >
@@ -73,7 +74,7 @@ export function NavBar() {
                   aria-current={actif ? "page" : undefined}
                   className={`relative flex size-9 items-center justify-center rounded-full transition-colors after:absolute after:-inset-1 after:content-[''] ${
                     actif
-                      ? "bg-brand-600 text-white"
+                      ? "bg-primary text-white"
                       : "text-brand-700 hover:bg-brand-50"
                   }`}
                 >
@@ -81,6 +82,8 @@ export function NavBar() {
                 </Link>
               );
             })()}
+            {/* Bascule de thème clair/sombre/système (#72, P19). */}
+            <BasculeTheme />
           </div>
         </div>
       </nav>

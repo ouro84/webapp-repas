@@ -213,7 +213,7 @@ function ContenuRecettes() {
         <button
           type="button"
           onClick={() => setVue({ mode: "creation" })}
-          className="rounded-full bg-brand-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
+          className="rounded-full bg-primary px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
         >
           Nouvelle recette
         </button>
@@ -255,7 +255,7 @@ function ContenuRecettes() {
             value={requete}
             onChange={(e) => setRequete(e.target.value)}
             placeholder="Rechercher une recette…"
-            className="mb-3 w-full rounded-full border border-brand-200 bg-white px-4 py-2.5 text-sm text-brand-900 placeholder:text-brand-700/50 focus:outline-2 focus:outline-offset-1 focus:outline-brand-600"
+            className="mb-3 w-full rounded-full border border-brand-200 bg-surface px-4 py-2.5 text-sm text-brand-900 placeholder:text-brand-700/50 focus:outline-2 focus:outline-offset-1 focus:outline-brand-600"
           />
 
           {/* Filtres (#86 végé, #23 saison) */}
@@ -276,7 +276,7 @@ function ContenuRecettes() {
                 onChange={(e) =>
                   setSaisonFiltre(e.target.value as Saison | "toutes")
                 }
-                className="cursor-pointer rounded-full border border-brand-200 bg-white px-3 py-1.5 text-sm text-brand-900 focus:outline-2 focus:outline-offset-1 focus:outline-brand-600"
+                className="cursor-pointer rounded-full border border-brand-200 bg-surface px-3 py-1.5 text-sm text-brand-900 focus:outline-2 focus:outline-offset-1 focus:outline-brand-600"
               >
                 <option value="toutes">Toutes saisons</option>
                 {SAISONS.map((s) => (
@@ -295,7 +295,7 @@ function ContenuRecettes() {
                 : `Aucune recette ne correspond à « ${requete.trim()} »`}
             </p>
           ) : (
-            <ul className="divide-y divide-brand-100 rounded-lg border border-brand-100 bg-white">
+            <ul className="divide-y divide-brand-100 rounded-lg border border-brand-100 bg-surface">
               {visibles.map(({ recette, editable }) => (
                 <li
                   key={recette.id}
