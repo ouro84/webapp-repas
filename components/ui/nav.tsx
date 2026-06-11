@@ -20,8 +20,18 @@ const LIENS = [
   { href: "/recettes", label: "Recettes" },
 ];
 
+// État actif d'un lien de nav (#73, P20). Piège central : `startsWith("/")`
+// matcherait TOUTES les routes → l'accueil se teste en égalité STRICTE. Les
+// sections (/planning, /courses, /reglages…) restent en préfixe pour couvrir
+// leurs sous-routes éventuelles. Centralisé ici pour ne pas re-tomber dans le
+// piège ailleurs.
+function estActif(pathname: string, href: string): boolean {
+  return href === "/" ? pathname === "/" : pathname.startsWith(href);
+}
+
 export function NavBar() {
   const pathname = usePathname();
+  const accueil = estActif(pathname, "/");
 
   return (
     <header role="banner">
@@ -31,10 +41,20 @@ export function NavBar() {
       >
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
           {/* Logo / accueil */}
+          {/* Logo / accueil — état actif sur « / » (#73, P20) : pastille de fond
+              (bg-brand-50), cohérente avec les liens actifs. La pilule entoure
+              le logo ET le wordmark, donc l'indice reste perceptible sur mobile
+              où le wordmark est masqué (sm:) et seul le mark subsiste.
+              aria-current annonce la page courante aux lecteurs d'écran. */}
           <Link
             href="/"
             aria-label="On mange quoi ? — accueil"
-            className="flex items-center gap-2 font-semibold text-brand-700 transition-colors hover:text-brand-600"
+            aria-current={accueil ? "page" : undefined}
+            className={`flex items-center gap-2 rounded-full px-2 py-1 font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 ${
+              accueil
+                ? "bg-brand-50 text-brand-900"
+                : "text-brand-700 hover:text-brand-600"
+            }`}
           >
             <Logo className="size-6" />
             {/* Wordmark en Fredoka (#66, P14) — signature de marque */}
@@ -46,7 +66,7 @@ export function NavBar() {
           {/* Liens de navigation */}
           <div className="flex items-center gap-1">
             {LIENS.map(({ href, label }) => {
-              const actif = pathname.startsWith(href);
+              const actif = estActif(pathname, href);
               return (
                 <Link
                   key={href}
@@ -66,7 +86,7 @@ export function NavBar() {
             })}
             {/* Réglages (#45) : icône engrenage, distincte des liens texte. */}
             {(() => {
-              const actif = pathname.startsWith("/reglages");
+              const actif = estActif(pathname, "/reglages");
               return (
                 <Link
                   href="/reglages"
