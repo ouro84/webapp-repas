@@ -126,7 +126,7 @@ function NavigateurSemaine({
 }) {
   const estCourante = offset === 0;
   const styleFleche =
-    "relative flex size-8 items-center justify-center rounded-full border border-brand-200 text-brand-700 transition-colors after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent";
+    "relative flex size-8 items-center justify-center rounded-full border border-brand-200 text-brand-700 transition after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.92] motion-reduce:active:scale-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent";
   return (
     <div
       role="group"
@@ -237,6 +237,13 @@ export default function PagePlanning() {
   const [erreurGeneration, setErreurGeneration] = useState<string | null>(null);
   // Génération serveur en cours (#2 : la génération est désormais asynchrone).
   const [enGeneration, setEnGeneration] = useState(false);
+  // Nonce de stagger (#69, P17) : bumpé à chaque génération pour rejouer
+  // l'apparition séquentielle des cartes. La génération ne vide pas l'écran
+  // (#63) → les <li key={jour}> ne se remontent pas seuls ; on keye donc la
+  // grille sur ce nonce pour forcer le remontage et rejouer l'animation. Pas
+  // bumpé sur un remplacement de slot / changement de personnes (sinon la
+  // grille entière re-animerait à chaque petite édition — sautillant).
+  const [genNonce, setGenNonce] = useState(0);
   // Slot dont le dernier remplacement a échoué (RG-04) : "jour-typeRepas".
   const [slotIndisponible, setSlotIndisponible] = useState<string | null>(null);
   // Slot en cours de sélection manuelle (US-06) : le sélecteur est monté
@@ -420,6 +427,8 @@ export default function PagePlanning() {
       // de courses (RG-13) — règle centralisée dans lib/stockage.ts.
       sauvegarderPlanningComplet(nouveau);
       setSlotIndisponible(null);
+      // Rejoue le stagger d'apparition des cartes (#69) : nouvelle key de grille.
+      setGenNonce((n) => n + 1);
       // Toast contextualisé par la semaine générée (US-11, bonus).
       const libelleSemaine = formaterSemaine(nouveau.semaine);
       if (estRegeneration) {
@@ -612,7 +621,7 @@ export default function PagePlanning() {
           onClick={() => void genererNouveauPlanning()}
           disabled={enGeneration}
           aria-busy={enGeneration}
-          className="rounded-full bg-brand-600 px-6 py-3 font-medium text-white transition-colors hover:bg-brand-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 disabled:opacity-60"
+          className="rounded-full bg-brand-600 px-6 py-3 font-medium text-white transition hover:bg-brand-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100 disabled:opacity-60"
         >
           {enGeneration ? "Génération…" : "Réessayer"}
         </button>
@@ -649,7 +658,7 @@ export default function PagePlanning() {
           onClick={() => void genererNouveauPlanning()}
           disabled={enGeneration}
           aria-busy={enGeneration}
-          className="rounded-full bg-brand-600 px-8 py-4 text-lg font-medium text-white transition-colors hover:bg-brand-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 disabled:opacity-60"
+          className="rounded-full bg-brand-600 px-8 py-4 text-lg font-medium text-white transition hover:bg-brand-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100 disabled:opacity-60"
         >
           {enGeneration ? "Génération…" : "Générer mon planning"}
         </button>
@@ -692,7 +701,7 @@ export default function PagePlanning() {
             onClick={() => void genererNouveauPlanning()}
             disabled={enGeneration}
             aria-busy={enGeneration}
-            className="relative flex-1 rounded-full border border-brand-200 px-4 py-2 text-center text-sm font-medium text-brand-700 transition-colors after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 disabled:opacity-60 sm:flex-none"
+            className="relative flex-1 rounded-full border border-brand-200 px-4 py-2 text-center text-sm font-medium text-brand-700 transition after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100 disabled:opacity-60 sm:flex-none"
           >
             {enGeneration ? "Génération…" : "Regénérer"}
           </button>
@@ -724,11 +733,15 @@ export default function PagePlanning() {
       {/* Vue mobile + tablette (RG-08, #64) : liste verticale jusqu'à lg.
           La grille 7 colonnes ne s'active qu'à ≥ 1024px, où chaque cellule
           reste lisible (à md=768 elle tombait à ~120px, badges compressés). */}
-      <ul className="space-y-4 lg:hidden">
-        {planning.jours.map((jp) => (
+      <ul key={`grille-mobile-${genNonce}`} className="space-y-4 lg:hidden">
+        {planning.jours.map((jp, i) => (
           <li
             key={jp.jour}
-            className="rounded-lg border border-brand-100 bg-white p-4"
+            // Stagger d'apparition (#69) : 40 ms/carte. `backwards` (cf. token)
+            // garde la carte invisible pendant son délai. motion-safe : rien si
+            // l'utilisateur a réduit les animations.
+            style={{ animationDelay: `${i * 40}ms` }}
+            className="rounded-lg border border-brand-100 bg-white p-4 motion-safe:animate-apparition"
           >
             <h2 className="mb-3 font-semibold text-brand-900">
               {LIBELLES_JOURS[jp.jour].complet}
@@ -773,9 +786,16 @@ export default function PagePlanning() {
       </ul>
 
       {/* Vue desktop (RG-07, #64) : grille 7 colonnes à partir de lg (≥ 1024px) */}
-      <div className="hidden lg:grid lg:grid-cols-7 lg:gap-3">
-        {planning.jours.map((jp) => (
-          <section key={jp.jour} className="flex flex-col gap-3">
+      <div
+        key={`grille-desktop-${genNonce}`}
+        className="hidden lg:grid lg:grid-cols-7 lg:gap-3"
+      >
+        {planning.jours.map((jp, i) => (
+          <section
+            key={jp.jour}
+            style={{ animationDelay: `${i * 40}ms` }}
+            className="flex flex-col gap-3 motion-safe:animate-apparition"
+          >
             <h2 className="text-center text-sm font-semibold uppercase tracking-wide text-brand-700/85">
               {LIBELLES_JOURS[jp.jour].abrege}
             </h2>
@@ -885,9 +905,14 @@ function SlotRepas({
   onChangerRestes: (valeur: boolean) => void;
 }) {
   const slotNom = `${libelle.toLowerCase()} de ${jourLabel.toLowerCase()}`;
+  // Spin one-shot de l'icône « changer » (#69, P17) : incrémenté au clic →
+  // re-monte l'icône (key) pour rejouer la rotation. 0 au montage = pas de spin.
+  const [spin, setSpin] = useState(0);
   // Style partagé des actions textuelles (zone tactile ≥ 44px via after:-inset-1).
+  // `transition` (et non transition-colors) anime couleur ET transform → le
+  // feedback d'enfoncement `active:scale` est lissé ; neutralisé en reduced-motion.
   const styleAction =
-    "relative px-2 py-2 text-sm text-brand-700/85 underline-offset-2 transition-colors after:absolute after:-inset-1 after:content-[''] hover:text-brand-900 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600";
+    "relative px-2 py-2 text-sm text-brand-700/85 underline-offset-2 transition after:absolute after:-inset-1 after:content-[''] hover:text-brand-900 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100";
 
   // Slot marqué « restes » (US-12, RG-22) : pas de cuisine → ni badge de temps,
   // ni stepper, ni fiche. On revient au repas planifié (« Cuisiner ») ou on en
@@ -931,11 +956,15 @@ function SlotRepas({
       {/* Nom = déclencheur de la fiche (US-10, RG-20). Bouton plutôt que card
           entière cliquable : la card porte déjà changer/sélectionner/stepper
           (pas d'imbrication d'interactifs). text-left + zone tactile étendue. */}
+      {/* key={recette.nom} : sur remplacement (US-04/US-06), le nom re-monte
+          et joue un fade (#69, P17) — la bascule sèche devient un crossfade
+          doux. motion-safe : statique si l'utilisateur réduit les animations. */}
       <button
+        key={recette.nom}
         type="button"
         onClick={onVoir}
         aria-label={`Voir la recette : ${recette.nom}`}
-        className="mt-1 block w-full text-left text-sm font-medium text-brand-900 underline-offset-2 transition-colors hover:text-brand-700 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
+        className="mt-1 block w-full text-left text-sm font-medium text-brand-900 underline-offset-2 transition-colors hover:text-brand-700 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 motion-safe:animate-crossfade"
       >
         {recette.nom}
       </button>
@@ -956,11 +985,21 @@ function SlotRepas({
         */}
         <button
           type="button"
-          onClick={onChanger}
+          onClick={() => {
+            setSpin((s) => s + 1);
+            onChanger();
+          }}
           aria-label={`Changer le ${slotNom}`}
           className={`${styleAction} inline-flex items-center gap-1`}
         >
-          <RefreshCw aria-hidden="true" className="size-3.5" /> changer
+          {/* key={spin} : chaque clic re-monte l'icône → rejoue la rotation
+              360°. spin>0 garde le tout premier rendu sans rotation. (#69) */}
+          <RefreshCw
+            key={spin}
+            aria-hidden="true"
+            className={`size-3.5 ${spin > 0 ? "motion-safe:animate-spin-once" : ""}`}
+          />{" "}
+          changer
         </button>
         {/* Sélection manuelle (US-06) : ouvre le sélecteur de recettes */}
         <button
@@ -1028,7 +1067,7 @@ function StepperPersonnes({
   onChanger: (personnes: number) => void;
 }) {
   const styleBouton =
-    "relative flex size-7 items-center justify-center rounded-full border border-brand-200 text-brand-700 transition-colors after:absolute after:-inset-2 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent";
+    "relative flex size-7 items-center justify-center rounded-full border border-brand-200 text-brand-700 transition after:absolute after:-inset-2 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.92] motion-reduce:active:scale-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent";
   return (
     <div className="mt-2 flex items-center gap-2">
       <button

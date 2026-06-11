@@ -200,7 +200,7 @@ export default function PageCourses() {
         </div>
         <Link
           href="/planning"
-          className="rounded-full bg-brand-600 px-8 py-4 text-lg font-medium text-white transition-colors hover:bg-brand-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
+          className="rounded-full bg-brand-600 px-8 py-4 text-lg font-medium text-white transition hover:bg-brand-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100"
         >
           Aller au planning
         </Link>
@@ -240,14 +240,14 @@ export default function PageCourses() {
             type="button"
             onClick={toutDecocher}
             // after:-inset-1 : étend la zone tactile à ≥ 44px sans changer le visuel
-            className="relative rounded-full border border-brand-200 px-4 py-2 text-sm font-medium text-brand-700 transition-colors after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
+            className="relative rounded-full border border-brand-200 px-4 py-2 text-sm font-medium text-brand-700 transition after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100"
           >
             Tout décocher
           </button>
         )}
         <Link
           href="/planning"
-          className="relative rounded-full border border-brand-200 px-4 py-2 text-sm font-medium text-brand-700 transition-colors after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
+          className="relative rounded-full border border-brand-200 px-4 py-2 text-sm font-medium text-brand-700 transition after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100"
         >
           ← Planning
         </Link>

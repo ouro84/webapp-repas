@@ -143,7 +143,7 @@ export function FormulaireAuth({
             type="submit"
             disabled={chargement}
             aria-busy={chargement}
-            className="relative flex items-center justify-center gap-2 rounded-full bg-brand-600 px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-brand-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 disabled:opacity-60"
+            className="relative flex items-center justify-center gap-2 rounded-full bg-brand-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-brand-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100 disabled:opacity-60"
           >
             {chargement && <Spinner />}
             {chargement ? labelChargement : labelSoumettre}

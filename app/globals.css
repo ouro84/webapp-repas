@@ -43,6 +43,46 @@
   --font-sans: var(--font-nunito);
   --font-display: var(--font-fredoka);
   --font-mono: var(--font-geist-mono);
+
+  /* ---- Animations — micro-interactions (#69, P17) ----
+     Tokens d'animation exposés en utilitaires `animate-*` par Tailwind v4.
+     Transform/opacity uniquement (pas de width/height) → pas de reflow.
+     `backwards` sur l'apparition : la carte reste invisible PENDANT son délai
+     de stagger (sinon elle clignote visible avant son tour). */
+  --animate-apparition: apparition 300ms ease-out backwards;
+  --animate-crossfade: crossfade 220ms ease-out;
+  --animate-spin-once: spin-once 450ms ease-out;
+}
+
+@keyframes apparition {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes crossfade {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes spin-once {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* Base : fond crème + texte vert très foncé (plus chaleureux que noir pur) */
@@ -58,4 +98,21 @@ body {
    taps. On laisse passer les interactions vers le DOM réel. */
 ::view-transition {
   pointer-events: none;
+}
+
+/* Reduced-motion (#69, P17) : filet de sécurité global. Quiconque a activé
+   « réduire les animations » au niveau OS voit les transitions/animations
+   réduites à l'instantané — couvre le stagger, le crossfade, le spin de
+   l'icône « changer », mais aussi les animations préexistantes (animate-pulse,
+   spinner d'auth) et les View Transitions. Les variantes `motion-safe:` /
+   `motion-reduce:` dans les composants complètent ce filet. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

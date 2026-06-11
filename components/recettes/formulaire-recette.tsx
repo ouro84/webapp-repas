@@ -405,7 +405,7 @@ export function FormulaireRecette({
         <button
           type="button"
           onClick={ajouterLigne}
-          className="self-start rounded-full border border-brand-200 px-4 py-2 text-sm font-medium text-brand-700 transition-colors hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
+          className="self-start rounded-full border border-brand-200 px-4 py-2 text-sm font-medium text-brand-700 transition hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100"
         >
           + Ajouter un ingrédient
         </button>
@@ -422,7 +422,7 @@ export function FormulaireRecette({
           type="submit"
           disabled={enCours}
           aria-busy={enCours}
-          className="rounded-full bg-brand-600 px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-brand-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 disabled:opacity-60"
+          className="rounded-full bg-brand-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-brand-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100 disabled:opacity-60"
         >
           {enCours ? "Enregistrement…" : "Enregistrer"}
         </button>
@@ -430,7 +430,7 @@ export function FormulaireRecette({
           type="button"
           onClick={onAnnuler}
           disabled={enCours}
-          className="rounded-full border border-brand-200 px-6 py-3 text-sm font-medium text-brand-700 transition-colors hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 disabled:opacity-60"
+          className="rounded-full border border-brand-200 px-6 py-3 text-sm font-medium text-brand-700 transition hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100 disabled:opacity-60"
         >
           Annuler
         </button>

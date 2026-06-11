@@ -152,7 +152,7 @@ export function SelecteurRecette({
           <button
             type="button"
             onClick={choisirRestes}
-            className="mt-3 flex w-full items-center gap-2 rounded-full border border-dashed border-brand-200 px-4 py-2 text-sm font-medium text-brand-700 transition-colors hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
+            className="mt-3 flex w-full items-center gap-2 rounded-full border border-dashed border-brand-200 px-4 py-2 text-sm font-medium text-brand-700 transition hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.98] motion-reduce:active:scale-100"
           >
             <svg
               aria-hidden="true"
