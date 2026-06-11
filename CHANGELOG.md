@@ -9,6 +9,7 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ### Modifié
 
+- Horodatage serveur de la sync (#104) : l'`updated_at` de `planning` et `etat_courses` — l'horloge de référence du **last-write-wins** entre appareils (#6) — est désormais posé par un **trigger SQL** (`now()`, horloge serveur) au lieu de l'horloge **du client**. Fiabilise l'arbitrage « le plus récent gagne » quand deux appareils ont des horloges désynchronisées (le trigger couvre aussi l'UPDATE/upsert et ignore toute valeur envoyée par le client). `lib/persistance.ts` récupère/renvoie la valeur posée par le trigger ; `lib/sync.ts` est inchangé. **Comportement observable identique**, robustesse accrue (dette technique de la sync multi-device soldée).
 - Migration `middleware` → `proxy` (#12) : le fichier `middleware.ts` est renommé `proxy.ts` et la fonction exportée `middleware` devient `proxy`, conformément à la convention Next.js 16 (l'ancien nom déclenchait un avertissement de dépréciation au démarrage). Aucun changement de comportement : rafraîchissement de session Supabase et redirections (routes protégées / routes d'auth) identiques, `export const config = { matcher }` inchangé. Solde l'avertissement de build.
 
 ## [1.2.0] - 2026-06-11

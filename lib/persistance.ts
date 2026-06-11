@@ -169,14 +169,15 @@ export async function sauvegarderPlanningDistant(
     throw new Error(`Sauvegarde du planning impossible : ${erreurSuppression.message}`)
   }
 
-  // updated_at posé explicitement (et renvoyé) : il sert d'horloge de référence
-  // au last-write-wins, côté serveur uniquement (#6, RG-23).
+  // updated_at n'est PAS fourni par le client : un trigger SQL le pose à now()
+  // (horloge serveur) à l'insert (#104). On récupère cette valeur via le
+  // RETURNING (.select(), qui reflète les triggers BEFORE) et on la renvoie —
+  // elle sert d'horloge de référence au last-write-wins (#6, RG-23).
   const { data: cree, error: erreurInsertion } = await supabase
     .from("planning")
     .insert({
       user_id: user.id,
       semaine: planning.semaine,
-      updated_at: new Date().toISOString(),
     })
     .select("id, updated_at")
     .single()
@@ -236,15 +237,22 @@ export async function sauvegarderCochesDistantes(
     coches = {}
   }
 
-  const horodatage = new Date().toISOString()
-  const { error } = await supabase.from("etat_courses").upsert({
-    user_id: user.id,
-    semaine,
-    coches,
-    updated_at: horodatage,
-  })
-  if (error) {
-    throw new Error(`Sauvegarde des coches impossible : ${error.message}`)
+  // updated_at posé par le trigger SQL (now(), horloge serveur) — #104. On le
+  // récupère via le RETURNING (.select()) et on le renvoie comme horloge de
+  // référence du last-write-wins (signature inchangée).
+  const { data: ligne, error } = await supabase
+    .from("etat_courses")
+    .upsert({
+      user_id: user.id,
+      semaine,
+      coches,
+    })
+    .select("updated_at")
+    .single()
+  if (error || !ligne) {
+    throw new Error(
+      `Sauvegarde des coches impossible : ${error?.message ?? "réponse vide"}`
+    )
   }
-  return horodatage
+  return ligne.updated_at as string
 }
