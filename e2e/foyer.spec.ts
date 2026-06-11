@@ -37,10 +37,13 @@ test("générer un code d'invitation l'affiche avec son expiration", async ({
   await page.goto("/reglages");
 
   // Idempotent entre runs : si un code valide existe déjà (« Régénérer »), on le
-  // régénère ; sinon on clique « Inviter quelqu'un ».
+  // régénère ; sinon on clique « Inviter quelqu'un ». On ATTEND d'abord que le
+  // panneau soit chargé (un des deux boutons présent) — sinon un isVisible()
+  // instantané lit l'état « Chargement… » et branche à tort.
   const inviter = page.getByRole("button", { name: "Inviter quelqu’un" });
   const regenerer = page.getByRole("button", { name: "Régénérer" });
-  if (await inviter.isVisible().catch(() => false)) {
+  await expect(inviter.or(regenerer)).toBeVisible();
+  if (await inviter.isVisible()) {
     await inviter.click();
   } else {
     await regenerer.click();
