@@ -18,6 +18,11 @@ on:
   pull_request:
   push:
     branches: [main]
+  # Déclenchement manuel : filet de sécurité quand GitHub « zappe » le run push
+  # d'un merge (vécu sur le merge de #56 PR2 : aucun run push créé → migrate-prod
+  # jamais exécuté, prod restée en arrière du staging). Permet de relancer la CI
+  # (et donc migrate-prod, cf. son `if` ci-dessous) sur main à la demande.
+  workflow_dispatch:
 
 jobs:
   test:
@@ -91,7 +96,9 @@ jobs:
   # Tourne toujours avec le coffre Actions (un push n'est jamais un
   # événement Dependabot), d'où SUPABASE_DB_PASSWORD dans ce seul coffre.
   migrate-prod:
-    if: github.event_name == 'push'
+    # push sur main (nominal) OU déclenchement manuel (rattrapage si le run push
+    # d'un merge a été zappé par GitHub).
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     needs: test
     runs-on: ubuntu-latest
     timeout-minutes: 10
