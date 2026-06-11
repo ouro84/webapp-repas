@@ -84,10 +84,24 @@ export async function POST(request: Request) {
     )
   }
 
-  // Conversion DB → domaine, puis génération (RG-01 à RG-03).
-  const recettesDomain = (recettes as unknown as DbRecette[]).map(
-    dbRecetteToDomain
+  // Recettes « supprimées » (masquées) par l'utilisateur (#105) : on les exclut
+  // de la génération. La RLS de recette_masquee ne renvoie que ses lignes. En
+  // cas d'erreur de lecture, on n'exclut rien (la génération prime) et on
+  // journalise — jamais de catch muet.
+  const { data: masques, error: masquesError } = await supabase
+    .from("recette_masquee")
+    .select("recette_id")
+  if (masquesError) {
+    console.error("Lecture des recettes masquées échouée (aucune exclusion).", masquesError)
+  }
+  const idsMasques = new Set(
+    (masques ?? []).map((m) => (m as { recette_id: string }).recette_id)
   )
+
+  // Conversion DB → domaine, exclusion des masquées, puis génération (RG-01 à RG-03).
+  const recettesDomain = (recettes as unknown as DbRecette[])
+    .map(dbRecetteToDomain)
+    .filter((r) => !idsMasques.has(r.id))
 
   // Réglages de génération personnalisés (#45, P09) : la RLS ne renvoie que la
   // ligne de l'utilisateur (ou aucune → réglages par défaut). Le client n'en

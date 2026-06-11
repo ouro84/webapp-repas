@@ -54,18 +54,42 @@ const SELECT_RECETTE = `
   )
 ` as const
 
+type Client = ReturnType<typeof createClient>
+
 /**
- * Charge les recettes visibles par l'utilisateur (globales + personnelles).
+ * Ids des recettes « supprimées » (masquées) par l'utilisateur courant (#105).
+ * La RLS de recette_masquee ne renvoie que les lignes de l'utilisateur → pas
+ * besoin de filtrer par user_id. Set vide si aucune. Sert à exclure les recettes
+ * masquées du catalogue partout côté client (génération : filtrage serveur).
+ */
+async function chargerIdsMasques(client: Client): Promise<Set<string>> {
+  const { data, error } = await client
+    .from("recette_masquee")
+    .select("recette_id")
+  if (error) {
+    throw new Error(`Chargement des recettes masquées impossible : ${error.message}`)
+  }
+  return new Set((data ?? []).map((r) => (r as { recette_id: string }).recette_id))
+}
+
+/**
+ * Charge les recettes visibles par l'utilisateur (globales + personnelles),
+ * EXCLUANT celles qu'il a supprimées (masquées, #105).
  * Lève une erreur explicite en cas d'échec réseau / Supabase.
  */
 export async function chargerRecettes(): Promise<Recette[]> {
   const supabase = createClient()
-  const { data, error } = await supabase.from("recette").select(SELECT_RECETTE)
+  const [{ data, error }, masques] = await Promise.all([
+    supabase.from("recette").select(SELECT_RECETTE),
+    chargerIdsMasques(supabase),
+  ])
 
   if (error) {
     throw new Error(`Chargement des recettes impossible : ${error.message}`)
   }
-  return (data as unknown as DbRecette[]).map(dbRecetteToDomain)
+  return (data as unknown as DbRecette[])
+    .map(dbRecetteToDomain)
+    .filter((r) => !masques.has(r.id))
 }
 
 // Recette annotée pour la page de gestion : `editable` distingue les recettes
@@ -79,27 +103,26 @@ export type RecetteGeree = { recette: Recette; editable: boolean }
  */
 export async function chargerRecettesGerees(): Promise<RecetteGeree[]> {
   const supabase = createClient()
-  const [{ data, error }, { data: { user } }] = await Promise.all([
+  const [{ data, error }, { data: { user } }, masques] = await Promise.all([
     supabase.from("recette").select(`user_id, ${SELECT_RECETTE}`),
     supabase.auth.getUser(),
+    chargerIdsMasques(supabase),
   ])
 
   if (error) {
     throw new Error(`Chargement des recettes impossible : ${error.message}`)
   }
-  return (data as unknown as (DbRecette & { user_id: string | null })[]).map(
-    (db) => ({
+  return (data as unknown as (DbRecette & { user_id: string | null })[])
+    .filter((db) => !masques.has(db.id))
+    .map((db) => ({
       recette: dbRecetteToDomain(db),
       editable: db.user_id !== null && db.user_id === user?.id,
-    })
-  )
+    }))
 }
 
 // ============================================================================
 // Écritures (recettes personnelles) — #2 PR2
 // ============================================================================
-
-type Client = ReturnType<typeof createClient>
 
 /**
  * Find-or-create d'un ingrédient du catalogue, identifié par le triplet
@@ -252,14 +275,75 @@ export async function modifierRecette(
 }
 
 /**
- * Supprime une recette personnelle (RG-01 : la confirmation est gérée par
- * l'UI en amont). La RLS interdit la suppression d'une recette globale ou
- * d'autrui ; les liens recette_ingredient partent en cascade (FK).
+ * Supprime une recette personnelle (la confirmation/undo est gérée par l'UI).
+ * La RLS interdit la suppression d'une recette globale ou d'autrui ; les liens
+ * recette_ingredient partent en cascade (FK).
  */
 export async function supprimerRecette(id: string): Promise<void> {
   const client = createClient()
   const { error } = await client.from("recette").delete().eq("id", id)
   if (error) {
     throw new Error(`Suppression impossible : ${error.message}`)
+  }
+}
+
+// ============================================================================
+// Masquage des recettes par défaut — « Supprimer » sur le catalogue (#105 PR1)
+// ============================================================================
+//
+// Le catalogue (user_id IS NULL) est partagé en lecture seule : on ne peut pas
+// le détruire. « Supprimer » une recette par défaut = l'inscrire dans
+// recette_masquee (propre à l'utilisateur). C'est réversible (undo transitoire,
+// même esprit que l'undo planning US-09) via demasquerRecette.
+
+/**
+ * Masque (« supprime » côté UX) une recette par défaut pour l'utilisateur
+ * courant. Idempotent du point de vue UX : si déjà masquée, la PK rejette le
+ * doublon — on remonte l'erreur, l'appelant ne devrait pas y arriver (la
+ * recette n'est plus listée une fois masquée).
+ */
+export async function masquerRecette(recetteId: string): Promise<void> {
+  const client = createClient()
+  const {
+    data: { user },
+  } = await client.auth.getUser()
+  if (!user) throw new Error("Tu dois être connecté pour supprimer une recette.")
+
+  const { error } = await client
+    .from("recette_masquee")
+    .insert({ user_id: user.id, recette_id: recetteId })
+  if (error) {
+    throw new Error(`Suppression impossible : ${error.message}`)
+  }
+}
+
+/**
+ * Démasque une recette par défaut : inverse de masquerRecette, utilisé par
+ * l'« Annuler » (undo) du toast de suppression.
+ */
+export async function demasquerRecette(recetteId: string): Promise<void> {
+  const client = createClient()
+  const { error } = await client
+    .from("recette_masquee")
+    .delete()
+    .eq("recette_id", recetteId)
+  if (error) {
+    throw new Error(`Annulation impossible : ${error.message}`)
+  }
+}
+
+/**
+ * Convertit une recette domaine en saisie de formulaire (#105) : sert à RECRÉER
+ * une recette personnelle supprimée lors d'un « Annuler » (undo). Les flags
+ * optionnels absents reprennent leurs valeurs neutres.
+ */
+export function recetteVersSaisie(recette: Recette): SaisieRecette {
+  return {
+    nom: recette.nom,
+    tempsPreparation: recette.tempsPreparation,
+    vegetarien: recette.vegetarien ?? false,
+    accompagnement: recette.accompagnement ?? null,
+    saisons: recette.saisons ?? [],
+    ingredients: recette.ingredients,
   }
 }

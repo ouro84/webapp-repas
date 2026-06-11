@@ -4,18 +4,32 @@
 // teardown (afterAll) supprime tout ce que le run a créé — pas d'accumulation.
 
 import { test, expect, request as apiRequest, type Page } from "@playwright/test";
-import { nettoyerRecettesDistantes } from "./helpers";
+import { nettoyerRecettesDistantes, nettoyerMasquagesDistants } from "./helpers";
 
 // Suffixe unique au run (Date.now est autorisé dans les tests Playwright).
 const SUFFIXE = `${Date.now()}`;
 
-// Teardown : supprime les recettes du run via DELETE REST (rapide, robuste).
-// Remplace l'ancienne suppression par clics UI, dont le re-render de liste
-// faisait dépasser le timeout afterAll (« element detached, retrying »).
+// Les masquages (#105 : « suppression » d'une recette du catalogue) persistent
+// en base pour le compte de test partagé. On les purge AVANT chaque test (un
+// résidu fausserait le vivier / l'absence d'une recette du catalogue) et APRÈS
+// la série, en plus du nettoyage des recettes perso du run.
+test.beforeEach(async () => {
+  const contexte = await apiRequest.newContext();
+  try {
+    await nettoyerMasquagesDistants(contexte);
+  } finally {
+    await contexte.dispose();
+  }
+});
+
+// Teardown : supprime les recettes du run + les masquages résiduels via DELETE
+// REST (rapide, robuste). Remplace l'ancienne suppression par clics UI, dont le
+// re-render de liste faisait dépasser le timeout afterAll (« element detached »).
 test.afterAll(async () => {
   const contexte = await apiRequest.newContext();
   try {
     await nettoyerRecettesDistantes(contexte, SUFFIXE);
+    await nettoyerMasquagesDistants(contexte);
   } finally {
     await contexte.dispose();
   }
@@ -87,52 +101,48 @@ test("dupliquer une recette du catalogue crée une copie personnelle", async ({
   await expect(ligne.getByRole("button", { name: "Modifier" })).toBeVisible();
 });
 
-test("supprimer une recette demande confirmation puis la retire (RG-01)", async ({
+test("supprimer une recette perso la retire, avec undo (#105)", async ({
   page,
 }) => {
   const nom = `E2E ASupprimer ${SUFFIXE}`;
   await creer(page, nom);
 
+  // Plus de confirmation : la suppression est immédiate + toast d'undo.
   await page
     .locator("li", { hasText: nom })
     .getByRole("button", { name: "Supprimer" })
     .click();
-
-  // Boîte de confirmation (RG-01).
-  const dialog = page.getByRole("dialog");
-  await expect(
-    dialog.getByRole("heading", { name: "Supprimer cette recette ?" })
-  ).toBeVisible();
-
-  // Annuler ne supprime pas.
-  await dialog.getByRole("button", { name: "Annuler" }).click();
-  await expect(page.locator("li", { hasText: nom })).toBeVisible();
-
-  // Confirmer supprime.
-  await page
-    .locator("li", { hasText: nom })
-    .getByRole("button", { name: "Supprimer" })
-    .click();
-  await page.getByRole("dialog").getByRole("button", { name: "Supprimer" }).click();
   await expect(page.getByText("Recette supprimée")).toBeVisible();
   await expect(page.locator("li", { hasText: nom })).toHaveCount(0);
+
+  // « Annuler » recrée la recette perso (US-09-like undo).
+  await page.getByRole("button", { name: "Annuler" }).click();
+  await expect(page.getByText("Annulé")).toBeVisible();
+  await expect(page.locator("li", { hasText: nom })).toBeVisible();
 });
 
-test("une recette du catalogue global est en lecture seule (pas de suppression)", async ({
+test("supprimer une recette du catalogue la masque, avec undo (#105)", async ({
   page,
 }) => {
   await page.goto("/recettes");
-  const ligneCatalogue = page
+  // Une recette du catalogue (par défaut) = ligne SANS bouton « Modifier »
+  // (réservé aux perso jusqu'à #105 PR2). Elle porte bien « Supprimer ».
+  const ligne = page
     .locator("main li")
-    .filter({ hasText: "Catalogue" })
+    .filter({ hasNot: page.getByRole("button", { name: "Modifier" }) })
     .first();
-  await expect(ligneCatalogue).toBeVisible();
-  await expect(
-    ligneCatalogue.getByRole("button", { name: "Modifier" })
-  ).toHaveCount(0);
-  await expect(
-    ligneCatalogue.getByRole("button", { name: "Supprimer" })
-  ).toHaveCount(0);
+  await expect(ligne).toBeVisible();
+  await expect(ligne.getByRole("button", { name: "Modifier" })).toHaveCount(0);
+  const nom = (await ligne.locator("span").first().innerText()).trim();
+
+  await ligne.getByRole("button", { name: "Supprimer" }).click();
+  await expect(page.getByText("Recette supprimée")).toBeVisible();
+  await expect(page.locator("li", { hasText: nom })).toHaveCount(0);
+
+  // « Annuler » démasque la recette par défaut → elle réapparaît.
+  await page.getByRole("button", { name: "Annuler" }).click();
+  await expect(page.getByText("Annulé")).toBeVisible();
+  await expect(page.locator("li", { hasText: nom })).toBeVisible();
 });
 
 test("une recette végétarienne porte le badge et passe le filtre (#86)", async ({

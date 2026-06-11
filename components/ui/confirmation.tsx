@@ -3,7 +3,7 @@
 // Modale de confirmation générique (#5) — garde-fou avant une action sur un
 // planning passé (régénérer / modifier un slot, RG-24). <dialog> natif en
 // showModal() : focus piégé, Échap, backdrop et restitution du focus fournis
-// par la plateforme (même motif que ConfirmationSuppression / SelecteurRecette).
+// par la plateforme (même motif que SelecteurRecette).
 //
 // Montée uniquement pendant la confirmation : ouverture au montage, fermeture
 // remontée via onAnnuler ; onConfirmer ferme aussi (le parent démonte).
