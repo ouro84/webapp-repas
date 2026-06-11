@@ -39,7 +39,7 @@ export function ConfirmationSuppression({
       onClose={onAnnuler}
       onClick={surClic}
       aria-labelledby="titre-suppression"
-      className="fixed inset-0 m-auto w-[calc(100%-2rem)] max-w-sm rounded-2xl bg-white p-0 text-brand-900 shadow-xl backdrop:bg-brand-900/50"
+      className="fixed inset-0 m-auto w-[calc(100%-2rem)] max-w-sm rounded-2xl bg-surface p-0 text-brand-900 shadow-xl backdrop:bg-black/50"
     >
       <div className="flex flex-col gap-4 p-6">
         <h2 id="titre-suppression" className="text-lg font-bold text-brand-900">
@@ -72,7 +72,7 @@ export function ConfirmationSuppression({
             onClick={onConfirmer}
             disabled={enCours}
             aria-busy={enCours}
-            className="rounded-full bg-red-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-red-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600 active:scale-[0.97] motion-reduce:active:scale-100 disabled:opacity-60"
+            className="rounded-full bg-danger px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-danger-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-danger active:scale-[0.97] motion-reduce:active:scale-100 disabled:opacity-60"
           >
             {enCours ? "Suppression…" : "Supprimer"}
           </button>

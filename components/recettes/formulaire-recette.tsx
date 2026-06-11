@@ -90,7 +90,7 @@ function ingredientVersLigne(ing: Ingredient): LigneSaisie {
 }
 
 const INPUT =
-  "rounded-lg border border-brand-200 bg-white px-3 py-2 text-sm text-brand-900 focus:outline-2 focus:outline-offset-1 focus:outline-brand-600";
+  "rounded-lg border border-brand-200 bg-surface px-3 py-2 text-sm text-brand-900 focus:outline-2 focus:outline-offset-1 focus:outline-brand-600";
 
 export function FormulaireRecette({
   valeurInitiale,
@@ -310,7 +310,7 @@ export function FormulaireRecette({
                 onClick={() => basculerSaison(s)}
                 className={`rounded-full border px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 ${
                   actif
-                    ? "border-brand-600 bg-brand-600 text-white"
+                    ? "border-brand-600 bg-primary text-white"
                     : "border-brand-200 text-brand-700 hover:bg-brand-50"
                 }`}
               >
@@ -328,7 +328,7 @@ export function FormulaireRecette({
         {lignes.map((ligne, index) => (
           <div
             key={index}
-            className="flex flex-wrap items-end gap-2 rounded-lg border border-brand-100 bg-white p-3"
+            className="flex flex-wrap items-end gap-2 rounded-lg border border-brand-100 bg-surface p-3"
           >
             <div className="flex min-w-[8rem] flex-1 flex-col gap-1">
               <label className="text-xs text-brand-700/85">Nom</label>
@@ -422,7 +422,7 @@ export function FormulaireRecette({
           type="submit"
           disabled={enCours}
           aria-busy={enCours}
-          className="rounded-full bg-brand-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-brand-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100 disabled:opacity-60"
+          className="rounded-full bg-primary px-6 py-3 text-sm font-semibold text-white transition hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100 disabled:opacity-60"
         >
           {enCours ? "Enregistrement…" : "Enregistrer"}
         </button>

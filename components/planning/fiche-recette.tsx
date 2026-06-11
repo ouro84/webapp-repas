@@ -72,7 +72,7 @@ export function FicheRecette({
       onClose={onFermer}
       onClick={surClic}
       aria-labelledby="titre-fiche"
-      className="fixed mx-auto mb-0 mt-auto flex max-h-[85dvh] w-full flex-col rounded-t-2xl bg-white p-0 text-brand-900 shadow-xl backdrop:bg-brand-900/50 md:my-auto md:max-w-lg md:rounded-2xl"
+      className="fixed mx-auto mb-0 mt-auto flex max-h-[85dvh] w-full flex-col rounded-t-2xl bg-surface p-0 text-brand-900 shadow-xl backdrop:bg-black/50 md:my-auto md:max-w-lg md:rounded-2xl"
     >
       <header className="flex items-start justify-between gap-3 border-b border-brand-100 p-4">
         <div className="min-w-0">

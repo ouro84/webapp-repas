@@ -21,7 +21,7 @@ export default function Accueil() {
 
       <Link
         href="/planning"
-        className="rounded-full bg-brand-600 px-8 py-4 text-lg font-semibold text-white shadow-sm transition hover:bg-brand-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100"
+        className="rounded-full bg-primary px-8 py-4 text-lg font-semibold text-white shadow-sm transition hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100"
       >
         Générer mon planning
       </Link>

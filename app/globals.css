@@ -35,6 +35,20 @@
   /* ---- Canvas — fond crème ---- */
   --color-canvas: #fafaf5;
 
+  /* ---- Tokens sémantiques (#72, P19 — dark mode) ----
+     L'échelle brand/accent est surchargée (un même step sert de texte ET de
+     fond de bouton/scrim) → un simple flip casserait les boutons. On extrait
+     donc les rôles « surface » et « action » dans leurs propres tokens : le
+     bloc dark (plus bas) ne flippe que ce qui est purement texte/fill/bordure.
+     - surface  : fond des cartes / nav / dialogs / inputs (était bg-white)
+     - primary  : fond des boutons d'action (reste vert, jamais flippé en clair)
+     - danger   : bouton destructif (était bg-red-600) — libère red-* pour le texte */
+  --color-surface: #ffffff;
+  --color-primary: #3d7a44;        /* = brand-600 en clair */
+  --color-primary-hover: #2e5e34;  /* = brand-700 en clair */
+  --color-danger: #dc2626;         /* = red-600 */
+  --color-danger-hover: #b91c1c;   /* = red-700 */
+
   /* ---- Typographie (#66, P14) ----
      Pairing rond et chaleureux. Nunito porte le corps (--font-sans, appliqué
      par `body`) ; Fredoka habille la marque + les titres de page via la classe
@@ -86,10 +100,65 @@
 }
 
 /* Base : fond crème + texte vert très foncé (plus chaleureux que noir pur) */
+:root {
+  color-scheme: light;
+}
 body {
   background-color: var(--color-canvas);
   color: var(--color-brand-900);
   font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+}
+
+/* ============================================================
+   Dark mode (#72, P19)
+   `data-theme="dark"` est posé sur <html> par le script anti-FOUC
+   (app/layout.tsx) : il résout la préférence stockée (clair/sombre/système)
+   AVANT le premier paint — donc « système » suit bien prefers-color-scheme,
+   et un override manuel (clair/sombre) le force.
+
+   Palette pensée pour le sombre (désaturée/éclaircie, pas une inversion) ;
+   contrastes texte vérifiés ≥ 4.5:1 sur surface (#1d2520) et canvas (#14181 5).
+   On ne redéfinit QUE les valeurs : les utilitaires (var(--color-*)) suivent.
+   ============================================================ */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --color-canvas: #141815;   /* fond de page (charbon vert chaud) */
+  --color-surface: #1d2520;  /* cartes / nav / dialogs (élevé) */
+
+  /* Brand — désormais rôles texte / fill subtil / bordure uniquement */
+  --color-brand-50:  #232f27; /* fill subtil / hover (au-dessus de surface) */
+  --color-brand-100: #2b372f; /* séparateurs */
+  --color-brand-200: #3b4d40; /* bordures medium */
+  --color-brand-500: #5fb06b; /* icônes / badges */
+  --color-brand-600: #6fbf7b; /* liens / icônes (vert vif clair) */
+  --color-brand-700: #a9c9af; /* texte secondaire (clair désaturé) */
+  --color-brand-900: #eef3ee; /* texte fort / titres (quasi blanc) */
+
+  /* Action : le vert de bouton reste vif (texte blanc lisible, ≥ 4.5:1) */
+  --color-primary: #3d7a44;
+  --color-primary-hover: #4a8f54;
+
+  /* Accent — terracotta éclairci pour le texte, foncé pour les fonds */
+  --color-accent-50:  #3a241b; /* fond placard / badge normal */
+  --color-accent-100: #482c20; /* badge long */
+  --color-accent-500: #e0794f; /* éléments accent */
+  --color-accent-600: #c96a42; /* accent hover */
+  --color-accent-700: #eaa888; /* texte accent (sur accent-50) */
+  --color-accent-800: #f2c2a6; /* texte accent fort (nom placard) */
+
+  /* États — encadrés sombres, texte clair ; bouton destructif via --color-danger */
+  --color-danger: #e5484d;
+  --color-danger-hover: #f1666a;
+  --color-red-50:  #3a1d1d;
+  --color-red-200: #5e2b2b;
+  --color-red-600: #f87171; /* texte erreur */
+  --color-red-700: #fca5a5;
+  --color-red-800: #fecaca;
+  --color-amber-50: #352a14;
+  --color-amber-100: #4a3a1c;
+  --color-amber-700: #fcd34d;
+  --color-amber-800: #fde68a;
 }
 
 /* View Transitions (réordonnancement de la liste de courses, US-05) :

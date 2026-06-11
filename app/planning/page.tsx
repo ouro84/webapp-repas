@@ -621,7 +621,7 @@ export default function PagePlanning() {
           onClick={() => void genererNouveauPlanning()}
           disabled={enGeneration}
           aria-busy={enGeneration}
-          className="rounded-full bg-brand-600 px-6 py-3 font-medium text-white transition hover:bg-brand-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100 disabled:opacity-60"
+          className="rounded-full bg-primary px-6 py-3 font-medium text-white transition hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100 disabled:opacity-60"
         >
           {enGeneration ? "Génération…" : "Réessayer"}
         </button>
@@ -658,7 +658,7 @@ export default function PagePlanning() {
           onClick={() => void genererNouveauPlanning()}
           disabled={enGeneration}
           aria-busy={enGeneration}
-          className="rounded-full bg-brand-600 px-8 py-4 text-lg font-medium text-white transition hover:bg-brand-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100 disabled:opacity-60"
+          className="rounded-full bg-primary px-8 py-4 text-lg font-medium text-white transition hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100 disabled:opacity-60"
         >
           {enGeneration ? "Génération…" : "Générer mon planning"}
         </button>
@@ -707,7 +707,7 @@ export default function PagePlanning() {
           </button>
           <Link
             href="/courses"
-            className="relative flex-1 rounded-full bg-brand-600 px-4 py-2 text-center text-sm font-medium text-white transition-colors after:absolute after:-inset-1 after:content-[''] hover:bg-brand-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 sm:flex-none"
+            className="relative flex-1 rounded-full bg-primary px-4 py-2 text-center text-sm font-medium text-white transition-colors after:absolute after:-inset-1 after:content-[''] hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 sm:flex-none"
           >
             Liste de courses →
           </Link>
@@ -741,7 +741,7 @@ export default function PagePlanning() {
             // garde la carte invisible pendant son délai. motion-safe : rien si
             // l'utilisateur a réduit les animations.
             style={{ animationDelay: `${i * 40}ms` }}
-            className="rounded-lg border border-brand-100 bg-white p-4 motion-safe:animate-apparition"
+            className="rounded-lg border border-brand-100 bg-surface p-4 motion-safe:animate-apparition"
           >
             <h2 className="mb-3 font-semibold text-brand-900">
               {LIBELLES_JOURS[jp.jour].complet}
@@ -949,7 +949,7 @@ function SlotRepas({
   }
 
   return (
-    <div className="rounded-lg border border-brand-100 bg-white p-3 shadow-sm">
+    <div className="rounded-lg border border-brand-100 bg-surface p-3 shadow-sm">
       <p className="text-xs font-medium uppercase tracking-wide text-brand-700/85">
         {libelle}
       </p>

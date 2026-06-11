@@ -53,7 +53,7 @@ function SegmentPlafond({
     <div
       role="radiogroup"
       aria-labelledby={libelleId}
-      className="inline-flex rounded-full border border-brand-200 bg-white p-0.5"
+      className="inline-flex rounded-full border border-brand-200 bg-surface p-0.5"
     >
       {ORDRE_TEMPS.map((t) => {
         const actif = t === valeur;
@@ -65,7 +65,7 @@ function SegmentPlafond({
             aria-checked={actif}
             onClick={() => onChange(t)}
             className={`rounded-full px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 ${
-              actif ? "bg-brand-600 text-white" : "text-brand-700 hover:bg-brand-50"
+              actif ? "bg-primary text-white" : "text-brand-700 hover:bg-brand-50"
             }`}
           >
             {LIBELLE_TEMPS[t]}
@@ -94,11 +94,11 @@ function Bascule({
       aria-labelledby={libelleId}
       onClick={() => onChange(!actif)}
       className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 ${
-        actif ? "bg-brand-600" : "bg-brand-200"
+        actif ? "bg-primary" : "bg-brand-200"
       }`}
     >
       <span
-        className={`inline-block size-5 transform rounded-full bg-white shadow transition-transform ${
+        className={`inline-block size-5 transform rounded-full bg-surface shadow transition-transform ${
           actif ? "translate-x-5" : "translate-x-0.5"
         }`}
       />
@@ -478,7 +478,7 @@ export default function PageReglages() {
           onClick={enregistrer}
           disabled={!modifie || !faisable || enregistrement}
           aria-busy={enregistrement}
-          className="rounded-full bg-brand-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100 disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded-full bg-primary px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {enregistrement ? "Enregistrement…" : "Enregistrer"}
         </button>

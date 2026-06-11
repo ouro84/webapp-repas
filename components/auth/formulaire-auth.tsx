@@ -87,7 +87,7 @@ export function FormulaireAuth({
               required
               aria-invalid={erreur !== null}
               aria-describedby={erreur !== null ? idErreur : undefined}
-              className="rounded-lg border border-brand-200 bg-white px-3 py-2.5 text-sm text-brand-900 focus:outline-2 focus:outline-offset-1 focus:outline-brand-600"
+              className="rounded-lg border border-brand-200 bg-surface px-3 py-2.5 text-sm text-brand-900 focus:outline-2 focus:outline-offset-1 focus:outline-brand-600"
             />
           </div>
 
@@ -110,7 +110,7 @@ export function FormulaireAuth({
                 aria-invalid={erreur !== null}
                 aria-describedby={erreur !== null ? idErreur : undefined}
                 // pr-12 : réserve la place du bouton œil, qui se superpose à droite
-                className="w-full rounded-lg border border-brand-200 bg-white px-3 py-2.5 pr-12 text-sm text-brand-900 focus:outline-2 focus:outline-offset-1 focus:outline-brand-600"
+                className="w-full rounded-lg border border-brand-200 bg-surface px-3 py-2.5 pr-12 text-sm text-brand-900 focus:outline-2 focus:outline-offset-1 focus:outline-brand-600"
               />
               <button
                 type="button"
@@ -143,7 +143,7 @@ export function FormulaireAuth({
             type="submit"
             disabled={chargement}
             aria-busy={chargement}
-            className="relative flex items-center justify-center gap-2 rounded-full bg-brand-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-brand-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100 disabled:opacity-60"
+            className="relative flex items-center justify-center gap-2 rounded-full bg-primary px-6 py-3 text-sm font-semibold text-white transition hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100 disabled:opacity-60"
           >
             {chargement && <Spinner />}
             {chargement ? labelChargement : labelSoumettre}

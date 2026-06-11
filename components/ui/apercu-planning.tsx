@@ -2,7 +2,7 @@
 //
 // Montre la « promesse produit » : une mini-grille de 3 cartes repas qui
 // reprend EXACTEMENT le langage visuel des vraies cartes du planning
-// (rounded-lg border-brand-100 bg-white shadow-sm, label jour, nom de plat,
+// (rounded-lg border-brand-100 bg-surface shadow-sm, label jour, nom de plat,
 // badges) et réutilise `BadgeTemps` / `BadgeVegetarien` pour rester cohérent
 // et profiter de la palette accent (#67 : Normal/Long en terracotta).
 //
@@ -39,7 +39,7 @@ export function ApercuPlanning({ className }: { className?: string }) {
       {CARTES.map((carte) => (
         <div
           key={carte.jour}
-          className="flex flex-col gap-1.5 rounded-lg border border-brand-100 bg-white p-2.5 shadow-sm sm:p-3"
+          className="flex flex-col gap-1.5 rounded-lg border border-brand-100 bg-surface p-2.5 shadow-sm sm:p-3"
         >
           <p className="text-[0.65rem] font-medium uppercase tracking-wide text-brand-700/85">
             {carte.jour}
