@@ -31,6 +31,15 @@ export const metadata: Metadata = {
   title: "On mange quoi ?",
   description:
     "La question du soir a enfin sa réponse : génère ton planning de repas hebdomadaire et ta liste de courses.",
+  applicationName: "On mange quoi ?",
+  // PWA iOS (#71, P18) : iOS ignore le manifest pour l'icône d'accueil et le
+  // mode standalone — il faut ces meta + app/apple-icon.png (apple-touch-icon
+  // auto-lié par Next). Le manifest est, lui, auto-injecté via app/manifest.ts.
+  appleWebApp: {
+    capable: true,
+    title: "On mange quoi ?",
+    statusBarStyle: "default",
+  },
 };
 
 // Clavier mobile (#98) : par défaut Android/Chrome ne redimensionne que le
@@ -41,6 +50,8 @@ export const metadata: Metadata = {
 // d'où le complément côté sélecteur via l'API visualViewport (lib/clavier.ts).
 export const viewport: Viewport = {
   interactiveWidget: "resizes-content",
+  // Barre système teintée en vert brand quand l'app tourne en standalone (#71).
+  themeColor: "#3d7a44",
 };
 
 export default function RootLayout({
