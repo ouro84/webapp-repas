@@ -112,6 +112,15 @@ update planning pl
 
 -- unique(user_id, semaine) → unique(foyer_id, semaine) (un planning par foyer
 -- et par semaine, partagé entre membres).
+-- Les anciennes policies référencent user_id → les supprimer AVANT le drop de
+-- la colonne (sinon ERROR 2BP01 : la colonne a des dépendances).
+drop policy if exists "planning: lecture propriétaire" on planning;
+drop policy if exists "planning: insertion propriétaire" on planning;
+drop policy if exists "planning: suppression propriétaire" on planning;
+drop policy if exists "planning_slot: lecture propriétaire" on planning_slot;
+drop policy if exists "planning_slot: insertion propriétaire" on planning_slot;
+drop policy if exists "planning_slot: suppression propriétaire" on planning_slot;
+
 alter table planning drop constraint if exists planning_user_id_semaine_key;
 alter table planning drop column user_id;
 alter table planning add constraint planning_foyer_id_semaine_key unique (foyer_id, semaine);
@@ -120,10 +129,6 @@ create index planning_foyer_idx on planning (foyer_id);
 -- RLS : lecture + suppression (la purge de rétention #5 est un DELETE client).
 -- Les insertions/maj passent par la RPC sauvegarder_planning (SECURITY DEFINER,
 -- contourne la RLS) → pas de policy insert/update.
-drop policy if exists "planning: lecture propriétaire" on planning;
-drop policy if exists "planning: insertion propriétaire" on planning;
-drop policy if exists "planning: suppression propriétaire" on planning;
-
 create policy "planning: lecture foyer"
   on planning for select
   using (foyer_id = mon_foyer());
@@ -133,10 +138,6 @@ create policy "planning: suppression foyer"
   using (foyer_id = mon_foyer());
 
 -- planning_slot : lecture dérivée du planning parent. Écritures via la RPC.
-drop policy if exists "planning_slot: lecture propriétaire" on planning_slot;
-drop policy if exists "planning_slot: insertion propriétaire" on planning_slot;
-drop policy if exists "planning_slot: suppression propriétaire" on planning_slot;
-
 create policy "planning_slot: lecture foyer"
   on planning_slot for select
   using (exists (
@@ -160,16 +161,17 @@ update etat_courses ec
 -- Défensif (devrait ne rien supprimer : tout compte a un profil depuis PR1).
 delete from etat_courses where foyer_id is null;
 
-alter table etat_courses drop constraint etat_courses_pkey;
-alter table etat_courses drop column user_id;
-alter table etat_courses add primary key (foyer_id, semaine);
-
--- RLS : lecture + suppression (purge). Upsert via RPC sauvegarder_coches.
+-- Anciennes policies (dépendent de user_id) supprimées AVANT le drop de colonne.
 drop policy if exists "etat_courses: lecture propriétaire" on etat_courses;
 drop policy if exists "etat_courses: insertion propriétaire" on etat_courses;
 drop policy if exists "etat_courses: modification propriétaire" on etat_courses;
 drop policy if exists "etat_courses: suppression propriétaire" on etat_courses;
 
+alter table etat_courses drop constraint etat_courses_pkey;
+alter table etat_courses drop column user_id;
+alter table etat_courses add primary key (foyer_id, semaine);
+
+-- RLS : lecture + suppression (purge). Upsert via RPC sauvegarder_coches.
 create policy "etat_courses: lecture foyer"
   on etat_courses for select
   using (foyer_id = mon_foyer());
@@ -193,6 +195,11 @@ update recette_masquee rm
 
 delete from recette_masquee where foyer_id is null;
 
+-- Anciennes policies (dépendent de user_id) supprimées AVANT le drop de colonne.
+drop policy if exists "recette_masquee: lecture propriétaire" on recette_masquee;
+drop policy if exists "recette_masquee: insertion propriétaire" on recette_masquee;
+drop policy if exists "recette_masquee: suppression propriétaire" on recette_masquee;
+
 -- L'index recette_masquee_user_idx part avec la colonne user_id.
 alter table recette_masquee drop constraint recette_masquee_pkey;
 alter table recette_masquee drop column user_id;
@@ -201,10 +208,6 @@ create index recette_masquee_foyer_idx on recette_masquee (foyer_id);
 
 -- RLS : lecture + insertion + suppression (masquer/démasquer = accès direct
 -- client ; foyer_id rempli par default mon_foyer() à l'insertion).
-drop policy if exists "recette_masquee: lecture propriétaire" on recette_masquee;
-drop policy if exists "recette_masquee: insertion propriétaire" on recette_masquee;
-drop policy if exists "recette_masquee: suppression propriétaire" on recette_masquee;
-
 create policy "recette_masquee: lecture foyer"
   on recette_masquee for select
   using (foyer_id = mon_foyer());
