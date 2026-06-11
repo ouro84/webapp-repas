@@ -36,6 +36,25 @@ const CLE_SEMAINE = "semaine_affichee";
 
 const DELAI_DEBOUNCE_MS = 800;
 
+/**
+ * Réinitialise le cache local (planning + coches + drapeaux dirty/horodatage +
+ * snapshot d'annulation) — à appeler après un changement de FOYER (#56 PR3 :
+ * jonction / sortie). Sans ça, le dirty-first laisserait le cache de l'ANCIEN
+ * foyer faire foi à la prochaine hydratation (et un push différé écrirait des
+ * données périmées sous le NOUVEAU foyer). L'appelant recharge ensuite la page
+ * pour réhydrater depuis la base du nouveau foyer. La semaine affichée
+ * (CLE_SEMAINE) est conservée : elle reste pertinente d'un foyer à l'autre.
+ */
+export function reinitialiserCacheFoyer(): void {
+  storePlanning.effacer();
+  storeCoches.effacer();
+  localStorage.removeItem(CLE_MAJ);
+  localStorage.removeItem(CLE_DIRTY);
+  localStorage.removeItem(CLE_MAJ_COCHES);
+  localStorage.removeItem(CLE_DIRTY_COCHES);
+  localStorage.removeItem("planning_snapshot"); // CLE_SNAPSHOT de lib/stockage
+}
+
 // ---------------------------------------------------------------------------
 // État de synchro (indicateur UI, bonus) — petit store externe en mémoire.
 // ---------------------------------------------------------------------------

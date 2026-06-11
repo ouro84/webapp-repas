@@ -21,6 +21,7 @@ import { chargerRecettes } from "@/lib/recettes";
 import { ORDRE_TEMPS, rangTemps, REGLAGES_DEFAUT } from "@/lib/reglages";
 import { analyserVivier } from "@/lib/generateur";
 import { PERSONNES_MAX, PERSONNES_MIN } from "@/lib/personnes";
+import { PanneauFoyer } from "@/components/reglages/panneau-foyer";
 import type { Recette, ReglagesGeneration, TempsPreparation } from "@/types";
 
 const LIBELLE_TEMPS: Record<TempsPreparation, string> = {
@@ -187,65 +188,6 @@ export default function PageReglages() {
   );
   const faisable = analyse ? analyse.suffisant : true;
 
-  function definirPlafond(cle: CleCreneau, temps: TempsPreparation): void {
-    setForm((f) =>
-      f ? { ...f, plafonds: { ...f.plafonds, [cle]: temps } } : f
-    );
-  }
-
-  // B2 — nombre de recettes du vivier éligibles à un plafond (temps ≤ plafond).
-  function nbEligibles(plafond: TempsPreparation): number | null {
-    if (recettes === null) return null;
-    const max = rangTemps(plafond);
-    return recettes.filter((r) => rangTemps(r.tempsPreparation) <= max).length;
-  }
-
-  // Préférence végé d'un créneau (#86 PR2) — absente = false.
-  function vegeActif(cle: CleCreneau): boolean {
-    return form?.vegetarienPrefere?.[cle] ?? false;
-  }
-
-  function definirVegePrefere(cle: CleCreneau, valeur: boolean): void {
-    setForm((f) => {
-      if (!f) return f;
-      const base = f.vegetarienPrefere ?? {
-        dejeunerSemaine: false,
-        dinerSemaine: false,
-        dejeunerWeekend: false,
-        dinerWeekend: false,
-      };
-      return { ...f, vegetarienPrefere: { ...base, [cle]: valeur } };
-    });
-  }
-
-  // B2 (végé) — recettes végétariennes éligibles à un plafond (temps ≤ plafond).
-  function nbVegeEligibles(plafond: TempsPreparation): number | null {
-    if (recettes === null) return null;
-    const max = rangTemps(plafond);
-    return recettes.filter(
-      (r) => r.vegetarien === true && rangTemps(r.tempsPreparation) <= max
-    ).length;
-  }
-
-  // Mix accompagnement (#49 PR2) — préférence unique, toute la semaine.
-  const mixActif = form?.mixAccompagnementJour ?? false;
-  function definirMix(valeur: boolean): void {
-    setForm((f) => (f ? { ...f, mixAccompagnementJour: valeur } : f));
-  }
-
-  // Aperçu (Bonus C) — nombre de recettes « légumes » du vivier (tous temps :
-  // un jour peut placer un légume sur n'importe quel créneau).
-  const nbLegumes =
-    recettes === null
-      ? null
-      : recettes.filter((r) => r.accompagnement === "legumes").length;
-
-  // Saisonnalité (#23 PR2) — ON par défaut (absent vaut actif).
-  const saisonnaliteActif = form?.saisonnalite !== false;
-  function definirSaisonnalite(valeur: boolean): void {
-    setForm((f) => (f ? { ...f, saisonnalite: valeur } : f));
-  }
-
   async function enregistrer(): Promise<void> {
     if (form === null || !modifie || !faisable) return;
     setEnregistrement(true);
@@ -260,33 +202,108 @@ export default function PageReglages() {
     }
   }
 
-  if (erreur !== null) {
-    return (
-      <main id="contenu" className="mx-auto w-full max-w-2xl flex-1 p-4 md:p-8">
-        <h1 className="mb-4 font-display text-2xl font-semibold text-brand-900">Réglages</h1>
-        <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
-          {erreur}
-        </p>
-      </main>
+  // Le panneau « Mon foyer » se charge indépendamment des réglages de
+  // génération : il reste visible même si ces derniers sont en chargement/erreur.
+  const blocGeneration =
+    erreur !== null ? (
+      <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+        {erreur}
+      </p>
+    ) : form === null ? (
+      <p role="status" className="animate-pulse text-brand-700/85">
+        Chargement…
+      </p>
+    ) : (
+      <GenerationReglages
+        form={form}
+        setForm={setForm}
+        recettes={recettes}
+        analyse={analyse}
+        faisable={faisable}
+        modifie={modifie}
+        enregistrement={enregistrement}
+        enregistrer={enregistrer}
+      />
     );
-  }
-
-  if (form === null) {
-    return (
-      <main id="contenu" className="mx-auto w-full max-w-2xl flex-1 p-4 md:p-8">
-        <h1 className="mb-4 font-display text-2xl font-semibold text-brand-900">Réglages</h1>
-        <p role="status" className="animate-pulse text-brand-700/85">
-          Chargement…
-        </p>
-      </main>
-    );
-  }
 
   return (
     <main id="contenu" className="mx-auto w-full max-w-2xl flex-1 p-4 md:p-8">
-      <h1 className="mb-2 font-display text-2xl font-semibold text-brand-900">
-        Réglages de génération
+      <h1 className="mb-6 font-display text-2xl font-semibold text-brand-900">
+        Réglages
       </h1>
+      <PanneauFoyer />
+      <div className="mb-8 border-t border-brand-100" />
+      {blocGeneration}
+    </main>
+  );
+}
+
+// Bloc des réglages de génération (#45) — extrait pour que la page hôte rende le
+// panneau Foyer indépendamment de l'état (chargement/erreur) de ces réglages.
+function GenerationReglages({
+  form,
+  setForm,
+  recettes,
+  analyse,
+  faisable,
+  modifie,
+  enregistrement,
+  enregistrer,
+}: {
+  form: ReglagesGeneration;
+  setForm: React.Dispatch<React.SetStateAction<ReglagesGeneration | null>>;
+  recettes: Recette[] | null;
+  analyse: ReturnType<typeof analyserVivier> | null;
+  faisable: boolean;
+  modifie: boolean;
+  enregistrement: boolean;
+  enregistrer: () => Promise<void>;
+}) {
+  function definirPlafond(cle: CleCreneau, temps: TempsPreparation): void {
+    setForm((f) => (f ? { ...f, plafonds: { ...f.plafonds, [cle]: temps } } : f));
+  }
+  function nbEligibles(plafond: TempsPreparation): number | null {
+    if (recettes === null) return null;
+    const max = rangTemps(plafond);
+    return recettes.filter((r) => rangTemps(r.tempsPreparation) <= max).length;
+  }
+  function vegeActif(cle: CleCreneau): boolean {
+    return form.vegetarienPrefere?.[cle] ?? false;
+  }
+  function definirVegePrefere(cle: CleCreneau, valeur: boolean): void {
+    setForm((f) => {
+      if (!f) return f;
+      const base = f.vegetarienPrefere ?? {
+        dejeunerSemaine: false,
+        dinerSemaine: false,
+        dejeunerWeekend: false,
+        dinerWeekend: false,
+      };
+      return { ...f, vegetarienPrefere: { ...base, [cle]: valeur } };
+    });
+  }
+  function nbVegeEligibles(plafond: TempsPreparation): number | null {
+    if (recettes === null) return null;
+    const max = rangTemps(plafond);
+    return recettes.filter(
+      (r) => r.vegetarien === true && rangTemps(r.tempsPreparation) <= max
+    ).length;
+  }
+  const mixActif = form.mixAccompagnementJour ?? false;
+  function definirMix(valeur: boolean): void {
+    setForm((f) => (f ? { ...f, mixAccompagnementJour: valeur } : f));
+  }
+  const nbLegumes =
+    recettes === null
+      ? null
+      : recettes.filter((r) => r.accompagnement === "legumes").length;
+  const saisonnaliteActif = form.saisonnalite !== false;
+  function definirSaisonnalite(valeur: boolean): void {
+    setForm((f) => (f ? { ...f, saisonnalite: valeur } : f));
+  }
+
+  return (
+    <>
       <p className="mb-6 text-sm text-brand-700/85">
         Ces règles s’appliquent à la prochaine génération (complète ou d’un seul
         repas). Pense à enregistrer.
@@ -483,6 +500,6 @@ export default function PageReglages() {
           {enregistrement ? "Enregistrement…" : "Enregistrer"}
         </button>
       </div>
-    </main>
+    </>
   );
 }
