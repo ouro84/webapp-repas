@@ -11,6 +11,10 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 - Error boundary racine (#30, P21) : nouveau `app/global-error.tsx` qui attrape les erreurs de rendu du **layout racine** et de ses enfants directs (barre de nav, polices, toaster, analytics) — celles que `app/error.tsx` ne couvre pas (il ne protège que les pages, à l'intérieur du layout). Affiche un écran de repli (« Quelque chose s'est mal passé », bouton **Réessayer**, **référence digest** en prod) au lieu d'une page blanche. Comme il **remplace le layout entier**, il rend ses propres `<html>`/`<body>` et ses **styles sont 100 % autonomes** (valeurs hex du design system en dur, fallback Arial) : `globals.css`/Tailwind ne sont pas garantis quand le layout a crashé. Erreur loggée (`console.error`) et remontée à **Sentry**. **N'est actif qu'en production** (en dev, l'overlay Next prend le dessus). **Clôture de #30.**
 
+### Modifié
+
+- Horodatage serveur de la sync (#104) : l'`updated_at` de `planning` et `etat_courses` — l'horloge de référence du **last-write-wins** entre appareils (#6) — est désormais posé par un **trigger SQL** (`now()`, horloge serveur) au lieu de l'horloge **du client**. Fiabilise l'arbitrage « le plus récent gagne » quand deux appareils ont des horloges désynchronisées (le trigger couvre aussi l'UPDATE/upsert et ignore toute valeur envoyée par le client). `lib/persistance.ts` récupère/renvoie la valeur posée par le trigger ; `lib/sync.ts` est inchangé. **Comportement observable identique**, robustesse accrue (dette technique de la sync multi-device soldée).
+
 ## [1.2.0] - 2026-06-11
 
 ### Ajouté
