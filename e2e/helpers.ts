@@ -48,13 +48,13 @@ export async function nettoyerEtatDistant(
   };
   const headers = { apikey: anon, Authorization: `Bearer ${jeton}` };
 
-  // PostgREST exige un filtre pour DELETE ; user_id=not.is.null couvre toutes
-  // les lignes visibles (la RLS restreint déjà au propriétaire). Les slots du
-  // planning partent en cascade.
-  await request.delete(`${url}/rest/v1/planning?user_id=not.is.null`, {
+  // PostgREST exige un filtre pour DELETE ; foyer_id=not.is.null couvre toutes
+  // les lignes visibles (la RLS « foyer » #56 restreint déjà au foyer du compte
+  // de test). Les slots du planning partent en cascade.
+  await request.delete(`${url}/rest/v1/planning?foyer_id=not.is.null`, {
     headers,
   });
-  await request.delete(`${url}/rest/v1/etat_courses?user_id=not.is.null`, {
+  await request.delete(`${url}/rest/v1/etat_courses?foyer_id=not.is.null`, {
     headers,
   });
 }
@@ -107,7 +107,7 @@ export async function nettoyerMasquagesDistants(
   request: APIRequestContext
 ): Promise<void> {
   const { url, headers } = await jetonTest(request);
-  await request.delete(`${url}/rest/v1/recette_masquee?user_id=not.is.null`, {
+  await request.delete(`${url}/rest/v1/recette_masquee?foyer_id=not.is.null`, {
     headers,
   });
 }
