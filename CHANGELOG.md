@@ -7,6 +7,10 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+### Modifié
+
+- Horodatage serveur de la sync (#104) : l'`updated_at` de `planning` et `etat_courses` — l'horloge de référence du **last-write-wins** entre appareils (#6) — est désormais posé par un **trigger SQL** (`now()`, horloge serveur) au lieu de l'horloge **du client**. Fiabilise l'arbitrage « le plus récent gagne » quand deux appareils ont des horloges désynchronisées (le trigger couvre aussi l'UPDATE/upsert et ignore toute valeur envoyée par le client). `lib/persistance.ts` récupère/renvoie la valeur posée par le trigger ; `lib/sync.ts` est inchangé. **Comportement observable identique**, robustesse accrue (dette technique de la sync multi-device soldée).
+
 ## [1.2.0] - 2026-06-11
 
 ### Ajouté
