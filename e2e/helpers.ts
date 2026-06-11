@@ -97,6 +97,22 @@ async function jetonTest(request: APIRequestContext): Promise<{
 }
 
 /**
+ * Supprime tous les masquages de recettes du compte de test (#105) via DELETE
+ * REST. Le masquage (« suppression » d'une recette par défaut) persiste en base
+ * pour l'utilisateur : sans nettoyage, une recette du catalogue masquée par un
+ * test resterait absente du vivier pour les runs suivants (génération faussée).
+ * À appeler en beforeEach ET afterAll de recettes.spec.
+ */
+export async function nettoyerMasquagesDistants(
+  request: APIRequestContext
+): Promise<void> {
+  const { url, headers } = await jetonTest(request);
+  await request.delete(`${url}/rest/v1/recette_masquee?user_id=not.is.null`, {
+    headers,
+  });
+}
+
+/**
  * Supprime les recettes de test du run (nom contenant le suffixe) via DELETE
  * REST — teardown de recettes.spec. Remplace la suppression via clics UI, qui
  * dépassait le timeout afterAll (re-render de la liste → « element detached »).
