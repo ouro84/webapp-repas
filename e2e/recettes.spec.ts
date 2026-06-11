@@ -9,6 +9,12 @@ import { nettoyerRecettesDistantes, nettoyerMasquagesDistants } from "./helpers"
 // Suffixe unique au run (Date.now est autorisé dans les tests Playwright).
 const SUFFIXE = `${Date.now()}`;
 
+// Recette du catalogue par défaut (seedée par migration, nom stable) servant de
+// cible aux tests « catalogue ». Depuis #105 PR2, « Modifier » est UNIFORME → on
+// ne peut plus repérer une recette par défaut par l'absence de ce bouton ; on la
+// cible par son nom exact.
+const RECETTE_CATALOGUE = "Poulet basquaise";
+
 // Les masquages (#105 : « suppression » d'une recette du catalogue) persistent
 // en base pour le compte de test partagé. On les purge AVANT chaque test (un
 // résidu fausserait le vivier / l'absence d'une recette du catalogue) et APRÈS
@@ -80,12 +86,10 @@ test("dupliquer une recette du catalogue crée une copie personnelle", async ({
   const nomCopie = `E2E Copie ${SUFFIXE}`;
   await page.goto("/recettes");
 
-  // Première recette du catalogue (par défaut) = ligne SANS bouton « Modifier »
-  // (réservé aux perso jusqu'à #105 PR2 ; plus de badge « Catalogue ») → Dupliquer.
+  // Une recette du catalogue par défaut, ciblée par son nom exact → Dupliquer.
   const ligneCatalogue = page
     .locator("main li")
-    .filter({ hasNot: page.getByRole("button", { name: "Modifier" }) })
-    .first();
+    .filter({ has: page.getByText(RECETTE_CATALOGUE, { exact: true }) });
   await ligneCatalogue.getByRole("button", { name: "Dupliquer" }).click();
 
   await expect(
@@ -126,15 +130,11 @@ test("supprimer une recette du catalogue la masque, avec undo (#105)", async ({
   page,
 }) => {
   await page.goto("/recettes");
-  // Une recette du catalogue (par défaut) = ligne SANS bouton « Modifier »
-  // (réservé aux perso jusqu'à #105 PR2). Elle porte bien « Supprimer ».
+  const nom = RECETTE_CATALOGUE;
   const ligne = page
     .locator("main li")
-    .filter({ hasNot: page.getByRole("button", { name: "Modifier" }) })
-    .first();
+    .filter({ has: page.getByText(nom, { exact: true }) });
   await expect(ligne).toBeVisible();
-  await expect(ligne.getByRole("button", { name: "Modifier" })).toHaveCount(0);
-  const nom = (await ligne.locator("span").first().innerText()).trim();
 
   await ligne.getByRole("button", { name: "Supprimer" }).click();
   await expect(page.getByText("Recette supprimée")).toBeVisible();
@@ -144,6 +144,39 @@ test("supprimer une recette du catalogue la masque, avec undo (#105)", async ({
   await page.getByRole("button", { name: "Annuler" }).click();
   await expect(page.getByText("Annulé")).toBeVisible();
   await expect(page.locator("li", { hasText: nom })).toBeVisible();
+});
+
+test("modifier une recette du catalogue crée une copie perso et masque l'originale (#105 PR2)", async ({
+  page,
+}) => {
+  const nomModifie = `E2E Modif Catalogue ${SUFFIXE}`;
+  await page.goto("/recettes");
+  const ligne = page
+    .locator("main li")
+    .filter({ has: page.getByText(RECETTE_CATALOGUE, { exact: true }) });
+  await expect(ligne).toBeVisible();
+
+  // « Modifier » est uniforme : sur une recette par défaut, le formulaire
+  // s'ouvre pré-rempli ; l'enregistrement duplique en perso + masque l'originale.
+  await ligne.getByRole("button", { name: "Modifier" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Modifier la recette" })
+  ).toBeVisible();
+  await expect(page.getByLabel("Nom de la recette")).toHaveValue(RECETTE_CATALOGUE);
+  await page.getByLabel("Nom de la recette").fill(nomModifie);
+  await page.getByRole("button", { name: "Enregistrer" }).click();
+
+  await expect(page.getByText("Recette modifiée")).toBeVisible();
+  // Ma version (perso, éditable) apparaît…
+  await expect(
+    page.locator("li", { hasText: nomModifie }).getByRole("button", { name: "Modifier" })
+  ).toBeVisible();
+  // …et l'originale par défaut a disparu (masquée derrière ma copie).
+  await expect(
+    page
+      .locator("main li")
+      .filter({ has: page.getByText(RECETTE_CATALOGUE, { exact: true }) })
+  ).toHaveCount(0);
 });
 
 test("une recette végétarienne porte le badge et passe le filtre (#86)", async ({
