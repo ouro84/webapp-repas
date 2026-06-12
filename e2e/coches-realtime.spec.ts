@@ -15,8 +15,10 @@ import { nettoyerEtatDistant } from "./helpers";
 import { semaineISO } from "../lib/semaines";
 import type { Jour, Planning } from "../types";
 
-// Même planning déterministe que courses.spec (lardons + tagliatelles + …),
-// semaine COURANTE pour ne pas déclencher la garde de semaine passée (RG-24).
+// Même planning déterministe que courses.spec, semaine COURANTE pour ne pas
+// déclencher la garde de semaine passée (RG-24). Les tests cochent des articles
+// d'une catégorie MULTI-articles (« Produits frais ») pour ne pas déclencher le
+// repli auto de section (#111), qui démonterait la case sur l'appareil acteur.
 function planningDeterministe(): Planning {
   const choisies = [
     recetteFixture("omelette-aux-champignons"),
@@ -68,18 +70,19 @@ test("une coche posée sur un appareil apparaît en temps réel sur l'autre (US-
   // Laisser à l'abonnement Realtime de B le temps de s'établir avant d'émettre.
   await deviceB.waitForTimeout(2000);
 
-  // A coche « lardons ».
-  await deviceA.getByRole("checkbox", { name: /lardons/ }).click();
-  await expect(deviceA.getByRole("checkbox", { name: /lardons/ })).toBeChecked();
+  // A coche « parmesan » (catégorie « Produits frais », 4 articles : cocher 1
+  // seul ne replie pas la section côté A — cf. #111 — la case reste montée).
+  await deviceA.getByRole("checkbox", { name: /parmesan/ }).click();
+  await expect(deviceA.getByRole("checkbox", { name: /parmesan/ })).toBeChecked();
 
   // B la voit cochée SANS rechargement (temps réel).
-  await expect(deviceB.getByRole("checkbox", { name: /lardons/ })).toBeChecked({
+  await expect(deviceB.getByRole("checkbox", { name: /parmesan/ })).toBeChecked({
     timeout: 15_000,
   });
 
   // A décoche → B la voit décochée, toujours en temps réel.
-  await deviceA.getByRole("checkbox", { name: /lardons/ }).click();
-  await expect(deviceB.getByRole("checkbox", { name: /lardons/ })).not.toBeChecked({
+  await deviceA.getByRole("checkbox", { name: /parmesan/ }).click();
+  await expect(deviceB.getByRole("checkbox", { name: /parmesan/ })).not.toBeChecked({
     timeout: 15_000,
   });
 
@@ -95,16 +98,19 @@ test("deux appareils cochent des articles différents sans s'écraser (anti-clob
   const deviceB = await ouvrirCourses(browser, planning);
   await deviceB.waitForTimeout(2000);
 
-  // A coche lardons, B coche tagliatelles — en parallèle.
-  await deviceA.getByRole("checkbox", { name: /lardons/ }).click();
-  await deviceB.getByRole("checkbox", { name: /tagliatelles/ }).click();
+  // A coche parmesan, B coche crème fraîche — en parallèle. Deux articles
+  // DIFFÉRENTS d'une même catégorie multi-articles (« Produits frais ») : ni A
+  // ni B ne complète la catégorie → aucune section ne se replie (#111), les
+  // cases restent montées pour les assertions croisées.
+  await deviceA.getByRole("checkbox", { name: /parmesan/ }).click();
+  await deviceB.getByRole("checkbox", { name: /crème fraîche/ }).click();
 
   // Chacun finit par voir LES DEUX coches : aucune n'a écrasé l'autre.
   for (const page of [deviceA, deviceB]) {
-    await expect(page.getByRole("checkbox", { name: /lardons/ })).toBeChecked({
+    await expect(page.getByRole("checkbox", { name: /parmesan/ })).toBeChecked({
       timeout: 15_000,
     });
-    await expect(page.getByRole("checkbox", { name: /tagliatelles/ })).toBeChecked({
+    await expect(page.getByRole("checkbox", { name: /crème fraîche/ })).toBeChecked({
       timeout: 15_000,
     });
   }

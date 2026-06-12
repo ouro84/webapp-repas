@@ -164,8 +164,10 @@ test("« Tout décocher » retire toutes les coches, fond de placard compris", a
   // Le bouton n'apparaît qu'à partir de la première coche.
   await expect(page.getByRole("button", { name: "Tout décocher" })).toHaveCount(0);
 
-  await page.getByRole("checkbox", { name: /lardons/ }).click();
-  await expect(page.getByRole("checkbox", { name: /lardons/ })).toBeChecked();
+  // « parmesan » : catégorie « Produits frais » (4 articles) → cocher 1 seul ne
+  // replie pas la section (cf. #111), la case reste montée pour l'assertion.
+  await page.getByRole("checkbox", { name: /parmesan/ }).click();
+  await expect(page.getByRole("checkbox", { name: /parmesan/ })).toBeChecked();
   await page.getByRole("checkbox", { name: /beurre/ }).click();
   await expect(page.getByRole("checkbox", { name: /beurre/ })).toBeChecked();
   await expect(page.getByText(/^1\/7 articles/)).toBeVisible();
@@ -173,7 +175,7 @@ test("« Tout décocher » retire toutes les coches, fond de placard compris", a
   await page.getByRole("button", { name: "Tout décocher" }).click();
 
   await expect(page.getByText(/^0\/7 articles/)).toBeVisible();
-  await expect(page.getByRole("checkbox", { name: /lardons/ })).not.toBeChecked();
+  await expect(page.getByRole("checkbox", { name: /parmesan/ })).not.toBeChecked();
   await expect(page.getByRole("checkbox", { name: /beurre/ })).not.toBeChecked();
   await expect(page.getByRole("button", { name: "Tout décocher" })).toHaveCount(0);
 });
@@ -270,8 +272,10 @@ test("l'état coché est resynchronisé depuis la base sur un device au cache vi
   );
   await page.goto("/courses");
 
-  await page.getByRole("checkbox", { name: /lardons/ }).click();
-  await expect(page.getByRole("checkbox", { name: /lardons/ })).toBeChecked();
+  // « parmesan » : catégorie multi-articles → cocher 1 seul ne replie pas la
+  // section (#111), la case reste montée pour l'assertion ici et après reload.
+  await page.getByRole("checkbox", { name: /parmesan/ }).click();
+  await expect(page.getByRole("checkbox", { name: /parmesan/ })).toBeChecked();
 
   // Attendre la persistance des coches en base (drapeau dirty effacé).
   await expect
@@ -288,7 +292,7 @@ test("l'état coché est resynchronisé depuis la base sur un device au cache vi
   await page.reload();
 
   // La coche est restaurée depuis la base (hydratation des coches).
-  await expect(page.getByRole("checkbox", { name: /lardons/ })).toBeChecked();
+  await expect(page.getByRole("checkbox", { name: /parmesan/ })).toBeChecked();
 });
 
 test("les libellés s'accordent en nombre selon la quantité (US-08)", async ({

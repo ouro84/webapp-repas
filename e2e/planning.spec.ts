@@ -393,7 +393,12 @@ test("une sélection manuelle conserve les coches de la liste de courses (RG-15/
     (input) => input.closest("label")?.querySelector("span")?.textContent ?? ""
   );
   await premierArticle.click();
-  await expect(page.getByRole("checkbox", { name: nomArticle }).first()).toBeChecked();
+  // Coche enregistrée — assertion robuste au repli auto (#111) : si l'article
+  // était seul dans sa catégorie, la section se replie et démonte la case ; le
+  // bouton « Tout décocher » n'apparaît qu'avec ≥ 1 coche. L'assertion par
+  // article (après aller-retour = remontage frais, section dépliée) plus bas
+  // vérifie la persistance précise.
+  await expect(page.getByRole("button", { name: "Tout décocher" })).toBeVisible();
 
   // Sélection manuelle du dîner de lundi… en re-choisissant LA MÊME recette
   // (permis par RG-15) : les agrégats de la liste ne bougent pas, le test est
@@ -518,7 +523,11 @@ test("modifier les personnes invalide la coche de l'article touché, pas les aut
   await page.getByRole("link", { name: "Liste de courses →" }).click();
   await page.waitForURL("**/courses");
   await page.getByRole("checkbox", { name: /œufs/ }).click();
-  await expect(page.getByRole("checkbox", { name: /œufs/ })).toBeChecked();
+  // « oeufs » est seul dans sa catégorie « Produits frais » normale (le beurre
+  // est au fond de placard) → cocher replie la section (#111) et démonte la
+  // case. On vérifie l'enregistrement via « Tout décocher » ; l'invalidation
+  // (RG-12) est assertée plus bas après remontage (section dépliée).
+  await expect(page.getByRole("button", { name: "Tout décocher" })).toBeVisible();
 
   // Augmenter les personnes : la quantité d'œufs change → coche invalidée.
   await page.getByRole("link", { name: "← Planning" }).click();
@@ -590,9 +599,10 @@ test("annuler une regénération restaure aussi les coches effacées (US-09, RG-
     (input) => input.closest("label")?.querySelector("span")?.textContent ?? ""
   );
   await premierArticle.click();
-  await expect(
-    page.getByRole("checkbox", { name: nomArticle }).first()
-  ).toBeChecked();
+  // Coche enregistrée — robuste au repli auto (#111, cf. plus haut) : la
+  // case peut être démontée si l'article était seul dans sa catégorie. La
+  // restauration précise est vérifiée après l'undo (remontage frais).
+  await expect(page.getByRole("button", { name: "Tout décocher" })).toBeVisible();
 
   // Regénérer efface les coches (RG-13) ; annuler doit les rendre (RG-19).
   await page.getByRole("link", { name: "← Planning" }).click();
