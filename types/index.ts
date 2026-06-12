@@ -202,12 +202,16 @@ export type DbRecetteIngredient = {
   ingredient: DbIngredient; // relation imbriquée via Supabase select
 };
 
-// État des coches de la liste de courses, par utilisateur (US-13, sync #6).
-// `coches` est le même objet que localStorage["courses_cochees"] : un mapping
-// { "nom|unité": quantité au moment du cochage } (RG-12), stocké en JSONB.
-export type DbEtatCourses = {
-  user_id: string;
-  coches: Record<string, number>;
+// État des coches de la liste de courses — UNE LIGNE PAR ARTICLE depuis #56 PR4
+// (anti-clobber temps réel, RG-32 ; remplace le blob JSONB par foyer+semaine).
+// `cle` = clé d'agrégation « nom|unité » (RG-05) ; `quantite` = quantité au
+// moment du cochage (invalidation RG-12). Le blob localStorage reste, lui, un
+// Record<cle, quantite> reconstruit depuis ces lignes (cf. lib/coches.ts).
+export type DbEtatCourseArticle = {
+  foyer_id: string;
+  semaine: string;
+  cle: string;
+  quantite: number;
   updated_at: string;
 };
 

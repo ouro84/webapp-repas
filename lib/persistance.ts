@@ -100,10 +100,24 @@ export async function purgerSemainesAvant(cutoff: string): Promise<void> {
   if (e1) throw new Error(`Purge des plannings impossible : ${e1.message}`)
 
   const { error: e2 } = await supabase
-    .from("etat_courses")
+    .from("etat_courses_article")
     .delete()
     .lt("semaine", cutoff)
   if (e2) throw new Error(`Purge des coches impossible : ${e2.message}`)
+}
+
+/** Foyer de l'utilisateur courant (pour scoper les canaux temps réel par foyer,
+ *  #56 PR4). La RLS de `profiles` ne renvoie que la ligne du membre courant. */
+export async function chargerFoyerId(): Promise<string | null> {
+  const supabase = createClient()
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("foyer_id")
+    .maybeSingle()
+  if (error) {
+    throw new Error(`Chargement du foyer impossible : ${error.message}`)
+  }
+  return (data as { foyer_id: string } | null)?.foyer_id ?? null
 }
 
 // Construit les slots à passer à la RPC sauvegarder_planning (sans planning_id :
@@ -163,52 +177,80 @@ export async function sauvegarderPlanningDistant(
   return data as string
 }
 
-/** Coches distantes d'une semaine (sérialisées comme localStorage) + horodatage, ou null. */
-export async function chargerCochesDistantes(semaine: string): Promise<{
-  coches: string
-  updatedAt: string
-} | null> {
+/**
+ * Coches distantes d'une semaine, reconstruites en blob `{ "nom|unité":
+ * quantité }` depuis les lignes par-article (#56 PR4). Renvoie un objet vide si
+ * aucune ligne (pas de null : l'absence de coche = blob vide).
+ */
+export async function chargerCochesDistantes(
+  semaine: string
+): Promise<Record<string, number>> {
   const supabase = createClient()
   const { data, error } = await supabase
-    .from("etat_courses")
-    .select("coches, updated_at")
+    .from("etat_courses_article")
+    .select("cle, quantite")
     .eq("semaine", semaine)
-    .maybeSingle()
 
   if (error) {
     throw new Error(`Chargement des coches distantes impossible : ${error.message}`)
   }
-  if (!data) return null
-  return { coches: JSON.stringify(data.coches ?? {}), updatedAt: data.updated_at }
+  const coches: Record<string, number> = {}
+  for (const ligne of (data ?? []) as Array<{ cle: string; quantite: number }>) {
+    coches[ligne.cle] = ligne.quantite
+  }
+  return coches
 }
 
-/**
- * Persiste l'état des coches d'une semaine via la RPC `sauvegarder_coches`
- * (#56 PR2 ; upsert par foyer+semaine, foyer dérivé de mon_foyer()). Renvoie
- * l'`updated_at` posé par le trigger serveur (#104), horloge de référence du
- * last-write-wins (comme le planning).
- */
-export async function sauvegarderCochesDistantes(
+// ---------------------------------------------------------------------------
+// Écritures par-article (#56 PR4) — accès DIRECT sous RLS « foyer » (chaque
+// opération porte sur UNE ligne, donc atomique : plus besoin de RPC comme pour
+// le blob). foyer_id est posé par le default mon_foyer() : le client ne le
+// fournit jamais. L'anti-clobber (RG-32) vient de la granularité par-article.
+// ---------------------------------------------------------------------------
+
+/** Coche un article (upsert d'une ligne ; mémorise la quantité pour RG-12). */
+export async function cocherArticleDistant(
   semaine: string,
-  cochesSerialise: string
-): Promise<string> {
+  cle: string,
+  quantite: number
+): Promise<void> {
   const supabase = createClient()
-
-  let coches: Record<string, number>
-  try {
-    coches = JSON.parse(cochesSerialise) as Record<string, number>
-  } catch {
-    coches = {}
-  }
-
-  const { data, error } = await supabase.rpc("sauvegarder_coches", {
-    p_semaine: semaine,
-    p_coches: coches,
-  })
-  if (error || !data) {
-    throw new Error(
-      `Sauvegarde des coches impossible : ${error?.message ?? "réponse vide"}`
+  const { error } = await supabase
+    .from("etat_courses_article")
+    .upsert(
+      { semaine, cle, quantite },
+      { onConflict: "foyer_id,semaine,cle" }
     )
+  if (error) {
+    throw new Error(`Cochage impossible : ${error.message}`)
   }
-  return data as string
+}
+
+/** Décoche un article (delete de sa ligne ; le foyer est filtré par la RLS). */
+export async function decocherArticleDistant(
+  semaine: string,
+  cle: string
+): Promise<void> {
+  const supabase = createClient()
+  const { error } = await supabase
+    .from("etat_courses_article")
+    .delete()
+    .eq("semaine", semaine)
+    .eq("cle", cle)
+  if (error) {
+    throw new Error(`Décochage impossible : ${error.message}`)
+  }
+}
+
+/** Vide toutes les coches d'une semaine (« Tout décocher » / regénération
+ *  RG-13). Un seul DELETE par semaine plutôt que N décochages. */
+export async function viderCochesDistantes(semaine: string): Promise<void> {
+  const supabase = createClient()
+  const { error } = await supabase
+    .from("etat_courses_article")
+    .delete()
+    .eq("semaine", semaine)
+  if (error) {
+    throw new Error(`Vidage des coches impossible : ${error.message}`)
+  }
 }
