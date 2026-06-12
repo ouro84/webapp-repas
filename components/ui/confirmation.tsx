@@ -16,12 +16,17 @@ export function ConfirmationModale({
   libelleConfirmer = "Confirmer",
   onConfirmer,
   onAnnuler,
+  sansAnnuler = false,
 }: {
   titre: string;
   message: string;
   libelleConfirmer?: string;
   onConfirmer: () => void;
   onAnnuler: () => void;
+  // Alerte informative à action unique (#56 PR5, US-21) : masque le bouton
+  // « Annuler ». Échap/backdrop ferment toujours (→ onAnnuler), à charger d'un
+  // sens d'« acquittement » par l'appelant.
+  sansAnnuler?: boolean;
 }) {
   const refDialog = useRef<HTMLDialogElement>(null);
 
@@ -47,13 +52,15 @@ export function ConfirmationModale({
         </h2>
         <p className="text-sm text-brand-700/85">{message}</p>
         <div className="mt-2 flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={() => refDialog.current?.close()}
-            className="rounded-full border border-brand-200 px-5 py-2.5 text-sm font-medium text-brand-700 transition hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100"
-          >
-            Annuler
-          </button>
+          {!sansAnnuler && (
+            <button
+              type="button"
+              onClick={() => refDialog.current?.close()}
+              className="rounded-full border border-brand-200 px-5 py-2.5 text-sm font-medium text-brand-700 transition hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100"
+            >
+              Annuler
+            </button>
+          )}
           <button
             type="button"
             onClick={onConfirmer}
