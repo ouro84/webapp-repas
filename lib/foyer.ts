@@ -74,8 +74,11 @@ export async function rejoindreFoyer(code: string): Promise<void> {
 }
 
 /**
- * Quitte le foyer courant et repart sur un foyer solo neuf (#56 PR3). Le
- * clonage des données du foyer quitté (RG-34) est livré en #56 PR6.
+ * Quitte le foyer courant et repart sur un foyer solo neuf, en CLONANT vers
+ * celui-ci recettes, plannings et coches du foyer quitté (#56 PR6, RG-34 : zéro
+ * perte des deux côtés). Tout est fait côté serveur par la RPC SECURITY DEFINER
+ * transactionnelle `quitter_foyer` ; le client recharge ensuite (cf. PanneauFoyer
+ * → reinitialiserCacheFoyer) pour réhydrater depuis le nouveau foyer.
  */
 export async function quitterFoyer(): Promise<void> {
   const supabase = createClient()

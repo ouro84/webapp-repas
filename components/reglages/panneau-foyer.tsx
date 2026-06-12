@@ -347,7 +347,7 @@ export function PanneauFoyer() {
       {confirmerSortie && (
         <ConfirmationModale
           titre="Quitter le foyer ?"
-          message="Tu repartiras avec un foyer vide (le catalogue par défaut reste disponible). Les autres membres conservent recettes, planning et courses."
+          message="Tu repartiras avec ta propre copie des recettes, du planning et de la liste de courses du foyer. Les autres membres, eux, conservent tout."
           libelleConfirmer="Quitter"
           onConfirmer={sortir}
           onAnnuler={() => setConfirmerSortie(false)}
