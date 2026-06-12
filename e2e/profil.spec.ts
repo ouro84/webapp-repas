@@ -10,11 +10,19 @@
 // On NE teste PAS un changement de mot de passe RÉUSSI : il modifierait le mot
 // de passe du compte de test partagé et casserait auth.setup aux runs suivants.
 // On couvre donc seulement les GARDES (mot de passe actuel erroné, confirmation
-// divergente), qui ne modifient rien. La déconnexion utilise scope 'local'
-// (cf. page profil) → elle ne révoque pas les tokens partagés.
+// divergente), qui ne modifient rien.
+//
+// ⚠️ DÉCONNEXION : le bouton appelle supabase.auth.signOut({ scope: 'local' }),
+// qui révoque le refresh token de LA SESSION COURANTE côté serveur. Or tous les
+// contextes e2e partagent le MÊME storageState (e2e/.auth/user.json = un seul
+// refresh token) : se déconnecter avec la session partagée le révoquerait pour
+// TOUS les tests suivants (recettes/reglages → redirigés vers /login). Le test
+// de déconnexion ouvre donc un contexte VIERGE et s'y connecte FRAÎCHEMENT
+// (session séparée, refresh token distinct) avant de se déconnecter — la session
+// partagée reste intacte (même esprit que foyer-clonage avec ses comptes dédiés).
 
 import { test, expect } from "@playwright/test";
-import { reinitialiserProfilDistant } from "./helpers";
+import { E2E_EMAIL, E2E_PASSWORD, reinitialiserProfilDistant } from "./helpers";
 
 test.beforeEach(async ({ request }) => {
   await reinitialiserProfilDistant(request);
@@ -99,12 +107,29 @@ test("changer le mot de passe refuse une confirmation divergente (US-22)", async
 });
 
 test("se déconnecter détruit la session et redirige vers /login (US-22)", async ({
-  page,
+  browser,
 }) => {
-  await page.goto("/profil");
+  // Contexte VIERGE (storageState vide) + connexion fraîche : la déconnexion ne
+  // touchera que cette session jetable, pas le token partagé (cf. en-tête).
+  const contexte = await browser.newContext({
+    storageState: { cookies: [], origins: [] },
+  });
+  const page = await contexte.newPage();
+  try {
+    await page.goto("/login");
+    await page.getByLabel("Email").fill(E2E_EMAIL);
+    // exact : le bouton œil « Afficher le mot de passe » contient « mot de passe ».
+    await page.getByLabel("Mot de passe", { exact: true }).fill(E2E_PASSWORD);
+    await page.getByRole("button", { name: "Se connecter" }).click();
+    await page.waitForURL("**/planning");
 
-  await page.getByRole("button", { name: "Se déconnecter" }).click();
+    // Déconnexion sur CETTE session.
+    await page.goto("/profil");
+    await page.getByRole("button", { name: "Se déconnecter" }).click();
 
-  await page.waitForURL("**/login");
-  await expect(page.getByRole("button", { name: "Se connecter" })).toBeVisible();
+    await page.waitForURL("**/login");
+    await expect(page.getByRole("button", { name: "Se connecter" })).toBeVisible();
+  } finally {
+    await contexte.close();
+  }
 });

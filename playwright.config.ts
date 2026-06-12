@@ -27,9 +27,7 @@ export default defineConfig({
   // écriture, rendu après génération). En CI, on réessaie les tests
   // transitoirement rouges (chaque test repart d'un état propre en beforeEach,
   // donc le rejeu est sûr) ; en local, pas de retry pour voir les vrais échecs.
-  // DIAGNOSTIC #22 (à révertir) : retries 0 pour que la suite termine sous le
-  // mur des 15 min et flushe l'erreur + les screenshots du test bloqué.
-  retries: 0,
+  retries: process.env.CI ? 2 : 0,
   // Marge sur les assertions pour absorber la latence du backend distant
   // (défaut 5 s → 10 s) ; les vrais bugs échouent toujours, juste un peu plus tard.
   expect: { timeout: 10_000 },
