@@ -77,12 +77,9 @@ export function PanneauFoyer() {
         setEtat(e);
         // Partage natif (Web Share) — détecté côté client.
         setPartageDispo(typeof navigator !== "undefined" && !!navigator.share);
-        // Pré-remplissage du code depuis un lien d'invitation (?rejoindre=CODE),
-        // sans useSearchParams (évite la frontière Suspense) : lecture directe.
-        const codeLien = new URLSearchParams(window.location.search).get(
-          "rejoindre"
-        );
-        if (codeLien) setCodeSaisi(codeLien.toUpperCase());
+        // (#22 PR3) Les liens d'invitation passent désormais par /signup?code=
+        // et sont gérés globalement par InvitationEnAttente (capture + modale) :
+        // plus de pré-remplissage ?rejoindre ici (évite le double-traitement).
       })
       .catch(
         (e) =>
@@ -111,8 +108,11 @@ export function PanneauFoyer() {
     }
   }
 
+  // Lien d'invitation → /signup?code= (#22 PR3) : un destinataire SANS compte
+  // s'inscrit et le code survit jusqu'au tunnel (deep-link, US-24) ; un membre
+  // déjà connecté est redirigé (code préservé par le proxy) vers l'interstitiel.
   function lienInvitation(code: string): string {
-    return `${window.location.origin}/profil?rejoindre=${code}`;
+    return `${window.location.origin}/signup?code=${code}`;
   }
 
   async function partager(code: string): Promise<void> {

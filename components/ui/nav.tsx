@@ -35,6 +35,10 @@ export function NavBar() {
   const accueil = estActif(pathname, "/");
   const profil = useProfil();
 
+  // Tunnel d'onboarding (#22 PR2) : parcours focalisé, sans nav (on ne propose
+  // aucune échappatoire tant que l'onboarding n'est pas terminé).
+  if (pathname === "/bienvenue") return null;
+
   return (
     <header role="banner">
       <nav

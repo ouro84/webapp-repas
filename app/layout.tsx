@@ -6,6 +6,7 @@ import { Toaster } from "sonner";
 import "./globals.css";
 import { NavBar } from "@/components/ui/nav";
 import { AlerteModifPlanning } from "@/components/ui/alerte-modif-planning";
+import { InvitationEnAttente } from "@/components/ui/invitation-en-attente";
 
 // Identité de marque (#66, P14) — pairing rond et chaleureux qui remplace Geist
 // (police « outil de dev », neutre). Fredoka habille le wordmark et les titres
@@ -112,6 +113,10 @@ export default function RootLayout({
         {/* Alerte intrusive de modif planning (#56 PR5, US-21) — montée une
             seule fois ici ; inerte hors des pages synchronisées. */}
         <AlerteModifPlanning />
+        {/* Interstitiel d'invitation en attente (#22 PR3, US-24) — capte un
+            deep-link ?code= et propose à un membre existant de rejoindre le
+            foyer ; inerte sur le tunnel et les pages d'auth. */}
+        <InvitationEnAttente />
         {/* Vercel Analytics : mesure d'audience, sans cookie */}
         <Analytics />
         {/* Vercel Speed Insights : mesure des Core Web Vitals en réel */}
