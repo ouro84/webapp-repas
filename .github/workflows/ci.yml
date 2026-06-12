@@ -88,8 +88,13 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: playwright-report
-          path: playwright-report/
+          # test-results/ porte les traces .zip ET les captures d'échec
+          # (screenshot: only-on-failure) — lisibles directement.
+          path: |
+            playwright-report/
+            test-results/
           retention-days: 7
+          if-no-files-found: ignore
 
   # Applique les migrations sur la PROD — uniquement sur push vers main
   # (jamais sur les PR), et seulement si les tests sont verts.
