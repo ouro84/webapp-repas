@@ -5,12 +5,14 @@
 // foyer, RLS) : NE PAS lancer en local (.env.local pointe la prod). Validation
 // en CI (staging seedé).
 //
-// ⚠️ On NE teste PAS de jonction/sortie RÉELLE : changer le foyer_id du compte
-// de test (partagé) le ferait diverger et casserait toutes les autres specs
-// (catalogue vide). Ces parcours exigent une fixture à deux comptes (à venir).
-// On couvre ici : affichage du panneau (solo), génération du code, et l'erreur
-// de jonction sur code invalide (sans effet de bord). Le code généré sur le
-// foyer de test est sans danger (personne ne le rejoint) → pas de teardown.
+// ⚠️ On NE teste PAS ici de jonction/sortie RÉELLE : changer le foyer_id du
+// compte de test (partagé) le ferait diverger et casserait toutes les autres
+// specs (catalogue vide). On couvre ici : affichage du panneau (solo),
+// génération du code, et l'erreur de jonction sur code invalide (sans effet de
+// bord). Le code généré sur le foyer de test est sans danger (personne ne le
+// rejoint) → pas de teardown. La jonction + sortie + clonage RÉELS (RG-33/RG-34)
+// sont couverts par `foyer-clonage.spec.ts`, qui crée des comptes JETABLES
+// dédiés (disjoints du compte partagé).
 
 import { test, expect } from "@playwright/test";
 
