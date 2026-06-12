@@ -28,13 +28,19 @@ import type { Ingredient, Recette } from "@/types";
 export function FicheRecette({
   recette,
   personnes,
-  editable,
+  modifiable,
   onFermer,
 }: {
   recette: Recette;
   personnes: number;
-  /** Recette personnelle : un raccourci « Modifier » est proposé (RG-20). */
-  editable: boolean;
+  /**
+   * La recette est présente dans le catalogue chargé (perso OU par défaut non
+   * masquée) → un raccourci « Modifier » est proposé (RG-20, #137). Faux pour
+   * une recette hors-base (fixture injectée) ou masquée encore présente dans un
+   * planning persisté → pas de raccourci (évite un lien mort vers
+   * `/recettes?edition=<id>`).
+   */
+  modifiable: boolean;
   onFermer: () => void;
 }) {
   const refDialog = useRef<HTMLDialogElement>(null);
@@ -139,9 +145,10 @@ export function FicheRecette({
         )}
       </div>
 
-      {/* Édition réservée aux recettes personnelles (RG-20). Les globales sont
-          en lecture seule (RLS) → pas de raccourci. */}
-      {editable && (
+      {/* Raccourci d'édition (RG-20, #137) : proposé pour toute recette du
+          catalogue chargé (perso ou par défaut). Sur une recette par défaut,
+          l'édition créera une copie perso + masquera l'originale (#105 PR2). */}
+      {modifiable && (
         <footer className="border-t border-brand-100 p-4">
           <Link
             href={`/recettes?edition=${recette.id}`}

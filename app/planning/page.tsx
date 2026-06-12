@@ -273,16 +273,18 @@ export default function PagePlanning() {
   } | null>(null);
 
   // Liste plate des recettes (sélecteur, remplacement aléatoire) + ensemble des
-  // ids éditables (recettes perso) pour la fiche — dérivés des recettes gérées.
+  // ids MODIFIABLES depuis la fiche (#137) — dérivés des recettes gérées.
   const recettes = useMemo<Recette[]>(
     () => recettesGerees.map((r) => r.recette),
     [recettesGerees]
   );
-  const idsEditables = useMemo<ReadonlySet<string>>(
-    () =>
-      new Set(
-        recettesGerees.filter((r) => r.editable).map((r) => r.recette.id)
-      ),
+  // Toutes les recettes du catalogue chargé (perso + par défaut non masquées,
+  // chargerRecettesGerees excluant déjà les masquées, #105) : pour ces ids, le
+  // deep-link `/recettes?edition=<id>` trouvera la recette → raccourci « Modifier »
+  // proposé. Une recette du slot absente d'ici (fixture hors-base, masquée) ne
+  // l'a pas, ce qui évite un lien mort.
+  const idsModifiables = useMemo<ReadonlySet<string>>(
+    () => new Set(recettesGerees.map((r) => r.recette.id)),
     [recettesGerees]
   );
   const hydrate = useHydratation();
@@ -847,12 +849,12 @@ export default function PagePlanning() {
       )}
 
       {/* Fiche de recette (US-10) — montée seulement pendant la consultation.
-          `editable` distingue les recettes perso (modifiables) des globales. */}
+          `modifiable` = recette présente dans le catalogue chargé (#137). */}
       {ficheOuverte && (
         <FicheRecette
           recette={ficheOuverte.recette}
           personnes={ficheOuverte.personnes}
-          editable={idsEditables.has(ficheOuverte.recette.id)}
+          modifiable={idsModifiables.has(ficheOuverte.recette.id)}
           onFermer={() => setFicheOuverte(null)}
         />
       )}
