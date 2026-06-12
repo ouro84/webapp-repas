@@ -73,6 +73,11 @@ test("un nouvel inscrit invité rejoint le foyer via le lien (US-24)", async ({
   await x.goto("/planning");
   await x.getByRole("button", { name: "Générer mon planning" }).click();
   await expect(x.locator("main ul > li")).toHaveCount(7);
+  // Attendre la PERSISTANCE en base avant que Y rejoigne/hydrate (sinon course :
+  // Y hydraterait un foyer dont le planning n'est pas encore poussé → vide).
+  await expect
+    .poll(async () => x.evaluate(() => localStorage.getItem("planning_dirty")))
+    .toBeNull();
 
   // Invitation → code.
   await x.goto("/profil");
