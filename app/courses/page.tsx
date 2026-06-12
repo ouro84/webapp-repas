@@ -24,6 +24,7 @@ import { genererListeCourses } from "@/lib/courses";
 import {
   aDesCoches,
   basculerCoche,
+  categorieComplete,
   compterProgression,
   estCoche,
   parserCoches,
@@ -159,8 +160,32 @@ export default function PageCourses() {
   const coches = useMemo(() => parserCoches(brutCoches), [brutCoches]);
 
   function basculer(ingredient: Ingredient): void {
+    const suivantes = basculerCoche(coches, ingredient);
+    // Repli automatique (#111) : cocher le DERNIER article d'une section la
+    // replie. On détermine la section (catégorie normale ou pseudo-catégorie
+    // « fond-de-placard ») et ses articles, puis on teste la complétude sur
+    // les coches RÉSULTANTES. On ne fait qu'ajouter au repli — décocher ne
+    // déplie pas (le titre rayé, lui, est dérivé et se met à jour seul).
+    const cleSection = ingredient.fondDePlacard
+      ? "fond-de-placard"
+      : ingredient.categorie;
+    const articlesSection = !liste
+      ? []
+      : ingredient.fondDePlacard
+        ? liste.fondDePlacard
+        : liste.normal.find((l) => l.categorie === ingredient.categorie)
+            ?.ingredients ?? [];
+    const replierApres = categorieComplete(articlesSection, suivantes);
+
     avecTransition(() => {
-      storeCoches.ecrire(JSON.stringify(basculerCoche(coches, ingredient)));
+      storeCoches.ecrire(JSON.stringify(suivantes));
+      if (replierApres) {
+        setReplies((courantes) =>
+          courantes.has(cleSection)
+            ? courantes
+            : new Set(courantes).add(cleSection)
+        );
+      }
     });
   }
 
@@ -273,6 +298,8 @@ export default function PageCourses() {
       <div className="space-y-6">
         {liste.normal.map((ligne) => {
           const repliee = replies.has(ligne.categorie);
+          // Titre rayé quand tous les articles sont cochés (#111).
+          const complete = categorieComplete(ligne.ingredients, coches);
           return (
             <section key={ligne.categorie}>
               <h2 className="mb-2">
@@ -282,7 +309,9 @@ export default function PageCourses() {
                   aria-expanded={!repliee}
                   className="flex min-h-11 w-full cursor-pointer items-center justify-between gap-2 text-sm font-semibold uppercase tracking-wide text-brand-700/85 transition-colors hover:text-brand-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
                 >
-                  {LIBELLES_CATEGORIES[ligne.categorie]}
+                  <span className={complete ? "line-through opacity-50" : ""}>
+                    {LIBELLES_CATEGORIES[ligne.categorie]}
+                  </span>
                   <Chevron repliee={repliee} />
                 </button>
               </h2>
@@ -313,7 +342,15 @@ export default function PageCourses() {
                 aria-expanded={!replies.has("fond-de-placard")}
                 className="flex min-h-11 w-full cursor-pointer items-center justify-between gap-2 text-sm font-semibold uppercase tracking-wide text-accent-700 transition-colors hover:text-accent-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
               >
-                Fond de placard
+                <span
+                  className={
+                    categorieComplete(liste.fondDePlacard, coches)
+                      ? "line-through opacity-50"
+                      : ""
+                  }
+                >
+                  Fond de placard
+                </span>
                 <Chevron repliee={replies.has("fond-de-placard")} />
               </button>
             </h2>

@@ -196,6 +196,45 @@ test("une section de catégorie se replie et se déplie (US-05)", async ({ page 
   await expect(tagliatelles).toBeVisible();
 });
 
+test("cocher le dernier article d'une catégorie la replie et raye son titre (#111)", async ({
+  page,
+}) => {
+  await page.addInitScript(
+    (contenu) => localStorage.setItem("planning_courant", contenu),
+    JSON.stringify(planningDeterministe())
+  );
+  await page.goto("/courses");
+
+  // « Produits frais » : 4 articles (crème fraîche, oeufs, parmesan, pâte
+  // brisée). La section reste ouverte tant que tous ne sont pas cochés.
+  const enTete = page.getByRole("button", { name: "Produits frais" });
+  const titre = enTete.locator("span").first();
+  const articles = [/crème fraîche/, /oeufs/, /parmesan/, /pâte brisée/];
+
+  await expect(enTete).toHaveAttribute("aria-expanded", "true");
+
+  // Cocher les 3 premiers : section toujours dépliée, titre non rayé.
+  for (const nom of articles.slice(0, 3)) {
+    await page.getByRole("checkbox", { name: nom }).click();
+    await expect(page.getByRole("checkbox", { name: nom })).toBeChecked();
+  }
+  await expect(enTete).toHaveAttribute("aria-expanded", "true");
+  await expect(titre).toHaveCSS("text-decoration-line", "none");
+
+  // Cocher le DERNIER : la section se replie et le titre devient rayé.
+  await page.getByRole("checkbox", { name: articles[3]! }).click();
+  await expect(enTete).toHaveAttribute("aria-expanded", "false");
+  await expect(titre).toHaveCSS("text-decoration-line", "line-through");
+  // Section repliée : les cases ne sont plus montées.
+  await expect(page.getByRole("checkbox", { name: /pâte brisée/ })).toHaveCount(0);
+
+  // Redéplier manuellement puis décocher un article : le titre se dé-raye.
+  await enTete.click();
+  await expect(enTete).toHaveAttribute("aria-expanded", "true");
+  await page.getByRole("checkbox", { name: /crème fraîche/ }).click();
+  await expect(titre).toHaveCSS("text-decoration-line", "none");
+});
+
 test("regénérer le planning réinitialise toutes les coches (RG-13)", async ({
   page,
 }) => {

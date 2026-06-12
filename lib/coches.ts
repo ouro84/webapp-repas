@@ -78,6 +78,18 @@ export function trierAvecCoches(
 }
 
 /**
+ * Tous les articles d'une catégorie sont-ils cochés ? (#111) — une catégorie
+ * vide n'est jamais « complète ». Sert au titre rayé et au repli automatique
+ * du dernier article coché (page /courses). Pur : découplé de l'UI.
+ */
+export function categorieComplete(
+  ingredients: Ingredient[],
+  coches: Coches
+): boolean {
+  return ingredients.length > 0 && ingredients.every((i) => estCoche(coches, i))
+}
+
+/**
  * Progression « n/N » du header (RG-14) : uniquement les articles à
  * acheter — le fond de placard est cochable mais hors compteur.
  */
