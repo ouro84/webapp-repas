@@ -11,6 +11,14 @@ import { defineConfig } from "@playwright/test";
 //   pour ça, RG-06) — la vue desktop reste en display:none.
 export default defineConfig({
   testDir: "./e2e",
+  // Reporter `list` : nomme chaque test (début/fin) dans les logs CI — sans lui,
+  // le reporter `dot` par défaut en CI rend un hang muet (impossible de savoir
+  // quel test pend). `list` rend les blocages diagnosticables.
+  reporter: "list",
+  // Timeout PAR TEST (défaut Playwright 30 s, mais on l'explicite) : borne un
+  // test qui pendrait, pour qu'il échoue (nommé) au lieu de laisser le job
+  // courir jusqu'au mur des 15 min. Marge pour la latence backend distant.
+  timeout: 60_000,
   // Un seul worker : les tests partagent le même serveur dev et manipulent
   // le localStorage — la sérialisation évite tout aléa.
   workers: 1,
