@@ -1,4 +1,5 @@
-// Parcours — onboarding du Foyer (#56 PR3, US-19).
+// Parcours — onboarding du Foyer (#56 PR3, US-19). Le panneau « Mon foyer » vit
+// sur /profil depuis #22 PR1 (déplacé depuis /reglages).
 // Session authentifiée via le projet "setup" (storageState).
 //
 // ⚠️ Écrit en base sur le compte de test (génère un code d'invitation sur son
@@ -20,7 +21,7 @@ import { test, expect } from "@playwright/test";
 const CODE_RX = /^[A-HJ-NP-Z2-9]{8}$/;
 
 test("le panneau « Mon foyer » s'affiche (compte solo)", async ({ page }) => {
-  await page.goto("/reglages");
+  await page.goto("/profil");
 
   await expect(
     page.getByRole("heading", { name: "Mon foyer", level: 2 })
@@ -36,7 +37,7 @@ test("le panneau « Mon foyer » s'affiche (compte solo)", async ({ page }) => {
 test("générer un code d'invitation l'affiche avec son expiration", async ({
   page,
 }) => {
-  await page.goto("/reglages");
+  await page.goto("/profil");
 
   // Idempotent entre runs : si un code valide existe déjà (« Régénérer »), on le
   // régénère ; sinon on clique « Inviter quelqu'un ». On ATTEND d'abord que le
@@ -65,7 +66,7 @@ test("générer un code d'invitation l'affiche avec son expiration", async ({
 test("rejoindre avec un code invalide affiche une erreur (RG-29)", async ({
   page,
 }) => {
-  await page.goto("/reglages");
+  await page.goto("/profil");
 
   // Code au bon format mais inexistant → la RPC rejoindre_foyer rejette.
   await page.getByLabel("Rejoindre un foyer").fill("ZZZZZZZZ");

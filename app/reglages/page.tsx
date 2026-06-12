@@ -21,7 +21,6 @@ import { chargerRecettes } from "@/lib/recettes";
 import { ORDRE_TEMPS, rangTemps, REGLAGES_DEFAUT } from "@/lib/reglages";
 import { analyserVivier } from "@/lib/generateur";
 import { PERSONNES_MAX, PERSONNES_MIN } from "@/lib/personnes";
-import { PanneauFoyer } from "@/components/reglages/panneau-foyer";
 import type { Recette, ReglagesGeneration, TempsPreparation } from "@/types";
 
 const LIBELLE_TEMPS: Record<TempsPreparation, string> = {
@@ -202,8 +201,6 @@ export default function PageReglages() {
     }
   }
 
-  // Le panneau « Mon foyer » se charge indépendamment des réglages de
-  // génération : il reste visible même si ces derniers sont en chargement/erreur.
   const blocGeneration =
     erreur !== null ? (
       <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -229,10 +226,8 @@ export default function PageReglages() {
   return (
     <main id="contenu" className="mx-auto w-full max-w-2xl flex-1 p-4 md:p-8">
       <h1 className="mb-6 font-display text-2xl font-semibold text-brand-900">
-        Réglages
+        Réglages de génération
       </h1>
-      <PanneauFoyer />
-      <div className="mb-8 border-t border-brand-100" />
       {blocGeneration}
     </main>
   );

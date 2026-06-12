@@ -1,12 +1,13 @@
 "use client";
 
-// Panneau « Mon foyer » de /reglages (#56 PR3, US-19). Compteur de membres,
-// invitation (code + partage natif + QR — bonus), jonction par code (RG-33) et
-// sortie (RG-29). Modèle « foyer de 1 systématique » : pas d'action « créer »,
-// on naît solo et on INVITE pour partager, ou on REJOINT.
+// Panneau « Mon foyer » de /profil (#56 PR3, US-19 ; déplacé depuis /reglages
+// en #22 PR1 — le foyer relève de l'identité, pas de la config de génération).
+// Compteur de membres, invitation (code + partage natif + QR — bonus), jonction
+// par code (RG-33) et sortie (RG-29). Modèle « foyer de 1 systématique » : pas
+// d'action « créer », on naît solo et on INVITE pour partager, ou on REJOINT.
 //
 // Trois états (RG-09) : chargement / erreur / chargé. Le panneau se charge
-// indépendamment des réglages de génération de la page hôte.
+// indépendamment du reste de la page hôte.
 //
 // Effet de bord clé : après une jonction/sortie, le FOYER change → le cache
 // local (planning + coches) de l'ancien foyer est périmé. On le réinitialise
@@ -31,7 +32,7 @@ import {
 } from "@/lib/recettes";
 import { detecterDoublons, type GroupeDoublon } from "@/lib/doublons";
 import { ConfirmationModale } from "@/components/ui/confirmation";
-import { ModaleDoublons } from "@/components/reglages/modale-doublons";
+import { ModaleDoublons } from "@/components/profil/modale-doublons";
 import type { Recette } from "@/types";
 
 // Un code est utilisable tant qu'il n'a pas expiré (le serveur fait foi via
@@ -111,7 +112,7 @@ export function PanneauFoyer() {
   }
 
   function lienInvitation(code: string): string {
-    return `${window.location.origin}/reglages?rejoindre=${code}`;
+    return `${window.location.origin}/profil?rejoindre=${code}`;
   }
 
   async function partager(code: string): Promise<void> {

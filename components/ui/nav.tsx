@@ -10,9 +10,10 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Settings } from "lucide-react";
 import { Logo } from "@/components/ui/logo";
+import { Avatar } from "@/components/ui/avatar";
 import { BasculeTheme } from "@/components/ui/bascule-theme";
+import { useProfil } from "@/lib/profil";
 
 const LIENS = [
   { href: "/planning", label: "Planning" },
@@ -32,6 +33,7 @@ function estActif(pathname: string, href: string): boolean {
 export function NavBar() {
   const pathname = usePathname();
   const accueil = estActif(pathname, "/");
+  const profil = useProfil();
 
   return (
     <header role="banner">
@@ -84,21 +86,27 @@ export function NavBar() {
                 </Link>
               );
             })}
-            {/* Réglages (#45) : icône engrenage, distincte des liens texte. */}
+            {/* Profil (#22 PR1) : l'avatar remplace l'ex-engrenage de réglages
+                (#45). Point d'entrée « mon compte » (prénom, foyer, sécurité,
+                réglages de génération, déconnexion). Anneau actif sur /profil. */}
             {(() => {
-              const actif = estActif(pathname, "/reglages");
+              const actif = estActif(pathname, "/profil");
               return (
                 <Link
-                  href="/reglages"
-                  aria-label="Réglages"
+                  href="/profil"
+                  aria-label={
+                    profil?.prenom ? `Profil de ${profil.prenom}` : "Profil"
+                  }
                   aria-current={actif ? "page" : undefined}
-                  className={`relative flex size-9 items-center justify-center rounded-full transition-colors after:absolute after:-inset-1 after:content-[''] ${
-                    actif
-                      ? "bg-primary text-white"
-                      : "text-brand-700 hover:bg-brand-50"
+                  className={`relative flex items-center justify-center rounded-full transition-colors after:absolute after:-inset-1 after:content-[''] ${
+                    actif ? "ring-2 ring-primary ring-offset-2 ring-offset-surface" : ""
                   }`}
                 >
-                  <Settings className="size-5" aria-hidden="true" />
+                  <Avatar
+                    prenom={profil?.prenom}
+                    couleur={profil?.couleurAvatar}
+                    taille="sm"
+                  />
                 </Link>
               );
             })()}

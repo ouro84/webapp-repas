@@ -1,7 +1,8 @@
 // Accès au Foyer partagé — lecture/écriture côté CLIENT (#56 PR3, US-19).
 //
 // Modèle « foyer de 1 systématique » (PR1) : tout utilisateur a toujours un
-// foyer. Ce module sert l'onglet « Mon foyer » de /reglages : compteur de
+// foyer. Ce module sert la section « Mon foyer » de /profil (déplacée depuis
+// /reglages en #22 PR1) : compteur de
 // membres, génération/partage du code d'invitation (RG-30 : tout membre peut),
 // jonction par code (RG-33) et sortie (RG-29).
 //

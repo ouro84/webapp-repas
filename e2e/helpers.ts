@@ -115,6 +115,26 @@ export async function nettoyerMasquagesDistants(
 }
 
 /**
+ * Réinitialise l'identité du profil du compte de test (#22) : prénom et couleur
+ * d'avatar remis à null via PATCH REST. Le compte étant partagé, un prénom
+ * résiduel ferait dériver l'avatar de la nav d'un run à l'autre. NE touche PAS
+ * onboarding_complete (laissé à true → pas de redirection onboarding en PR2).
+ * À appeler en beforeEach ET afterAll de profil.spec.
+ */
+export async function reinitialiserProfilDistant(
+  request: APIRequestContext
+): Promise<void> {
+  const { url, headers } = await jetonTest(request);
+  // RLS UPDATE « ma propre ligne » → ne touche que le profil du compte de test
+  // (le filtre est requis par PostgREST). Grant au niveau colonne : prenom /
+  // couleur_avatar sont modifiables par le rôle authenticated.
+  await request.patch(`${url}/rest/v1/profiles?user_id=not.is.null`, {
+    headers: { ...headers, "Content-Type": "application/json" },
+    data: { prenom: null, couleur_avatar: null },
+  });
+}
+
+/**
  * Supprime les recettes de test du run (nom contenant le suffixe) via DELETE
  * REST — teardown de recettes.spec. Remplace la suppression via clics UI, qui
  * dépassait le timeout afterAll (re-render de la liste → « element detached »).
