@@ -659,12 +659,39 @@ test("la fiche d'une recette s'ouvre au clic sur le nom, à l'échelle du slot e
     fiche.getByRole("heading", { name: /^Fond de placard/ })
   ).toBeVisible();
 
-  // Recette du catalogue (non perso) → pas de raccourci « Modifier ».
+  // Recette injectée HORS-BASE (id slug, absente du catalogue chargé) → pas de
+  // raccourci « Modifier » : évite un lien mort (#137). Une recette par défaut
+  // RÉELLE en propose un (cf. test suivant).
   await expect(fiche.getByText("Modifier la recette")).toHaveCount(0);
 
   // Fermeture native via Échap.
   await page.keyboard.press("Escape");
   await expect(fiche).not.toBeVisible();
+});
+
+test("la fiche d'une recette par défaut propose « Modifier » et mène au formulaire (#137)", async ({
+  page,
+}) => {
+  // Génération RÉELLE (catalogue seedé) → CI-only. Toutes les recettes du
+  // planning sont des recettes par défaut présentes dans le catalogue chargé →
+  // la fiche doit proposer « Modifier la recette » (#137).
+  await page.getByRole("button", { name: "Générer mon planning" }).click();
+  await expect(page.getByText("Planning généré")).toBeVisible();
+
+  // Ouvre la fiche du premier repas (la carte lundi porte déjeuner + dîner).
+  const carteLundi = page.locator("main ul > li").first();
+  await carteLundi.getByRole("button", { name: /^Voir la recette/ }).first().click();
+  const fiche = page.getByRole("dialog");
+  await expect(fiche).toBeVisible();
+
+  // Le raccourci « Modifier » est proposé et mène au formulaire d'édition
+  // (sans enregistrer → aucune mutation : dup+masquage ne se déclenche qu'au save).
+  const modifier = fiche.getByText("Modifier la recette");
+  await expect(modifier).toBeVisible();
+  await modifier.click();
+  await expect(
+    page.getByRole("heading", { name: "Modifier la recette" })
+  ).toBeVisible();
 });
 
 test("la grille 7 colonnes n'apparaît qu'à partir du desktop (#64)", async ({
