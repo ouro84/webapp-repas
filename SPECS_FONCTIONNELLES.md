@@ -422,6 +422,57 @@ Réduire à zéro l'effort de planification hebdomadaire des repas, du choix des
 > **When** je choisis une recette  
 > **Then** **toutes** les recettes restent proposées, hors saison comprises (RG-03 de #23 → RG-28)
 
+### US-19 — Partager son foyer : inviter / rejoindre / quitter (#56, P24)
+
+> **En tant qu'** utilisateur, je veux partager recettes, planning et liste de courses avec les autres membres de mon foyer, afin que nous organisions les repas ensemble.
+
+**Comportement (inviter) :**
+> **Given** je suis dans mon foyer  
+> **When** je génère un **code d'invitation** et le partage (copier, lien, QR ou partage natif)  
+> **Then** tout membre peut le (re)générer (gouvernance plate, RG-30) ; il est **valable 7 jours** et **réutilisable** jusqu'à expiration (RG-29)
+
+**Comportement (rejoindre) :**
+> **Given** je suis **seul** dans mon foyer  
+> **When** je saisis un code d'invitation valide  
+> **Then** je rejoins le foyer cible, **mes recettes personnelles y sont fusionnées** (collisions de noms conservées, RG-33), et un **assistant de dédoublonnage** m'est proposé
+
+> **Given** je suis déjà dans un foyer **partagé**  
+> **When** je tente d'en rejoindre un autre  
+> **Then** c'est **refusé** : je dois d'abord quitter le mien (un seul foyer à la fois, RG-29)
+
+**Comportement (quitter) :**
+> **Given** je suis dans un foyer partagé  
+> **When** je quitte le foyer  
+> **Then** je repars avec une **copie** de mes données (RG-34) et les autres membres **conservent tout**
+
+### US-20 — Liste de courses en temps réel (#56, P24)
+
+> **En tant que** membre d'un foyer faisant les courses, je veux voir en direct les articles cochés par les autres, afin de ne pas acheter deux fois la même chose.
+
+> **Given** un autre membre coche ou décoche un article pendant que je consulte la liste  
+> **When** il valide son action  
+> **Then** je la vois apparaître **sans recharger** (RG-32)
+
+> **Given** deux membres cochent des articles **différents** en même temps  
+> **When** les deux actions partent  
+> **Then** **aucune n'écrase l'autre** (suivi par article, RG-32)
+
+> **Given** un autre membre est aussi sur la liste de courses  
+> **When** je consulte la page  
+> **Then** un indicateur **discret et anonyme** me le signale (RG-31)
+
+### US-21 — Alerte de modification du planning (#56, P24)
+
+> **En tant que** membre faisant les courses, je veux être alerté si quelqu'un modifie le planning à la maison, afin de ne pas acheter selon un planning périmé.
+
+> **Given** je consulte ma liste de courses (ou le planning)  
+> **When** un autre membre modifie le planning de la **semaine affichée**  
+> **Then** je reçois une **alerte bloquante** et ma liste de courses est **automatiquement réactualisée** (RG-32)
+
+> **Given** c'est **moi** qui modifie le planning  
+> **When** ma modification est enregistrée  
+> **Then** je ne reçois **aucune** alerte (l'écho de ma propre écriture est ignoré, RG-32)
+
 ---
 
 ## 5. Modèle de données
@@ -521,11 +572,20 @@ type Planning = {
 
 Le planning généré est sauvegardé en `localStorage` sous la clé `planning_courant`. Il est écrasé à chaque nouvelle génération.
 
-**Synchronisation multi-device (US-13, #6) + historique (US-14, #5) :** la **base Supabase est la source de vérité** du planning **et des coches**, **par semaine** ; `localStorage` cache la **semaine affichée** (clé `semaine_affichee`). Chaque donnée est poussée en base à chaque changement et hydratée selon un **last-write-wins horodaté**, avec **file de rejeu** hors-ligne. Naviguer change la semaine affichée : on **flushe** d'abord les écritures en attente (sinon perte) puis on charge la semaine cible. Clés de cache : planning (`planning_courant`, `planning_courant_maj`, `planning_dirty`) et coches (`courses_cochees`, `courses_cochees_maj`, `courses_dirty`). (Cf. RG-23/RG-24, tables `planning`/`planning_slot`/`etat_courses` clé-vées par `(user, semaine)`.)
+**Synchronisation multi-device (US-13, #6) + historique (US-14, #5) :** la **base Supabase est la source de vérité** du planning **et des coches**, **par semaine** ; `localStorage` cache la **semaine affichée** (clé `semaine_affichee`). Chaque donnée est poussée en base à chaque changement et hydratée selon un **last-write-wins horodaté**, avec **file de rejeu** hors-ligne. Naviguer change la semaine affichée : on **flushe** d'abord les écritures en attente (sinon perte) puis on charge la semaine cible. Clés de cache : planning (`planning_courant`, `planning_courant_maj`, `planning_dirty`) et coches (`courses_cochees`, `courses_cochees_maj`, `courses_dirty`). (Cf. RG-23/RG-24, tables `planning`/`planning_slot`/`etat_courses_article` clé-vées par `(foyer, semaine)` depuis #56 — cf. 5.7.)
 
 Les coches de la liste de courses (US-05) sont sauvegardées sous la clé `courses_cochees` : un objet `{ [nom|unité]: quantité au moment du cochage }` (cf. RG-12). La clé est effacée à chaque génération complète de planning (RG-13).
 
 Un snapshot d'annulation (US-09) est conservé sous la clé `planning_snapshot` : `{ planning, coches, horodatage }`, figeant `planning_courant` et `courses_cochees` avant une action destructive. Transitoire et mono-niveau, il expire après la fenêtre d'undo (cf. RG-19).
+
+> **Depuis #56 (P24)**, les données partagées sont scopées au **foyer** (et non plus à l'utilisateur), et les coches sont stockées **par article** (cf. 5.7). Les tables `planning`/`planning_slot`/`etat_courses_article` sont clé-vées par `(foyer, semaine)` ; la sync coches devient **par article + temps réel** (RG-31/RG-32).
+
+### 5.7 Foyer & propriété des données (#56, P24)
+
+- **Foyer** = unité de partage. Toute donnée partagée appartient à un foyer (`foyer_id`), pas à un compte. Tables `foyers` et `profiles` (un profil par compte, rattaché à un foyer). **Modèle « foyer de 1 systématique »** : chaque compte naît dans son propre foyer (créé à l'inscription) — il n'y a donc pas d'action « créer un foyer », on **invite** ou on **rejoint** (US-19).
+- **Scope foyer** : `recette` (avec `foyer_id IS NULL` = **catalogue global** en lecture seule), `recette_ingredient`, `planning`/`planning_slot`, `etat_courses_article`, `recette_masquee`. **`reglages` reste par-utilisateur** (chaque membre a ses propres règles de génération).
+- **Coches par article** : table `etat_courses_article (foyer_id, semaine, cle, quantite)` — **une ligne par article** (remplace l'ancien blob `etat_courses`), condition d'un temps réel sans écrasement mutuel (RG-32).
+- **Isolation** : chaque membre ne voit que les données de son foyer (+ le catalogue global). Les écritures partagées sensibles (planning, jonction, sortie) passent par des **fonctions serveur transactionnelles** (atomicité + dérivation du foyer côté serveur).
 
 ---
 
@@ -725,6 +785,36 @@ Un slot peut être marqué **« restes »** (flag par slot, `restes.dejeuner` / 
 - **Last-write-wins horodaté** : au chargement, la version la plus récente entre base et cache local gagne (comparaison `updated_at` / `planning_courant_maj`). Un cache **sans horodatage** (planning antérieur à la feature, ou injecté en test) est considéré comme le plus frais — on ne l'écrase pas ; un device au cache **vide** récupère donc le planning distant.
 - **Écriture à chaque changement** (débounce), avec **rejeu** au retour réseau (`planning_dirty`). Pas de temps réel : la propagation se fait au prochain chargement.
 - **Mono-actif** : un seul planning persisté par utilisateur (l'historique multi-semaines est #P08). Le **snapshot d'annulation** (US-09) reste **local**, non synchronisé.
+
+> **Évolution #56 (P24)** : depuis le foyer partagé, la source de vérité est par **foyer** (et non plus par utilisateur), l'historique multi-semaines est livré (#5), et la sync des **coches** passe en **temps réel** (cf. RG-31/RG-32). Le last-write-wins horodaté reste la règle pour le **planning**.
+
+### RG-29 — Un seul foyer à la fois & code d'invitation (US-19, #56)
+
+- **Foyer de 1 systématique** : tout compte appartient toujours à un foyer (créé à l'inscription). Pas d'action « créer » ; on **invite** (le sien devient partagé) ou on **rejoint**.
+- **Rejoindre exige d'être seul** : pour passer d'un foyer partagé à un autre, il faut **quitter** d'abord (US-19).
+- **Code d'invitation** : 8 caractères d'un alphabet sans caractères ambigus, généré **à la demande** (pas à l'inscription), **valable 7 jours**, **réutilisable** jusqu'à expiration (multi-jonction, pas usage unique).
+
+### RG-30 — Gouvernance plate (US-19, #56)
+
+Tous les membres ont **les mêmes droits** : générer/régénérer le code d'invitation, créer/éditer/supprimer les recettes **du foyer**, modifier le planning et les coches. **Pas de rôle « propriétaire »** ni d'administration différenciée.
+
+### RG-31 — Présence anonyme « en magasin » (US-20, #56)
+
+Quand au moins un **autre** membre consulte la liste de courses en même temps, un indicateur **discret** le signale. La présence est **anonyme** (aucun nom) : seul le fait qu'« un autre membre est là » est exposé.
+
+### RG-32 — Temps réel & anti-écrasement (US-20, US-21, #56)
+
+- **Coches suivies par article** (une entrée par `(foyer, semaine, article)`) : deux membres qui cochent des articles **différents** ne s'écrasent pas ; sur un **même** article, le dernier écrit gagne (acceptable).
+- **Propagation en temps réel** des coches : un changement distant apparaît **sans recharger**.
+- **Alerte planning (US-21)** : une modification distante du planning de la **semaine affichée** déclenche une **alerte bloquante** chez les autres membres et **réactualise** leur liste de courses ; **l'écho de sa propre écriture est ignoré** (discriminé par l'horodatage serveur).
+
+### RG-33 — Fusion des catalogues à la jonction (US-19, #56)
+
+En rejoignant un foyer, les **recettes personnelles** du membre sont rattachées au foyer cible. Les **collisions de noms sont conservées** (pas de fusion automatique, aucune perte) ; un **assistant de dédoublonnage** est proposé juste après pour nettoyer manuellement (suppression réelle pour une recette du foyer, masquage pour une globale, cf. #105).
+
+### RG-34 — Sortie sans perte (US-19, #56)
+
+Quitter un foyer **clone** vers le nouveau foyer solo du partant une **copie** de tout ce qu'il partageait : recettes (+ ingrédients), masquages, plannings (+ slots, tout l'historique) et coches. On **clone, on ne déplace pas** : les membres restants conservent **100 %** des données (pérennité) et les deux foyers deviennent **indépendants immédiatement** (étanchéité). Opération **transactionnelle** côté serveur (tout ou rien).
 
 ---
 
