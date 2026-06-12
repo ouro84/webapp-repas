@@ -29,6 +29,9 @@ export default defineConfig({
     // API du setup d'auth passeraient par sa CA non reconnue de Node.
     ignoreHTTPSErrors: true,
     trace: "on-first-retry",
+    // Capture une image de l'écran au moment d'un échec → diagnostic CI lisible
+    // (les traces .zip exigent un visualiseur ; une capture se lit directement).
+    screenshot: "only-on-failure",
     // Viewport mobile (RG-06) — la liste verticale du planning est visible,
     // la grille desktop est masquée.
     viewport: { width: 390, height: 844 },
