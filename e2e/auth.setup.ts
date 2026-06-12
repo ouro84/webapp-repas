@@ -9,6 +9,7 @@
 
 import { readFileSync } from "node:fs";
 import { test as setup, expect } from "@playwright/test";
+import { marquerOnboardingCompletDistant } from "./helpers";
 
 const EMAIL = process.env.E2E_EMAIL ?? "claude-e2e-test@example.com";
 const MOT_DE_PASSE = process.env.E2E_PASSWORD ?? "E2E-Test-Claude-2026!";
@@ -37,6 +38,12 @@ setup("authentification du compte de test", async ({ page, request }) => {
       `Signup du compte de test impossible : HTTP ${reponse.status()} — ${await reponse.text()}`
     );
   }
+
+  // Onboarding terminé (#22 PR2) : sinon le proxy redirigerait le login vers le
+  // tunnel /bienvenue au lieu de /planning. Le compte partagé est déjà onboardé
+  // par le backfill de la migration ; cet appel est défensif (base staging neuve
+  // où le compte vient d'être créé par le signup ci-dessus → false par défaut).
+  await marquerOnboardingCompletDistant(request, EMAIL, MOT_DE_PASSE);
 
   // Connexion par le parcours réel.
   await page.goto("/login");

@@ -25,7 +25,11 @@ import {
   type BrowserContext,
   type Page,
 } from "@playwright/test";
-import { E2E_PASSWORD, lireEnvLocal } from "./helpers";
+import {
+  E2E_PASSWORD,
+  lireEnvLocal,
+  marquerOnboardingCompletDistant,
+} from "./helpers";
 
 // 8 caractères de l'alphabet de generer_code_invitation (sans I/O/0/1).
 const CODE_RX = /^[A-HJ-NP-Z2-9]{8}$/;
@@ -48,6 +52,10 @@ async function inscrire(
   if (![200, 400, 422].includes(r.status())) {
     throw new Error(`Signup ${email} impossible : HTTP ${r.status()} — ${await r.text()}`);
   }
+  // Onboarding terminé (#22 PR2) : sinon le login serait redirigé vers /bienvenue
+  // (compte neuf → onboarding_complete false par défaut) et `connecter` (qui
+  // attend /planning) échouerait.
+  await marquerOnboardingCompletDistant(request, email, E2E_PASSWORD);
 }
 
 // Connecte le compte dans un contexte neuf (un « appareil ») via la vraie page

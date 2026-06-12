@@ -37,24 +37,42 @@ export async function proxy(request: NextRequest) {
   // Ne pas écrire de logique entre createServerClient et getUser()
   const { data: { user } } = await supabase.auth.getUser()
 
-  // Pages protégées : redirige vers /login si non connecté
-  const protectedRoutes = ["/planning", "/courses", "/recettes", "/reglages", "/profil"]
-  const isProtectedRoute = protectedRoutes.some(route =>
-    request.nextUrl.pathname.startsWith(route)
-  )
+  const pathname = request.nextUrl.pathname
+
+  // Pages protégées : redirige vers /login si non connecté. /bienvenue (tunnel
+  // d'onboarding #22 PR2) en fait partie — on ne s'onboarde pas déconnecté.
+  const protectedRoutes = ["/planning", "/courses", "/recettes", "/reglages", "/profil", "/bienvenue"]
+  const isProtectedRoute = protectedRoutes.some(route => pathname.startsWith(route))
 
   if (isProtectedRoute && !user) {
     return NextResponse.redirect(new URL("/login", request.url))
   }
 
-  // Pages auth : redirige vers /planning si déjà connecté
   const authRoutes = ["/login", "/signup"]
-  const isAuthRoute = authRoutes.some(route =>
-    request.nextUrl.pathname.startsWith(route)
-  )
+  const isAuthRoute = authRoutes.some(route => pathname.startsWith(route))
 
-  if (isAuthRoute && user) {
-    return NextResponse.redirect(new URL("/planning", request.url))
+  // Garde d'onboarding (#22 PR2) : tant que profiles.onboarding_complete est
+  // faux, l'utilisateur connecté est renvoyé vers le tunnel /bienvenue ; une
+  // fois terminé, il ne peut plus y revenir (ni rester sur les routes d'auth).
+  // Une requête par navigation connectée — choix assumé (usage perso, cf. plan
+  // #22). On EXEMPTE /api/* et /auth/* (déconnexion, reset mot de passe) : ni
+  // redirection ni requête, pour ne pas casser ces flux ni les ralentir.
+  if (user && !pathname.startsWith("/api") && !pathname.startsWith("/auth")) {
+    const { data } = await supabase
+      .from("profiles")
+      .select("onboarding_complete")
+      .eq("user_id", user.id)
+      .single()
+    // Fail-open sur erreur (profil illisible/transitoire) : on considère
+    // l'utilisateur onboardé pour ne jamais le piéger dans une boucle.
+    const onboarde = data ? data.onboarding_complete : true
+
+    if (!onboarde && pathname !== "/bienvenue") {
+      return NextResponse.redirect(new URL("/bienvenue", request.url))
+    }
+    if (onboarde && (pathname === "/bienvenue" || isAuthRoute)) {
+      return NextResponse.redirect(new URL("/planning", request.url))
+    }
   }
 
   return supabaseResponse

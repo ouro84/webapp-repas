@@ -115,6 +115,40 @@ export async function nettoyerMasquagesDistants(
 }
 
 /**
+ * Marque un compte comme ayant terminé l'onboarding (#22 PR2) via PATCH REST.
+ * Indispensable depuis que le proxy redirige tout compte `onboarding_complete`
+ * faux vers le tunnel `/bienvenue` : sans ça, le login d'un compte fraîchement
+ * créé (signup → false par défaut) atterrit sur `/bienvenue` au lieu de
+ * `/planning`. À appeler après `inscrire` pour les comptes jetables, et dans
+ * `auth.setup` pour le compte partagé (défensif sur une base staging neuve — le
+ * compte existant est déjà onboardé par le backfill de la migration).
+ * Auth par mot de passe (compte partagé par défaut, ou un compte jetable donné).
+ */
+export async function marquerOnboardingCompletDistant(
+  request: APIRequestContext,
+  email: string = E2E_EMAIL,
+  password: string = E2E_PASSWORD
+): Promise<void> {
+  const url = lireEnvLocal("NEXT_PUBLIC_SUPABASE_URL");
+  const anon = lireEnvLocal("NEXT_PUBLIC_SUPABASE_ANON_KEY");
+  const auth = await request.post(`${url}/auth/v1/token?grant_type=password`, {
+    headers: { apikey: anon, "Content-Type": "application/json" },
+    data: { email, password },
+  });
+  if (!auth.ok()) {
+    throw new Error(`Auth REST de ${email} impossible : HTTP ${auth.status()}`);
+  }
+  const { access_token: jeton } = (await auth.json()) as { access_token: string };
+  // RLS UPDATE « ma propre ligne » → ne touche que le profil de ce compte (le
+  // filtre est requis par PostgREST). Grant au niveau colonne : onboarding_complete
+  // est modifiable par le rôle authenticated.
+  await request.patch(`${url}/rest/v1/profiles?user_id=not.is.null`, {
+    headers: { apikey: anon, Authorization: `Bearer ${jeton}`, "Content-Type": "application/json" },
+    data: { onboarding_complete: true },
+  });
+}
+
+/**
  * Réinitialise l'identité du profil du compte de test (#22) : prénom et couleur
  * d'avatar remis à null via PATCH REST. Le compte étant partagé, un prénom
  * résiduel ferait dériver l'avatar de la nav d'un run à l'autre. NE touche PAS
