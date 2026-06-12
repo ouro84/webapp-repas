@@ -19,6 +19,7 @@
 import Link from "next/link";
 import { useMemo, useState, useSyncExternalStore } from "react";
 import { flushSync } from "react-dom";
+import { Users } from "lucide-react";
 import { genererListeCourses } from "@/lib/courses";
 import {
   aDesCoches,
@@ -29,7 +30,7 @@ import {
   trierAvecCoches,
 } from "@/lib/coches";
 import { storeCoches, storePlanning } from "@/lib/stockage";
-import { useSync } from "@/lib/sync";
+import { useSync, usePresenceCourses } from "@/lib/sync";
 import { formaterSemaine } from "@/lib/semaines";
 import { accorderNom } from "@/lib/pluriels";
 import { formaterQuantite } from "@/lib/unites";
@@ -122,6 +123,9 @@ export default function PageCourses() {
   // Synchro multi-device (US-13) : hydrate le planning depuis la base au
   // montage (ouvrir /courses sur un device neuf récupère le planning).
   useSync();
+  // Présence anonyme « en magasin » (#56 PR4, RG-31) : vrai si un autre membre
+  // du foyer est aussi sur la liste de courses en ce moment.
+  const autresPresents = usePresenceCourses();
 
   // Catégories repliées (US-05) — état volontairement non persisté :
   // réinitialisé à chaque chargement de page. "fond-de-placard" est une
@@ -233,6 +237,17 @@ export default function PageCourses() {
                 {liste.fondDePlacard.length} à vérifier
               </span>
             )}
+          </p>
+          {/* Présence anonyme « en magasin » (#56 PR4, RG-31) : discret, sans
+              nom. aria-live pour annoncer l'arrivée/le départ d'un membre. */}
+          <p
+            aria-live="polite"
+            className={`mt-1 flex items-center gap-1.5 text-xs text-brand-700/70 transition-opacity ${
+              autresPresents ? "opacity-100" : "opacity-0"
+            }`}
+          >
+            <Users aria-hidden="true" className="size-3.5 shrink-0" />
+            {autresPresents ? "Un autre membre est aussi sur la liste" : ""}
           </p>
         </div>
         {aDesCoches(liste, coches) && (

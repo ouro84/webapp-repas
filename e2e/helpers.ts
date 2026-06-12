@@ -54,9 +54,11 @@ export async function nettoyerEtatDistant(
   await request.delete(`${url}/rest/v1/planning?foyer_id=not.is.null`, {
     headers,
   });
-  await request.delete(`${url}/rest/v1/etat_courses?foyer_id=not.is.null`, {
-    headers,
-  });
+  // Coches par-article (#56 PR4) : la table etat_courses (blob) a été remplacée.
+  await request.delete(
+    `${url}/rest/v1/etat_courses_article?foyer_id=not.is.null`,
+    { headers }
+  );
 }
 
 /**

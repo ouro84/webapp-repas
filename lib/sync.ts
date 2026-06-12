@@ -15,19 +15,33 @@ import { useSyncExternalStore } from "react";
 import { storeCoches, storePlanning } from "@/lib/stockage";
 import {
   chargerCochesDistantes,
+  chargerFoyerId,
   chargerPlanningDistant,
+  cocherArticleDistant,
+  decocherArticleDistant,
   purgerSemainesAvant,
-  sauvegarderCochesDistantes,
   sauvegarderPlanningDistant,
+  viderCochesDistantes,
 } from "@/lib/persistance";
+import { parserCoches, type Coches } from "@/lib/coches";
+import {
+  appliquerEvent,
+  deriverOps,
+  type EventCoche,
+} from "@/lib/coches-sync";
+import { createClient } from "@/lib/supabase/client";
 import { semaineDecalee, semaineISO, semaineParDefaut } from "@/lib/semaines";
 import type { Planning } from "@/types";
+import type { RealtimeChannel } from "@supabase/supabase-js";
 
 // Horodatage de la dernière écriture locale (last-write-wins) et drapeau
 // « écriture en attente de push » (file hors-ligne minimale). Un jeu de clés
 // par donnée synchronisée : planning et coches (US-13).
 const CLE_MAJ = "planning_courant_maj";
 const CLE_DIRTY = "planning_dirty";
+// Coches : depuis #56 PR4 (par-article), seul `courses_dirty` (file d'opérations
+// à pousser) sert. `courses_cochees_maj` est legacy — plus écrit, mais purgé au
+// changement de foyer et en e2e pour ne pas laisser de valeur orpheline.
 const CLE_MAJ_COCHES = "courses_cochees_maj";
 const CLE_DIRTY_COCHES = "courses_dirty";
 // Semaine actuellement affichée (navigation historique #5) — partagée
@@ -199,21 +213,33 @@ function planifierPush(): void {
 // d'une semaine précise) — cf. plus bas.
 
 // ---------------------------------------------------------------------------
-// Mécanique des coches (US-13, PR3) — strictement parallèle au planning :
-// même logique dirty-first + horloge serveur + push sérialisé.
+// Mécanique des coches PAR-ARTICLE + temps réel (#56 PR4, US-20, RG-32).
+//
+// La liste reste un BLOB localStorage (storeCoches) — page et lib/coches.ts
+// inchangées. Mais la base stocke désormais UNE LIGNE PAR ARTICLE : pour ne pas
+// s'écraser entre membres (RG-32), on ne pousse plus le blob entier. À chaque
+// écriture locale on calcule le DIFF entre l'état déjà synchronisé
+// (`cochesConnues`) et le blob courant → opérations par-article (cf. deriverOps)
+// poussées en accès direct sous RLS. En sens inverse, un abonnement Supabase
+// Realtime fusionne dans le blob les coches des autres membres.
+//
+// Pas d'horloge last-write-wins par blob : la granularité par-article rend le
+// clobber improbable (clés distinctes = indépendantes), et sur une MÊME clé le
+// dernier écrit en base gagne (acceptable pour une coche). `courses_dirty`
+// signale simplement « des opérations restent à pousser » (file hors-ligne).
 // ---------------------------------------------------------------------------
 let hydratationCochesEnCours = false;
-let pushCochesEnCours = false;
-let rePushCochesDemande = false;
+let flushCochesEnCours = false;
+let reFlushCochesDemande = false;
 let minuteurCoches: ReturnType<typeof setTimeout> | null = null;
+// Vrai pendant l'application d'un event temps réel : l'écriture de storeCoches
+// qui en découle ne doit PAS redéclencher de dérivation d'opérations.
+let applicationDistanteEnCours = false;
+// Dernier état réconcilié avec la base — référence du diff.
+let cochesConnues: Coches = {};
 
 function estDirtyCoches(): boolean {
   return localStorage.getItem(CLE_DIRTY_COCHES) === "1";
-}
-
-function lireMajCoches(): number {
-  const valeur = localStorage.getItem(CLE_MAJ_COCHES);
-  return valeur ? Date.parse(valeur) : 0;
 }
 
 // Les coches sont propres à une semaine (#5) : celle du planning actif.
@@ -221,82 +247,354 @@ function semaineActive(): string | null {
   return planningLocal()?.semaine ?? null;
 }
 
-async function pousserCoches(): Promise<void> {
-  if (pushCochesEnCours) {
-    rePushCochesDemande = true;
+function cochesLocales(): Coches {
+  return parserCoches(storeCoches.lire());
+}
+
+// Écrit le blob dans storeCoches (efface si vide → cohérent avec RG-13).
+function ecrireBlob(blob: Coches): void {
+  if (Object.keys(blob).length === 0) storeCoches.effacer();
+  else storeCoches.ecrire(JSON.stringify(blob));
+}
+
+// Pousse en base le DIFF entre `cochesConnues` et le blob courant. Sérialisé
+// (garde `flushCochesEnCours`) ; recalcule le diff à chaque passage → converge
+// même si l'état a rebougé pendant un flush. Au succès, `cochesConnues` rattrape
+// le local et `courses_dirty` est levé ; à l'échec (hors-ligne) il est rejoué.
+async function flusherCoches(): Promise<void> {
+  if (flushCochesEnCours) {
+    reFlushCochesDemande = true;
     return;
   }
-  // Pas de planning actif → pas de semaine à laquelle rattacher les coches.
   const semaine = semaineActive();
   if (semaine === null) {
     localStorage.removeItem(CLE_DIRTY_COCHES);
     return;
   }
-  // Coches absentes (effacées par RG-13) → on synchronise l'état vide.
-  const serialise = storeCoches.lire() ?? "{}";
+  const local = cochesLocales();
+  const ops = deriverOps(cochesConnues, local);
+  if (ops.length === 0) {
+    localStorage.removeItem(CLE_DIRTY_COCHES);
+    return;
+  }
 
-  pushCochesEnCours = true;
-  rePushCochesDemande = false;
+  flushCochesEnCours = true;
+  reFlushCochesDemande = false;
   definirEtat("sauvegarde");
   try {
-    const majServeur = await sauvegarderCochesDistantes(semaine, serialise);
-    localStorage.setItem(CLE_MAJ_COCHES, majServeur);
-    if (!rePushCochesDemande) localStorage.removeItem(CLE_DIRTY_COCHES);
+    if (Object.keys(local).length === 0) {
+      // Vidage complet (Tout décocher / regénération RG-13) → un seul DELETE.
+      await viderCochesDistantes(semaine);
+    } else {
+      for (const op of ops) {
+        if (op.type === "cocher") {
+          await cocherArticleDistant(semaine, op.cle, op.quantite);
+        } else {
+          await decocherArticleDistant(semaine, op.cle);
+        }
+      }
+    }
+    cochesConnues = local;
+    if (!reFlushCochesDemande) localStorage.removeItem(CLE_DIRTY_COCHES);
     definirEtat("synchronise");
   } catch (erreur) {
     definirEtat("hors-ligne");
     console.error("Synchronisation des coches échouée (sera rejouée).", erreur);
   } finally {
-    pushCochesEnCours = false;
-    if (rePushCochesDemande) {
-      rePushCochesDemande = false;
-      void pousserCoches();
+    flushCochesEnCours = false;
+    if (reFlushCochesDemande) {
+      reFlushCochesDemande = false;
+      void flusherCoches();
     }
   }
 }
 
-function planifierPushCoches(): void {
-  if (hydratationCochesEnCours) return;
+// À chaque écriture locale des coches (hors hydratation et hors application d'un
+// event distant) : marque `dirty` et planifie un flush débounce.
+function surChangementCoches(): void {
+  if (hydratationCochesEnCours || applicationDistanteEnCours) return;
   localStorage.setItem(CLE_DIRTY_COCHES, "1");
-  if (pushCochesEnCours) {
-    rePushCochesDemande = true;
+  if (flushCochesEnCours) {
+    reFlushCochesDemande = true;
     return;
   }
   if (minuteurCoches) clearTimeout(minuteurCoches);
-  minuteurCoches = setTimeout(() => void pousserCoches(), DELAI_DEBOUNCE_MS);
+  minuteurCoches = setTimeout(() => void flusherCoches(), DELAI_DEBOUNCE_MS);
+}
+
+// Charge l'état distant d'une semaine dans le blob SANS dériver d'opérations
+// (pose aussi la référence `cochesConnues`). Appelé à l'hydratation/navigation.
+function appliquerBlobDistant(blob: Coches): void {
+  applicationDistanteEnCours = true;
+  ecrireBlob(blob);
+  cochesConnues = blob;
+  localStorage.removeItem(CLE_DIRTY_COCHES);
+  applicationDistanteEnCours = false;
 }
 
 async function hydraterCoches(): Promise<void> {
+  // Des opérations locales restent à pousser → le local fait foi (on flushe).
   if (estDirtyCoches()) {
-    void pousserCoches();
+    void flusherCoches();
     return;
   }
-  // Sans planning actif, aucune semaine de coches à hydrater.
   const semaine = semaineActive();
   if (semaine === null) return;
-
-  let distant: Awaited<ReturnType<typeof chargerCochesDistantes>>;
+  const local = cochesLocales();
+  let distant: Coches;
   try {
     distant = await chargerCochesDistantes(semaine);
   } catch (erreur) {
     console.error("Chargement des coches distantes échoué.", erreur);
     return;
   }
-  if (distant === null) return;
-
-  const local = storeCoches.lire();
-  const majLocale = lireMajCoches();
-  // Local présent mais non horodaté (legacy/injecté) → considéré le plus frais.
-  if (local !== null && majLocale === 0) return;
-
-  if (local === null || Date.parse(distant.updatedAt) > majLocale) {
-    hydratationCochesEnCours = true;
-    storeCoches.ecrire(distant.coches);
-    localStorage.setItem(CLE_MAJ_COCHES, distant.updatedAt);
-    localStorage.removeItem(CLE_DIRTY_COCHES);
-    hydratationCochesEnCours = false;
-    definirEtat("synchronise");
+  // L'utilisateur a pu cocher PENDANT le chargement réseau → ne pas écraser ses
+  // modifs locales non synchronisées (le flush les poussera).
+  if (estDirtyCoches()) {
+    void flusherCoches();
+    return;
   }
+  // Dirty-first (comme le blob #6 quand `maj === 0`) : un blob local NON VIDE
+  // fait foi au rechargement (reload/offline/e2e injecté) — on ne l'écrase pas
+  // par le serveur ; on pousse plutôt le diff local ↔ serveur. Un cache vide,
+  // lui, se laisse hydrater par le serveur (resync US-13).
+  if (Object.keys(local).length > 0) {
+    cochesConnues = distant; // référence = état serveur connu
+    if (deriverOps(distant, local).length > 0) {
+      localStorage.setItem(CLE_DIRTY_COCHES, "1");
+      void flusherCoches();
+    }
+    return;
+  }
+  appliquerBlobDistant(distant);
+}
+
+// ---------------------------------------------------------------------------
+// Temps réel (#56 PR4) — abonnement aux coches du foyer (postgres_changes) +
+// présence anonyme « en magasin » (RG-31). Un seul client Supabase pour gérer
+// les canaux (createBrowserClient n'est pas garanti singleton par appel).
+// ---------------------------------------------------------------------------
+let clientRealtime: ReturnType<typeof createClient> | null = null;
+function client(): ReturnType<typeof createClient> {
+  return (clientRealtime ??= createClient());
+}
+
+// Garantit que le client Realtime porte le JWT de session : sans ça, la RLS
+// des events postgres_changes (foyer_id = mon_foyer()) ne laisse RIEN passer
+// (échec SILENCIEUX). createBrowserClient câble normalement l'auth realtime,
+// mais on le force explicitement par sûreté avant chaque abonnement.
+async function assurerAuthRealtime(): Promise<void> {
+  const { data } = await client().auth.getSession();
+  const token = data.session?.access_token;
+  if (token) client().realtime.setAuth(token);
+}
+
+let foyerIdCourant: string | null = null;
+async function assurerFoyerId(): Promise<string | null> {
+  if (foyerIdCourant) return foyerIdCourant;
+  try {
+    foyerIdCourant = await chargerFoyerId();
+  } catch (erreur) {
+    console.error("Chargement du foyer (temps réel) échoué.", erreur);
+  }
+  return foyerIdCourant;
+}
+
+// Applique un event Realtime au blob local (sans redériver d'opérations) et
+// réconcilie la référence `cochesConnues` (l'état distant fait foi pour la clé).
+function appliquerEventLocal(event: EventCoche): void {
+  const avant = cochesLocales();
+  const apres = appliquerEvent(avant, event);
+  cochesConnues = appliquerEvent(cochesConnues, event);
+  if (apres === avant) return; // idempotent (écho de notre propre écriture)
+  applicationDistanteEnCours = true;
+  ecrireBlob(apres);
+  applicationDistanteEnCours = false;
+}
+
+type LigneArticle = Partial<{
+  foyer_id: string;
+  semaine: string;
+  cle: string;
+  quantite: number;
+}>;
+
+function surEventCoche(
+  foyer: string,
+  semaine: string,
+  payload: {
+    eventType: "INSERT" | "UPDATE" | "DELETE";
+    new: LigneArticle;
+    old: LigneArticle;
+  }
+): void {
+  // DELETE : la ligne est dans `old` (`new` vaut `{}`, pas null → un `??` la
+  // raterait). INSERT/UPDATE : dans `new`. (REPLICA IDENTITY FULL garantit que
+  // `old` porte foyer_id/semaine/cle au DELETE.)
+  const ligne = (
+    payload.eventType === "DELETE" ? payload.old : payload.new
+  ) as LigneArticle;
+  // Filtrage défensif (la RLS sécurise déjà, le filtre serveur cible la semaine).
+  if (ligne.foyer_id && ligne.foyer_id !== foyer) return;
+  if (ligne.semaine && ligne.semaine !== semaine) return;
+  if (!ligne.cle) return;
+  appliquerEventLocal(
+    payload.eventType === "DELETE"
+      ? { type: "supprime", cle: ligne.cle }
+      : { type: "upsert", cle: ligne.cle, quantite: Number(ligne.quantite) }
+  );
+}
+
+// Retire de CE client tout canal portant ce topic. `channel(topic)` RÉUTILISE un
+// canal existant : appeler `.on()` dessus après son `subscribe()` lève « cannot
+// add callbacks after subscribe() ». On purge donc avant de recréer.
+async function retirerCanalTopic(topic: string): Promise<void> {
+  for (const canal of client().getChannels()) {
+    if (canal.topic === `realtime:${topic}`) await client().removeChannel(canal);
+  }
+}
+
+let canalCoches: RealtimeChannel | null = null;
+let semaineAbonnee: string | null = null;
+// Sérialise (dés)abonnements coches : le cleanup async d'un effet croise le
+// montage suivant (nav SPA, double-invoke strict-mode en dev) → sans file, deux
+// abonnements au même topic se chevauchent et lèvent l'erreur ci-dessus.
+let chaineCoches: Promise<void> = Promise.resolve();
+
+// (Ré)abonne le canal temps réel des coches à la semaine donnée (idempotent,
+// sérialisé). Les erreurs sont avalées (journalisées) pour ne jamais devenir des
+// unhandledRejection.
+function synchroniserAbonnementCoches(semaine: string | null): Promise<void> {
+  chaineCoches = chaineCoches
+    .then(() => majAbonnementCoches(semaine))
+    .catch((e) => console.error("Abonnement temps réel des coches échoué.", e));
+  return chaineCoches;
+}
+
+async function majAbonnementCoches(semaine: string | null): Promise<void> {
+  if (semaine === semaineAbonnee && (semaine === null || canalCoches)) return;
+  semaineAbonnee = semaine;
+  if (canalCoches) {
+    await client().removeChannel(canalCoches);
+    canalCoches = null;
+  }
+  if (semaine === null) return;
+  const foyer = await assurerFoyerId();
+  if (foyer === null || semaineAbonnee !== semaine) return; // semaine rechangée
+  await assurerAuthRealtime();
+  if (semaineAbonnee !== semaine) return;
+  const topic = `coches:${foyer}:${semaine}`;
+  await retirerCanalTopic(topic); // sécurité contre un canal résiduel de même topic
+  canalCoches = client()
+    .channel(topic)
+    .on(
+      "postgres_changes",
+      {
+        event: "*",
+        schema: "public",
+        table: "etat_courses_article",
+        filter: `semaine=eq.${semaine}`,
+      },
+      (payload) => surEventCoche(foyer, semaine, payload)
+    )
+    .subscribe();
+}
+
+// Coupe l'abonnement temps réel des coches (cleanup d'useSync). Passe par la même
+// file que l'abonnement → la coupure ne croise jamais une création en cours.
+function couperTempsReel(): Promise<void> {
+  chaineCoches = chaineCoches
+    .then(async () => {
+      if (canalCoches) {
+        await client().removeChannel(canalCoches);
+        canalCoches = null;
+      }
+      semaineAbonnee = null;
+    })
+    .catch((e) => console.error("Arrêt temps réel des coches échoué.", e));
+  return chaineCoches;
+}
+
+// ---- Présence anonyme « en magasin » (bonus validé, RG-31) ----
+let canalPresence: RealtimeChannel | null = null;
+let autresPresents = false;
+const abonnesPresence = new Set<() => void>();
+// Même sérialisation que les coches (cf. chaineCoches).
+let chainePresence: Promise<void> = Promise.resolve();
+
+function definirPresence(valeur: boolean): void {
+  if (autresPresents === valeur) return;
+  autresPresents = valeur;
+  for (const rappel of abonnesPresence) rappel();
+}
+
+function assurerPresence(): Promise<void> {
+  chainePresence = chainePresence
+    .then(majPresence)
+    .catch((e) => console.error("Présence temps réel échouée.", e));
+  return chainePresence;
+}
+
+async function majPresence(): Promise<void> {
+  if (canalPresence) return;
+  const foyer = await assurerFoyerId();
+  if (foyer === null) return;
+  await assurerAuthRealtime();
+  const topic = `presence-courses:${foyer}`;
+  await retirerCanalTopic(topic);
+  // Clé anonyme par onglet (RG-31 : aucun nom). Plusieurs membres ⇒ ≥ 2 clés.
+  const cle = crypto.randomUUID();
+  canalPresence = client()
+    .channel(topic, { config: { presence: { key: cle } } })
+    .on("presence", { event: "sync" }, () => {
+      const etat = canalPresence?.presenceState() ?? {};
+      definirPresence(Object.keys(etat).length > 1);
+    })
+    .subscribe((statut) => {
+      if (statut === "SUBSCRIBED") void canalPresence?.track({ enMagasin: true });
+    });
+}
+
+function couperPresence(): Promise<void> {
+  chainePresence = chainePresence
+    .then(async () => {
+      if (canalPresence) {
+        await client().removeChannel(canalPresence);
+        canalPresence = null;
+      }
+      definirPresence(false);
+    })
+    .catch((e) => console.error("Arrêt de la présence échoué.", e));
+  return chainePresence;
+}
+
+const storePresence = {
+  sAbonner(rappel: () => void): () => void {
+    abonnesPresence.add(rappel);
+    return () => abonnesPresence.delete(rappel);
+  },
+  lire: (): boolean => autresPresents,
+  lireServeur: (): boolean => false,
+};
+
+/**
+ * Indique qu'un autre membre du foyer est aussi sur la liste de courses
+ * (présence anonyme « en magasin », RG-31). À utiliser SUR la page courses
+ * uniquement : le hook gère lui-même l'entrée/sortie du canal de présence, donc
+ * le compteur ne reflète que les membres présents sur cette page. Faux hors
+ * abonnement / en SSR.
+ */
+export function usePresenceCourses(): boolean {
+  const present = useSyncExternalStore(
+    storePresence.sAbonner,
+    storePresence.lire,
+    storePresence.lireServeur
+  );
+  useEffect(() => {
+    void assurerPresence();
+    return () => void couperPresence();
+  }, []);
+  return present;
 }
 
 // Vide la file d'écritures (planning + coches) avant un changement de semaine,
@@ -310,16 +608,16 @@ async function attendreSync(): Promise<boolean> {
     }
     void pousser();
   }
-  if (estDirtyCoches() && !pushCochesEnCours) {
+  if (estDirtyCoches() && !flushCochesEnCours) {
     if (minuteurCoches) {
       clearTimeout(minuteurCoches);
       minuteurCoches = null;
     }
-    void pousserCoches();
+    void flusherCoches();
   }
   for (
     let i = 0;
-    i < 100 && (pushEnCours || pushCochesEnCours || estDirty() || estDirtyCoches());
+    i < 100 && (pushEnCours || flushCochesEnCours || estDirty() || estDirtyCoches());
     i++
   ) {
     await new Promise((r) => setTimeout(r, 30));
@@ -344,15 +642,8 @@ async function chargerSemaineDansCache(semaine: string): Promise<void> {
     }
     localStorage.removeItem(CLE_DIRTY);
 
-    const distantCoches = await chargerCochesDistantes(semaine);
-    if (distantCoches) {
-      storeCoches.ecrire(distantCoches.coches);
-      localStorage.setItem(CLE_MAJ_COCHES, distantCoches.updatedAt);
-    } else {
-      storeCoches.effacer();
-      localStorage.removeItem(CLE_MAJ_COCHES);
-    }
-    localStorage.removeItem(CLE_DIRTY_COCHES);
+    // Coches par-article (#56 PR4) : reconstruit le blob + pose la référence.
+    appliquerBlobDistant(await chargerCochesDistantes(semaine));
     definirEtat("synchronise");
   } catch (erreur) {
     console.error("Chargement de la semaine échoué.", erreur);
@@ -361,6 +652,8 @@ async function chargerSemaineDansCache(semaine: string): Promise<void> {
     hydratationCochesEnCours = false;
   }
   definirSemaineAffichee(semaine);
+  // (Ré)abonne le temps réel des coches à la semaine désormais affichée.
+  void synchroniserAbonnementCoches(semaine);
 }
 
 /**
@@ -406,7 +699,7 @@ function purgerHistorique(): void {
 export async function hydrater(): Promise<void> {
   if (dejaHydrate) {
     if (estDirty()) void pousser();
-    if (estDirtyCoches()) void pousserCoches();
+    if (estDirtyCoches()) void flusherCoches();
     return;
   }
   dejaHydrate = true;
@@ -418,6 +711,7 @@ export async function hydrater(): Promise<void> {
     definirSemaineAffichee(local.semaine);
     if (estDirty()) void pousser();
     await hydraterCoches();
+    void synchroniserAbonnementCoches(local.semaine);
     return;
   }
 
@@ -426,20 +720,27 @@ export async function hydrater(): Promise<void> {
   await chargerSemaineDansCache(semaineParDefaut());
 }
 
-// Démarre la synchro : abonnement aux écritures (planning + coches) + rejeu au
-// retour en ligne. Retourne une fonction d'arrêt (cleanup d'effet).
+// Démarre la synchro : abonnement aux écritures (planning + coches), temps réel
+// (coches du foyer + présence) + rejeu au retour en ligne. Retourne une fonction
+// d'arrêt (cleanup d'effet).
 function demarrerSync(): () => void {
   const desabonnerPlanning = storePlanning.sAbonner(planifierPush);
-  const desabonnerCoches = storeCoches.sAbonner(planifierPushCoches);
+  const desabonnerCoches = storeCoches.sAbonner(surChangementCoches);
   const surRetourEnLigne = () => {
     if (estDirty()) void pousser();
-    if (estDirtyCoches()) void pousserCoches();
+    if (estDirtyCoches()) void flusherCoches();
   };
   window.addEventListener("online", surRetourEnLigne);
+  // Temps réel (#56 PR4) : abonnement aux coches du foyer si une semaine est
+  // déjà connue (nav SPA « à chaud » ; au chargement froid, l'abonnement est
+  // posé par hydrater/chargerSemaineDansCache une fois la semaine résolue). La
+  // PRÉSENCE est gérée à part (usePresenceCourses) : propre à la page courses.
+  void synchroniserAbonnementCoches(semaineActive());
   return () => {
     desabonnerPlanning();
     desabonnerCoches();
     window.removeEventListener("online", surRetourEnLigne);
+    void couperTempsReel();
   };
 }
 
