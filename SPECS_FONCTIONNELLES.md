@@ -475,6 +475,56 @@ Réduire à zéro l'effort de planification hebdomadaire des repas, du choix des
 
 ---
 
+### US-22 — Hygiène de compte (#22, P23)
+
+> **En tant qu'** utilisateur inscrit, je veux me déconnecter et gérer mon mot de passe, afin de contrôler l'accès à mon compte.
+
+> **Given** je suis sur **`/profil`**  
+> **When** je clique sur « Se déconnecter »  
+> **Then** ma session est détruite (cet appareil) et je suis redirigé vers `/login` (RG-35)
+
+> **Given** je suis déconnecté sur `/login`  
+> **When** je clique « Mot de passe oublié » et saisis mon email  
+> **Then** je reçois un lien de réinitialisation menant à une page de définition d'un nouveau mot de passe (absorbe l'ancien backlog mot de passe oublié)
+
+> **Given** je suis dans la section « Sécurité » de `/profil`  
+> **When** je change mon mot de passe  
+> **Then** le **mot de passe actuel** m'est demandé pour valider (ré-authentification) avant l'enregistrement
+
+### US-23 — Profil & tunnel d'onboarding (#22, P23)
+
+> **En tant que** nouvel inscrit, je veux être guidé vers un premier planning pertinent, afin que l'app soit immédiatement utile (pas un écran vide).
+
+> **Given** je viens de créer mon compte (onboarding non terminé)  
+> **When** j'accède à l'app  
+> **Then** je suis conduit au tunnel **`/bienvenue`** tant que l'onboarding n'est pas terminé (RG-36)
+
+> **Given** l'écran 1 du tunnel  
+> **When** je saisis mon **prénom**, le **nombre de personnes** du foyer et l'option **« foyer végétarien »**  
+> **Then** ces données calibrent mon profil (prénom + avatar, RG-35) et mes réglages de génération (RG-37)
+
+> **Given** l'écran 2 du tunnel  
+> **When** je choisis « Démarrer seul·e »  
+> **Then** l'app **génère mon premier planning** et m'amène sur `/planning` déjà rempli
+
+> **Given** j'ai terminé l'onboarding et je m'appelle « Arnaud »  
+> **When** j'utilise l'app  
+> **Then** l'en-tête affiche mon **avatar** (initiale + couleur, RG-35) menant à `/profil` — sans message de bienvenue permanent
+
+### US-24 — Deep-link d'acquisition (#22, P23)
+
+> **En tant qu'** utilisateur qui partage son code, je veux que le lien fonctionne même pour un destinataire **sans compte**, afin qu'il rejoigne mon foyer après inscription.
+
+> **Given** je reçois un lien d'invitation (`/signup?code=…`) **sans avoir de compte**  
+> **When** je m'inscris  
+> **Then** le code est conservé pendant l'inscription (RG-38) et l'écran 2 du tunnel me propose directement « Tu rejoins le foyer de [Prénom] »
+
+> **Given** je reçois ce lien **en étant déjà inscrit** et **seul** dans mon foyer  
+> **When** j'accède à l'app  
+> **Then** un interstitiel me propose de rejoindre le foyer de l'invitant·e ; si je suis déjà en **foyer partagé**, c'est refusé (RG-29) et expliqué
+
+---
+
 ## 5. Modèle de données
 
 > Les structures ci-dessous sont exprimées en TypeScript à titre documentaire. Le fichier de données réel est `/data/recettes.json` — format JSON lisible et éditable sans connaissance technique.
@@ -815,6 +865,22 @@ En rejoignant un foyer, les **recettes personnelles** du membre sont rattachées
 ### RG-34 — Sortie sans perte (US-19, #56)
 
 Quitter un foyer **clone** vers le nouveau foyer solo du partant une **copie** de tout ce qu'il partageait : recettes (+ ingrédients), masquages, plannings (+ slots, tout l'historique) et coches. On **clone, on ne déplace pas** : les membres restants conservent **100 %** des données (pérennité) et les deux foyers deviennent **indépendants immédiatement** (étanchéité). Opération **transactionnelle** côté serveur (tout ou rien).
+
+### RG-35 — Identité : avatar « zéro upload », mot de passe, déconnexion (US-22/US-23, #22)
+
+L'**identité** (prénom, avatar, foyer, sécurité, déconnexion) vit sur **`/profil`** — distincte des **réglages de génération** (`/reglages`). **Avatar sans upload** : un disque coloré portant l'**initiale du prénom** ; couleur par défaut **dérivée de l'email** (déterministe), modifiable parmi une palette fixe. La **déconnexion** ne révoque que la session de l'appareil courant. Le **changement de mot de passe** exige le mot de passe actuel ; la **réinitialisation** (oubli) se fait par email.
+
+### RG-36 — Onboarding obligatoire, non-bloquant (US-23, #22)
+
+Tout nouveau compte naît avec un onboarding **non terminé** : l'app le redirige vers le tunnel **`/bienvenue`** tant qu'il ne l'a pas complété, et l'en empêche d'y revenir ensuite. Les **comptes pré-existants** sont considérés comme déjà onboardés (aucune régression). Un onboarding interrompu reprend là où il s'était arrêté.
+
+### RG-37 — L'onboarding calibre les réglages existants (US-23, #22)
+
+L'écran de calibration n'introduit **aucun nouveau champ** : le nombre de personnes alimente `reglages.personnes_defaut` (la base de mise à l'échelle des recettes reste figée à 2, RG-16) et l'option « foyer végétarien » active la préférence végé de semaine (RG-26). La fin du tunnel **génère le premier planning** (ou, si l'on rejoint un foyer, en réhydrate le contenu existant — sans régénérer).
+
+### RG-38 — Survie du code d'invitation au flux d'auth (US-24, #22)
+
+Un code d'invitation présent dans l'URL d'arrivée est **conservé pendant l'inscription/connexion** (le temps de créer ou retrouver le compte), puis **consommé une seule fois** : par le tunnel (nouvel inscrit) ou par l'interstitiel (membre existant). Un code **expiré/invalide** est oublié silencieusement (repli sur le choix manuel rejoindre/solo).
 
 ---
 

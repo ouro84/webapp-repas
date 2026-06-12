@@ -5,6 +5,19 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
+// Construit une URL de redirection en PRÉSERVANT le code d'invitation présent
+// dans l'URL entrante (#22 PR3, deep-link) : sans ça, un membre déjà connecté
+// qui clique un lien `/signup?code=…` serait redirigé vers /planning en perdant
+// le code. Côté client, un composant le capte ensuite en sessionStorage.
+function urlPreservantCode(chemin: string, request: NextRequest): URL {
+  const url = new URL(chemin, request.url)
+  const code =
+    request.nextUrl.searchParams.get("code") ??
+    request.nextUrl.searchParams.get("rejoindre")
+  if (code) url.searchParams.set("code", code)
+  return url
+}
+
 export async function proxy(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
     request,
@@ -45,7 +58,7 @@ export async function proxy(request: NextRequest) {
   const isProtectedRoute = protectedRoutes.some(route => pathname.startsWith(route))
 
   if (isProtectedRoute && !user) {
-    return NextResponse.redirect(new URL("/login", request.url))
+    return NextResponse.redirect(urlPreservantCode("/login", request))
   }
 
   const authRoutes = ["/login", "/signup"]
@@ -68,10 +81,10 @@ export async function proxy(request: NextRequest) {
     const onboarde = data ? data.onboarding_complete : true
 
     if (!onboarde && pathname !== "/bienvenue") {
-      return NextResponse.redirect(new URL("/bienvenue", request.url))
+      return NextResponse.redirect(urlPreservantCode("/bienvenue", request))
     }
     if (onboarde && (pathname === "/bienvenue" || isAuthRoute)) {
-      return NextResponse.redirect(new URL("/planning", request.url))
+      return NextResponse.redirect(urlPreservantCode("/planning", request))
     }
   }
 

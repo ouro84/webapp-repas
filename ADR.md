@@ -260,6 +260,30 @@ La séparation des bases Supabase (dev/prod) n'est pas mise en place dès le MVP
 
 ---
 
+## ADR-09 — Identité & onboarding (#22)
+
+### Contexte
+Après l'auth brute (email/mdp → app), il manquait une page « mon compte », une boucle d'activation pour les nouveaux inscrits, et la gestion du cycle de vie du compte (déconnexion, mot de passe). L'épopée Foyer (#56) avait déjà introduit `profiles`/`foyers`.
+
+### Décision
+- **Séparation `/profil` (identité) vs `/reglages` (génération)** : `/profil` regroupe prénom, **avatar**, **foyer** (panneau déplacé depuis `/reglages`), sécurité (mot de passe) et déconnexion ; `/reglages` ne garde que la configuration de génération. La nav mène à `/profil` par l'avatar (l'engrenage disparaît).
+- **Avatar « zéro upload »** : disque à initiale + couleur dérivée de l'email (déterministe), modifiable parmi une palette fixe. Aucune dépendance externe ni stockage d'image.
+- **Tunnel d'onboarding `/bienvenue`** (2 écrans) terminé par la **génération du premier planning**. **Garde dans le `proxy`** : lecture de `profiles.onboarding_complete` (une requête par navigation connectée — coût assumé en usage perso) qui redirige vers le tunnel tant qu'il n'est pas terminé. `/api/*` et `/auth/*` exemptés ; **fail-open** sur erreur (jamais de boucle).
+- **Pas de nouveau champ « taille du foyer »** : l'onboarding initialise `reglages.personnes_defaut` (la base de mise à l'échelle reste figée à 2, RG-16).
+- **Écriture du profil par le client = GRANT au niveau colonne** (`prenom`, `couleur_avatar`, `onboarding_complete`) plutôt qu'une simple policy RLS : empêche le client de réécrire `foyer_id` (contournement de RG-29) tout en laissant les RPC `SECURITY DEFINER` libres.
+- **Deep-link d'acquisition** : le lien d'invitation pointe vers `/signup?code=` ; le code survit au flux d'auth via `sessionStorage` (le `proxy` préserve le paramètre à travers ses redirections).
+- **Mot de passe** : « oublié » via email Supabase (`resetPasswordForEmail` → `/auth/reinitialiser`) ; changement gardé par ré-authentification. **Config templates email = action manuelle dashboard** (cf. issue dédiée).
+
+### Justification
+Aligne le modèle mental utilisateur (« qui je suis » vs « comment l'app génère »), supprime l'écran vide post-inscription (activation), et boucle l'acquisition (un invité sans compte atterrit dans le bon foyer). Le coût d'une requête proxy par navigation est négligeable pour un usage personnel et garde une source de vérité unique (pas de duplication du drapeau dans le JWT).
+
+### Alternatives écartées
+- **Avatars abstraits (DiceBear) avec choix de forme** : dépendance externe pour une valeur d'identité équivalente aux initiales.
+- **Drapeau `onboarding_complete` dans le JWT** (au lieu d'une requête proxy) : double source de vérité à synchroniser, pour un gain négligeable en usage perso.
+- **`taille_foyer` sur `foyers`** : redondant avec `personnes_defaut`, en conflit avec la base figée de mise à l'échelle (RG-16).
+
+---
+
 ## Règles transversales
 
 ### Gestion des secrets

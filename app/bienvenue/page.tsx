@@ -20,6 +20,12 @@ import { couleurAvatar } from "@/lib/avatar";
 import { chargerReglages, sauvegarderReglages } from "@/lib/reglages-data";
 import { REGLAGES_DEFAUT } from "@/lib/reglages";
 import { rejoindreFoyer } from "@/lib/foyer";
+import {
+  apercuInvitation,
+  effacerCodeEnAttente,
+  lireCodeEnAttente,
+  type ApercuInvitation,
+} from "@/lib/invitation";
 import { reinitialiserCacheFoyer, useSync } from "@/lib/sync";
 import { sauvegarderPlanningComplet } from "@/lib/stockage";
 import { PERSONNES_MAX, PERSONNES_MIN } from "@/lib/personnes";
@@ -38,6 +44,9 @@ export default function PageBienvenue() {
   const [vege, setVege] = useState(false);
   const [code, setCode] = useState("");
   const [enCours, setEnCours] = useState(false);
+  // Deep-link d'acquisition (#22 PR3) : aperçu de l'invitation en attente
+  // (null = aucune / pas encore vérifiée). `valide` → écran de confirmation.
+  const [apercu, setApercu] = useState<ApercuInvitation | null>(null);
 
   // Pré-remplissage en cas de reprise du tunnel (prénom/personnes déjà saisis à
   // une session précédente interrompue). setState dans la promesse (conforme à
@@ -59,6 +68,19 @@ export default function PageBienvenue() {
         setVege(Boolean(reglages.vegetarienPrefere?.dinerSemaine));
       }
       setEtape("identite");
+      // Deep-link : un code d'invitation a pu être capté (sessionStorage) depuis
+      // le lien /signup?code=… → on en récupère un aperçu pour l'écran 2.
+      const codeEnAttente = lireCodeEnAttente();
+      if (codeEnAttente) {
+        setCode(codeEnAttente);
+        apercuInvitation(codeEnAttente)
+          .then((a) => {
+            if (!actif) return;
+            setApercu(a);
+            if (!a.valide) effacerCodeEnAttente(); // expiré/invalide : on oublie
+          })
+          .catch(() => {});
+      }
     })().catch(() => actif && setEtape("identite"));
     return () => {
       actif = false;
@@ -143,6 +165,7 @@ export default function PageBienvenue() {
     setEnCours(true);
     try {
       await rejoindreFoyer(valeur);
+      effacerCodeEnAttente(); // code consommé (deep-link ou saisie manuelle)
       await finaliser({ genererPlanning: false });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Impossible de rejoindre ce foyer.");
@@ -214,7 +237,34 @@ export default function PageBienvenue() {
         </section>
       )}
 
-      {etape === "foyer" && (
+      {/* Deep-link valide (#22 PR3, US-23 sc.4) : on a été invité → confirmation
+          directe « Vous rejoignez le foyer de X », sans ressaisir le code. */}
+      {etape === "foyer" && apercu?.valide && (
+        <section aria-labelledby="titre-invite">
+          <h1
+            id="titre-invite"
+            className="mb-2 font-display text-2xl font-semibold text-brand-900"
+          >
+            Tu as été invité·e&nbsp;!
+          </h1>
+          <p className="mb-8 text-brand-700/85">
+            {apercu.prenom
+              ? `Tu rejoins le foyer de ${apercu.prenom}.`
+              : "Tu rejoins un foyer existant."}{" "}
+            Vous partagerez recettes, planning et liste de courses.
+          </p>
+          <button
+            type="button"
+            onClick={() => void rejoindre()}
+            disabled={enCours}
+            className="w-full rounded-full bg-primary px-6 py-3 text-sm font-semibold text-white transition hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.98] motion-reduce:active:scale-100 disabled:opacity-50"
+          >
+            {enCours ? "…" : "C’est parti !"}
+          </button>
+        </section>
+      )}
+
+      {etape === "foyer" && !apercu?.valide && (
         <section aria-labelledby="titre-foyer">
           <h1
             id="titre-foyer"
