@@ -75,8 +75,13 @@ test("quitter un foyer partagé clone les données chez le partant, sans rien re
   await inscrire(request, emailX);
   await inscrire(request, emailY);
 
-  const ctxX = await browser.newContext();
-  const ctxY = await browser.newContext();
+  // storageState VIDE explicite : sinon browser.newContext() HÉRITE du
+  // `use.storageState` du projet (= compte de test partagé), et goto('/login')
+  // serait redirigé vers /planning (déjà connecté) → pas de champ Email. On veut
+  // deux contextes VIERGES, qu'on connecte ensuite à leurs comptes jetables.
+  const vierge = { storageState: { cookies: [], origins: [] } };
+  const ctxX = await browser.newContext(vierge);
+  const ctxY = await browser.newContext(vierge);
 
   // --- X : génère un planning (données du foyer), puis invite ---
   const x = await connecter(ctxX, emailX);
