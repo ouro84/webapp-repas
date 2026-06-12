@@ -26,6 +26,8 @@ export default function LoginPage() {
       pied={
         <>
           Pas encore de compte ? <LienPied href="/signup">S&apos;inscrire</LienPied>
+          <br />
+          <LienPied href="/mot-de-passe-oublie">Mot de passe oublié&nbsp;?</LienPied>
         </>
       }
     />

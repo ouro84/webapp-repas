@@ -248,3 +248,21 @@ export type DbPlanningSlot = {
   restes: boolean; // slot marqué « restes » (US-12)
   recette: DbRecette; // relation imbriquée
 };
+
+// Profil utilisateur (#22 PR1) — table `profiles` (#56 PR1) étendue. `prenom` et
+// `couleur_avatar` sont NULL tant que l'onboarding n'a pas tranché ;
+// `onboarding_complete` pilote la redirection vers le tunnel /bienvenue (PR2).
+// `foyer_id` n'est PAS exposé ici : les changements de foyer passent par les RPC
+// dédiées, pas par l'édition du profil.
+export type Profil = {
+  prenom: string | null;
+  couleurAvatar: string | null;
+  onboardingComplete: boolean;
+};
+
+// Forme DB (snake_case) du sous-ensemble « identité » de `profiles`.
+export type DbProfil = {
+  prenom: string | null;
+  couleur_avatar: string | null;
+  onboarding_complete: boolean;
+};

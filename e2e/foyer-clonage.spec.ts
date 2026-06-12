@@ -92,7 +92,7 @@ test("quitter un foyer partagé clone les données chez le partant, sans rien re
     .poll(async () => x.evaluate(() => localStorage.getItem("planning_dirty")))
     .toBeNull();
 
-  await x.goto("/reglages");
+  await x.goto("/profil");
   const inviter = x.getByRole("button", { name: "Inviter quelqu’un" });
   await expect(inviter).toBeVisible();
   await inviter.click();
@@ -102,7 +102,7 @@ test("quitter un foyer partagé clone les données chez le partant, sans rien re
 
   // --- Y : rejoint le foyer de X ---
   const y = await connecter(ctxY, emailY);
-  await y.goto("/reglages");
+  await y.goto("/profil");
   await y.getByLabel("Rejoindre un foyer").fill(code);
   await y.getByRole("button", { name: "Rejoindre" }).click();
   // Jonction → reload ; le panneau passe en mode partagé (bouton « Quitter »).
@@ -112,7 +112,7 @@ test("quitter un foyer partagé clone les données chez le partant, sans rien re
   await expect(y.locator("main ul > li")).toHaveCount(7);
 
   // --- Y : quitte → clonage (RG-34) ---
-  await y.goto("/reglages");
+  await y.goto("/profil");
   await y.getByRole("button", { name: "Quitter le foyer" }).click();
   // Bouton de confirmation de la modale (exact : « Quitter le foyer » le contient).
   await y.getByRole("button", { name: "Quitter", exact: true }).click();
