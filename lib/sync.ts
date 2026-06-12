@@ -29,6 +29,7 @@ import {
   deriverOps,
   type EventCoche,
 } from "@/lib/coches-sync";
+import { signaturePlanning } from "@/lib/planning-diff";
 import { createClient } from "@/lib/supabase/client";
 import { semaineDecalee, semaineISO, semaineParDefaut } from "@/lib/semaines";
 import type { Planning } from "@/types";
@@ -500,8 +501,8 @@ async function majAbonnementCoches(semaine: string | null): Promise<void> {
     .subscribe();
 }
 
-// Coupe l'abonnement temps réel des coches (cleanup d'useSync). Passe par la même
-// file que l'abonnement → la coupure ne croise jamais une création en cours.
+// Coupe les abonnements temps réel coches + planning (cleanup d'useSync). Chacun
+// passe par sa file → la coupure ne croise jamais une création en cours.
 function couperTempsReel(): Promise<void> {
   chaineCoches = chaineCoches
     .then(async () => {
@@ -512,7 +513,144 @@ function couperTempsReel(): Promise<void> {
       semaineAbonnee = null;
     })
     .catch((e) => console.error("Arrêt temps réel des coches échoué.", e));
-  return chaineCoches;
+  chainePlanning = chainePlanning
+    .then(async () => {
+      if (canalPlanning) {
+        await client().removeChannel(canalPlanning);
+        canalPlanning = null;
+      }
+      semainePlanningAbonnee = null;
+    })
+    .catch((e) => console.error("Arrêt temps réel du planning échoué.", e));
+  return Promise.all([chaineCoches, chainePlanning]).then(() => undefined);
+}
+
+// ---------------------------------------------------------------------------
+// Temps réel du PLANNING (#56 PR5, US-21) — alerte intrusive de modif.
+//
+// Un membre « en magasin » (sur /courses ou /planning) doit être prévenu, de
+// façon BLOQUANTE, si un autre membre modifie le planning de la semaine affichée
+// à la maison. On s'abonne aux changements de la ligne `planning` du foyer pour
+// cette semaine ; à réception, on RE-PULL de force (on lève le « local fait
+// foi » du #6) puis, si le contenu a vraiment changé (≠ écho de notre propre
+// écriture), on déclenche l'alerte. Discriminant : l'`updated_at` serveur (#104)
+// vs notre `planning_courant_maj` — notre propre push l'a déjà rattrapé, donc
+// son écho est filtré ; un changement distant est strictement plus récent.
+// ---------------------------------------------------------------------------
+let alertePlanning = false;
+const abonnesAlerte = new Set<() => void>();
+
+function notifierAlerte(): void {
+  for (const rappel of abonnesAlerte) rappel();
+}
+
+function declencherAlertePlanning(): void {
+  if (alertePlanning) return;
+  alertePlanning = true;
+  notifierAlerte();
+}
+
+/** Acquitte l'alerte de modif planning (bouton « OK » de la modale). Les données
+ *  ont déjà été re-pull au moment de l'event ; ne reste qu'à fermer. */
+export function acquitterAlertePlanning(): void {
+  if (!alertePlanning) return;
+  alertePlanning = false;
+  notifierAlerte();
+}
+
+const storeAlerte = {
+  sAbonner(rappel: () => void): () => void {
+    abonnesAlerte.add(rappel);
+    return () => abonnesAlerte.delete(rappel);
+  },
+  lire: (): boolean => alertePlanning,
+  lireServeur: (): boolean => false,
+};
+
+/** Vrai quand le planning de la semaine affichée vient d'être modifié par un
+ *  autre membre (US-21). Faux hors abonnement / en SSR. */
+export function useAlertePlanning(): boolean {
+  return useSyncExternalStore(
+    storeAlerte.sAbonner,
+    storeAlerte.lire,
+    storeAlerte.lireServeur
+  );
+}
+
+let traitementPlanningEnCours = false;
+
+// Re-pull forcé du planning de la semaine puis, si le contenu a changé, alerte.
+async function traiterChangementPlanningDistant(semaine: string): Promise<void> {
+  if (traitementPlanningEnCours) return;
+  if (semaine !== semaineActive()) return; // l'utilisateur a navigué entre-temps
+  traitementPlanningEnCours = true;
+  try {
+    const sigAvant = signaturePlanning(planningLocal());
+    await chargerSemaineDansCache(semaine); // force le re-pull (planning + coches)
+    if (semaineActive() === semaine && signaturePlanning(planningLocal()) !== sigAvant) {
+      declencherAlertePlanning();
+    }
+  } finally {
+    traitementPlanningEnCours = false;
+  }
+}
+
+function surEventPlanning(
+  foyer: string,
+  semaine: string,
+  payload: {
+    eventType: "INSERT" | "UPDATE" | "DELETE";
+    new: { foyer_id?: string; semaine?: string; updated_at?: string };
+    old: { foyer_id?: string; semaine?: string; updated_at?: string };
+  }
+): void {
+  const ligne = payload.eventType === "DELETE" ? payload.old : payload.new;
+  if (ligne.foyer_id && ligne.foyer_id !== foyer) return;
+  if (ligne.semaine && ligne.semaine !== semaine) return;
+  const majEvent = ligne.updated_at ? Date.parse(ligne.updated_at) : 0;
+  // Écho de notre propre écriture ou pas plus récent que notre cache → ignorer.
+  if (!Number.isFinite(majEvent) || majEvent <= lireMajLocale()) return;
+  void traiterChangementPlanningDistant(semaine);
+}
+
+let canalPlanning: RealtimeChannel | null = null;
+let semainePlanningAbonnee: string | null = null;
+let chainePlanning: Promise<void> = Promise.resolve();
+
+function synchroniserAbonnementPlanning(semaine: string | null): Promise<void> {
+  chainePlanning = chainePlanning
+    .then(() => majAbonnementPlanning(semaine))
+    .catch((e) => console.error("Abonnement temps réel du planning échoué.", e));
+  return chainePlanning;
+}
+
+async function majAbonnementPlanning(semaine: string | null): Promise<void> {
+  if (semaine === semainePlanningAbonnee && (semaine === null || canalPlanning)) return;
+  semainePlanningAbonnee = semaine;
+  if (canalPlanning) {
+    await client().removeChannel(canalPlanning);
+    canalPlanning = null;
+  }
+  if (semaine === null) return;
+  const foyer = await assurerFoyerId();
+  if (foyer === null || semainePlanningAbonnee !== semaine) return;
+  await assurerAuthRealtime();
+  if (semainePlanningAbonnee !== semaine) return;
+  const topic = `planning:${foyer}:${semaine}`;
+  await retirerCanalTopic(topic);
+  canalPlanning = client()
+    .channel(topic)
+    .on(
+      "postgres_changes",
+      {
+        event: "*",
+        schema: "public",
+        table: "planning",
+        filter: `semaine=eq.${semaine}`,
+      },
+      (payload) => surEventPlanning(foyer, semaine, payload)
+    )
+    .subscribe();
 }
 
 // ---- Présence anonyme « en magasin » (bonus validé, RG-31) ----
@@ -652,8 +790,9 @@ async function chargerSemaineDansCache(semaine: string): Promise<void> {
     hydratationCochesEnCours = false;
   }
   definirSemaineAffichee(semaine);
-  // (Ré)abonne le temps réel des coches à la semaine désormais affichée.
+  // (Ré)abonne le temps réel (coches + planning) à la semaine désormais affichée.
   void synchroniserAbonnementCoches(semaine);
+  void synchroniserAbonnementPlanning(semaine);
 }
 
 /**
@@ -712,6 +851,7 @@ export async function hydrater(): Promise<void> {
     if (estDirty()) void pousser();
     await hydraterCoches();
     void synchroniserAbonnementCoches(local.semaine);
+    void synchroniserAbonnementPlanning(local.semaine);
     return;
   }
 
@@ -731,11 +871,12 @@ function demarrerSync(): () => void {
     if (estDirtyCoches()) void flusherCoches();
   };
   window.addEventListener("online", surRetourEnLigne);
-  // Temps réel (#56 PR4) : abonnement aux coches du foyer si une semaine est
-  // déjà connue (nav SPA « à chaud » ; au chargement froid, l'abonnement est
-  // posé par hydrater/chargerSemaineDansCache une fois la semaine résolue). La
-  // PRÉSENCE est gérée à part (usePresenceCourses) : propre à la page courses.
+  // Temps réel (#56 PR4/PR5) : abonnement aux coches + au planning du foyer si
+  // une semaine est déjà connue (nav SPA « à chaud » ; au chargement froid,
+  // l'abonnement est posé par hydrater/chargerSemaineDansCache une fois la
+  // semaine résolue). La PRÉSENCE est gérée à part (usePresenceCourses).
   void synchroniserAbonnementCoches(semaineActive());
+  void synchroniserAbonnementPlanning(semaineActive());
   return () => {
     desabonnerPlanning();
     desabonnerCoches();

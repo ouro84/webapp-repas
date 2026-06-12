@@ -5,6 +5,7 @@ import { SpeedInsights } from "@vercel/speed-insights/next";
 import { Toaster } from "sonner";
 import "./globals.css";
 import { NavBar } from "@/components/ui/nav";
+import { AlerteModifPlanning } from "@/components/ui/alerte-modif-planning";
 
 // Identité de marque (#66, P14) — pairing rond et chaleureux qui remplace Geist
 // (police « outil de dev », neutre). Fredoka habille le wordmark et les titres
@@ -108,6 +109,9 @@ export default function RootLayout({
           }}
         />
         {children}
+        {/* Alerte intrusive de modif planning (#56 PR5, US-21) — montée une
+            seule fois ici ; inerte hors des pages synchronisées. */}
+        <AlerteModifPlanning />
         {/* Vercel Analytics : mesure d'audience, sans cookie */}
         <Analytics />
         {/* Vercel Speed Insights : mesure des Core Web Vitals en réel */}
