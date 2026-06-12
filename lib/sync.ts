@@ -335,18 +335,38 @@ function appliquerBlobDistant(blob: Coches): void {
 async function hydraterCoches(): Promise<void> {
   // Des opérations locales restent à pousser → le local fait foi (on flushe).
   if (estDirtyCoches()) {
-    // Sans référence connue (rechargement complet), repartir de zéro pousse tout
-    // le blob local (cas hors-ligne/e2e injecté) — exactement ce qu'on veut.
     void flusherCoches();
     return;
   }
   const semaine = semaineActive();
   if (semaine === null) return;
+  const local = cochesLocales();
+  let distant: Coches;
   try {
-    appliquerBlobDistant(await chargerCochesDistantes(semaine));
+    distant = await chargerCochesDistantes(semaine);
   } catch (erreur) {
     console.error("Chargement des coches distantes échoué.", erreur);
+    return;
   }
+  // L'utilisateur a pu cocher PENDANT le chargement réseau → ne pas écraser ses
+  // modifs locales non synchronisées (le flush les poussera).
+  if (estDirtyCoches()) {
+    void flusherCoches();
+    return;
+  }
+  // Dirty-first (comme le blob #6 quand `maj === 0`) : un blob local NON VIDE
+  // fait foi au rechargement (reload/offline/e2e injecté) — on ne l'écrase pas
+  // par le serveur ; on pousse plutôt le diff local ↔ serveur. Un cache vide,
+  // lui, se laisse hydrater par le serveur (resync US-13).
+  if (Object.keys(local).length > 0) {
+    cochesConnues = distant; // référence = état serveur connu
+    if (deriverOps(distant, local).length > 0) {
+      localStorage.setItem(CLE_DIRTY_COCHES, "1");
+      void flusherCoches();
+    }
+    return;
+  }
+  appliquerBlobDistant(distant);
 }
 
 // ---------------------------------------------------------------------------
@@ -425,12 +445,34 @@ function surEventCoche(
   );
 }
 
+// Retire de CE client tout canal portant ce topic. `channel(topic)` RÉUTILISE un
+// canal existant : appeler `.on()` dessus après son `subscribe()` lève « cannot
+// add callbacks after subscribe() ». On purge donc avant de recréer.
+async function retirerCanalTopic(topic: string): Promise<void> {
+  for (const canal of client().getChannels()) {
+    if (canal.topic === `realtime:${topic}`) await client().removeChannel(canal);
+  }
+}
+
 let canalCoches: RealtimeChannel | null = null;
 let semaineAbonnee: string | null = null;
+// Sérialise (dés)abonnements coches : le cleanup async d'un effet croise le
+// montage suivant (nav SPA, double-invoke strict-mode en dev) → sans file, deux
+// abonnements au même topic se chevauchent et lèvent l'erreur ci-dessus.
+let chaineCoches: Promise<void> = Promise.resolve();
 
-// (Ré)abonne le canal temps réel des coches à la semaine donnée (idempotent).
-async function synchroniserAbonnementCoches(semaine: string | null): Promise<void> {
-  if (semaine === semaineAbonnee) return;
+// (Ré)abonne le canal temps réel des coches à la semaine donnée (idempotent,
+// sérialisé). Les erreurs sont avalées (journalisées) pour ne jamais devenir des
+// unhandledRejection.
+function synchroniserAbonnementCoches(semaine: string | null): Promise<void> {
+  chaineCoches = chaineCoches
+    .then(() => majAbonnementCoches(semaine))
+    .catch((e) => console.error("Abonnement temps réel des coches échoué.", e));
+  return chaineCoches;
+}
+
+async function majAbonnementCoches(semaine: string | null): Promise<void> {
+  if (semaine === semaineAbonnee && (semaine === null || canalCoches)) return;
   semaineAbonnee = semaine;
   if (canalCoches) {
     await client().removeChannel(canalCoches);
@@ -440,8 +482,11 @@ async function synchroniserAbonnementCoches(semaine: string | null): Promise<voi
   const foyer = await assurerFoyerId();
   if (foyer === null || semaineAbonnee !== semaine) return; // semaine rechangée
   await assurerAuthRealtime();
+  if (semaineAbonnee !== semaine) return;
+  const topic = `coches:${foyer}:${semaine}`;
+  await retirerCanalTopic(topic); // sécurité contre un canal résiduel de même topic
   canalCoches = client()
-    .channel(`coches:${foyer}:${semaine}`)
+    .channel(topic)
     .on(
       "postgres_changes",
       {
@@ -455,10 +500,27 @@ async function synchroniserAbonnementCoches(semaine: string | null): Promise<voi
     .subscribe();
 }
 
+// Coupe l'abonnement temps réel des coches (cleanup d'useSync). Passe par la même
+// file que l'abonnement → la coupure ne croise jamais une création en cours.
+function couperTempsReel(): Promise<void> {
+  chaineCoches = chaineCoches
+    .then(async () => {
+      if (canalCoches) {
+        await client().removeChannel(canalCoches);
+        canalCoches = null;
+      }
+      semaineAbonnee = null;
+    })
+    .catch((e) => console.error("Arrêt temps réel des coches échoué.", e));
+  return chaineCoches;
+}
+
 // ---- Présence anonyme « en magasin » (bonus validé, RG-31) ----
 let canalPresence: RealtimeChannel | null = null;
 let autresPresents = false;
 const abonnesPresence = new Set<() => void>();
+// Même sérialisation que les coches (cf. chaineCoches).
+let chainePresence: Promise<void> = Promise.resolve();
 
 function definirPresence(valeur: boolean): void {
   if (autresPresents === valeur) return;
@@ -466,15 +528,24 @@ function definirPresence(valeur: boolean): void {
   for (const rappel of abonnesPresence) rappel();
 }
 
-async function assurerPresence(): Promise<void> {
+function assurerPresence(): Promise<void> {
+  chainePresence = chainePresence
+    .then(majPresence)
+    .catch((e) => console.error("Présence temps réel échouée.", e));
+  return chainePresence;
+}
+
+async function majPresence(): Promise<void> {
   if (canalPresence) return;
   const foyer = await assurerFoyerId();
   if (foyer === null) return;
   await assurerAuthRealtime();
+  const topic = `presence-courses:${foyer}`;
+  await retirerCanalTopic(topic);
   // Clé anonyme par onglet (RG-31 : aucun nom). Plusieurs membres ⇒ ≥ 2 clés.
   const cle = crypto.randomUUID();
   canalPresence = client()
-    .channel(`presence-courses:${foyer}`, { config: { presence: { key: cle } } })
+    .channel(topic, { config: { presence: { key: cle } } })
     .on("presence", { event: "sync" }, () => {
       const etat = canalPresence?.presenceState() ?? {};
       definirPresence(Object.keys(etat).length > 1);
@@ -484,22 +555,17 @@ async function assurerPresence(): Promise<void> {
     });
 }
 
-// Coupe l'abonnement temps réel des coches (cleanup d'useSync). La présence a
-// son propre cycle de vie (usePresenceCourses).
-async function couperTempsReel(): Promise<void> {
-  if (canalCoches) {
-    await client().removeChannel(canalCoches);
-    canalCoches = null;
-  }
-  semaineAbonnee = null;
-}
-
-async function couperPresence(): Promise<void> {
-  if (canalPresence) {
-    await client().removeChannel(canalPresence);
-    canalPresence = null;
-  }
-  definirPresence(false);
+function couperPresence(): Promise<void> {
+  chainePresence = chainePresence
+    .then(async () => {
+      if (canalPresence) {
+        await client().removeChannel(canalPresence);
+        canalPresence = null;
+      }
+      definirPresence(false);
+    })
+    .catch((e) => console.error("Arrêt de la présence échoué.", e));
+  return chainePresence;
 }
 
 const storePresence = {
