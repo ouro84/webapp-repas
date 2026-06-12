@@ -207,11 +207,13 @@ test("cocher le dernier article d'une catégorie la replie et raye son titre (#1
   );
   await page.goto("/courses");
 
-  // « Produits frais » : 4 articles (crème fraîche, oeufs, parmesan, pâte
+  // « Produits frais » : 4 articles (crème fraîche, œufs, parmesan, pâte
   // brisée). La section reste ouverte tant que tous ne sont pas cochés.
+  // NB : le nom affiché plie la ligature (accorderNom → « œufs »), d'où /œufs/
+  // et non /oeufs/ — sinon la case est introuvable et le click reste suspendu.
   const enTete = page.getByRole("button", { name: "Produits frais" });
   const titre = enTete.locator("span").first();
-  const articles = [/crème fraîche/, /oeufs/, /parmesan/, /pâte brisée/];
+  const articles = [/crème fraîche/, /œufs/, /parmesan/, /pâte brisée/];
 
   await expect(enTete).toHaveAttribute("aria-expanded", "true");
 
