@@ -39,7 +39,7 @@ Webapp de génération automatique de plannings de repas hebdomadaires, avec lis
 
 | Rôle | Techno | Version |
 |------|--------|---------|
-| Framework full-stack | Next.js (App Router) | 16.2.7 |
+| Framework full-stack | Next.js (App Router) | 16.2.9 |
 | Base de données + Auth | Supabase | — (Phase 4) |
 | Hébergement | Vercel | — |
 | CSS | Tailwind CSS | v4 |
