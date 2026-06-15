@@ -182,8 +182,16 @@ function estEligible(
 }
 
 // RG-03 — Sélection aléatoire parmi les recettes éligibles.
-function choisirAleatoire<T>(elements: T[]): T {
-  const index = Math.floor(Math.random() * elements.length)
+//
+// La source d'aléa est INJECTABLE (`random`, défaut `Math.random`) : en prod le
+// comportement est inchangé, mais les tests peuvent passer un PRNG seedé pour
+// rendre la génération déterministe (cf. #157 — sans cela, `genererPlanning`
+// pouvait épuiser aléatoirement le vivier « rapide » et faire échouer par
+// intermittence les assertions de remplacement).
+type Aleatoire = () => number
+
+function choisirAleatoire<T>(elements: T[], random: Aleatoire = Math.random): T {
+  const index = Math.floor(random() * elements.length)
   return elements[index]!
 }
 
@@ -216,13 +224,16 @@ function cleSlot(jour: Jour, typeRepas: TypeRepas): string {
  *
  * @param semaine identifiant ISO "AAAA-Wnn" de la semaine cible (US-11, RG-21).
  *                Défaut : la semaine courante.
+ * @param random source d'aléa (RG-03), injectable pour des tests déterministes
+ *               (#157) ; défaut `Math.random` (comportement prod inchangé).
  * @throws {Error} si le vivier de recettes éligibles est insuffisant pour remplir
  *                 les 14 slots sans répétition.
  */
 export function genererPlanning(
   recettes: Recette[],
   semaine: string = semaineISO(),
-  reglages: ReglagesGeneration = REGLAGES_DEFAUT
+  reglages: ReglagesGeneration = REGLAGES_DEFAUT,
+  random: Aleatoire = Math.random
 ): Planning {
   const slots: Slot[] = ORDRE_JOURS.flatMap((jour): Slot[] => [
     { jour, typeRepas: "dejeuner" },
@@ -277,7 +288,7 @@ export function genererPlanning(
       attributions,
       reglages
     )
-    const choisie = choisirAleatoire(candidats)
+    const choisie = choisirAleatoire(candidats, random)
     utilisees.add(choisie.id)
     attributions.set(cleSlot(slot.jour, slot.typeRepas), choisie)
   }
@@ -320,6 +331,8 @@ function poidsContrainte(slot: Slot, reglages: ReglagesGeneration): number {
  * Immutabilité : le planning passé en argument n'est jamais muté. Une nouvelle
  * structure est retournée (les `JourPlanning` non concernés sont réutilisés tels quels).
  *
+ * @param random source d'aléa (RG-03), injectable pour des tests déterministes
+ *               (#157) ; défaut `Math.random` (comportement prod inchangé).
  * @returns le nouveau planning, ou `null` si aucune recette de remplacement n'est
  *          disponible — ou si le slot ciblé n'existe pas (planning antérieur
  *          à 14 repas, sans déjeuner ce jour-là). L'UI affiche alors
@@ -330,7 +343,8 @@ export function remplacerSlot(
   jour: Jour,
   typeRepas: TypeRepas,
   recettes: Recette[],
-  reglages: ReglagesGeneration = REGLAGES_DEFAUT
+  reglages: ReglagesGeneration = REGLAGES_DEFAUT,
+  random: Aleatoire = Math.random
 ): Planning | null {
   const jourPlanning = planning.jours.find((jp) => jp.jour === jour)
   if (!jourPlanning) return null // jour absent du planning
@@ -380,7 +394,7 @@ export function remplacerSlot(
     const legumes = candidats.filter((r) => r.accompagnement === "legumes")
     if (legumes.length > 0) candidats = legumes
   }
-  const choisie = choisirAleatoire(candidats)
+  const choisie = choisirAleatoire(candidats, random)
 
   // Reconstruction immuable : seul le jour ciblé est recréé. Remplacer la
   // recette efface un éventuel marquage « restes » sur ce slot (RG-22 : on

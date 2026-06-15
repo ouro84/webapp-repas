@@ -42,6 +42,23 @@ const LONGUES = RECETTES.filter((r) => r.tempsPreparation === "long");
 const JOURS_SEMAINE: Jour[] = ["lundi", "mardi", "mercredi", "jeudi", "vendredi"];
 const ORDRE_JOURS: Jour[] = [...JOURS_SEMAINE, "samedi", "dimanche"];
 
+// PRNG déterministe (mulberry32) injecté dans genererPlanning/remplacerSlot pour
+// neutraliser l'aléa de RG-03 (#157). Sans seed, la génération pouvait épuiser
+// par hasard le vivier « rapide » (13 recettes) et faire échouer par
+// intermittence les remplacements sur un dîner de semaine (plafond "rapide") —
+// l'assertion `not.toBeNull()` tombait alors ~0,4 % des runs, bloquant la CI
+// (job `test` rouge → `migrate-prod` sauté). Avec un seed fixe, ces tests sont
+// déterministes : ils passent ou échouent toujours, jamais « occasionnellement ».
+function rngSeed(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
 // Fabrique n recettes synthétiques d'un temps donné (id/nom uniques).
 function synth(temps: TempsPreparation, n: number, prefixe: string): Recette[] {
   return Array.from({ length: n }, (_, i) => ({
@@ -218,8 +235,9 @@ describe("genererPlanning — vivier insuffisant", () => {
 // ---------------------------------------------------------------------------
 describe("remplacerSlot — RG-04 remplacement individuel", () => {
   test("remplace le slot ciblé par une recette différente sans toucher aux autres", () => {
-    const planning = genererPlanning(RECETTES_PLUS);
-    const resultat = remplacerSlot(planning, "mardi", "diner", RECETTES_PLUS);
+    const rng = rngSeed(157);
+    const planning = genererPlanning(RECETTES_PLUS, undefined, undefined, rng);
+    const resultat = remplacerSlot(planning, "mardi", "diner", RECETTES_PLUS, undefined, rng);
 
     expect(resultat).not.toBeNull();
     const avantMardi = planning.jours.find((jp) => jp.jour === "mardi")!.diner;
@@ -236,9 +254,10 @@ describe("remplacerSlot — RG-04 remplacement individuel", () => {
   });
 
   test("dîner de semaine : ne propose QUE des recettes 'rapide'", () => {
+    const rng = rngSeed(157);
     for (let i = 0; i < 25; i++) {
-      const planning = genererPlanning(RECETTES_PLUS);
-      const resultat = remplacerSlot(planning, "lundi", "diner", RECETTES_PLUS);
+      const planning = genererPlanning(RECETTES_PLUS, undefined, undefined, rng);
+      const resultat = remplacerSlot(planning, "lundi", "diner", RECETTES_PLUS, undefined, rng);
       expect(resultat).not.toBeNull();
       const nouveau = resultat!.jours.find((jp) => jp.jour === "lundi")!.diner;
       expect(nouveau.tempsPreparation).toBe("rapide");
@@ -299,13 +318,15 @@ describe("remplacerSlot — RG-04 remplacement individuel", () => {
   });
 
   test("conserve l'identifiant de semaine du planning d'origine", () => {
-    const planning = genererPlanning(RECETTES_PLUS);
-    const resultat = remplacerSlot(planning, "vendredi", "diner", RECETTES_PLUS);
+    const rng = rngSeed(157);
+    const planning = genererPlanning(RECETTES_PLUS, undefined, undefined, rng);
+    const resultat = remplacerSlot(planning, "vendredi", "diner", RECETTES_PLUS, undefined, rng);
     expect(resultat!.semaine).toBe(planning.semaine);
   });
 
   test("efface le marquage « restes » du slot remplacé (RG-22)", () => {
-    const base = genererPlanning(RECETTES_PLUS);
+    const rng = rngSeed(157);
+    const base = genererPlanning(RECETTES_PLUS, undefined, undefined, rng);
     // Dîner de mardi marqué restes.
     const planning: Planning = {
       ...base,
@@ -313,7 +334,7 @@ describe("remplacerSlot — RG-04 remplacement individuel", () => {
         jp.jour === "mardi" ? { ...jp, restes: { diner: true } } : jp
       ),
     };
-    const resultat = remplacerSlot(planning, "mardi", "diner", RECETTES_PLUS)!;
+    const resultat = remplacerSlot(planning, "mardi", "diner", RECETTES_PLUS, undefined, rng)!;
     expect(resultat.jours.find((jp) => jp.jour === "mardi")!.restes?.diner).toBe(
       false
     );

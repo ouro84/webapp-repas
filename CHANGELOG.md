@@ -29,6 +29,10 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 - Horodatage serveur de la sync (#104) : l'`updated_at` de `planning` et `etat_courses` — l'horloge de référence du **last-write-wins** entre appareils (#6) — est désormais posé par un **trigger SQL** (`now()`, horloge serveur) au lieu de l'horloge **du client**. Fiabilise l'arbitrage « le plus récent gagne » quand deux appareils ont des horloges désynchronisées (le trigger couvre aussi l'UPDATE/upsert et ignore toute valeur envoyée par le client). `lib/persistance.ts` récupère/renvoie la valeur posée par le trigger ; `lib/sync.ts` est inchangé. **Comportement observable identique**, robustesse accrue (dette technique de la sync multi-device soldée).
 - Migration `middleware` → `proxy` (#12) : le fichier `middleware.ts` est renommé `proxy.ts` et la fonction exportée `middleware` devient `proxy`, conformément à la convention Next.js 16 (l'ancien nom déclenchait un avertissement de dépréciation au démarrage). Aucun changement de comportement : rafraîchissement de session Supabase et redirections (routes protégées / routes d'auth) identiques, `export const config = { matcher }` inchangé. Solde l'avertissement de build.
 
+### Corrigé
+
+- Test unitaire flaky du générateur (#157) : le test `generateur.test.ts` qui vérifie le remplacement d'un dîner de semaine tombait **par intermittence** (~0,4 % des exécutions) — non pas à cause d'un bug produit, mais parce que la génération, **non seedée**, pouvait épuiser au hasard le vivier de recettes « rapide » et ne laisser aucun remplaçant. Un échec sur le push `main` rendait le job `test` rouge et **sautait `migrate-prod`** (migration non appliquée en prod, vécu au merge de #22). Correctif : la source d'aléa (RG-03) devient **injectable** (`genererPlanning`/`remplacerSlot` acceptent un paramètre `random` optionnel, défaut `Math.random`) et les tests sensibles au vivier passent un **PRNG seedé** → déterminisme total. **Comportement de l'app inchangé** (le défaut reste `Math.random`). Les 4 assertions à risque du fichier sont couvertes, pas seulement celle signalée.
+
 ## [1.2.0] - 2026-06-11
 
 ### Ajouté
