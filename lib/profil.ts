@@ -155,7 +155,12 @@ function sabonnerProfil(cb: () => void): () => void {
         notifierProfil();
       })
       .catch(() => {
-        // Déconnecté / erreur réseau : on reste sur l'avatar neutre.
+        // Déconnecté / erreur réseau : on reste sur l'avatar neutre. On relâche
+        // le verrou de chargement (#166) pour qu'un prochain abonnement (ex. la
+        // page /profil qui monte plus tard) RÉESSAIE — sinon un échec réseau
+        // transitoire neutraliserait le profil pour toute la session (avatar
+        // neutre + EditionIdentite figée sur « Chargement… »).
+        chargementLance = false;
       });
   }
   return () => {

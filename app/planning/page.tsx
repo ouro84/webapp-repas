@@ -303,7 +303,14 @@ export default function PagePlanning() {
         if (actif) setRecettesGerees(liste);
       })
       .catch((erreur) => {
+        // Sans feedback, « changer »/« sélectionner » opéreraient sur un vivier
+        // vide → « Pas de recette disponible » trompeur (#166). On le signale.
         console.error("Chargement des recettes échoué.", erreur);
+        if (actif) {
+          toast.error("Catalogue de recettes indisponible. Réessaie plus tard.", {
+            id: "chargement-recettes",
+          });
+        }
       });
     // Réglages de génération (#45) : indépendants des recettes, défauts si échec.
     chargerReglages()

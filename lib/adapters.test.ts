@@ -7,6 +7,7 @@ import {
   dbRecetteToDomain,
   dbSlotToJourPlanning,
 } from "@/lib/adapters";
+import { SELECT_PLANNING } from "@/lib/persistance";
 import type { DbPlanningSlot, DbRecette } from "@/types";
 
 function dbRecette(id: string): DbRecette {
@@ -137,5 +138,38 @@ describe("dbPlanningToDomain", () => {
     expect(planning.semaine).toBe("2026-W23");
     expect(planning.jours.map((j) => j.jour)).toEqual(["lundi", "mardi"]);
     expect(planning.jours[1]!.dejeuner?.id).toBe("ma-dej");
+  });
+
+  // Régression #164 : un planning hydraté depuis la base doit CONSERVER les
+  // flags végé/accompagnement/saisons sur ses recettes (badges + biais
+  // végé/légumes/saison). L'adaptateur les porte déjà ; le risque réel était
+  // que le SELECT distant ne les remonte pas.
+  it("conserve vegetarien/accompagnement/saisons sur les recettes du planning (#164)", () => {
+    const recetteTaguee: DbRecette = {
+      ...dbRecette("r-din"),
+      vegetarien: true,
+      accompagnement: "legumes",
+      saisons: ["ete"],
+    };
+    const slot: DbPlanningSlot = {
+      ...dbSlot("lundi", "diner", "r-din"),
+      recette: recetteTaguee,
+    };
+    const planning = dbPlanningToDomain("2026-W23", [slot]);
+    const diner = planning.jours[0]!.diner;
+    expect(diner.vegetarien).toBe(true);
+    expect(diner.accompagnement).toBe("legumes");
+    expect(diner.saisons).toEqual(["ete"]);
+  });
+});
+
+// Garde directe sur la requête d'hydratation : sans ces colonnes, l'adaptateur
+// ci-dessus recevrait des recettes sans flags → bug #164 (invisible en
+// génération directe, frappe le 2ᵉ appareil / la navigation entre semaines).
+describe("SELECT_PLANNING — colonnes recette (régression #164)", () => {
+  it("sélectionne vegetarien, accompagnement et saisons", () => {
+    expect(SELECT_PLANNING).toContain("vegetarien");
+    expect(SELECT_PLANNING).toContain("accompagnement");
+    expect(SELECT_PLANNING).toContain("saisons");
   });
 });
