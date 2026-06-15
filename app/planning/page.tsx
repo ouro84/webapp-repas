@@ -46,6 +46,7 @@ import { naviguerVers, useSemaineAffichee, useSync } from "@/lib/sync";
 import { chargerRecettesGerees, type RecetteGeree } from "@/lib/recettes";
 import { chargerReglages } from "@/lib/reglages-data";
 import { REGLAGES_DEFAUT } from "@/lib/reglages";
+import { messagesAvertissementGeneration } from "@/lib/avertissements-generation";
 import {
   decalageEntre,
   formaterSemaine,
@@ -449,32 +450,16 @@ export default function PagePlanning() {
       } else {
         toast.success(`Planning généré — ${libelleSemaine}`);
       }
-      // RG-26 — préférence végé souple non honorée sur certains repas (vivier
-      // végé insuffisant) : on informe sans bloquer (#86 PR2).
-      if (vegeNonHonore > 0) {
-        toast.warning(
-          vegeNonHonore === 1
-            ? "1 repas n’a pas pu être végétarien (pas assez de recettes végé)."
-            : `${vegeNonHonore} repas n’ont pas pu être végétariens (pas assez de recettes végé).`
-        );
-      }
-      // RG-27 — préférence « ≥1 légume/jour » souple non honorée (vivier légumes
-      // insuffisant) : on informe sans bloquer (#49 PR2).
-      if (mixNonHonore > 0) {
-        toast.warning(
-          mixNonHonore === 1
-            ? "1 jour n’a pas de repas « légumes » (pas assez de recettes légumes)."
-            : `${mixNonHonore} jours n’ont pas de repas « légumes » (pas assez de recettes légumes).`
-        );
-      }
-      // RG-28 — saisonnalité : repas complétés hors-saison faute de recettes de
-      // saison (dégradation gracieuse) : on informe sans bloquer (#23 PR2).
-      if (saisonNonHonore > 0) {
-        toast.warning(
-          saisonNonHonore === 1
-            ? "1 repas est hors saison (pas assez de recettes de saison)."
-            : `${saisonNonHonore} repas sont hors saison (pas assez de recettes de saison).`
-        );
+      // Préférences souples non honorées (vivier insuffisant) — RG-26 (végé),
+      // RG-27 (≥1 légume/jour), RG-28 (saison) : on informe sans bloquer. La
+      // construction des messages (accord singulier/pluriel) est extraite et
+      // testée à part (#168, lib/avertissements-generation.ts).
+      for (const message of messagesAvertissementGeneration({
+        vegeNonHonore,
+        mixNonHonore,
+        saisonNonHonore,
+      })) {
+        toast.warning(message);
       }
     } catch (erreur) {
       console.error("Génération du planning échouée.", erreur);
