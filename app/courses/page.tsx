@@ -150,7 +150,10 @@ export default function PageCourses() {
     if (brutPlanning === null) return null;
     try {
       return (JSON.parse(brutPlanning) as Planning).semaine;
-    } catch {
+    } catch (erreur) {
+      // Planning local corrompu : on retombe sur l'état vide, mais on le trace
+      // (jamais de catch muet, cf. CLAUDE.md / #166).
+      console.error("Planning local illisible (semaine).", erreur);
       return null;
     }
   }, [brutPlanning]);

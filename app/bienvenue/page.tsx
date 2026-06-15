@@ -151,12 +151,17 @@ export default function PageBienvenue() {
       }
       await marquerOnboardingComplete();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Une erreur est survenue.");
-    } finally {
-      // Rechargement plein : le proxy réévalue l'onboarding (désormais terminé)
-      // et /planning réhydrate depuis le cache/la base.
-      window.location.assign("/planning");
+      // Échec du marquage d'onboarding : NE PAS rediriger vers /planning (#167).
+      // Le proxy relirait onboarding_complete=false et renverrait ici → boucle
+      // de redirections. On revient à l'écran foyer pour réessayer.
+      toast.error(e instanceof Error ? e.message : "Une erreur est survenue. Réessaie.");
+      setEtape("foyer");
+      setEnCours(false);
+      return;
     }
+    // Marquage réussi : rechargement plein → le proxy laisse passer, /planning
+    // réhydrate depuis le cache/la base.
+    window.location.assign("/planning");
   }
 
   async function rejoindre(): Promise<void> {

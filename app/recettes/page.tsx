@@ -60,8 +60,10 @@ function repercuterSurPlanning(recette: Recette): void {
     const planning = JSON.parse(brut) as Planning;
     const maj = remplacerRecetteDansPlanning(planning, recette);
     if (maj !== null) sauvegarderRemplacementSlot(maj);
-  } catch {
+  } catch (erreur) {
     // Planning illisible : rien à répercuter, la prochaine génération l'écrasera.
+    // On le trace tout de même (jamais de catch muet, cf. CLAUDE.md / #166).
+    console.error("Planning local illisible (répercussion recette).", erreur);
   }
 }
 
