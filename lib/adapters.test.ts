@@ -13,6 +13,7 @@ function dbRecette(id: string): DbRecette {
   return {
     id,
     user_id: "u1",
+    foyer_id: null,
     nom: id,
     temps_preparation: "rapide",
     vegetarien: false,

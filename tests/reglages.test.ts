@@ -123,6 +123,7 @@ describe("validerReglages", () => {
 
 describe("adaptateurs DB ↔ domaine", () => {
   const db: DbReglages = {
+    user_id: "u1",
     personnes_defaut: 3,
     max_dejeuner_semaine: "normal",
     max_diner_semaine: "rapide",
@@ -134,6 +135,7 @@ describe("adaptateurs DB ↔ domaine", () => {
     vege_diner_weekend: true,
     mix_accompagnement_jour: true,
     saisonnalite: false,
+    updated_at: "2026-06-01T00:00:00Z",
   };
 
   test("dbReglagesToDomain mappe les colonnes (plafonds + végé + mix + saison)", () => {

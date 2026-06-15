@@ -10,14 +10,14 @@
 ## Contexte général
 
 Projet personnel : webapp de génération automatique de plannings de repas hebdomadaires.
-Usage solo (1 utilisateur), mobile-first, déployée sur internet.
+Usage personnel, mobile-first, déployée sur internet. (Conçu mono-utilisateur à l'origine ; étendu au **foyer partagé multi-comptes** en #56/P24 — cf. révision ADR-02 du 2026-06-12.)
 Profil de développement : vibe coding (pilotage par LLM, pas de compétences techniques propres).
 
 Les décisions ci-dessous ont été prises en tenant compte de ce profil : popularité des technos auprès des LLMs, simplicité de déploiement, conventions fortes, communauté large.
 
 ---
 
-## ADR-01 — Framework full-stack : Next.js 14 (App Router)
+## ADR-01 — Framework full-stack : Next.js 16 (App Router)
 
 ### Contexte
 Il faut un framework capable de gérer à la fois les pages (frontend) et la logique serveur (backend léger). Le projet est une webapp classique — pas une SPA pure, pas une app mobile native.
@@ -175,44 +175,61 @@ Le code doit être versionné, sauvegardé hors de la machine locale, et permett
 
 ---
 
-## Structure de dossiers cible
+## Structure de dossiers (à jour)
+
+> Mise à jour 2026-06-15 : l'arbre « cible » d'origine (trio MVP `lib/{generateur,courses,supabase}.ts`) a été remplacé par l'arborescence réelle, qui a beaucoup grossi (épopées #2, #22, #45, #49, #56, #86, #105…). Vue d'ensemble représentative — voir `CLAUDE.md` pour les conventions par fichier.
 
 ```
 webapp-repas/
 │
-├── app/                        # Pages (App Router Next.js)
-│   ├── layout.tsx              # Layout global
-│   ├── page.tsx                # Accueil (route "/")
-│   ├── planning/
-│   │   └── page.tsx            # Planning (route "/planning")
-│   └── courses/
-│       └── page.tsx            # Liste de courses (route "/courses")
+├── app/                          # App Router (pages, API, conventions Next)
+│   ├── layout.tsx                # Layout global (+ script anti-FOUC, nav, toaster)
+│   ├── page.tsx                  # Accueil "/"
+│   ├── error.tsx                 # Error boundary des pages
+│   ├── global-error.tsx          # Error boundary RACINE (#30) — styles inline
+│   ├── manifest.ts               # PWA manifest (#71) ; icon.svg / apple-icon.png / opengraph-image.png
+│   ├── planning/                 # "/planning" (+ layout)
+│   ├── courses/                  # "/courses" (+ layout)
+│   ├── recettes/                 # "/recettes" — CRUD recettes (#2, #105)
+│   ├── reglages/                 # "/reglages" — règles de génération (#45)
+│   ├── profil/                   # "/profil" — identité, foyer, sécurité (#22)
+│   ├── bienvenue/                # "/bienvenue" — tunnel d'onboarding (#22)
+│   ├── login/  signup/  mot-de-passe-oublie/
+│   ├── auth/                     # reinitialiser/ (page) + signout/ (route)
+│   └── api/planning/generer/route.ts   # Génération côté serveur
 │
 ├── components/
-│   ├── ui/                     # Composants génériques (bouton, badge, carte...)
-│   └── planning/               # Composants spécifiques au planning
+│   ├── ui/                       # Génériques (logo, nav, badges, confirmation, avatar, thème…)
+│   ├── planning/                 # badge-temps, fiche-recette, selecteur-recette
+│   ├── recettes/                 # formulaire-recette
+│   ├── profil/                   # panneau-foyer, edition-identite, modale-doublons, changer-mot-de-passe
+│   └── auth/                     # formulaire-auth
 │
-├── lib/                        # Logique métier pure (sans UI)
-│   ├── generateur.ts           # Algorithme de génération du planning
-│   ├── courses.ts              # Agrégation de la liste de courses
-│   └── supabase.ts             # Client Supabase (Phase 4)
+├── lib/                          # Logique métier pure (sans UI) + accès données
+│   ├── generateur.ts  courses.ts  personnes.ts  saisons.ts  restes.ts  semaines.ts
+│   ├── reglages.ts (pur) / reglages-data.ts (accès)  accompagnement.ts  pluriels.ts  recherche.ts  unites.ts
+│   ├── coches.ts / coches-sync.ts  doublons.ts  planning-diff.ts  avatar.ts  clavier.ts
+│   ├── stockage.ts  sync.ts  persistance.ts  recettes.ts  reglages-data.ts  profil.ts  foyer.ts  invitation.ts  theme.ts
+│   ├── adapters.ts               # Conversion DB → domaine
+│   ├── errors.ts  messages-auth.ts
+│   └── supabase/                 # client.ts (navigateur) + server.ts (serveur) — cf. ADR-02
 │
-├── data/
-│   └── recettes.json           # Source de vérité des recettes (MVP)
+├── types/index.ts                # Types domaine + types DB (snake_case)
+├── data/                         # recettes.json (amorçage, 74) + recettes_25random.json (ancien jeu, réf.)
+├── supabase/migrations/          # Migrations SQL (db push CI)
+├── scripts/                      # *.mjs utilitaires (query-supabase, génération seed/icônes/saisons)
+├── e2e/                          # Specs Playwright + auth.setup + helpers
+├── tests/                        # Specs Vitest + fixtures
+├── public/                       # Assets statiques
 │
-├── types/
-│   └── index.ts                # Types TypeScript partagés
-│
-├── public/                     # Assets statiques
-│
-├── .env.local                  # Secrets — JAMAIS dans Git
-├── .env.example                # Template des variables d'env — dans Git
-├── .gitignore                  # Fichiers ignorés par Git
-├── next.config.ts
-├── tailwind.config.ts
-├── tsconfig.json
-└── CLAUDE.md
+├── proxy.ts                      # ex-middleware (#12) — refresh session + routes protégées + garde onboarding
+├── instrumentation.ts  instrumentation-client.ts  sentry.server.config.ts  sentry.edge.config.ts
+├── next.config.ts  tsconfig.json  vitest.config.ts  playwright.config.ts
+├── .env.local  .env.example  .gitignore
+└── CLAUDE.md  ADR.md  SPECS_FONCTIONNELLES.md  CHANGELOG.md  README.md  AGENTS.md  QA_CHECKLIST.md
 ```
+
+> **Note Tailwind v4 :** pas de `tailwind.config.ts` — toute la config vit dans `app/globals.css` via `@theme` (cf. révision ADR-04).
 
 ---
 

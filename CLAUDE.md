@@ -43,10 +43,13 @@ Webapp de génération automatique de plannings de repas hebdomadaires, avec lis
 | Base de données + Auth | Supabase | — (Phase 4) |
 | Hébergement | Vercel | — |
 | CSS | Tailwind CSS | v4 |
-| Typage | TypeScript strict | v5 |
+| Typage | TypeScript strict | v6 |
 | Tests unitaires | Vitest | — (Phase 7) |
 | Tests e2e | Playwright | — (Phase 7) |
 | Monitoring d'erreurs | Sentry (`@sentry/nextjs`) | v10 |
+| Icônes | `lucide-react` | v1 |
+| Toasts | `sonner` | v2 |
+| QR code (partage foyer #56) | `qrcode.react` | v4 |
 | Versioning | Git + GitHub | — |
 
 > **Note Tailwind v4 :** la configuration se fait dans `app/globals.css` via `@theme`, pas dans un fichier `tailwind.config.js`. Les classes utilitaires restent identiques.
@@ -120,6 +123,15 @@ Format : `type: description courte`
 | `gh` (GitHub CLI) | Authentifié en tant que `ouro84`. Utiliser pour gérer le backlog GitHub Projects en langage naturel : ajouter des cartes, changer leur statut, lister les items. |
 | `supabase` (CLI, devDependency) | Migrations de schéma (`supabase/migrations/`). En CI uniquement pour `db push` — en local le binaire Go est bloqué par Avast (cf. piège ci-dessous), passer par `scripts/query-supabase.mjs`. Token : `SUPABASE_ACCESS_TOKEN` dans `.env.local`. |
 
+### Scripts utilitaires (`scripts/*.mjs`)
+
+| Script | Rôle |
+|--------|------|
+| `query-supabase.mjs` | Exécute du SQL sur un projet Supabase via l'API de management (contourne le blocage TLS d'Avast sur le CLI Go). Usage : `node scripts/query-supabase.mjs <project-ref> "<sql>"` (requiert `SUPABASE_ACCESS_TOKEN`). Refs : prod `gabyhlcwahzquolwxmgd`, staging `upxoxrjumxpzumakawiv`. |
+| `generer-seed-recettes.mjs` | Génère la migration d'amorçage du catalogue global (#2) depuis `data/recettes.json` (policies SELECT globales + INSERT des 74 recettes). |
+| `generer-saisons-recettes.mjs` | Génère les `UPDATE … set saisons` du tagging saisonnier du catalogue (#23). **Miroir JS** de `PRODUITS_SAISON` de `lib/saisons.ts` — à régénérer si la table évolue. |
+| `generer-icones-pwa.mjs` | Génère les icônes PWA (#71) depuis `app/icon.svg` (sharp). À relancer si le mark change (ne pas éditer les PNG à la main). |
+
 ---
 
 ## Règles de code
@@ -161,8 +173,6 @@ Format : `type: description courte`
 
 **Mix « ≥1 légume/jour » = contrainte JOINTE par jour, pas un biais par slot (#49 PR2)** — `ReglagesGeneration.mixAccompagnementJour?` (**un seul** booléen pour toute la semaine, ≠ les 4 booléens végé par créneau ; DB `mix_accompagnement_jour not null default false`, migration `..._reglages_mix_accompagnement.sql` ; **absent de `REGLAGES_DEFAUT`** = désactivé). Contrairement à `biaiserVege` (par slot, indépendant), le mix **couple les deux slots d'une journée**. `biaiserMixLegume(candidats, jour, attributions, reglages)` dans `lib/generateur.ts` est en **deux temps** : jour pas encore pourvu d'un légume → biais **vers** légume (repli souple) ; jour déjà pourvu → **anti-biais** (préférence **non**-légume) pour **préserver le vivier légume aux jours non encore servis** — sans cet anti-biais, le 2ᵉ slot d'un jour déjà honoré peut « voler » le dernier légume d'un autre jour (vu en test : samedi affamait dimanche). Composé **après** `biaiserVege` dans `genererPlanning` (végé prioritaire en cas de conflit) ; même biais dans `remplacerSlot` (regarde le repas **frère** du jour). Les deux branches replient toujours et restent dans le même palier de temps → **faisabilité (`analyserVivier`/Hall) inchangée**, la génération n'échoue jamais à cause du mix. Avertissement **dérivé du planning final** par `joursSansLegume(planning, reglages)` (pur, découplé de l'aléatoire) : la route renvoie `mixNonHonore` (nb de jours), le client toast ; le « ↺ changer » toast aussi si le jour reste sans légume. Réglage : un `role="switch"` « Au moins un repas légumes par jour » sur `/reglages` + aperçu « N recettes légumes ».
 
-**`global-error.tsx` n'existe pas (encore)** — `app/error.tsx` couvre les pages, pas le layout racine. C'est l'issue #30 au backlog ; piège documenté dedans : dans `global-error.tsx`, Tailwind n'est pas disponible (globals.css est importé par le layout qui a crashé) → styles inline obligatoires.
-
 ### React / Next.js 16
 
 **localStorage = `useSyncExternalStore`, pas `useEffect` + `setState`** — La règle ESLint `react-hooks/set-state-in-effect` (config Next.js 16) interdit le setState synchrone dans un effet au montage. Le pattern du projet : mini-stores partagés dans `lib/stockage.ts` (`storePlanning`, `storeCoches`) avec snapshot serveur `null` (prérendu en état vide, puis hydratation). Dévier = erreur de lint + risque de mismatch d'hydratation.
@@ -179,7 +189,7 @@ Format : `type: description courte`
 
 ### Recettes & génération (depuis #2)
 
-**La source de vérité des recettes est Supabase, pas `data/recettes.json`** — Le JSON ne sert plus qu'd'asset d'amorçage du catalogue global (cf. migration `..._recettes_globales.sql` et `scripts/generer-seed-recettes.mjs`). Les tests (`tests/recettes-dataset.test.ts`, fixtures) continuent de le lire, mais l'app lit la base. Modifier le JSON ne change rien à l'app déployée — il faut une migration/CRUD.
+**La source de vérité des recettes est Supabase, pas `data/recettes.json`** — Le JSON (74 recettes) ne sert plus qu'd'asset d'amorçage du catalogue global (cf. migration `..._recettes_globales.sql` et `scripts/generer-seed-recettes.mjs`). Les tests (`tests/recettes-dataset.test.ts`, fixtures) continuent de le lire, mais l'app lit la base. Modifier le JSON ne change rien à l'app déployée — il faut une migration/CRUD. **`data/recettes_25random.json`** (25 recettes) est l'**ancien jeu de démonstration**, conservé en référence depuis le remplacement par les 74 vraies recettes (#29/#43) — il n'est **utilisé nulle part** (ni app, ni tests : les fixtures de test vivent dans `tests/fixtures/recettes.ts`). À ne pas confondre avec la source d'amorçage.
 
 **Catalogue global (lecture seule) + recettes du foyer** — Les recettes **globales** (catalogue par défaut) ont **`foyer_id IS NULL`** (et `user_id IS NULL`) : visibles de tous, non éditables. Les recettes créées appartiennent au **foyer** (`foyer_id = mon_foyer()`), éditables/supprimables par **tout membre** (RG-30). RLS : SELECT autorise `foyer_id IS NULL OR foyer_id = mon_foyer()`, mais insert/update/delete exigent `foyer_id = mon_foyer()`. Pour « modifier » une globale, on la **duplique** dans son espace (#105 PR2). Ne pas attendre qu'un `update`/`delete` touche une globale : la RLS le refuse silencieusement.
 
