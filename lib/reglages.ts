@@ -118,7 +118,11 @@ export function validerReglages(brut: unknown): ReglagesGeneration | null {
 
 // --- Adaptateurs DB ↔ domaine -------------------------------------------------
 
-export function dbReglagesToDomain(db: DbReglages): ReglagesGeneration {
+// N'a besoin que des colonnes de génération — accepte donc aussi le payload
+// d'écriture (sans `user_id`/`updated_at`) ; un row complet reste assignable.
+export function dbReglagesToDomain(
+  db: Omit<DbReglages, "user_id" | "updated_at">
+): ReglagesGeneration {
   return {
     personnesDefaut: db.personnes_defaut,
     plafonds: {
@@ -138,7 +142,11 @@ export function dbReglagesToDomain(db: DbReglages): ReglagesGeneration {
   }
 }
 
-export function reglagesToDb(r: ReglagesGeneration): DbReglages {
+// Payload d'écriture : `user_id` est posé au site d'upsert (sauvegarderReglages)
+// et `updated_at` par le DEFAULT/serveur — donc absents d'ici (Omit).
+export function reglagesToDb(
+  r: ReglagesGeneration
+): Omit<DbReglages, "user_id" | "updated_at"> {
   const v = r.vegetarienPrefere
   return {
     personnes_defaut: r.personnesDefaut,

@@ -151,7 +151,9 @@ export type ReglagesGeneration = {
 };
 
 // Forme DB (snake_case) de la table `reglages` — convertie via lib/reglages.ts.
+// `reglages` reste PAR-UTILISATEUR (PK user_id), même après la bascule foyer #56.
 export type DbReglages = {
+  user_id: string; // PK — réglages propres à chaque membre
   personnes_defaut: number;
   max_dejeuner_semaine: TempsPreparation;
   max_diner_semaine: TempsPreparation;
@@ -165,6 +167,16 @@ export type DbReglages = {
   mix_accompagnement_jour: boolean;
   // #23 PR2 — saisonnalité (not null default TRUE : ON par défaut).
   saisonnalite: boolean;
+  updated_at: string; // versioning, posé par défaut now() à l'écriture
+};
+
+// Forme DB de `recette_masquee` — masquage d'une recette du catalogue par défaut
+// (#105 PR1), basculé en scope FOYER en #56 PR2 (PK (foyer_id, recette_id) ;
+// user_id retiré). `cle` métier = (foyer_id, recette_id). Cf. lib/recettes.ts.
+export type DbRecetteMasquee = {
+  foyer_id: string;
+  recette_id: string;
+  masquee_le: string;
 };
 
 export type LignesCourses = {
@@ -217,7 +229,11 @@ export type DbEtatCourseArticle = {
 
 export type DbRecette = {
   id: string;
+  // Créateur de la recette, CONSERVÉ depuis #56 PR2 (en plus de foyer_id).
   user_id: string;
+  // Propriété par foyer (#56 PR2). `null` = catalogue global en lecture seule
+  // (le marqueur du global est passé de `user_id IS NULL` à `foyer_id IS NULL`).
+  foyer_id: string | null;
   nom: string;
   temps_preparation: TempsPreparation;
   vegetarien: boolean;
@@ -232,10 +248,15 @@ export type DbRecette = {
 
 export type DbPlanning = {
   id: string;
-  user_id: string;
+  // Propriété par foyer (#56 PR2 : user_id retiré au profit de foyer_id ;
+  // unicité (foyer_id, semaine)).
+  foyer_id: string;
   semaine: string;
+  // Incrémenté par la RPC sauvegarder_planning à chaque upsert (#56 PR2) ;
+  // base de la détection de l'alerte intrusive (#56 PR5).
+  version: number;
   created_at: string;
-  updated_at: string; // last-write-wins entre devices (#6)
+  updated_at: string; // last-write-wins entre devices (#6), posé par trigger serveur (#104)
 };
 
 export type DbPlanningSlot = {

@@ -48,7 +48,7 @@ Réduire à zéro l'effort de planification hebdomadaire des repas, du choix des
 
 | # | Feature | Description |
 |---|---------|-------------|
-| F-01 | Liste de recettes | ~30 recettes stockées dans `/data/recettes.json` |
+| F-01 | Liste de recettes | Catalogue global de **74 recettes** (amorcé depuis `/data/recettes.json`, source de vérité = Supabase depuis #2) ; chaque foyer y ajoute ses recettes |
 | F-02 | Temps de préparation | Chaque recette est classée : Rapide / Normal / Long |
 | F-03 | Flag "fond de placard" | Chaque ingrédient peut être marqué comme fond de placard (sel, huile, épices…) |
 | F-04 | Génération du planning | Génère, pour la semaine choisie (courante → +6), un planning sur 7 jours : un déjeuner **et** un dîner chaque jour (14 repas) |
@@ -527,7 +527,9 @@ Réduire à zéro l'effort de planification hebdomadaire des repas, du choix des
 
 ## 5. Modèle de données
 
-> Les structures ci-dessous sont exprimées en TypeScript à titre documentaire. Le fichier de données réel est `/data/recettes.json` — format JSON lisible et éditable sans connaissance technique.
+> Les structures ci-dessous sont exprimées en TypeScript à titre documentaire.
+>
+> **Source de vérité (à jour) :** depuis #2 (révision ADR-02), les recettes sont persistées dans **Supabase**, pas dans un fichier. `/data/recettes.json` ne sert plus que d'**asset d'amorçage** du catalogue global. Les recettes d'un foyer se créent/éditent via l'UI (CRUD). Le scope de propriété (catalogue global vs recettes du foyer) est décrit en §5.7.
 
 ### 5.1 Recette
 
@@ -547,6 +549,8 @@ type Recette = {
   ingredients: Ingredient[]       // Cf. RG-28.
 }
 ```
+
+> **Note (à jour) :** ce type domaine ne porte ni le **scope de propriété** (catalogue global `foyer_id IS NULL` vs recette du foyer — §5.7) ni les **métadonnées DB** (`user_id` créateur, `foyer_id`, horodatages). Ces champs vivent côté base (cf. `DbRecette` dans `types/index.ts`) et sont retirés à la conversion DB → domaine (`lib/adapters.ts`).
 
 ### 5.2 Ingrédient
 
@@ -594,7 +598,7 @@ type CategorieIngredient =
   | "autre"               // Catégorie non listée — à compléter à l'usage
 ```
 
-> **Note :** cette liste sera complétée lors de la saisie des ~30 recettes initiales (Phase 3).
+> **Note :** cette liste a été complétée lors de la saisie du catalogue d'amorçage (**74 recettes**, cf. #29/#43 — au-delà des ~30 du persona).
 
 ### 5.5 Planning (structure générée)
 
@@ -900,7 +904,9 @@ Les wireframes low-fi validés lors de la Phase 1 couvrent :
 > Ces features ne sont pas prévues dans la roadmap actuelle. Contrairement au backlog (section 3), elles ne seront pas reconsidérées sans une évolution significative du besoin.
 
 - Gestion des allergies ou régimes alimentaires
-- Suggestions basées sur les saisons ou le marché
 - Notation ou commentaire des recettes
 - Synchronisation avec un calendrier externe (Google Calendar…)
-- Mode collaboratif temps réel (couple qui planifie simultanément)
+
+> **Revirements de décision (à jour) :** deux entrées initialement hors-scope ont finalement été livrées et sont donc retirées de cette liste :
+> - **Recettes de saison** — livré en #23 (US-18, RG-28) : la saisonnalité privilégie les recettes de la saison de la semaine (filtre ON par défaut, dégradation gracieuse). *(Les suggestions « basées sur le marché » restent, elles, hors-scope.)*
+> - **Mode collaboratif temps réel** — livré en #56/P24 (US-20/US-21, RG-31/RG-32) : coches de la liste de courses en temps réel, présence anonyme « en magasin », et alerte intrusive de modification du planning entre membres d'un même foyer.
