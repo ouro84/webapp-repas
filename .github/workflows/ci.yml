@@ -71,15 +71,16 @@ jobs:
 
   # E2E en jobs parallèles (cf. projets playwright + Phase 2) :
   #  - jetable : specs à comptes jetables uniques → un job, workers:4 ;
-  #  - partage : specs du compte partagé → réparties en 3 GROUPES de fichiers
-  #    équilibrés (~22/18/21 tests), CHACUN sur SON PROPRE compte (E2E_EMAIL
-  #    distinct, auto-créé par auth.setup idempotent). Isolation par compte → les
+  #  - partage : specs du compte partagé → réparties en 5 GROUPES de fichiers
+  #    équilibrés (~10-15 tests), CHACUN sur SON PROPRE compte (E2E_EMAIL distinct
+  #    p1..p5, auto-créé par auth.setup idempotent). Isolation par compte → les
   #    groupes ne se courent pas dessus (workers:1 intra-groupe, parallélisme
   #    INTER-groupes). Aucun changement de specs/helpers : helpers.ts et
   #    auth.setup.ts lisent déjà process.env.E2E_EMAIL.
   # NB : groupes EXPLICITES plutôt que `--shard` (Playwright shard par fichier →
-  # déséquilibre 42/0/19 à cause de planning.spec). À rééquilibrer si on ajoute
-  # des specs. Chaque job build l'app en prod (webServer) et tourne concurremment.
+  # déséquilibre, planning.spec à lui seul pèse lourd → scindé en planning.spec +
+  # planning-edition.spec). À rééquilibrer si on ajoute des specs. Chaque job
+  # build l'app en prod (webServer) et tourne concurremment.
   e2e:
     needs: migrate-staging
     runs-on: ubuntu-latest
@@ -101,13 +102,23 @@ jobs:
           - name: partage-2
             project: e2e-partage
             workers: 1
-            files: "e2e/courses.spec.ts e2e/recettes.spec.ts e2e/accueil.spec.ts"
+            files: "e2e/planning-edition.spec.ts"
             email: claude-e2e-p2@example.com
           - name: partage-3
             project: e2e-partage
             workers: 1
-            files: "e2e/reglages.spec.ts e2e/profil.spec.ts e2e/foyer.spec.ts e2e/auth.spec.ts e2e/coches-realtime.spec.ts e2e/alerte-planning.spec.ts"
+            files: "e2e/courses.spec.ts e2e/accueil.spec.ts"
             email: claude-e2e-p3@example.com
+          - name: partage-4
+            project: e2e-partage
+            workers: 1
+            files: "e2e/recettes.spec.ts e2e/reglages.spec.ts"
+            email: claude-e2e-p4@example.com
+          - name: partage-5
+            project: e2e-partage
+            workers: 1
+            files: "e2e/profil.spec.ts e2e/foyer.spec.ts e2e/auth.spec.ts e2e/coches-realtime.spec.ts e2e/alerte-planning.spec.ts"
+            email: claude-e2e-p5@example.com
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
