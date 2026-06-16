@@ -12,7 +12,7 @@
 // (.env.local pointe la prod).
 
 import { test, expect } from "@playwright/test";
-import { E2E_PASSWORD, lireEnvLocal } from "./helpers";
+import { E2E_PASSWORD, lireEnvLocal, lireReglagesDistants } from "./helpers";
 
 const RUN = Date.now();
 
@@ -64,6 +64,64 @@ test("le tunnel mène un nouvel inscrit à un premier planning (US-23)", async (
     await expect(
       page.getByRole("link", { name: "Profil de Camille" })
     ).toBeVisible();
+  } finally {
+    await contexte.close();
+  }
+});
+
+test("l'écran 1 du tunnel calibre les réglages de génération (US-23, RG-37)", async ({
+  browser,
+  request,
+}) => {
+  // Parcours long (signup + login + écran 1 + génération réelle) : 30 s ne suffit
+  // pas avec la latence staging.
+  test.setTimeout(120_000);
+
+  const email = `calibration-${RUN}@example.com`;
+  const url = lireEnvLocal("NEXT_PUBLIC_SUPABASE_URL");
+  const anon = lireEnvLocal("NEXT_PUBLIC_SUPABASE_ANON_KEY");
+
+  // Signup REST — compte NON onboardé (on veut le tunnel).
+  const r = await request.post(`${url}/auth/v1/signup`, {
+    headers: { apikey: anon, "Content-Type": "application/json" },
+    data: { email, password: E2E_PASSWORD },
+  });
+  expect([200, 400, 422]).toContain(r.status());
+
+  const contexte = await browser.newContext({
+    storageState: { cookies: [], origins: [] },
+  });
+  const page = await contexte.newPage();
+  try {
+    await page.goto("/login");
+    await page.getByLabel("Email").fill(email);
+    await page.getByLabel("Mot de passe", { exact: true }).fill(E2E_PASSWORD);
+    await page.getByRole("button", { name: "Se connecter" }).click();
+    await page.waitForURL("**/bienvenue");
+
+    // Écran 1 : prénom + 4 personnes (2 → +2) + foyer végétarien activé.
+    await page.getByPlaceholder("Ton prénom").fill("Dominique");
+    await page.getByRole("button", { name: "Plus de personnes" }).click();
+    await page.getByRole("button", { name: "Plus de personnes" }).click();
+    await page.getByRole("switch", { name: "Foyer végétarien" }).click();
+    await page.getByRole("button", { name: "Suivant" }).click();
+
+    // Écran 2 : démarrer en solo → génération → /planning.
+    await page.getByRole("button", { name: /Démarrer seul/ }).click();
+    await page.waitForURL("**/planning", { timeout: 60_000 });
+
+    // RG-37 : la calibration s'est traduite dans la table reglages — nombre de
+    // personnes par défaut (4) et préférence végé de SEMAINE activée (le week-end
+    // reste au défaut, cf. reglagesSaisis du tunnel).
+    await expect
+      .poll(() => lireReglagesDistants(request, email, E2E_PASSWORD), {
+        timeout: 15_000,
+      })
+      .not.toBeNull();
+    const reglages = await lireReglagesDistants(request, email, E2E_PASSWORD);
+    expect(reglages?.personnes_defaut).toBe(4);
+    expect(reglages?.vege_dejeuner_semaine).toBe(true);
+    expect(reglages?.vege_diner_semaine).toBe(true);
   } finally {
     await contexte.close();
   }
