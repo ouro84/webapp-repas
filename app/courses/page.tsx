@@ -24,10 +24,12 @@ import { genererListeCourses } from "@/lib/courses";
 import {
   aDesCoches,
   basculerCoche,
+  categorieTerminee,
   compterProgression,
   estCoche,
   parserCoches,
   trierAvecCoches,
+  trierCategoriesAvecCoches,
 } from "@/lib/coches";
 import { storeCoches, storePlanning } from "@/lib/stockage";
 import { useSync, usePresenceCourses } from "@/lib/sync";
@@ -85,6 +87,13 @@ function nomTransition(ingredient: Ingredient): string {
     .replace(/[̀-ͯ]/g, "") // diacritiques décomposés par NFD
     .replace(/[^a-z0-9]+/g, "-");
   return `article-${slug}`;
+}
+
+// Nom de transition d'une section de catégorie (#111) : permet d'animer le
+// glissement d'une catégorie terminée vers le bas via View Transitions, comme
+// les articles cochés (RG-11). La clé de catégorie est déjà un slug ASCII.
+function nomTransitionCategorie(cle: string): string {
+  return `categorie-${cle}`;
 }
 
 // Applique une mise à jour d'état dans une View Transition quand c'est
@@ -272,18 +281,28 @@ export default function PageCourses() {
       </header>
 
       {/* Une section par catégorie présente, dans l'ordre canonique (RG-05).
-          Articles non cochés d'abord, cochés en fin de catégorie (RG-11). */}
+          Articles non cochés d'abord, cochés en fin de catégorie (RG-11).
+          Les catégories entièrement cochées glissent en bas de liste, titre
+          rayé, en restant ouvertes (RG-39, #111). */}
       <div className="space-y-6">
-        {liste.normal.map((ligne) => {
+        {trierCategoriesAvecCoches(liste.normal, coches).map((ligne) => {
           const repliee = replies.has(ligne.categorie);
+          const terminee = categorieTerminee(ligne, coches);
           return (
-            <section key={ligne.categorie}>
+            <section
+              key={ligne.categorie}
+              style={{ viewTransitionName: nomTransitionCategorie(ligne.categorie) }}
+            >
               <h2 className="mb-2">
                 <button
                   type="button"
                   onClick={() => basculerSection(ligne.categorie)}
                   aria-expanded={!repliee}
-                  className="flex min-h-11 w-full cursor-pointer items-center justify-between gap-2 text-sm font-semibold uppercase tracking-wide text-brand-700/85 transition-colors hover:text-brand-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
+                  className={`flex min-h-11 w-full cursor-pointer items-center justify-between gap-2 text-sm font-semibold uppercase tracking-wide transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 ${
+                    terminee
+                      ? "text-brand-700/85 line-through opacity-40 hover:text-brand-900"
+                      : "text-brand-700/85 hover:text-brand-900"
+                  }`}
                 >
                   {LIBELLES_CATEGORIES[ligne.categorie]}
                   <Chevron repliee={repliee} />
@@ -314,7 +333,13 @@ export default function PageCourses() {
                 type="button"
                 onClick={() => basculerSection("fond-de-placard")}
                 aria-expanded={!replies.has("fond-de-placard")}
-                className="flex min-h-11 w-full cursor-pointer items-center justify-between gap-2 text-sm font-semibold uppercase tracking-wide text-accent-700 transition-colors hover:text-accent-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
+                className={`flex min-h-11 w-full cursor-pointer items-center justify-between gap-2 text-sm font-semibold uppercase tracking-wide text-accent-700 transition-colors hover:text-accent-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 ${
+                  // RG-39 : titre rayé quand tout est vérifié — pas de
+                  // réordonnancement (le fond de placard reste en dernier).
+                  liste.fondDePlacard.every((i) => estCoche(coches, i))
+                    ? "line-through opacity-40"
+                    : ""
+                }`}
               >
                 Fond de placard
                 <Chevron repliee={replies.has("fond-de-placard")} />
