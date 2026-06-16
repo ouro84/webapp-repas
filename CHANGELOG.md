@@ -7,6 +7,8 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-06-16
+
 ### Ajouté
 
 - Liste de courses — les catégories terminées s'effacent (#111) : quand **tous les articles d'une catégorie** sont cochés, la catégorie **glisse en bas de la liste** et son **titre se raye**, pour garder en tête ce qu'il reste à acheter. La catégorie **reste ouverte** (pas de repli automatique) : décocher un article la fait **remonter** aussitôt à sa place. C'est l'extension naturelle du comportement déjà en place pour les articles cochés (qui descendent en fin de leur catégorie). Le **fond de placard** se raye aussi quand tout est vérifié mais reste en dernier. **Choix de design** : le repli automatique initialement envisagé a été écarté (mouvement de contenu sous le doigt en magasin, annulation pénible). **Couvre RG-39.**
@@ -139,7 +141,8 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 - CI GitHub Actions (Vitest + Playwright)
 - Déploiement Vercel avec preview deployments
 
-[Unreleased]: https://github.com/ouro84/webapp-repas/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/ouro84/webapp-repas/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/ouro84/webapp-repas/compare/v1.2.0...v2.0.0
 [1.2.0]: https://github.com/ouro84/webapp-repas/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/ouro84/webapp-repas/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/ouro84/webapp-repas/compare/v1.0.0...v1.0.1
