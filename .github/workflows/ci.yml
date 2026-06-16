@@ -69,10 +69,17 @@ jobs:
           npx supabase link --project-ref upxoxrjumxpzumakawiv
           npx supabase db push
 
-  # E2E en DEUX partitions parallèles (cf. projets playwright) :
-  #  - partage : specs du compte de test partagé → série (workers:1) ;
-  #  - jetable : specs à comptes jetables uniques → parallèle (workers:4).
-  # Chaque partition build l'app en prod (webServer) et tourne concurremment.
+  # E2E en jobs parallèles (cf. projets playwright + Phase 2) :
+  #  - jetable : specs à comptes jetables uniques → un job, workers:4 ;
+  #  - partage : specs du compte partagé → réparties en 3 GROUPES de fichiers
+  #    équilibrés (~22/18/21 tests), CHACUN sur SON PROPRE compte (E2E_EMAIL
+  #    distinct, auto-créé par auth.setup idempotent). Isolation par compte → les
+  #    groupes ne se courent pas dessus (workers:1 intra-groupe, parallélisme
+  #    INTER-groupes). Aucun changement de specs/helpers : helpers.ts et
+  #    auth.setup.ts lisent déjà process.env.E2E_EMAIL.
+  # NB : groupes EXPLICITES plutôt que `--shard` (Playwright shard par fichier →
+  # déséquilibre 42/0/19 à cause de planning.spec). À rééquilibrer si on ajoute
+  # des specs. Chaque job build l'app en prod (webServer) et tourne concurremment.
   e2e:
     needs: migrate-staging
     runs-on: ubuntu-latest
@@ -81,12 +88,26 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: partage
-            project: e2e-partage
-            workers: 1
           - name: jetable
             project: e2e-jetable
             workers: 4
+            files: ""
+            email: claude-e2e-test@example.com
+          - name: partage-1
+            project: e2e-partage
+            workers: 1
+            files: "e2e/planning.spec.ts"
+            email: claude-e2e-p1@example.com
+          - name: partage-2
+            project: e2e-partage
+            workers: 1
+            files: "e2e/courses.spec.ts e2e/recettes.spec.ts e2e/accueil.spec.ts"
+            email: claude-e2e-p2@example.com
+          - name: partage-3
+            project: e2e-partage
+            workers: 1
+            files: "e2e/reglages.spec.ts e2e/profil.spec.ts e2e/foyer.spec.ts e2e/auth.spec.ts e2e/coches-realtime.spec.ts e2e/alerte-planning.spec.ts"
+            email: claude-e2e-p3@example.com
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -123,7 +144,13 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Tests e2e (Playwright) — partition ${{ matrix.name }}
-        run: npx playwright test --project=${{ matrix.project }} --workers=${{ matrix.workers }}
+        # E2E_EMAIL dédié par groupe → isolation des données (auth.setup le crée
+        # idempotemment ; E2E_PASSWORD reste le défaut du code). `files` vide
+        # (jetable) lance toute la partition ; sinon, filtre sur les fichiers du
+        # groupe (le projet `setup` tourne quand même — vérifié).
+        env:
+          E2E_EMAIL: ${{ matrix.email }}
+        run: npx playwright test --project=${{ matrix.project }} --workers=${{ matrix.workers }} ${{ matrix.files }}
 
       # En cas d'échec e2e, le rapport HTML (traces incluses) est téléchargeable
       # depuis l'onglet Actions du run.
