@@ -46,10 +46,11 @@
 - [ ] Un remplacement de repas survit aussi au rechargement
 - [ ] Sans planning : `/courses` affiche l'invite "Génère d'abord un planning" avec le lien
 - [ ] Sync multi-device (US-13) : générer/éditer **et cocher** sur un appareil → se connecter sur un autre (ou vider le cache local) → le même planning **et le même état coché** sont retrouvés depuis la base ; indicateur "Sauvegarde…/Hors-ligne" cohérent
+- [ ] Flags recette après hydratation (#164) : sur un **2ᵉ appareil** (ou après navigation entre semaines / cache vidé), les **badges végétarien / accompagnement / saison** sont toujours présents sur les cards et la fiche (régression corrigée — ne pas se fier au seul affichage post-génération)
 - [ ] Historique (US-14) : navigateur ‹ ← / → › change la semaine (passé/futur) ; semaine courante marquée ; la liste de courses suit la semaine (n° affiché) ; revenir sur une semaine générée la retrouve intacte
 - [ ] Confirmation semaine passée (US-14, RG-24) : régénérer ou modifier un repas (changer/sélectionner/restes) d'une **semaine passée** déjà planifiée ouvre une confirmation ; Annuler laisse intact, Confirmer applique. Générer une semaine passée **vide** ne demande rien ; le stepper personnes non plus
 - [ ] Rétention (US-14, RG-24) : les semaines de plus de 12 semaines ne s'accumulent pas indéfiniment en base (purge au chargement de session)
-- [ ] Réglages (US-15, RG-25) : l'engrenage de la nav ouvre `/reglages` ; on règle le plafond de chaque créneau (segmenté Rapide/Normal/Long) et le nombre de personnes par défaut
+- [ ] Réglages (US-15, RG-25) : l'**avatar** de la nav ouvre `/profil` (#22), d'où le lien « Réglages de génération → » mène à `/reglages` ; on y règle le plafond de chaque créneau (segmenté Rapide/Normal/Long) et le nombre de personnes par défaut
 - [ ] Réglages — enregistrement explicite : « Enregistrer » est désactivé tant que rien ne change ; un changement non enregistré est perdu au rechargement ; après enregistrement, la valeur persiste (rechargement / autre appareil)
 - [ ] Réglages — effet : la génération complète **et** le « ↺ changer » respectent les plafonds ; un planning généré porte le nombre de personnes par défaut choisi
 - [ ] Réglages — bonus : « Réinitialiser » repositionne sur les défauts (sans sauver) ; l'aperçu « N recettes éligibles » se met à jour ; une config infaisable bloque l'enregistrement avec un message
@@ -61,6 +62,7 @@
 - [ ] Catalogue global : les recettes globales sans viande/poisson portent le badge (auto-tag heuristique)
 - [ ] Préférence de génération (RG-26) : sur `/reglages`, activer « privilégier le végétarien » sur un créneau, enregistrer → après génération, ce créneau reçoit des recettes végé en priorité ; l'aperçu « N recettes végétariennes éligibles » s'affiche quand l'interrupteur est actif ; le réglage persiste (rechargement)
 - [ ] Avertissement végé souple : avec trop peu de recettes végé, la génération aboutit quand même et un toast signale le nombre de repas non végé ; « ↺ changer » sur un créneau végé sans recette végé disponible remplace quand même et prévient
+- [ ] Avertissements de dégradation (RG-26/27/28, #168) : selon le vivier, les toasts « N repas non végé / N jours sans légume / N repas hors-saison » s'affichent après génération, accordés en nombre (1 repas… / N repas…)
 
 ## 2. UI / Responsive
 
@@ -88,7 +90,7 @@
 
 ## 3. Données
 
-- [ ] `data/recettes.json` : JSON valide, ~25 recettes minimum
+- [ ] `data/recettes.json` : JSON valide, ~74 recettes (asset d'amorçage du catalogue global — source de vérité = Supabase)
 - [ ] Chaque recette a un `id` unique, un `nom`, un `tempsPreparation` du référentiel (rapide/normal/long)
 - [ ] Toutes les unités et catégories appartiennent aux référentiels de la section 5 des specs
 - [ ] Toutes les quantités sont strictement positives
@@ -97,7 +99,7 @@
 
 ## 4. Régressions
 
-- [ ] `npm run test:run` — tests unitaires verts (130 attendus)
+- [ ] `npm run test:run` — tous les tests unitaires verts (la suite s'étoffe à chaque PR ; aucun échec, aucun « 0 test exécuté »)
 - [ ] `npm run test:e2e` — tests e2e verts
 - [ ] `npx tsc --noEmit` — zéro erreur TypeScript
 - [ ] `npm run lint` — zéro erreur ESLint
