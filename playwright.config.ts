@@ -1,5 +1,10 @@
 import { defineConfig } from "@playwright/test";
 
+// Specs à comptes JETABLES (emails uniques par run, disjoints du compte de test
+// partagé) → parallélisables sans course de données. Tout le reste écrit le
+// compte partagé et reste sérialisé (cf. `workers` + projets ci-dessous).
+const SPECS_JETABLE = /(onboarding|acquisition|foyer-clonage|foyer-rg29)\.spec\.ts$/;
+
 // Configuration Playwright — tests e2e des parcours critiques (ADR-05).
 //
 // Particularités du projet :
@@ -19,8 +24,12 @@ export default defineConfig({
   // test qui pendrait, pour qu'il échoue (nommé) au lieu de laisser le job
   // courir jusqu'au mur des 15 min. Marge pour la latence backend distant.
   timeout: 60_000,
-  // Un seul worker : les tests partagent le même serveur dev et manipulent
-  // le localStorage — la sérialisation évite tout aléa.
+  // Défaut prudent : un seul worker. La plupart des specs écrivent dans le MÊME
+  // compte de test partagé (planning/coches/réglages/recettes) → les paralléliser
+  // les ferait se courir dessus. La CI relève ce plafond UNIQUEMENT pour le projet
+  // « e2e-jetable » (specs à comptes jetables uniques, sûres en parallèle) via
+  // `--project=e2e-jetable --workers=N` ; le projet « e2e-partage » reste à 1.
+  // En local (un seul `playwright test`), on garde 1 → comportement inchangé.
   workers: 1,
   // Les e2e tapent une vraie instance Supabase (staging en CI) : la latence
   // réseau peut faire dépasser ponctuellement un timeout (lecture après
@@ -45,19 +54,37 @@ export default defineConfig({
     viewport: { width: 390, height: 844 },
   },
   projects: [
-    // Authentification unique avant tous les tests.
+    // Authentification unique avant tous les tests (connexion du compte partagé
+    // → e2e/.auth/user.json).
     { name: "setup", testMatch: /auth\.setup\.ts/ },
+    // Partition « compte partagé » : toutes les specs SAUF celles à comptes
+    // jetables. Écrivent le même compte de test → exécutées en série (workers:1).
     {
-      name: "chromium",
+      name: "e2e-partage",
+      testMatch: /\.spec\.ts$/,
+      testIgnore: SPECS_JETABLE,
+      use: { storageState: "e2e/.auth/user.json" },
+      dependencies: ["setup"],
+    },
+    // Partition « comptes jetables » : chaque spec crée ses propres comptes
+    // (emails uniques par run) → aucune collision, donc parallélisable en CI
+    // (`--project=e2e-jetable --workers=N`). storageState fourni par cohérence
+    // (ces specs ouvrent en réalité leurs propres contextes vierges).
+    {
+      name: "e2e-jetable",
+      testMatch: SPECS_JETABLE,
       use: { storageState: "e2e/.auth/user.json" },
       dependencies: ["setup"],
     },
   ],
   webServer: {
-    // Lance le serveur dev si aucun ne tourne déjà sur le port 3000.
-    command: "npm run dev",
+    // En CI : build de PROD + `next start` (pas de compilation à la demande ni de
+    // runtime dev → e2e nettement plus rapides). En local : `next dev` pour garder
+    // l'itération rapide (les e2e ne se lancent pas en local — .env.local = prod).
+    command: process.env.CI ? "npm run build && npm run start" : "npm run dev",
     url: "http://localhost:3000",
     reuseExistingServer: !process.env.CI,
-    timeout: 60_000,
+    // Marge pour le `next build` à froid en CI (compilation complète avant start).
+    timeout: 180_000,
   },
 });

@@ -25,34 +25,42 @@ on:
   workflow_dispatch:
 
 jobs:
-  test:
+  # Lint + tests unitaires — indépendant de Supabase/Playwright, tourne EN
+  # PARALLÈLE des e2e (plus sur le chemin critique de l'e2e).
+  unit:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
-
       - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
-
       - name: Installer les dépendances
         run: npm ci
-
       # Ni `next build` (Next 16) ni les tests ne lancent ESLint :
       # sans cette étape, une dépendance qui casse le lint passe en CI
       # (vécu avec le bump eslint 10, incompatible eslint-config-next).
       - name: Lint (ESLint)
         run: npm run lint
-
       - name: Tests unitaires (Vitest)
         # `vitest` détecte CI=true et tourne en mode single-run, pas en watch.
         run: npm run test
 
-      # Applique les migrations sur le STAGING avant les e2e — garantit que
-      # les tests tournent sur le schéma de la branche. `db push` est
-      # idempotent : seules les migrations absentes de l'historique distant
-      # (supabase_migrations.schema_migrations) sont appliquées.
+  # Applique les migrations sur le STAGING UNE SEULE FOIS avant les e2e (les deux
+  # partitions e2e en dépendent). `db push` est idempotent ; le faire dans un job
+  # à part évite deux `db push` concurrents (course sur l'historique de migration).
+  migrate-staging:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - name: Installer les dépendances
+        run: npm ci
       - name: Appliquer les migrations (staging)
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
@@ -61,10 +69,36 @@ jobs:
           npx supabase link --project-ref upxoxrjumxpzumakawiv
           npx supabase db push
 
-      # auth.setup.ts et `next dev` lisent .env.local (pas process.env) :
-      # on le génère depuis les secrets avant de lancer les e2e.
-      # Les secrets STAGING_* sont mappés vers les noms de variables attendus
-      # par l'app — les e2e pointent ainsi vers l'instance staging.
+  # E2E en DEUX partitions parallèles (cf. projets playwright) :
+  #  - partage : specs du compte de test partagé → série (workers:1) ;
+  #  - jetable : specs à comptes jetables uniques → parallèle (workers:4).
+  # Chaque partition build l'app en prod (webServer) et tourne concurremment.
+  e2e:
+    needs: migrate-staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: partage
+            project: e2e-partage
+            workers: 1
+          - name: jetable
+            project: e2e-jetable
+            workers: 4
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - name: Installer les dépendances
+        run: npm ci
+
+      # auth.setup.ts et le build Next lisent .env.local (pas process.env) :
+      # on le génère depuis les secrets. Les NEXT_PUBLIC_* sont inlinés AU BUILD
+      # → ce fichier doit exister avant `next build` (lancé par le webServer).
       - name: Générer .env.local depuis les secrets (staging)
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
@@ -75,11 +109,21 @@ jobs:
             echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY"
           } > .env.local
 
+      # Cache du navigateur Playwright (évite le re-téléchargement à chaque run) :
+      # clé sur la version de @playwright/test via package-lock.json.
+      - name: Cache des navigateurs Playwright
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            playwright-${{ runner.os }}-
+
       - name: Installer le navigateur Playwright
         run: npx playwright install --with-deps chromium
 
-      - name: Tests e2e (Playwright)
-        run: npx playwright test
+      - name: Tests e2e (Playwright) — partition ${{ matrix.name }}
+        run: npx playwright test --project=${{ matrix.project }} --workers=${{ matrix.workers }}
 
       # En cas d'échec e2e, le rapport HTML (traces incluses) est téléchargeable
       # depuis l'onglet Actions du run.
@@ -87,7 +131,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: playwright-report
+          name: playwright-report-${{ matrix.name }}
           # test-results/ porte les traces .zip ET les captures d'échec
           # (screenshot: only-on-failure) — lisibles directement.
           path: |
@@ -97,14 +141,14 @@ jobs:
           if-no-files-found: ignore
 
   # Applique les migrations sur la PROD — uniquement sur push vers main
-  # (jamais sur les PR), et seulement si les tests sont verts.
+  # (jamais sur les PR), et seulement si tout est vert (unit + les 2 partitions e2e).
   # Tourne toujours avec le coffre Actions (un push n'est jamais un
   # événement Dependabot), d'où SUPABASE_DB_PASSWORD dans ce seul coffre.
   migrate-prod:
     # push sur main (nominal) OU déclenchement manuel (rattrapage si le run push
     # d'un merge a été zappé par GitHub).
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-    needs: test
+    needs: [unit, e2e]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
