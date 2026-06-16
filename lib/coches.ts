@@ -10,7 +10,7 @@
 // revérifier cet article, le reste de son chariot est préservé.
 
 import { cleAgregation } from "@/lib/courses"
-import type { Ingredient, ListeCourses } from "@/types"
+import type { Ingredient, LignesCourses, ListeCourses } from "@/types"
 
 // Clé d'agrégation → quantité au moment du cochage (RG-12).
 export type Coches = Record<string, number>
@@ -75,6 +75,37 @@ export function trierAvecCoches(
   const nonCoches = ingredients.filter((i) => !estCoche(coches, i))
   const cochesEnFin = ingredients.filter((i) => estCoche(coches, i))
   return [...nonCoches, ...cochesEnFin]
+}
+
+/**
+ * Une catégorie est « terminée » (RG-39, #111) quand elle contient au moins
+ * un article ET que tous ses articles sont cochés (coches valides, RG-12).
+ * Une catégorie vide n'est jamais terminée.
+ */
+export function categorieTerminee(
+  ligne: LignesCourses,
+  coches: Coches
+): boolean {
+  return (
+    ligne.ingredients.length > 0 &&
+    ligne.ingredients.every((i) => estCoche(coches, i))
+  )
+}
+
+/**
+ * Trie les catégories pour l'affichage (RG-39, #111) : catégories non
+ * terminées d'abord (ordre canonique RG-05 préservé), puis catégories
+ * terminées (même ordre canonique entre elles). Tri stable : on partitionne
+ * sans réordonner à l'intérieur de chaque groupe, ce qui glisse en bas de
+ * liste une catégorie dont tous les articles viennent d'être cochés.
+ */
+export function trierCategoriesAvecCoches(
+  lignes: LignesCourses[],
+  coches: Coches
+): LignesCourses[] {
+  const enCours = lignes.filter((l) => !categorieTerminee(l, coches))
+  const terminees = lignes.filter((l) => categorieTerminee(l, coches))
+  return [...enCours, ...terminees]
 }
 
 /**

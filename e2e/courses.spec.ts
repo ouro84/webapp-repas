@@ -196,6 +196,57 @@ test("une section de catégorie se replie et se déplie (US-05)", async ({ page 
   await expect(tagliatelles).toBeVisible();
 });
 
+test("une catégorie entièrement cochée glisse en bas de liste, titre rayé (#111)", async ({
+  page,
+}) => {
+  await page.addInitScript(
+    (contenu) => localStorage.setItem("planning_courant", contenu),
+    JSON.stringify(planningDeterministe())
+  );
+  await page.goto("/courses");
+
+  // Titres de section dans l'ordre du DOM (catégories normales puis fond de
+  // placard, toujours en dernier). « Viandes & Poissons » n'a qu'un article
+  // (lardons) → cocher cet article termine la catégorie.
+  const titres = page.locator("main section h2 button");
+
+  // Ordre canonique initial (RG-05).
+  await expect(titres).toHaveText([
+    "Viandes & Poissons",
+    "Légumes & Fruits",
+    "Produits frais",
+    "Épicerie",
+    "Fond de placard",
+  ]);
+
+  // RG-39 : cocher le dernier (seul) article de Viandes → la catégorie glisse
+  // en bas des catégories normales, juste avant le fond de placard.
+  await page.getByRole("checkbox", { name: /lardons/ }).click();
+  await expect(titres).toHaveText([
+    "Légumes & Fruits",
+    "Produits frais",
+    "Épicerie",
+    "Viandes & Poissons",
+    "Fond de placard",
+  ]);
+
+  // RG-39 : titre rayé, et la section reste ouverte (article visible).
+  const viandes = page.getByRole("button", { name: "Viandes & Poissons" });
+  await expect(viandes).toHaveCSS("text-decoration-line", "line-through");
+  await expect(page.getByRole("checkbox", { name: /lardons/ })).toBeVisible();
+
+  // RG-39 : décocher fait remonter la catégorie à sa place canonique, sans rayé.
+  await page.getByRole("checkbox", { name: /lardons/ }).click();
+  await expect(titres).toHaveText([
+    "Viandes & Poissons",
+    "Légumes & Fruits",
+    "Produits frais",
+    "Épicerie",
+    "Fond de placard",
+  ]);
+  await expect(viandes).toHaveCSS("text-decoration-line", "none");
+});
+
 test("regénérer le planning réinitialise toutes les coches (RG-13)", async ({
   page,
 }) => {

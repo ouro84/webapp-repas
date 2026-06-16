@@ -758,6 +758,16 @@ Une génération complète de planning réinitialise toutes les coches. Un rempl
 
 Les articles du fond de placard sont cochables (même comportement visuel) mais exclus du compteur de progression « n/N », qui ne porte que sur les articles à acheter.
 
+### RG-39 — Catégorie terminée : glissement en bas de liste (US-05, #111)
+
+Une catégorie est **terminée** lorsqu'elle contient au moins un article **et** que tous ses articles sont cochés (coches valides au sens RG-12). Comportement, en miroir de RG-11 d'un cran au-dessus (article → catégorie) :
+
+- **Tri** : les catégories terminées glissent **en bas** de la liste ; les catégories en cours restent en tête. À l'intérieur de chaque groupe, l'ordre canonique des catégories (RG-05) est préservé (tri stable).
+- **Repère visuel** : le titre d'une catégorie terminée est **rayé et atténué** (même langage que les articles cochés), sans autre changement de structure.
+- **Pas de repli automatique** : la catégorie reste **ouverte** ; le repli manuel (chevron) demeure disponible et indépendant. Choix de design assumé : éviter le mouvement de contenu sous le doigt en magasin, la pénalité d'annulation et le conflit auto/manuel.
+- **Réversibilité** : décocher un article fait remonter la catégorie à sa place canonique parmi les catégories en cours, et retire le rayé — sans geste supplémentaire. L'invalidation d'une coche par changement de quantité (RG-12) produit le même retour automatique.
+- **Fond de placard** : son titre se raye quand tous ses articles sont vérifiés, mais il **reste toujours en dernier** (hors progression, RG-14) — pas de réordonnancement.
+
 ### RG-19 — Snapshot d'annulation (US-09)
 
 Avant toute action destructive sur le planning — regénération (US-09), remplacement de slot (US-04) ou sélection manuelle (US-06) — un snapshot **mono-niveau** est capturé en `localStorage` (clé `planning_snapshot`, cf. 5.6) : il fige à la fois `planning_courant` **et** `courses_cochees`. L'annulation réécrit les deux clés à l'identique — elle **inverse donc l'effacement des coches de RG-13**. Règles :
