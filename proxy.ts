@@ -3,6 +3,7 @@
 // dépréciée en Next 16. Gère le rafraîchissement de session Supabase et les
 // redirections d'accès (routes protégées / routes d'auth).
 import { createServerClient } from '@supabase/ssr'
+import type { User } from '@supabase/supabase-js'
 import { NextResponse, type NextRequest } from 'next/server'
 
 // Construit une URL de redirection en PRÉSERVANT le code d'invitation présent
@@ -48,7 +49,17 @@ export async function proxy(request: NextRequest) {
 
   // Rafraîchit la session si elle a expiré
   // Ne pas écrire de logique entre createServerClient et getUser()
-  const { data: { user } } = await supabase.auth.getUser()
+  // Encadré (#169) : si Supabase est indisponible, on dégrade en « non
+  // connecté » plutôt que de laisser le proxy crasher (500 sur TOUTES les
+  // routes filtrées, app entièrement inaccessible). Les routes protégées
+  // redirigeront alors vers /login.
+  let user: User | null = null
+  try {
+    const { data } = await supabase.auth.getUser()
+    user = data.user
+  } catch (erreur) {
+    console.error("proxy : récupération de la session échouée.", erreur)
+  }
 
   const pathname = request.nextUrl.pathname
 
@@ -71,14 +82,20 @@ export async function proxy(request: NextRequest) {
   // #22). On EXEMPTE /api/* et /auth/* (déconnexion, reset mot de passe) : ni
   // redirection ni requête, pour ne pas casser ces flux ni les ralentir.
   if (user && !pathname.startsWith("/api") && !pathname.startsWith("/auth")) {
-    const { data } = await supabase
-      .from("profiles")
-      .select("onboarding_complete")
-      .eq("user_id", user.id)
-      .single()
-    // Fail-open sur erreur (profil illisible/transitoire) : on considère
-    // l'utilisateur onboardé pour ne jamais le piéger dans une boucle.
-    const onboarde = data ? data.onboarding_complete : true
+    // Fail-open sur erreur (profil illisible/transitoire OU Supabase
+    // indisponible, #169) : on considère l'utilisateur onboardé pour ne jamais
+    // le piéger dans une boucle ni crasher le proxy.
+    let onboarde = true
+    try {
+      const { data } = await supabase
+        .from("profiles")
+        .select("onboarding_complete")
+        .eq("user_id", user.id)
+        .single()
+      onboarde = data ? data.onboarding_complete : true
+    } catch (erreur) {
+      console.error("proxy : lecture de l'onboarding échouée (fail-open).", erreur)
+    }
 
     if (!onboarde && pathname !== "/bienvenue") {
       return NextResponse.redirect(urlPreservantCode("/bienvenue", request))

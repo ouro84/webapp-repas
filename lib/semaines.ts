@@ -94,6 +94,14 @@ export function decalageEntre(a: string, b: string): number {
 }
 
 // Lundi (date locale) d'une semaine ISO "AAAA-Wnn" — inverse de semaineISO.
+//
+// Arithmétique calendaire en heure LOCALE, volontairement (#171) : semaineISO()
+// reconstruit l'identifiant à partir des getters LOCAUX (getFullYear/Month/Date)
+// de la date qu'on lui passe. Produire ici un lundi en date locale est donc
+// cohérent et garantit le round-trip exact `semaineDecalee(s, 0) === s` (testé).
+// Le résultat est le jour calendaire local visé — aucune conversion UTC en jeu,
+// donc indépendant du fuseau. Ne PAS « UTC-ifier » sans adapter semaineISO en
+// miroir : on casserait le round-trip (faux positif d'audit écarté).
 function lundiDeSemaine(semaine: string): Date {
   const m = /^(\d{4})-W(\d{2})$/.exec(semaine)
   if (!m) return new Date()

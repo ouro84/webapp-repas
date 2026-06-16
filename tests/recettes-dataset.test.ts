@@ -118,4 +118,34 @@ describe("data/recettes.json — intégrité du dataset", () => {
       ).not.toThrow();
     }
   });
+
+  // #172 — jumeau JS/SQL de l'heuristique d'accompagnement. La migration
+  // auto-tague le catalogue global en désaccentuant par
+  // `translate(lower(nom), 'àâäéèêëïîôöùûüç', 'aaaeeeeiioouuuc')`, tandis que le
+  // JS (lib/accompagnement.ts) désaccentue par NFD (qui couvre TOUS les accents).
+  // Pour que les deux taguent IDENTIQUEMENT, aucun nom d'ingrédient ne doit
+  // porter un accent décomposable hors de l'ensemble couvert par le SQL (ex. á,
+  // í — non français). Ce test verrouille le contrat sur le catalogue réel.
+  test("désaccentuation JS (NFD) == SQL (translate) sur chaque nom d'ingrédient (#172)", () => {
+    const ACCENTS_SQL = "àâäéèêëïîôöùûüç";
+    const CIBLE_SQL = "aaaeeeeiioouuuc";
+    const translateSQL = (nom: string): string =>
+      [...nom.toLowerCase()]
+        .map((c) => {
+          const i = ACCENTS_SQL.indexOf(c);
+          return i >= 0 ? CIBLE_SQL[i] : c;
+        })
+        .join("");
+    const normaliserJS = (nom: string): string =>
+      nom.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+
+    for (const r of RECETTES) {
+      for (const ing of r.ingredients) {
+        expect(
+          translateSQL(ing.nom),
+          `divergence twin JS/SQL sur l'ingrédient « ${ing.nom} » (${r.id})`
+        ).toBe(normaliserJS(ing.nom));
+      }
+    }
+  });
 });

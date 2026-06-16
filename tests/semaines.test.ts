@@ -93,6 +93,19 @@ describe("semaineDecalee (#5)", () => {
     expect(semaineDecalee("2026-W53", 1)).toBe("2027-W01");
     expect(semaineDecalee("2027-W01", -1)).toBe("2026-W53");
   });
+
+  // Round-trip semaineDecalee(s, 0) === s = semaineISO(lundiDeSemaine(s)) :
+  // garde-fou du référentiel calendaire (#171). Verrouille la cohérence
+  // lundiDeSemaine (local) ↔ semaineISO (getters locaux) : un passage erroné en
+  // UTC casserait cette identité sur certaines semaines / fuseaux.
+  it("round-trip exact sur des semaines variées et aux bords d'année (#171)", () => {
+    for (const s of [
+      "2025-W01", "2025-W52", "2026-W01", "2026-W23", "2026-W53",
+      "2027-W01", "2028-W09", "2030-W52",
+    ]) {
+      expect(semaineDecalee(s, 0)).toBe(s);
+    }
+  });
 });
 
 describe("saisonDeSemaine (#23, RG-02)", () => {

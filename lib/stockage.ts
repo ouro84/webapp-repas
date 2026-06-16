@@ -38,18 +38,36 @@ function creerStoreLocal(cle: string): StoreLocal {
       }
     },
     lire(): string | null {
-      return localStorage.getItem(cle)
+      // localStorage peut lever (mode privé strict Safari/ITP) — on dégrade en
+      // « pas de cache » plutôt que de casser le rendu (#170).
+      try {
+        return localStorage.getItem(cle)
+      } catch (erreur) {
+        console.error(`localStorage indisponible (lecture "${cle}").`, erreur)
+        return null
+      }
     },
     // Pas de localStorage côté serveur : prérendu en état vide.
     lireServeur(): null {
       return null
     },
     ecrire(valeur: string): void {
-      localStorage.setItem(cle, valeur)
+      // setItem peut lever (quota dépassé, mode privé) : le cache local est
+      // best-effort (la base reste la source de vérité, #6) → on ne bloque pas
+      // l'app, mais on notifie quand même les abonnés de l'intention (#170).
+      try {
+        localStorage.setItem(cle, valeur)
+      } catch (erreur) {
+        console.error(`localStorage indisponible (écriture "${cle}").`, erreur)
+      }
       notifier()
     },
     effacer(): void {
-      localStorage.removeItem(cle)
+      try {
+        localStorage.removeItem(cle)
+      } catch (erreur) {
+        console.error(`localStorage indisponible (effacement "${cle}").`, erreur)
+      }
       notifier()
     },
   }
