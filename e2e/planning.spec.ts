@@ -574,6 +574,25 @@ test("annuler une regénération restaure le planning précédent à l'identique
   await expect.poll(async () => liste.innerText()).toBe(planningInitial);
 });
 
+test("annuler une regénération au clavier (Ctrl/Cmd+Z) restaure le planning (US-09, RG-19)", async ({
+  page,
+}) => {
+  await page.getByRole("button", { name: "Générer mon planning" }).click();
+  const liste = page.locator("main ul");
+  await expect(page.locator("main ul > li")).toHaveCount(7);
+  const planningInitial = await liste.innerText();
+
+  await page.getByRole("button", { name: "Regénérer" }).click();
+  await expect(page.getByText("Planning regénéré")).toBeVisible();
+
+  // Raccourci clavier (et non le bouton du toast) : le handler de la page écoute
+  // Ctrl/Cmd+Z hors champ de saisie. En CI (Linux) → Control.
+  await page.keyboard.press("Control+z");
+
+  await expect(page.getByText("Annulé")).toBeVisible();
+  await expect.poll(async () => liste.innerText()).toBe(planningInitial);
+});
+
 test("annuler une regénération restaure aussi les coches effacées (US-09, RG-13/RG-19)", async ({
   page,
 }) => {

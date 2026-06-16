@@ -149,6 +149,45 @@ export async function marquerOnboardingCompletDistant(
 }
 
 /**
+ * Lit les réglages de génération d'un compte (par mot de passe) via GET REST —
+ * sert à vérifier que l'onboarding les a bien calibrés (#174, RG-37). Renvoie la
+ * ligne `reglages` du compte (RLS propriétaire) ou null si absente.
+ */
+export async function lireReglagesDistants(
+  request: APIRequestContext,
+  email: string,
+  password: string
+): Promise<{
+  personnes_defaut: number;
+  vege_dejeuner_semaine: boolean;
+  vege_diner_semaine: boolean;
+} | null> {
+  const url = lireEnvLocal("NEXT_PUBLIC_SUPABASE_URL");
+  const anon = lireEnvLocal("NEXT_PUBLIC_SUPABASE_ANON_KEY");
+  const auth = await request.post(`${url}/auth/v1/token?grant_type=password`, {
+    headers: { apikey: anon, "Content-Type": "application/json" },
+    data: { email, password },
+  });
+  if (!auth.ok()) {
+    throw new Error(`Auth REST de ${email} impossible : HTTP ${auth.status()}`);
+  }
+  const { access_token: jeton } = (await auth.json()) as { access_token: string };
+  const res = await request.get(
+    `${url}/rest/v1/reglages?select=personnes_defaut,vege_dejeuner_semaine,vege_diner_semaine`,
+    { headers: { apikey: anon, Authorization: `Bearer ${jeton}` } }
+  );
+  if (!res.ok()) {
+    throw new Error(`Lecture des réglages impossible : HTTP ${res.status()}`);
+  }
+  const rows = (await res.json()) as Array<{
+    personnes_defaut: number;
+    vege_dejeuner_semaine: boolean;
+    vege_diner_semaine: boolean;
+  }>;
+  return rows[0] ?? null;
+}
+
+/**
  * Réinitialise l'identité du profil du compte de test (#22) : prénom et couleur
  * d'avatar remis à null via PATCH REST. Le compte étant partagé, un prénom
  * résiduel ferait dériver l'avatar de la nav d'un run à l'autre. NE touche PAS
