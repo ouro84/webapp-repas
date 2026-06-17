@@ -11,7 +11,9 @@ _La question du soir a enfin sa réponse. Voici comment obtenir ton premier plan
 L'app te pose **deux questions** pour calibrer ton premier planning :
 
 - **« Comment t'appelles-tu ? »** → ton prénom (sert à personnaliser ton profil et tes invitations).
+
 - **« Vous êtes combien à table ? »** → le nombre de personnes, réglable avec les boutons **−** / **+**. C'est la base utilisée pour les portions de tes recettes.
+
 - **« Foyer végétarien »** (interrupteur) → s'il est activé, l'app privilégie les recettes végé **en semaine**. Tu pourras tout ajuster plus tard.
 
 Touche **« Suivant »**.
@@ -21,6 +23,7 @@ Touche **« Suivant »**.
 Deux choix :
 
 - **Rejoindre un proche** : saisis le **code d'invitation** qu'il t'a transmis, puis **« Rejoindre »**. Vous partagerez recettes, planning et liste de courses.
+
 - **Commencer seul** : touche **« Démarrer seul·e »**. Tu pourras inviter quelqu'un quand tu veux.
 
 ## 4. Ton premier planning est prêt

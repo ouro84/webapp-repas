@@ -7,15 +7,45 @@
 //   - public/aide/<slug>/*        (images rapatriées — les URLs Notion expirent)
 //
 // La page /aide de l'app lit ces fichiers au build (SSG). Notion reste la
-// SOURCE DE VÉRITÉ ; ce script est le seul pont. À relancer après toute
-// modification publiée dans Notion.
+// SOURCE DE VÉRITÉ ; ce script est le seul pont.
 //
-// Usage : NOTION_TOKEN=secret_xxx node scripts/pull-aide.mjs
-// Requiert une intégration interne Notion partagée sur la page « Guide
-// utilisateur — On mange quoi ? » (qui contient la base).
+// DEUX usages :
+//   - `npm run pull:aide`            : pull manuel (échoue si pas de token / erreur).
+//   - `npm run pull:aide -- --prebuild` (hook `prebuild`, lancé avant `next build`) :
+//     mode TOLÉRANT — pas de token OU erreur réseau ⇒ on conserve le contenu
+//     committé et on sort en succès (le build ne casse jamais à cause de Notion).
+//
+// AUTONOMIE : avec NOTION_TOKEN présent dans l'env de build (Vercel), chaque
+// déploiement régénère l'aide depuis le Notion publié — aucun pull manuel requis.
+//
+// Token : NOTION_TOKEN (env, ou .env.local chargé ci-dessous). Intégration
+// interne Notion partagée sur la page « Guide utilisateur — On mange quoi ? ».
 
 import { mkdir, rm, writeFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
+
+const MODE_PREBUILD = process.argv.includes("--prebuild");
+
+// ── Chargement de .env.local (le script ne tourne pas dans Next) ──────────────
+// Remplit NOTION_TOKEN depuis .env.local s'il n'est pas déjà dans l'environnement
+// (en CI/Vercel il vient des vraies variables d'env → ce chargement est inerte).
+function chargerEnvLocal() {
+  if (process.env.NOTION_TOKEN) return;
+  try {
+    const contenu = readFileSync(join(process.cwd(), ".env.local"), "utf8");
+    for (const ligne of contenu.split(/\r?\n/)) {
+      const m = ligne.match(/^\s*NOTION_TOKEN\s*=\s*(.+?)\s*$/);
+      if (m) {
+        process.env.NOTION_TOKEN = m[1].replace(/^["']|["']$/g, "");
+        break;
+      }
+    }
+  } catch {
+    // Pas de .env.local : normal en CI/Vercel, ignoré.
+  }
+}
+chargerEnvLocal();
 
 // ── Configuration ───────────────────────────────────────────────────────────
 
@@ -27,6 +57,7 @@ const NOTION_VERSION = "2022-06-28";
 const API = "https://api.notion.com/v1";
 
 // Ordre canonique des sections (figé ici, pas dans Notion — cf. schéma #97).
+// MIROIR de lib/aide.ts → faire évoluer les deux ensemble.
 const ORDRE_SECTIONS = [
   "Démarrage",
   "Planning",
@@ -40,14 +71,6 @@ const ORDRE_SECTIONS = [
 
 const RACINE_CONTENU = join(process.cwd(), "content", "aide");
 const RACINE_IMAGES = join(process.cwd(), "public", "aide");
-
-if (!TOKEN) {
-  console.error(
-    "Erreur : NOTION_TOKEN manquant.\n" +
-      "Usage : NOTION_TOKEN=secret_xxx node scripts/pull-aide.mjs"
-  );
-  process.exit(1);
-}
 
 // ── Appels API ───────────────────────────────────────────────────────────────
 
@@ -67,7 +90,6 @@ async function notion(chemin, options = {}) {
   return res.json();
 }
 
-// Toutes les lignes publiées de la base (pagination incluse).
 async function listerArticlesPublies() {
   const pages = [];
   let cursor;
@@ -86,7 +108,6 @@ async function listerArticlesPublies() {
   return pages;
 }
 
-// Enfants d'un bloc (ou d'une page), pagination incluse.
 async function listerBlocs(blocId) {
   const blocs = [];
   let cursor;
@@ -119,7 +140,6 @@ function lireProprietes(page) {
 
 // ── Conversion blocs → Markdown ──────────────────────────────────────────────
 
-// Rich text → Markdown inline (gras, italique, code, barré, lien).
 function richTextVersMd(richText = []) {
   return richText
     .map((t) => {
@@ -135,8 +155,9 @@ function richTextVersMd(richText = []) {
     .join("");
 }
 
-// Convertit une liste de blocs en Markdown. `ctx` porte le slug (nommage des
-// images) et un compteur d'images partagé.
+// Convertit des blocs en Markdown. `ctx` = { slug, compteurImage, images } :
+// les images NE SONT PAS écrites ici mais collectées dans ctx.images (write
+// différé après fetch complet, pour ne jamais détruire le contenu sur erreur).
 async function blocsVersMd(blocs, ctx, profondeur = 0) {
   const morceaux = [];
   for (const bloc of blocs) {
@@ -171,14 +192,12 @@ async function blocsVersMd(blocs, ctx, profondeur = 0) {
         morceaux.push(`> ${richTextVersMd(bloc.quote.rich_text)}`);
         break;
       case "callout": {
-        // Callout Notion → blockquote, emoji d'icône conservé en tête.
         const emoji = bloc.callout.icon?.emoji ? `${bloc.callout.icon.emoji} ` : "";
         morceaux.push(`> ${emoji}${richTextVersMd(bloc.callout.rich_text)}`);
         break;
       }
       case "toggle": {
-        // Pas de <details> (HTML brut) pour garder un Markdown pur rendu sans
-        // rehype-raw : le résumé devient un intertitre gras, le corps suit.
+        // Pas de <details> (HTML brut) : Markdown pur, rendu sans rehype-raw.
         const corps = enfants.length ? await blocsVersMd(enfants, ctx) : "";
         morceaux.push(`**${richTextVersMd(bloc.toggle.rich_text)}**\n\n${corps}`);
         break;
@@ -194,7 +213,7 @@ async function blocsVersMd(blocs, ctx, profondeur = 0) {
       case "image": {
         const url = bloc.image.type === "external" ? bloc.image.external.url : bloc.image.file.url;
         const alt = texteBrut(bloc.image.caption);
-        const chemin = await telechargerImage(url, ctx);
+        const chemin = await collecterImage(url, ctx);
         morceaux.push(`![${alt}](${chemin})`);
         break;
       }
@@ -202,18 +221,16 @@ async function blocsVersMd(blocs, ctx, profondeur = 0) {
         morceaux.push(await tableVersMd(bloc));
         break;
       default:
-        // Type non géré (cf. contrat de blocs autorisés #97) : ignoré + log.
         console.warn(`  ⚠ bloc « ${bloc.type} » ignoré (non supporté)`);
     }
   }
-  // Double saut de ligne entre blocs de tête, simple pour les items de liste.
   return morceaux.join("\n\n");
 }
 
 const indenter = (ligne, profondeur) => "  ".repeat(profondeur) + ligne;
 
 async function tableVersMd(bloc) {
-  const lignes = await listerBlocs(bloc.id); // table_row
+  const lignes = await listerBlocs(bloc.id);
   if (lignes.length === 0) return "";
   const cellules = (row) => row.table_row.cells.map((c) => richTextVersMd(c).replace(/\|/g, "\\|"));
   const [entete, ...corps] = lignes.map(cellules);
@@ -222,19 +239,17 @@ async function tableVersMd(bloc) {
   return md.join("\n");
 }
 
-// ── Images ───────────────────────────────────────────────────────────────────
-
-async function telechargerImage(url, ctx) {
+// Télécharge l'image EN MÉMOIRE et la collecte (write différé). Renvoie le
+// chemin public final qui sera servi par Next.
+async function collecterImage(url, ctx) {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Image inaccessible (${res.status}) : ${url}`);
   const buffer = Buffer.from(await res.arrayBuffer());
   const ext = extensionImage(url, res.headers.get("content-type"));
   ctx.compteurImage += 1;
   const nomFichier = `img-${ctx.compteurImage}.${ext}`;
-  const dossier = join(RACINE_IMAGES, ctx.slug);
-  await mkdir(dossier, { recursive: true });
-  await writeFile(join(dossier, nomFichier), buffer);
-  return `/aide/${ctx.slug}/${nomFichier}`; // chemin public servi par Next
+  ctx.images.push({ slug: ctx.slug, nomFichier, buffer });
+  return `/aide/${ctx.slug}/${nomFichier}`;
 }
 
 function extensionImage(url, contentType) {
@@ -248,23 +263,19 @@ function extensionImage(url, contentType) {
 
 // ── Programme principal ──────────────────────────────────────────────────────
 
-async function principal() {
+// Fetch COMPLET en mémoire, PUIS écriture. Sur erreur avant l'écriture, le
+// contenu committé reste intact (important pour le mode --prebuild tolérant).
+async function pull() {
   console.log("Lecture de la base Notion « Guide OMQ »…");
   const pages = await listerArticlesPublies();
   console.log(`${pages.length} article(s) au statut « Publié ».`);
 
-  // Repart d'un dossier propre (supprime les fichiers obsolètes / images périmées).
-  await rm(RACINE_CONTENU, { recursive: true, force: true });
-  await rm(RACINE_IMAGES, { recursive: true, force: true });
-  await mkdir(RACINE_CONTENU, { recursive: true });
-
-  const index = [];
+  const articles = [];
+  const images = [];
   const slugsVus = new Set();
 
   for (const page of pages) {
     const meta = lireProprietes(page);
-
-    // Garde-fous (le build doit échouer plutôt que produire des liens morts).
     if (!meta.slug) throw new Error(`Article « ${meta.titre} » sans slug.`);
     if (slugsVus.has(meta.slug)) throw new Error(`Slug dupliqué : « ${meta.slug} ».`);
     if (!ORDRE_SECTIONS.includes(meta.section)) {
@@ -274,24 +285,62 @@ async function principal() {
 
     console.log(`  • ${meta.section} / ${meta.titre} (${meta.slug})`);
     const blocs = await listerBlocs(page.id);
-    const ctx = { slug: meta.slug, compteurImage: 0 };
+    const ctx = { slug: meta.slug, compteurImage: 0, images };
     const markdown = await blocsVersMd(blocs, ctx);
-    await writeFile(join(RACINE_CONTENU, `${meta.slug}.md`), `${markdown}\n`, "utf8");
-    index.push(meta);
+    articles.push({ meta, markdown });
   }
 
-  // Tri : section canonique puis Ordre croissant.
-  index.sort((a, b) => {
-    const ds = ORDRE_SECTIONS.indexOf(a.section) - ORDRE_SECTIONS.indexOf(b.section);
-    return ds !== 0 ? ds : a.ordre - b.ordre;
+  articles.sort((a, b) => {
+    const ds =
+      ORDRE_SECTIONS.indexOf(a.meta.section) - ORDRE_SECTIONS.indexOf(b.meta.section);
+    return ds !== 0 ? ds : a.meta.ordre - b.meta.ordre;
   });
 
+  // — À partir d'ici seulement, on touche au système de fichiers —
+  await rm(RACINE_CONTENU, { recursive: true, force: true });
+  await rm(RACINE_IMAGES, { recursive: true, force: true });
+  await mkdir(RACINE_CONTENU, { recursive: true });
+
+  for (const { meta, markdown } of articles) {
+    await writeFile(join(RACINE_CONTENU, `${meta.slug}.md`), `${markdown}\n`, "utf8");
+  }
+  for (const { slug, nomFichier, buffer } of images) {
+    const dossier = join(RACINE_IMAGES, slug);
+    await mkdir(dossier, { recursive: true });
+    await writeFile(join(dossier, nomFichier), buffer);
+  }
   await writeFile(
     join(RACINE_CONTENU, "index.json"),
-    `${JSON.stringify(index, null, 2)}\n`,
+    `${JSON.stringify(articles.map((a) => a.meta), null, 2)}\n`,
     "utf8"
   );
-  console.log(`\n✓ ${index.length} article(s) écrit(s) dans content/aide/.`);
+  console.log(`\n✓ ${articles.length} article(s) écrit(s) dans content/aide/.`);
+}
+
+async function principal() {
+  if (!TOKEN) {
+    const msg =
+      "NOTION_TOKEN absent. Crée une intégration Notion et partage la page " +
+      "« Guide utilisateur — On mange quoi ? » avec elle, puis renseigne NOTION_TOKEN.";
+    if (MODE_PREBUILD) {
+      console.log(`[prebuild] ${msg}\n[prebuild] Pull ignoré — contenu committé de content/aide conservé.`);
+      return;
+    }
+    console.error(`Erreur : ${msg}`);
+    process.exit(1);
+  }
+
+  try {
+    await pull();
+  } catch (e) {
+    if (MODE_PREBUILD) {
+      // Build résilient : une panne Notion / un token invalide ne casse pas le
+      // déploiement — on garde le contenu committé.
+      console.warn(`[prebuild] Pull échoué (${e.message}). Contenu committé conservé.`);
+      return;
+    }
+    throw e;
+  }
 }
 
 principal().catch((e) => {

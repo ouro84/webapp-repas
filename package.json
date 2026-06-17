@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "prebuild": "node scripts/pull-aide.mjs --prebuild",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
