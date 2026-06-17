@@ -10,7 +10,8 @@
     "test": "vitest",
     "test:run": "vitest run",
     "test:ui": "vitest --ui",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "pull:aide": "node scripts/pull-aide.mjs"
   },
   "dependencies": {
     "@sentry/nextjs": "^10.57.0",
