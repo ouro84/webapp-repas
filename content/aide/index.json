@@ -1,0 +1,156 @@
+[
+  {
+    "titre": "Démarrer en 2 minutes",
+    "slug": "demarrer",
+    "section": "Démarrage",
+    "ordre": 10,
+    "resume": "Crée ton compte et obtiens ton premier planning de la semaine en moins de deux minutes.",
+    "motsCles": [
+      "planning"
+    ],
+    "majLe": "2026-06-17T13:28:00.000Z"
+  },
+  {
+    "titre": "J'ai été invité dans un foyer",
+    "slug": "rejoindre-invitation",
+    "section": "Démarrage",
+    "ordre": 20,
+    "resume": "Tu as reçu un lien ou un code d'invitation : ce que ça implique et comment rejoindre le foyer d'un proche.",
+    "motsCles": [
+      "foyer",
+      "partage"
+    ],
+    "majLe": "2026-06-17T18:25:00.000Z"
+  },
+  {
+    "titre": "Générer et regénérer mon planning",
+    "slug": "generer-planning",
+    "section": "Planning",
+    "ordre": 10,
+    "resume": "Lancer la génération automatique d'une semaine de repas et la relancer.",
+    "motsCles": [
+      "planning"
+    ],
+    "majLe": "2026-06-17T18:25:00.000Z"
+  },
+  {
+    "titre": "Naviguer entre les semaines",
+    "slug": "naviguer-semaines",
+    "section": "Planning",
+    "ordre": 20,
+    "resume": "Consulter et préparer les semaines passées et à venir.",
+    "motsCles": [
+      "planning"
+    ],
+    "majLe": "2026-06-17T18:25:00.000Z"
+  },
+  {
+    "titre": "Changer, choisir, marquer « Restes »",
+    "slug": "modifier-repas",
+    "section": "Planning",
+    "ordre": 30,
+    "resume": "Remplacer un repas, en choisir un manuellement, ou le marquer comme restes.",
+    "motsCles": [
+      "planning",
+      "recettes"
+    ],
+    "majLe": "2026-06-17T18:24:00.000Z"
+  },
+  {
+    "titre": "Le catalogue et mes recettes",
+    "slug": "catalogue-recettes",
+    "section": "Recettes",
+    "ordre": 10,
+    "resume": "Comprendre la différence entre le catalogue par défaut et les recettes de ton foyer.",
+    "motsCles": [
+      "recettes"
+    ],
+    "majLe": "2026-06-17T18:25:00.000Z"
+  },
+  {
+    "titre": "Créer, modifier, supprimer une recette",
+    "slug": "gerer-recettes",
+    "section": "Recettes",
+    "ordre": 20,
+    "resume": "Ajouter tes propres recettes et adapter celles du catalogue.",
+    "motsCles": [
+      "recettes"
+    ],
+    "majLe": "2026-06-17T18:25:00.000Z"
+  },
+  {
+    "titre": "Cocher et organiser ma liste",
+    "slug": "liste-courses",
+    "section": "Courses",
+    "ordre": 10,
+    "resume": "Utiliser la liste de courses agrégée, le fond de placard et les rayons.",
+    "motsCles": [
+      "courses"
+    ],
+    "majLe": "2026-06-17T18:24:00.000Z"
+  },
+  {
+    "titre": "Régler la génération",
+    "slug": "reglages-generation",
+    "section": "Réglages",
+    "ordre": 10,
+    "resume": "Durées de préparation, préférences végé, légumes, saisonnalité, nombre de personnes — et le mode sombre.",
+    "motsCles": [
+      "planning"
+    ],
+    "majLe": "2026-06-17T18:25:00.000Z"
+  },
+  {
+    "titre": "Inviter quelqu'un dans mon foyer",
+    "slug": "inviter-foyer",
+    "section": "Foyer",
+    "ordre": 10,
+    "resume": "Générer un code ou un lien d'invitation et partager ton foyer.",
+    "motsCles": [
+      "foyer",
+      "partage"
+    ],
+    "majLe": "2026-06-17T18:25:00.000Z"
+  },
+  {
+    "titre": "Quitter un foyer",
+    "slug": "quitter-foyer",
+    "section": "Foyer",
+    "ordre": 20,
+    "resume": "Ce qui se passe quand tu quittes un foyer partagé (tu repars avec ta propre copie).",
+    "motsCles": [
+      "foyer"
+    ],
+    "majLe": "2026-06-17T18:25:00.000Z"
+  },
+  {
+    "titre": "Profil, avatar et mot de passe",
+    "slug": "mon-compte",
+    "section": "Mon compte",
+    "ordre": 10,
+    "resume": "Gérer ton identité, ton avatar et la sécurité de ton compte.",
+    "motsCles": [
+      "compte",
+      "mot de passe"
+    ],
+    "majLe": "2026-06-17T18:24:00.000Z"
+  },
+  {
+    "titre": "Questions fréquentes",
+    "slug": "faq",
+    "section": "Dépannage",
+    "ordre": 10,
+    "resume": "Réponses aux problèmes les plus courants.",
+    "motsCles": [],
+    "majLe": "2026-06-17T18:25:00.000Z"
+  },
+  {
+    "titre": "Installer l'app sur mon téléphone",
+    "slug": "installer-pwa",
+    "section": "Dépannage",
+    "ordre": 20,
+    "resume": "Ajouter On mange quoi ? à l'écran d'accueil de ton téléphone.",
+    "motsCles": [],
+    "majLe": "2026-06-17T18:25:00.000Z"
+  }
+]
