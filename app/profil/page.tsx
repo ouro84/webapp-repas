@@ -51,12 +51,21 @@ export default function PageProfil() {
       <div className="mb-8 border-t border-brand-100" />
 
       {/* Passerelle vers la configuration de génération (séparée de l'identité). */}
-      <Link
-        href="/reglages"
-        className="inline-flex items-center gap-1 text-sm font-medium text-brand-700 underline underline-offset-2 transition-colors hover:text-brand-600"
-      >
-        Réglages de génération →
-      </Link>
+      <div className="flex flex-col gap-3">
+        <Link
+          href="/reglages"
+          className="inline-flex items-center gap-1 text-sm font-medium text-brand-700 underline underline-offset-2 transition-colors hover:text-brand-600"
+        >
+          Réglages de génération →
+        </Link>
+        {/* Aide (#97) : route publique, guide d'utilisation. */}
+        <Link
+          href="/aide"
+          className="inline-flex items-center gap-1 text-sm font-medium text-brand-700 underline underline-offset-2 transition-colors hover:text-brand-600"
+        >
+          Aide & guide d’utilisation →
+        </Link>
+      </div>
 
       <div className="mt-8 border-t border-brand-100 pt-6">
         <button
