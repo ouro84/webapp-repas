@@ -9,6 +9,7 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ### Sécurité
 
+- Insertion de recette durcie (#190, audit F-03) : la règle d'accès (RLS) d'insertion d'une recette vérifie désormais que l'**auteur** (`user_id`) enregistré est bien l'utilisateur courant — auparavant seule l'appartenance au foyer était contrôlée, ce qui permettait à un client malveillant d'**attribuer une recette à quelqu'un d'autre** au sein de son propre foyer (usurpation d'auteur, sans fuite de données ni accès hors foyer). Aucun changement visible : la création de recette fonctionne à l'identique. La modification reste possible par **tout membre du foyer** (RG-30, policy de mise à jour inchangée).
 - En-têtes de sécurité HTTP (#188, audit F-01, palier 1/2) : les réponses portent désormais `X-Frame-Options: DENY` (anti-**clickjacking** : l'app ne peut plus être encadrée dans une iframe tierce), `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin` (l'URL complète — dont un éventuel `?code=` d'invitation — ne fuite plus vers une origine tierce) et `Permissions-Policy` (caméra/micro/géoloc coupés, FLoC désactivé). Ajoutés via `next.config.ts` (`headers()`), sans incidence fonctionnelle. **La Content-Security-Policy (palier 2), qui nécessite de lister les origines Supabase/Sentry/Vercel et un passage par `report-only`, fera l'objet d'une livraison séparée.**
 
 ## [2.0.0] - 2026-06-16
