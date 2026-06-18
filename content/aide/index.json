@@ -94,7 +94,7 @@
     "slug": "reglages-generation",
     "section": "Réglages",
     "ordre": 10,
-    "resume": "Durées de préparation, préférences végé, légumes, saisonnalité, nombre de personnes — et le mode sombre.",
+    "resume": "Durées de préparation, préférences végé, légumes, saisonnalité, nombre de personnes.",
     "motsCles": [
       "planning"
     ],
@@ -128,7 +128,7 @@
     "slug": "mon-compte",
     "section": "Mon compte",
     "ordre": 10,
-    "resume": "Gérer ton identité, ton avatar et la sécurité de ton compte.",
+    "resume": "Gérer ton identité, ton avatar, le thème et la sécurité de ton compte.",
     "motsCles": [
       "compte",
       "mot de passe"

@@ -36,4 +36,4 @@ En bas, deux boutons : **« Réinitialiser »** (revient aux valeurs par défaut
 
 ## Le mode sombre
 
-Le mode sombre n'est pas dans cette page : il se règle depuis l'**icône de thème dans la barre de navigation** (à côté de ton avatar). Touche-la pour faire défiler les trois modes — **système**, **clair**, **sombre**. Le mode « système » suit automatiquement le réglage de ton téléphone ou de ton ordinateur.
+Le mode sombre n'est pas dans cette page : il se règle depuis **Mon profil** (l'avatar en haut à droite), section **Préférences** → **Thème**. Choisis parmi **système**, **clair**, **sombre**. Le mode « système » suit automatiquement le réglage de ton téléphone ou de ton ordinateur.

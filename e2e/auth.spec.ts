@@ -56,6 +56,17 @@ test("le skip link mène au contenu de la page de connexion (#60)", async ({
   await expect(page.locator("main#contenu")).toBeVisible();
 });
 
+test("déconnecté, la nav applicative est masquée (#207)", async ({ page }) => {
+  await page.goto("/login");
+  // Pas de liens de section qui rebondiraient vers /login, ni d'avatar/profil.
+  await expect(page.getByRole("link", { name: "Planning" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Courses" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Recettes" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: /Profil/ })).toHaveCount(0);
+  // Nav minimale : le logo (accueil) et l'aide restent accessibles.
+  await expect(page.getByRole("link", { name: "Aide" })).toBeVisible();
+});
+
 test("un échec de connexion affiche une alerte et redonne le focus à l'email (#60)", async ({
   page,
 }) => {

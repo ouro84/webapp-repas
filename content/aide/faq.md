@@ -38,7 +38,7 @@ Sur l'écran de connexion, utilise **« Mot de passe oublié »** : tu recevras 
 
 ## Comment activer le mode sombre ?
 
-Touche l'**icône de thème** dans la barre de navigation (près de ton avatar) pour passer entre **système / clair / sombre**. Voir _Régler la génération_.
+Va dans **Mon profil** (l'avatar en haut à droite) → section **Préférences** → **Thème**, et choisis **système / clair / sombre**. Voir _Profil, avatar et mot de passe_.
 
 ## Comment mettre l'app sur mon écran d'accueil ?
 

@@ -20,6 +20,7 @@ import { reinitialiserCacheFoyer } from "@/lib/sync";
 import { EditionIdentite } from "@/components/profil/edition-identite";
 import { ChangerMotDePasse } from "@/components/profil/changer-mot-de-passe";
 import { PanneauFoyer } from "@/components/profil/panneau-foyer";
+import { SelecteurTheme } from "@/components/ui/selecteur-theme";
 
 export default function PageProfil() {
   async function deconnecter(): Promise<void> {
@@ -48,6 +49,24 @@ export default function PageProfil() {
       <div className="mb-8 border-t border-brand-100" />
 
       <ChangerMotDePasse />
+      <div className="mb-8 border-t border-brand-100" />
+
+      {/* Préférences (#205) : le thème — déplacé de la nav vers le profil, son
+          seul emplacement logique (réglage personnel, consulté rarement). */}
+      <section aria-labelledby="titre-preferences" className="mb-8">
+        <h2 id="titre-preferences" className="mb-4 text-lg font-semibold text-brand-900">
+          Préférences
+        </h2>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <span className="text-sm font-medium text-brand-900">
+            Thème
+            <span className="block text-xs font-normal text-brand-700/85">
+              Clair, sombre, ou selon ton appareil.
+            </span>
+          </span>
+          <SelecteurTheme />
+        </div>
+      </section>
       <div className="mb-8 border-t border-brand-100" />
 
       {/* Passerelle vers la configuration de génération (séparée de l'identité). */}
