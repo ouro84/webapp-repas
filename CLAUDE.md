@@ -29,7 +29,8 @@ Webapp de génération automatique de plannings de repas hebdomadaires, avec lis
 | Fichier | Rôle |
 |---------|------|
 | `SPECS_FONCTIONNELLES.md` | Périmètre MVP, user stories BDD, modèle de données, règles métier — source de vérité pour toute décision de code |
-| `ADR.md` | Stack, structure de dossiers, conventions de commits, workflow Git, règles secrets |
+| `ADR.md` | Stack, structure de dossiers, conventions de commits, workflow Git, règles secrets (dont ADR-10 — durcissement sécurité) |
+| `RAPPORT_AUDIT_SECURITE.md` | Rapport d'audit white box (2026-06-18) — constats F-01→F-08, état (livré/différé), dettes pré-ouverture publique. Référence ponctuelle (pas une lecture de session obligatoire). |
 
 **Lire `SPECS_FONCTIONNELLES.md` et `ADR.md` avant toute session de code.** Ne jamais improviser un choix que ces documents ont déjà tranché.
 

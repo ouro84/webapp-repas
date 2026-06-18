@@ -301,6 +301,28 @@ Aligne le modèle mental utilisateur (« qui je suis » vs « comment l'app gén
 
 ---
 
+## ADR-10 — Durcissement sécurité (audit white box, 2026-06-18)
+
+### Contexte
+Un audit de sécurité white box (cf. `RAPPORT_AUDIT_SECURITE.md`) a passé en revue le modèle d'autorisation (RLS/RPC), l'authentification, la surface serveur et la configuration de déploiement. Conclusion : posture globalement solide (RLS exhaustif, `SECURITY DEFINER` durci, secrets bien gérés), **aucune vulnérabilité critique/élevée**. Huit constats de durcissement (F-01 à F-08) ont été ouverts en issues (#188–#195).
+
+### Décisions
+- **F-01 — En-têtes de sécurité (livré, palier 1)** : en-têtes statiques posés via `headers()` dans `next.config.ts` (`X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy`). HSTS reste fourni par Vercel. **CSP différée (palier 2)** : non triviale (doit lister Supabase REST+`wss`, Sentry, Vercel ; et le script anti-FOUC inline impose `'unsafe-inline'` **ou** un nonce — ce dernier ferait perdre le rendu `PRERENDER`). À livrer d'abord en `Content-Security-Policy-Report-Only`.
+- **F-03 / F-06 — Durcissement RLS & contraintes** : l'insertion de `recette` contraint désormais `user_id` (`user_id IS NULL OR user_id = auth.uid()` — anti-usurpation d'auteur, sans toucher l'UPDATE pour préserver RG-30) ; `ingredient` passe en **lecture authentifiée** (plus `using(true)`), gagne un `CHECK` de longueur et un `UNIQUE (nom, categorie, fond_de_placard)`, avec purge one-shot des orphelins.
+- **F-04 — Rate-limiting → nouveau vendor Upstash** : `POST /api/planning/generer` est borné (10/min/utilisateur) via **Upstash Redis** (`@upstash/ratelimit`), nouvelle dépendance BaaS. **NO-OP si non configuré** (CI/dev sans secrets) et **fail-open** si indisponible — une génération légitime n'est jamais bloquée.
+- **F-05 — Anti-énumération (volet UI livré, volet config différé)** : le message d'inscription ne révèle plus l'existence d'un compte. La **fermeture complète** exige d'**activer la confirmation email en prod** (cf. NOTE PRODUCTION d'ADR-02) — **dette tracée pré-ouverture publique** (#192), au même titre que **F-02** (politique de mot de passe : min ≥ 8 + protection « leaked passwords »).
+- **F-07 / F-08** : sans action (ACAO `*` bénin sur documents publics ; source maps Sentry non uploadées = choix assumé, positif côté vie privée).
+
+### Alternatives écartées
+- **Rate-limiting en mémoire** : inefficace en serverless (instances éphémères) → Upstash retenu.
+- **CSP à nonce immédiate** : perdrait l'optimisation `PRERENDER` des pages statiques → reportée à un palier dédié.
+- **Migration de déduplication des ingrédients** : inutile (0 doublon de triplet constaté sur prod ET staging) → seule la contrainte préventive + purge orphelins a été appliquée.
+
+### Conséquence pratique
+Toute nouvelle origine externe (CDN, API tierce) devra être ajoutée à la future CSP. Le rate-limiting n'est actif qu'avec les secrets Upstash en prod (cf. Gestion des secrets). Les dettes F-02/F-05 sont à solder **avant toute ouverture publique** (cf. checklist #192).
+
+---
+
 ## Règles transversales
 
 ### Gestion des secrets
@@ -308,6 +330,7 @@ Aligne le modèle mental utilisateur (« qui je suis » vs « comment l'app gén
 - `.env.example` contient les noms des variables sans valeur — commité dans Git
 - `.gitignore` configuré **avant** le premier `git add` — sans exception
 - En production (Vercel) : variables d'environnement configurées dans le dashboard Vercel, jamais dans le code
+- **Rate-limiting (#191, ADR-10)** : `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` à poser dans les variables d'env **Vercel (prod)**. **Absentes ⇒ rate-limiter inactif (no-op)** : volontaire en CI/dev. Si la CI devait un jour les lire, les dupliquer dans **les deux coffres** (Actions **et** Dependabot, cf. CLAUDE.md).
 
 ### Convention de commits
 Format : `type: description courte`
