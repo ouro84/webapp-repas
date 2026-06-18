@@ -21,6 +21,7 @@ import { chargerRecettes } from "@/lib/recettes";
 import { ORDRE_TEMPS, rangTemps, REGLAGES_DEFAUT } from "@/lib/reglages";
 import { analyserVivier } from "@/lib/generateur";
 import { PERSONNES_MAX, PERSONNES_MIN } from "@/lib/personnes";
+import { Interrupteur } from "@/components/ui/interrupteur";
 import type { Recette, ReglagesGeneration, TempsPreparation } from "@/types";
 
 const LIBELLE_TEMPS: Record<TempsPreparation, string> = {
@@ -73,36 +74,6 @@ function SegmentPlafond({
         );
       })}
     </div>
-  );
-}
-
-// Interrupteur on/off (switch accessible) — préférence « privilégier végé ».
-function Bascule({
-  libelleId,
-  actif,
-  onChange,
-}: {
-  libelleId: string;
-  actif: boolean;
-  onChange: (actif: boolean) => void;
-}) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={actif}
-      aria-labelledby={libelleId}
-      onClick={() => onChange(!actif)}
-      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 ${
-        actif ? "bg-primary" : "bg-brand-200"
-      }`}
-    >
-      <span
-        className={`inline-block size-5 transform rounded-full bg-surface shadow transition-transform ${
-          actif ? "translate-x-5" : "translate-x-0.5"
-        }`}
-      />
-    </button>
   );
 }
 
@@ -378,7 +349,7 @@ function GenerationReglages({
                     </span>
                   )}
                 </div>
-                <Bascule
+                <Interrupteur
                   libelleId={`vege-${cle}`}
                   actif={actif}
                   onChange={(v) => definirVegePrefere(cle, v)}
@@ -415,7 +386,7 @@ function GenerationReglages({
               </span>
             )}
           </div>
-          <Bascule
+          <Interrupteur
             libelleId="mix-legume"
             actif={mixActif}
             onChange={definirMix}
@@ -437,7 +408,7 @@ function GenerationReglages({
           <span id="saisonnalite" className="text-sm font-medium text-brand-900">
             Ne proposer que des recettes de saison
           </span>
-          <Bascule
+          <Interrupteur
             libelleId="saisonnalite"
             actif={saisonnaliteActif}
             onChange={definirSaisonnalite}

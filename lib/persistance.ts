@@ -252,7 +252,7 @@ export async function decocherArticleDistant(
   }
 }
 
-/** Vide toutes les coches d'une semaine (« Tout décocher » / regénération
+/** Vide toutes les coches d'une semaine (« Tout décocher » / régénération
  *  RG-13). Un seul DELETE par semaine plutôt que N décochages. */
 export async function viderCochesDistantes(semaine: string): Promise<void> {
   const supabase = createClient()

@@ -7,6 +7,11 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+### Corrigé
+
+- Onboarding — interrupteur « Foyer végétarien » au rendu cassé (#204, audit #51) : sur le premier écran d'accueil, le **curseur du bouton bascule** pouvait s'afficher désynchronisé de sa piste (et mal rendu en thème sombre). Cause : deux implémentations divergentes du même interrupteur dans l'app. Désormais **un seul composant partagé** est utilisé partout (accueil + réglages), ce qui corrige l'affichage et évite tout futur écart.
+- Orthographe du bouton « Régénérer » (#208, audit #51) : le bouton du planning, le toast de confirmation et la documentation affichaient « Regénérer » (sans accent) — corrigé en **« Régénérer »**.
+
 ### Sécurité
 
 - Content-Security-Policy en observation (#188, audit F-01, palier 2/2) : ajout d'une **CSP** (`frame-ancestors 'none'`, `object-src 'none'`, allowlist `connect-src` Supabase/Sentry/Vercel, `base-uri`/`form-action 'self'`…) servie en **`Report-Only`** — elle **ne bloque rien** pour l'instant, elle journalise les éventuelles violations afin de valider l'allowlist sur les vrais parcours avant de passer en mode bloquant. Stratégie `script-src` : `'unsafe-inline'` (conserve le rendu statique des pages publiques ; le nonce a été écarté).

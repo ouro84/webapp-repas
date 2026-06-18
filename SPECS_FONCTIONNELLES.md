@@ -121,7 +121,7 @@ Réduire à zéro l'effort de planification hebdomadaire des repas, du choix des
 
 ### US-04 — Remplacer un repas
 
-> **En tant qu'** utilisateur, je veux pouvoir remplacer un repas spécifique du planning, afin de ne pas devoir tout regénérer si un seul repas ne me convient pas.
+> **En tant qu'** utilisateur, je veux pouvoir remplacer un repas spécifique du planning, afin de ne pas devoir tout régénérer si un seul repas ne me convient pas.
 
 **Comportement :**
 > **Given** un planning est affiché  
@@ -240,14 +240,14 @@ Réduire à zéro l'effort de planification hebdomadaire des repas, du choix des
 > **When** la quantité varie  
 > **Then** son nom reste invariable (« 200 g de beurre »)
 
-### US-09 — Annuler une regénération
+### US-09 — Annuler une régénération
 
-> **En tant qu'** utilisateur ayant regénéré par erreur, je veux pouvoir annuler afin de retrouver mon planning précédent à l'identique.
+> **En tant qu'** utilisateur ayant régénéré par erreur, je veux pouvoir annuler afin de retrouver mon planning précédent à l'identique.
 
 **Comportement :**
 > **Given** un planning existant (éventuellement ajusté slot par slot, avec des coches faites sur la liste de courses)  
-> **When** je clique sur « Regénérer »  
-> **Then** un toast « Planning regénéré — Annuler » s'affiche ~5 s
+> **When** je clique sur « Régénérer »  
+> **Then** un toast « Planning régénéré — Annuler » s'affiche ~5 s
 
 > **Given** ce toast est affiché  
 > **When** je clique « Annuler » (ou je fais Ctrl/Cmd+Z)  
@@ -770,7 +770,7 @@ Une catégorie est **terminée** lorsqu'elle contient au moins un article **et**
 
 ### RG-19 — Snapshot d'annulation (US-09)
 
-Avant toute action destructive sur le planning — regénération (US-09), remplacement de slot (US-04) ou sélection manuelle (US-06) — un snapshot **mono-niveau** est capturé en `localStorage` (clé `planning_snapshot`, cf. 5.6) : il fige à la fois `planning_courant` **et** `courses_cochees`. L'annulation réécrit les deux clés à l'identique — elle **inverse donc l'effacement des coches de RG-13**. Règles :
+Avant toute action destructive sur le planning — régénération (US-09), remplacement de slot (US-04) ou sélection manuelle (US-06) — un snapshot **mono-niveau** est capturé en `localStorage` (clé `planning_snapshot`, cf. 5.6) : il fige à la fois `planning_courant` **et** `courses_cochees`. L'annulation réécrit les deux clés à l'identique — elle **inverse donc l'effacement des coches de RG-13**. Règles :
 
 - **Un seul cran d'undo** : chaque nouvelle action écrase le snapshot précédent ; on ne recule que d'un pas.
 - **Expiration** : le snapshot est horodaté et n'est plus restaurable au-delà de la fenêtre d'undo (~6 s, marge sur les ~5 s du toast). Au-delà, l'undo n'est plus proposé.
