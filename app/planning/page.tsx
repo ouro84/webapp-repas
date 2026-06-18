@@ -19,7 +19,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
-import { RefreshCw, SlidersHorizontal } from "lucide-react";
+import { CookingPot, RefreshCw, Search, SlidersHorizontal } from "lucide-react";
 import {
   joursSansLegume,
   prefereVegeSlot,
@@ -914,11 +914,14 @@ function SlotRepas({
   // Spin one-shot de l'icône « changer » (#69, P17) : incrémenté au clic →
   // re-monte l'icône (key) pour rejouer la rotation. 0 au montage = pas de spin.
   const [spin, setSpin] = useState(0);
-  // Style partagé des actions textuelles (zone tactile ≥ 44px via after:-inset-1).
-  // `transition` (et non transition-colors) anime couleur ET transform → le
-  // feedback d'enfoncement `active:scale` est lissé ; neutralisé en reduced-motion.
+  // Style unifié des actions de slot (#210, audit #51) : chip discret (icône +
+  // libellé) au lieu de liens-texte hétérogènes — toutes les actions ont le même
+  // traitement et un fond au survol qui les fait lire comme des contrôles. Zone
+  // tactile ≥ 44px via after:-inset-1. `transition` (et non transition-colors)
+  // anime couleur ET transform → le feedback `active:scale` est lissé ; neutralisé
+  // en reduced-motion.
   const styleAction =
-    "relative px-2 py-2 text-sm text-brand-700/85 underline-offset-2 transition after:absolute after:-inset-1 after:content-[''] hover:text-brand-900 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100";
+    "relative inline-flex items-center gap-1 rounded-full px-2.5 py-1.5 text-sm font-medium text-brand-700 transition after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 hover:text-brand-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100";
 
   // Slot marqué « restes » (US-12, RG-22) : pas de cuisine → ni badge de temps,
   // ni stepper, ni fiche. On revient au repas planifié (« Cuisiner ») ou on en
@@ -932,13 +935,14 @@ function SlotRepas({
         <p className="mt-1 flex items-center gap-1.5 text-sm font-medium text-brand-700/80">
           <IconeRestes /> Restes
         </p>
-        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
+        <div className="mt-2 flex flex-wrap items-center gap-1">
           <button
             type="button"
             onClick={() => onChangerRestes(false)}
             aria-label={`Cuisiner le ${slotNom}`}
             className={styleAction}
           >
+            <CookingPot aria-hidden="true" className="size-3.5" />
             Cuisiner
           </button>
           <button
@@ -947,6 +951,7 @@ function SlotRepas({
             aria-label={`Sélectionner le ${slotNom}`}
             className={styleAction}
           >
+            <Search aria-hidden="true" className="size-3.5" />
             Sélectionner
           </button>
         </div>
@@ -974,7 +979,8 @@ function SlotRepas({
       >
         {recette.nom}
       </button>
-      <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
+      {/* Badges (information) — ligne dédiée, séparée des actions (#210). */}
+      <div className="mt-2 flex flex-wrap items-center gap-1.5">
         <BadgeTemps temps={recette.tempsPreparation} />
         {recette.vegetarien && <BadgeVegetarien compact />}
         {recette.accompagnement && (
@@ -983,12 +989,13 @@ function SlotRepas({
         {recette.saisons && recette.saisons.length > 0 && (
           <BadgeSaison saisons={recette.saisons} compact />
         )}
-        {/*
-          a11y : aria-labels contextualisés — des paires de boutons identiques
-          sont indiscernables au lecteur d'écran ; l'icône Lucide RefreshCw
-          (#59, fin du glyphe ↺) est décorative ; after:-inset-* étend la zone
-          tactile à ≥ 44px.
-        */}
+      </div>
+      {/* Actions (contrôles) — ligne dédiée + style unifié (#210, audit #51) :
+          séparées des badges par un filet, toutes au même traitement icône+libellé.
+          a11y : aria-labels contextualisés (des paires de boutons identiques sont
+          indiscernables au lecteur d'écran) ; icônes décoratives ; le libellé
+          visible est contenu dans le nom accessible (WCAG 2.5.3). */}
+      <div className="mt-2 flex flex-wrap items-center gap-1 border-t border-brand-100/70 pt-2">
         <button
           type="button"
           onClick={() => {
@@ -996,7 +1003,7 @@ function SlotRepas({
             onChanger();
           }}
           aria-label={`Changer le ${slotNom}`}
-          className={`${styleAction} inline-flex items-center gap-1`}
+          className={styleAction}
         >
           {/* key={spin} : chaque clic re-monte l'icône → rejoue la rotation
               360°. spin>0 garde le tout premier rendu sans rotation. (#69) */}
@@ -1004,8 +1011,8 @@ function SlotRepas({
             key={spin}
             aria-hidden="true"
             className={`size-3.5 ${spin > 0 ? "motion-safe:animate-spin-once" : ""}`}
-          />{" "}
-          changer
+          />
+          Changer
         </button>
         {/* Sélection manuelle (US-06) : ouvre le sélecteur de recettes */}
         <button
@@ -1014,6 +1021,7 @@ function SlotRepas({
           aria-label={`Sélectionner le ${slotNom}`}
           className={styleAction}
         >
+          <Search aria-hidden="true" className="size-3.5" />
           Sélectionner
         </button>
         {/* Marquer en « restes » (US-12) : pas de cuisine ce repas-là */}
@@ -1023,6 +1031,7 @@ function SlotRepas({
           aria-label={`Marquer le ${slotNom} en restes`}
           className={styleAction}
         >
+          <IconeRestes />
           Restes
         </button>
       </div>

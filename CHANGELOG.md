@@ -13,6 +13,7 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ### Modifié
 
+- Actions des cartes repas plus lisibles (#210, audit #51) : sur chaque repas du planning, les actions **Changer / Sélectionner / Restes** sont désormais regroupées sur **leur propre ligne** (séparées des badges d'information) et présentées de façon **uniforme** (icône + libellé, fond au survol) — au lieu d'un mélange de liens texte hétérogènes difficiles à distinguer. Zones tactiles confortables. Comportements inchangés.
 - Thème clair/sombre déplacé dans le profil (#205, audit #51) : la **bascule de thème quitte la barre de navigation** (où elle occupait un emplacement permanent pour un réglage rarement utilisé) pour rejoindre une nouvelle section **« Préférences »** de la page **Mon profil**, sous forme de sélecteur **Système / Clair / Sombre**. Comportement du thème inchangé ; il n'apparaît simplement plus sur chaque écran (ni sur l'écran de connexion).
 - Barre de navigation épurée hors connexion (#207, audit #51) : déconnecté (écran de connexion, inscription, ou pages publiques), la nav n'affiche plus les onglets **Planning / Courses / Recettes** ni l'avatar — qui renvoyaient de toute façon vers la connexion. Ne restent que le **logo** et le lien **Aide**. Une fois connecté, la nav complète revient.
 
