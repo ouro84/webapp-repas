@@ -7,6 +7,10 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+### Sécurité
+
+- En-têtes de sécurité HTTP (#188, audit F-01, palier 1/2) : les réponses portent désormais `X-Frame-Options: DENY` (anti-**clickjacking** : l'app ne peut plus être encadrée dans une iframe tierce), `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin` (l'URL complète — dont un éventuel `?code=` d'invitation — ne fuite plus vers une origine tierce) et `Permissions-Policy` (caméra/micro/géoloc coupés, FLoC désactivé). Ajoutés via `next.config.ts` (`headers()`), sans incidence fonctionnelle. **La Content-Security-Policy (palier 2), qui nécessite de lister les origines Supabase/Sentry/Vercel et un passage par `report-only`, fera l'objet d'une livraison séparée.**
+
 ## [2.0.0] - 2026-06-16
 
 ### Ajouté
