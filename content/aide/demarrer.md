@@ -35,7 +35,7 @@ Chaque jour a un **déjeuner** et un **dîner**. Sur chaque repas tu peux :
 | Action | Ce qu'elle fait |
 | --- | --- |
 | Toucher le nom du plat | Ouvre la fiche complète (ingrédients, quantités) |
-| « changer » | Remplace ce repas par une autre recette au hasard |
+| « Changer » | Remplace ce repas par une autre recette au hasard |
 | « Sélectionner » | Choisis toi-même une recette dans le catalogue |
 | « Restes » | Marque ce repas comme non cuisiné (exclu des courses) |
 | − / + | Ajuste le nombre de personnes pour ce repas |
