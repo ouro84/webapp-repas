@@ -147,19 +147,19 @@ test("une génération complète remet tous les repas à 2 personnes (RG-16)", a
     .click();
   await expect(carteLundi).toContainText("3 pers.");
 
-  await page.getByRole("button", { name: "Regénérer" }).click();
-  // La regénération affiche un toast d'annulation « Planning regénéré » (US-09),
+  await page.getByRole("button", { name: "Régénérer" }).click();
+  // La régénération affiche un toast d'annulation « Planning régénéré » (US-09),
   // distinct du « Planning généré » de la première génération.
-  await expect(page.getByText("Planning regénéré")).toBeVisible();
+  await expect(page.getByText("Planning régénéré")).toBeVisible();
   await expect(page.locator("main ul > li").first()).toContainText("2 pers.");
 });
 
 // ---------------------------------------------------------------------------
-// US-09 — annuler une regénération (RG-19). Valide en CI (instance staging
+// US-09 — annuler une régénération (RG-19). Valide en CI (instance staging
 // seedée) ; en local, la génération peut échouer si la base n'est pas seedée.
 // ---------------------------------------------------------------------------
 
-test("annuler une regénération restaure le planning précédent à l'identique (US-09)", async ({
+test("annuler une régénération restaure le planning précédent à l'identique (US-09)", async ({
   page,
 }) => {
   await page.getByRole("button", { name: "Générer mon planning" }).click();
@@ -167,9 +167,9 @@ test("annuler une regénération restaure le planning précédent à l'identique
   await expect(page.locator("main ul > li")).toHaveCount(7);
   const planningInitial = await liste.innerText();
 
-  await page.getByRole("button", { name: "Regénérer" }).click();
+  await page.getByRole("button", { name: "Régénérer" }).click();
   // Toast d'annulation avec son action « Annuler ».
-  await expect(page.getByText("Planning regénéré")).toBeVisible();
+  await expect(page.getByText("Planning régénéré")).toBeVisible();
   await page.getByRole("button", { name: "Annuler" }).click();
 
   // Confirmation + planning restauré à l'identique (US-09, RG-19).
@@ -177,7 +177,7 @@ test("annuler une regénération restaure le planning précédent à l'identique
   await expect.poll(async () => liste.innerText()).toBe(planningInitial);
 });
 
-test("annuler une regénération au clavier (Ctrl/Cmd+Z) restaure le planning (US-09, RG-19)", async ({
+test("annuler une régénération au clavier (Ctrl/Cmd+Z) restaure le planning (US-09, RG-19)", async ({
   page,
 }) => {
   await page.getByRole("button", { name: "Générer mon planning" }).click();
@@ -185,8 +185,8 @@ test("annuler une regénération au clavier (Ctrl/Cmd+Z) restaure le planning (U
   await expect(page.locator("main ul > li")).toHaveCount(7);
   const planningInitial = await liste.innerText();
 
-  await page.getByRole("button", { name: "Regénérer" }).click();
-  await expect(page.getByText("Planning regénéré")).toBeVisible();
+  await page.getByRole("button", { name: "Régénérer" }).click();
+  await expect(page.getByText("Planning régénéré")).toBeVisible();
 
   // Raccourci clavier (et non le bouton du toast) : le handler de la page écoute
   // Ctrl/Cmd+Z hors champ de saisie. En CI (Linux) → Control.
@@ -196,7 +196,7 @@ test("annuler une regénération au clavier (Ctrl/Cmd+Z) restaure le planning (U
   await expect.poll(async () => liste.innerText()).toBe(planningInitial);
 });
 
-test("annuler une regénération restaure aussi les coches effacées (US-09, RG-13/RG-19)", async ({
+test("annuler une régénération restaure aussi les coches effacées (US-09, RG-13/RG-19)", async ({
   page,
 }) => {
   // Navigation par les LIENS de l'app (SPA) : un page.goto rejouerait
@@ -216,11 +216,11 @@ test("annuler une regénération restaure aussi les coches effacées (US-09, RG-
     page.getByRole("checkbox", { name: nomArticle }).first()
   ).toBeChecked();
 
-  // Regénérer efface les coches (RG-13) ; annuler doit les rendre (RG-19).
+  // Régénérer efface les coches (RG-13) ; annuler doit les rendre (RG-19).
   await page.getByRole("link", { name: "← Planning" }).click();
   await page.waitForURL("**/planning");
-  await page.getByRole("button", { name: "Regénérer" }).click();
-  await expect(page.getByText("Planning regénéré")).toBeVisible();
+  await page.getByRole("button", { name: "Régénérer" }).click();
+  await expect(page.getByText("Planning régénéré")).toBeVisible();
   await page.getByRole("button", { name: "Annuler" }).click();
   await expect(page.getByText("Annulé")).toBeVisible();
 

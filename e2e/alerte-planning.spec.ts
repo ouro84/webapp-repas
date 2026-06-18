@@ -45,7 +45,7 @@ test("un membre en magasin est alerté quand le planning change à la maison (US
   await a.waitForTimeout(2500);
 
   // --- B regénère → le planning de la semaine change ---
-  await b.getByRole("button", { name: "Regénérer" }).click();
+  await b.getByRole("button", { name: "Régénérer" }).click();
 
   // --- A : alerte bloquante, puis acquittement ---
   const alerte = a.getByText(/le planning de la semaine vient d/i);

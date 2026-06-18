@@ -247,7 +247,7 @@ test("une catégorie entièrement cochée glisse en bas de liste, titre rayé (#
   await expect(viandes).toHaveCSS("text-decoration-line", "none");
 });
 
-test("regénérer le planning réinitialise toutes les coches (RG-13)", async ({
+test("régénérer le planning réinitialise toutes les coches (RG-13)", async ({
   page,
 }) => {
   await page.addInitScript(
@@ -262,7 +262,7 @@ test("regénérer le planning réinitialise toutes les coches (RG-13)", async ({
   // Génération complète depuis la page planning (vraies recettes, liste
   // non déterministe) : les coches doivent être effacées (RG-13).
   await page.goto("/planning");
-  await page.getByRole("button", { name: "Regénérer" }).click();
+  await page.getByRole("button", { name: "Régénérer" }).click();
   await expect(page.locator("main ul > li")).toHaveCount(7);
 
   await page.goto("/courses");
