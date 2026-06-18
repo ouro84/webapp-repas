@@ -69,6 +69,45 @@ jobs:
           npx supabase link --project-ref upxoxrjumxpzumakawiv
           npx supabase db push
 
+  # Pré-chauffe le cache du navigateur Playwright UNE SEULE FOIS, en parallèle de
+  # migrate-staging (hors chemin critique : e2e attend déjà migrate-staging, donc
+  # le portail ne grandit pas). Sans ce job, les 6 jobs e2e partageaient la même
+  # clé de cache et se couraient dessus À LA SAUVEGARDE (6 restore simultanés sur
+  # une clé absente → 6 miss → 6 téléchargements, un seul `save` gagne) : le job le
+  # plus long re-téléchargeait chromium à CHAQUE run (~9-11 min, cf. piège « Cache
+  # navigateur Playwright »). Ici UN SEUL job peuple le cache ; les e2e ne font plus
+  # que le RESTAURER (restore-only, jamais save → plus aucune course).
+  playwright-cache:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - name: Installer les dépendances
+        run: npm ci
+      # Clé de cache sur la VERSION de Playwright (dérivée du module installé), pas
+      # le hash de package-lock entier : un bump de dépendance sans rapport
+      # n'invalide plus le navigateur. Dérivée → pas de twin à maintenir à la main.
+      - name: Version de Playwright
+        id: pw
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      - name: Cache du navigateur Playwright
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
+      # Binaire seul (pas --with-deps) : les deps système (apt) ne sont pas
+      # cachables et sont (ré)installées par chaque job e2e via install-deps.
+      # Borné à 5 min → un stall CDN échoue vite (rejeu CI) au lieu de tenir 10 min.
+      - name: Télécharger chromium (si cache absent)
+        if: steps.cache.outputs.cache-hit != 'true'
+        timeout-minutes: 5
+        run: npx playwright install chromium
+
   # E2E en jobs parallèles (cf. projets playwright + Phase 2) :
   #  - jetable : specs à comptes jetables uniques → un job, workers:4 ;
   #  - partage : specs du compte partagé → réparties en 5 GROUPES de fichiers
@@ -82,7 +121,9 @@ jobs:
   # planning-edition.spec). À rééquilibrer si on ajoute des specs. Chaque job
   # build l'app en prod (webServer) et tourne concurremment.
   e2e:
-    needs: migrate-staging
+    # playwright-cache peuple le cache du navigateur AVANT ces jobs → ils le
+    # restaurent (rapide) au lieu de le télécharger chacun (cf. ce job).
+    needs: [migrate-staging, playwright-cache]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -141,18 +182,34 @@ jobs:
             echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY"
           } > .env.local
 
-      # Cache du navigateur Playwright (évite le re-téléchargement à chaque run) :
-      # clé sur la version de @playwright/test via package-lock.json.
-      - name: Cache des navigateurs Playwright
-        uses: actions/cache@v4
+      # Même version dérivée que playwright-cache → même clé de cache.
+      - name: Version de Playwright
+        id: pw
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      # RESTORE seulement (jamais de save) : playwright-cache est SEUL autoritaire
+      # pour peupler le cache → aucune course à la sauvegarde entre les 6 jobs.
+      - name: Restaurer le navigateur Playwright
+        id: cache
+        uses: actions/cache/restore@v4
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
           restore-keys: |
             playwright-${{ runner.os }}-
 
-      - name: Installer le navigateur Playwright
-        run: npx playwright install --with-deps chromium
+      # Deps système (apt) du navigateur : non cachables, rapides → toujours.
+      - name: Installer les dépendances système du navigateur
+        run: npx playwright install-deps chromium
+
+      # Filet : si le restore a manqué (clé évincée, éventuelle consistance), on
+      # retélécharge le binaire — borné à 5 min pour échouer vite au lieu de tenir
+      # les 15 min du job. En régime normal, playwright-cache a déjà peuplé la clé
+      # exacte → cache-hit=true → cette étape est sautée.
+      - name: Télécharger chromium (filet, si cache absent)
+        if: steps.cache.outputs.cache-hit != 'true'
+        timeout-minutes: 5
+        run: npx playwright install chromium
 
       - name: Tests e2e (Playwright) — partition ${{ matrix.name }}
         # E2E_EMAIL dédié par groupe → isolation des données (auth.setup le crée
