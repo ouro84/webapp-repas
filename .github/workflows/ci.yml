@@ -198,9 +198,13 @@ jobs:
           restore-keys: |
             playwright-${{ runner.os }}-
 
-      # Deps système (apt) du navigateur : non cachables, rapides → toujours.
-      - name: Installer les dépendances système du navigateur
-        run: npx playwright install-deps chromium
+      # PAS de `playwright install-deps` (apt) : les runners ubuntu-latest
+      # préinstallent Chrome/Chromium → les libs système dont le chromium de
+      # Playwright a besoin (libnss3, libasound2, libgbm, libxkbcommon…) sont
+      # déjà là. install-deps lance `apt-get update` qui tape les miroirs Ubuntu
+      # d'Azure : non cachable, sujet aux stalls de miroir, vu monter à 10-15 min
+      # (cf. piège « Cache navigateur Playwright »). On le supprime — si un jour
+      # une lib manque, chromium échoue au lancement de façon bruyante en e2e.
 
       # Filet : si le restore a manqué (clé évincée, éventuelle consistance), on
       # retélécharge le binaire — borné à 5 min pour échouer vite au lieu de tenir
