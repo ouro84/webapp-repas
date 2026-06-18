@@ -28,7 +28,7 @@ Chaque recette porte des badges qui résument ses caractéristiques :
 
 | Badge | Signification |
 | --- | --- |
-| **Rapide** / **Normal** / **Long** | Temps de préparation (Long ajoute une horloge : cuisson longue) |
+| **Rapide** / **Normal** / **Long** | Temps de préparation. Une horloge graduée renforce le repère : aucune sur Rapide, une sur Normal, deux sur Long (plus il y a d'horloges, plus c'est long) |
 | **Végétarien** (feuille) | Aucune viande ni poisson |
 | **Féculents** (épi) / **Légumes** (carotte) | Type d'accompagnement de la recette |
 | **Printemps · Été…** | Saison(s) où la recette est de saison (vide = toute l'année) |
