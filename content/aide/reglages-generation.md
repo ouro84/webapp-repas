@@ -1,4 +1,4 @@
-_Ces réglages décident de la « personnalité » de tes plannings : durées, préférences, saison, portions. On y accède depuis « Mon profil » → « Réglages de génération »._
+_Ces réglages décident de la « personnalité » de tes plannings : durées, préférences, saison, portions. On y accède depuis « Mon profil » → « Réglages de génération », ou directement depuis le planning via l'**icône réglages** à côté de « Régénérer »._
 
 > 💡 Tout en haut, l'app rappelle : **« Ces règles s'appliquent à la prochaine génération (complète ou d'un seul repas). Pense à enregistrer. »** Rien n'est pris en compte tant que tu n'as pas touché **« Enregistrer »**.
 
