@@ -73,6 +73,11 @@ test("la génération affiche un planning de 7 jours avec leurs 14 repas", async
 
   // Le numéro de semaine s'affiche dans le navigateur (« Semaine du … »).
   await expect(page.getByText(/^Semaine du /).first()).toBeVisible();
+
+  // Accès contextuel aux réglages de génération depuis le planning (#206).
+  const lienReglages = page.getByRole("link", { name: "Réglages de génération" });
+  await expect(lienReglages).toBeVisible();
+  await expect(lienReglages).toHaveAttribute("href", "/reglages");
 });
 
 // ---------------------------------------------------------------------------

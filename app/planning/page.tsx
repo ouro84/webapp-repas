@@ -19,7 +19,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, SlidersHorizontal } from "lucide-react";
 import {
   joursSansLegume,
   prefereVegeSlot,
@@ -690,6 +690,18 @@ export default function PagePlanning() {
         {/* Actions : pleine largeur partagée sur mobile, compactes dès sm.
             after:-inset-1 étend la zone tactile à ≥ 44px sans changer le visuel. */}
         <div className="flex gap-2">
+          {/* Accès contextuel aux réglages de génération (#206, audit #51) :
+              l'intention « ce planning ne me ressemble pas » naît ici → on
+              rapproche le levier de l'action, au lieu de l'enfouir dans /profil.
+              Icône seule (place limitée sur mobile à côté des deux CTA). */}
+          <Link
+            href="/reglages"
+            aria-label="Réglages de génération"
+            title="Réglages de génération"
+            className="relative flex size-10 shrink-0 items-center justify-center rounded-full border border-brand-200 text-brand-700 transition after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.95] motion-reduce:active:scale-100"
+          >
+            <SlidersHorizontal className="size-5" aria-hidden="true" />
+          </Link>
           <button
             type="button"
             onClick={() => void genererNouveauPlanning()}

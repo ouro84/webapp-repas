@@ -7,6 +7,10 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+### Ajouté
+
+- Accès rapide aux réglages depuis le planning (#206, audit #51) : une **icône réglages** (à côté de « Régénérer ») ouvre directement les **Réglages de génération**. Plus besoin de passer par le profil quand un planning ne te convient pas — tu ajustes les règles (durées, végé, légumes, saison, personnes) là où l'envie naît, puis tu régénères.
+
 ### Modifié
 
 - Thème clair/sombre déplacé dans le profil (#205, audit #51) : la **bascule de thème quitte la barre de navigation** (où elle occupait un emplacement permanent pour un réglage rarement utilisé) pour rejoindre une nouvelle section **« Préférences »** de la page **Mon profil**, sous forme de sélecteur **Système / Clair / Sombre**. Comportement du thème inchangé ; il n'apparaît simplement plus sur chaque écran (ni sur l'écran de connexion).
