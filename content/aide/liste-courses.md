@@ -36,7 +36,7 @@ Tu n'as jamais à recalculer une quantité. L'app fait deux choses pour toi :
 
 En magasin, **touche un article** (n'importe où sur la ligne, la zone est large) pour le cocher : il devient **barré et grisé**. Re-touche pour décocher.
 
-En haut, un compteur suit ta progression : **« 3/12 articles »**. Il ne compte que ce qu'il te **reste à acheter** dans les rayons — le fond de placard n'y entre pas (voir plus bas).
+En haut, un compteur suit ta progression : **« 3 cochés sur 12 »**. Il ne compte que ce qu'il te **reste à acheter** dans les rayons — le fond de placard n'y entre pas (voir plus bas).
 
 > 🛒 Tu fais les courses à plusieurs ? Si un autre membre de ton foyer ouvre la liste en même temps, l'app affiche **« Un autre membre est aussi sur la liste »**, et vos coches se synchronisent **en direct** : tu vois cocher ce qu'il met dans le panier, et inversement.
 
@@ -66,7 +66,7 @@ Dans ces deux cas, si un article que tu avais **déjà coché** voit sa quantit�
 
 Tout en bas, une section **« Fond de placard »** regroupe les ingrédients que tu as sûrement déjà chez toi (sel, huile, épices…), avec le rappel **« À vérifier avant d'acheter »**.
 
-Ils sont cochables comme les autres, mais **hors du compteur de progression** — d'où la mention **« … à vérifier »** affichée à côté de ton « n/N ». Petite différence avec les rayons : le fond de placard se **raye** quand tout est vérifié, mais ne remonte ni ne descend (il reste toujours en dernier).
+Ils sont cochables comme les autres, mais **hors du compteur de progression** — d'où la mention **« … à vérifier dans tes placards »** affichée à côté de ton compteur « N cochés sur M ». Petite différence avec les rayons : le fond de placard se **raye** quand tout est vérifié, mais ne remonte ni ne descend (il reste toujours en dernier).
 
 ## Repartir d'une liste vierge
 

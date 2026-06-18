@@ -133,7 +133,7 @@ test("quitter un foyer partagé clone les données chez le partant, sans rien re
   await expect(y.locator("main ul > li")).toHaveCount(7);
   // …et sa liste de courses (dérivée du planning cloné) non plus.
   await y.goto("/courses");
-  await expect(y.getByText(/^\d+\/[1-9]\d* articles?/)).toBeVisible();
+  await expect(y.getByText(/^\d+ cochés? sur [1-9]\d*/)).toBeVisible();
 
   // PÉRENNITÉ : X conserve son planning (rien ne lui a été retiré à la sortie de Y).
   await x.goto("/planning");
