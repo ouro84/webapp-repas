@@ -208,7 +208,7 @@ function slotsDuJour(
 // Identifiant unique du toast d'annulation : réutiliser le même id fait qu'une
 // nouvelle action remplace le toast précédent (et réarme les ~5 s) — un seul
 // cran d'undo est proposé à la fois (RG-19), ce qui neutralise aussi le
-// double-clic sur « Regénérer ».
+// double-clic sur « Régénérer ».
 const ID_TOAST_ANNULATION = "annulation-planning";
 
 // Restaure le dernier snapshot (planning + coches, RG-19) et notifie.
@@ -399,7 +399,7 @@ export default function PagePlanning() {
   // `enGeneration` pour le retour visuel, sans vider l'écran (#63).
   async function genererNouveauPlanning(force = false): Promise<void> {
     if (enGeneration) return;
-    // Regénération d'une semaine passée (planning existant) : confirmation
+    // Régénération d'une semaine passée (planning existant) : confirmation
     // avant écrasement (RG-24). Première génération (planning null) : direct.
     if (!force && confirmerSiPassee(() => void genererNouveauPlanning(true))) {
       return;
@@ -428,7 +428,7 @@ export default function PagePlanning() {
         mixNonHonore?: number;
         saisonNonHonore?: number;
       };
-      // Regénération (US-09) : un planning existait → on fige l'état (planning
+      // Régénération (US-09) : un planning existait → on fige l'état (planning
       // + coches) avant écrasement pour permettre l'undo (RG-19). Première
       // génération : rien à annuler (capturerSnapshot est alors un no-op).
       const estRegeneration = storePlanning.lire() !== null;
@@ -442,7 +442,7 @@ export default function PagePlanning() {
       // Toast contextualisé par la semaine générée (US-11, bonus).
       const libelleSemaine = formaterSemaine(nouveau.semaine);
       if (estRegeneration) {
-        toast(`Planning regénéré — ${libelleSemaine}`, {
+        toast(`Planning régénéré — ${libelleSemaine}`, {
           id: ID_TOAST_ANNULATION,
           action: { label: "Annuler", onClick: annulerDerniereAction },
           duration: 5000,
@@ -697,7 +697,7 @@ export default function PagePlanning() {
             aria-busy={enGeneration}
             className="relative flex-1 rounded-full border border-brand-200 px-4 py-2 text-center text-sm font-medium text-brand-700 transition after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100 disabled:opacity-60 sm:flex-none"
           >
-            {enGeneration ? "Génération…" : "Regénérer"}
+            {enGeneration ? "Génération…" : "Régénérer"}
           </button>
           <Link
             href="/courses"
@@ -709,7 +709,7 @@ export default function PagePlanning() {
       </header>
 
       {/* Navigateur de semaines (#5) : change la semaine affichée ; la
-          génération/regénération vise la semaine affichée. */}
+          génération/régénération vise la semaine affichée. */}
       {navPret && (
         <div className="mb-6">
           <NavigateurSemaine

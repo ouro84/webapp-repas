@@ -40,7 +40,7 @@ Chaque jour a un **déjeuner** et un **dîner**. Sur chaque repas tu peux :
 | « Restes » | Marque ce repas comme non cuisiné (exclu des courses) |
 | − / + | Ajuste le nombre de personnes pour ce repas |
 
-En haut : **« Regénérer »** relance toute la semaine, et les flèches **‹ ›** naviguent entre les semaines.
+En haut : **« Régénérer »** relance toute la semaine, et les flèches **‹ ›** naviguent entre les semaines.
 
 > ↩️ **Erreur de manip ?** Un bouton **« Annuler »** apparaît après chaque changement (ou Ctrl/Cmd + Z).
 

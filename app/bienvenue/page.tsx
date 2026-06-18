@@ -29,6 +29,7 @@ import {
 import { reinitialiserCacheFoyer, useSync } from "@/lib/sync";
 import { sauvegarderPlanningComplet } from "@/lib/stockage";
 import { PERSONNES_MAX, PERSONNES_MIN } from "@/lib/personnes";
+import { Interrupteur } from "@/components/ui/interrupteur";
 import type { Planning, ReglagesGeneration } from "@/types";
 
 type Etape = "chargement" | "identite" | "foyer" | "generation";
@@ -400,22 +401,7 @@ function InterrupteurVege({
           Privilégie les recettes végé en semaine (ajustable ensuite).
         </span>
       </span>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={actif}
-        aria-label="Foyer végétarien"
-        onClick={() => onChange(!actif)}
-        className={`relative h-6 w-11 shrink-0 rounded-full transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 ${
-          actif ? "bg-primary" : "bg-brand-200"
-        }`}
-      >
-        <span
-          className={`absolute top-0.5 size-5 rounded-full bg-white transition-transform ${
-            actif ? "translate-x-[1.375rem]" : "translate-x-0.5"
-          }`}
-        />
-      </button>
+      <Interrupteur actif={actif} onChange={onChange} label="Foyer végétarien" />
     </label>
   );
 }

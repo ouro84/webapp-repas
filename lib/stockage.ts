@@ -109,7 +109,7 @@ export function sauvegarderRemplacementSlot(planning: Planning): void {
 // ============================================================================
 // Annulation (US-09, RG-19) — snapshot mono-niveau du planning ET des coches.
 //
-// Pourquoi figer AUSSI les coches ? Une regénération efface les coches
+// Pourquoi figer AUSSI les coches ? Une régénération efface les coches
 // (sauvegarderPlanningComplet → RG-13) : restaurer le seul planning laisserait
 // les coches perdues, l'undo ne serait pas « à l'identique ». La restauration
 // réécrit donc les deux clés directement (sans repasser par

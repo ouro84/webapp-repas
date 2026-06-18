@@ -6,13 +6,13 @@ Sur la page **Mon planning de la semaine**, si aucun planning n'existe encore, t
 
 Pendant le calcul, le bouton affiche **« Génération… »**. Tu n'as rien à choisir : l'app pioche dans ton catalogue de recettes en respectant tes réglages de génération.
 
-## Regénérer
+## Régénérer
 
-Une fois une semaine affichée, le bouton en haut devient **« Regénérer »**. Il rebat les cartes : une toute nouvelle sélection de 14 repas remplace l'ancienne.
+Une fois une semaine affichée, le bouton en haut devient **« Régénérer »**. Il rebat les cartes : une toute nouvelle sélection de 14 repas remplace l'ancienne.
 
-> ↩️ **Tu préférais la version d'avant ?** Juste après une regénération, un bouton **« Annuler »** apparaît (ou `Ctrl/Cmd + Z`). Il restaure **à la fois** le planning précédent **et** les coches de ta liste de courses. Attention : un seul niveau d'annulation, et la fenêtre dure quelques secondes seulement.
+> ↩️ **Tu préférais la version d'avant ?** Juste après une régénération, un bouton **« Annuler »** apparaît (ou `Ctrl/Cmd + Z`). Il restaure **à la fois** le planning précédent **et** les coches de ta liste de courses. Attention : un seul niveau d'annulation, et la fenêtre dure quelques secondes seulement.
 
-> 🧹 Regénérer **remet à zéro les coches** de ta liste de courses, puisque presque tous les ingrédients changent. C'est normal.
+> 🧹 Régénérer **remet à zéro les coches** de ta liste de courses, puisque presque tous les ingrédients changent. C'est normal.
 
 ## Pourquoi mes repas ressemblent à ça ?
 

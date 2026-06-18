@@ -284,7 +284,7 @@ async function flusherCoches(): Promise<void> {
   definirEtat("sauvegarde");
   try {
     if (Object.keys(local).length === 0) {
-      // Vidage complet (Tout décocher / regénération RG-13) → un seul DELETE.
+      // Vidage complet (Tout décocher / régénération RG-13) → un seul DELETE.
       await viderCochesDistantes(semaine);
     } else {
       for (const op of ops) {

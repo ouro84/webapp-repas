@@ -60,7 +60,7 @@ C'est le point le moins évident — et le plus utile à comprendre. Ta liste es
 
 Dans ces deux cas, si un article que tu avais **déjà coché** voit sa quantité changer, l'app le **décoche automatiquement** pour que tu le revérifies — **sans toucher au reste de ton chariot**. Tu ne perds donc jamais toutes tes coches pour une seule modif : seules les lignes réellement impactées repassent à vérifier.
 
-> 🔄 En revanche, **régénérer tout le planning** (bouton « Regénérer ») repart d'une semaine neuve : là, **toutes les coches sont remises à zéro**, puisque presque tous les plats changent.
+> 🔄 En revanche, **régénérer tout le planning** (bouton « Régénérer ») repart d'une semaine neuve : là, **toutes les coches sont remises à zéro**, puisque presque tous les plats changent.
 
 ## Le fond de placard
 

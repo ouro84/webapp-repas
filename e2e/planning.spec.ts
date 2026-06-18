@@ -148,19 +148,19 @@ test("modifier une semaine passée demande confirmation (US-14, RG-24)", async (
 
   const modale = page.getByRole("dialog", { name: "Modifier une semaine passée ?" });
 
-  // Regénérer un planning passé → confirmation. Annuler le laisse intact.
-  await page.getByRole("button", { name: "Regénérer" }).click();
+  // Régénérer un planning passé → confirmation. Annuler le laisse intact.
+  await page.getByRole("button", { name: "Régénérer" }).click();
   await expect(modale).toBeVisible();
   await modale.getByRole("button", { name: "Annuler" }).click();
   await expect(modale).not.toBeVisible();
-  await expect(page.getByText("Planning regénéré")).toHaveCount(0);
+  await expect(page.getByText("Planning régénéré")).toHaveCount(0);
   expect(await page.locator("main ul").innerText()).toBe(planningAvant);
 
   // Confirmer régénère réellement.
-  await page.getByRole("button", { name: "Regénérer" }).click();
+  await page.getByRole("button", { name: "Régénérer" }).click();
   await expect(modale).toBeVisible();
   await modale.getByRole("button", { name: "Modifier" }).click();
-  await expect(page.getByText("Planning regénéré")).toBeVisible();
+  await expect(page.getByText("Planning régénéré")).toBeVisible();
 
   // Modifier un slot d'une semaine passée demande aussi confirmation.
   await page
