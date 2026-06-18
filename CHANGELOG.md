@@ -7,6 +7,11 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+### Modifié
+
+- Thème clair/sombre déplacé dans le profil (#205, audit #51) : la **bascule de thème quitte la barre de navigation** (où elle occupait un emplacement permanent pour un réglage rarement utilisé) pour rejoindre une nouvelle section **« Préférences »** de la page **Mon profil**, sous forme de sélecteur **Système / Clair / Sombre**. Comportement du thème inchangé ; il n'apparaît simplement plus sur chaque écran (ni sur l'écran de connexion).
+- Barre de navigation épurée hors connexion (#207, audit #51) : déconnecté (écran de connexion, inscription, ou pages publiques), la nav n'affiche plus les onglets **Planning / Courses / Recettes** ni l'avatar — qui renvoyaient de toute façon vers la connexion. Ne restent que le **logo** et le lien **Aide**. Une fois connecté, la nav complète revient.
+
 ### Corrigé
 
 - Onboarding — interrupteur « Foyer végétarien » au rendu cassé (#204, audit #51) : sur le premier écran d'accueil, le **curseur du bouton bascule** pouvait s'afficher désynchronisé de sa piste (et mal rendu en thème sombre). Cause : deux implémentations divergentes du même interrupteur dans l'app. Désormais **un seul composant partagé** est utilisé partout (accueil + réglages), ce qui corrige l'affichage et évite tout futur écart.

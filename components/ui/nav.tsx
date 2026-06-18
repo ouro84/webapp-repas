@@ -12,14 +12,20 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Logo } from "@/components/ui/logo";
 import { Avatar } from "@/components/ui/avatar";
-import { BasculeTheme } from "@/components/ui/bascule-theme";
 import { useProfil } from "@/lib/profil";
+import { useEstConnecte } from "@/lib/session";
 
 const LIENS = [
   { href: "/planning", label: "Planning" },
   { href: "/courses", label: "Courses" },
   { href: "/recettes", label: "Recettes" },
 ];
+
+// Routes protégées (cf. proxy.ts) : le proxy y garantit une session → on peut
+// afficher la nav complète sans attendre le signal d'auth client (pas de
+// scintillement sur le chemin chaud). Les pages publiques (/, /aide, /login…)
+// attendent, elles, le vrai signal `useEstConnecte`.
+const ROUTES_PROTEGEES = ["/planning", "/courses", "/recettes", "/reglages", "/profil"];
 
 // État actif d'un lien de nav (#73, P20). Piège central : `startsWith("/")`
 // matcherait TOUTES les routes → l'accueil se teste en égalité STRICTE. Les
@@ -34,10 +40,18 @@ export function NavBar() {
   const pathname = usePathname();
   const accueil = estActif(pathname, "/");
   const profil = useProfil();
+  const estConnecte = useEstConnecte();
 
   // Tunnel d'onboarding (#22 PR2) : parcours focalisé, sans nav (on ne propose
   // aucune échappatoire tant que l'onboarding n'est pas terminé).
   if (pathname === "/bienvenue") return null;
+
+  // Nav applicative (liens de section + avatar) réservée aux connectés (#207).
+  // Tant que le signal d'auth est indéterminé (null), on retombe sur « suis-je
+  // sur une route protégée ? » : le proxy y garantit la session → nav complète
+  // sans attendre, donc aucun scintillement sur le chemin chaud.
+  const surRouteProtegee = ROUTES_PROTEGEES.some((r) => pathname.startsWith(r));
+  const afficherNavApp = estConnecte ?? surRouteProtegee;
 
   return (
     <header role="banner">
@@ -71,51 +85,64 @@ export function NavBar() {
 
           {/* Liens de navigation */}
           <div className="flex items-center gap-1">
-            {LIENS.map(({ href, label }) => {
-              const actif = estActif(pathname, href);
-              return (
-                <Link
-                  key={href}
-                  href={href}
-                  aria-current={actif ? "page" : undefined}
-                  // after:-inset-y-2 : étend la zone tactile verticale à ≥ 44px
-                  // (inset-x-0 pour ne pas chevaucher le lien voisin, gap-1)
-                  className={`relative rounded-full px-4 py-1.5 text-sm font-medium transition-colors after:absolute after:inset-x-0 after:-inset-y-2 after:content-[''] ${
-                    actif
-                      ? "bg-primary text-white"
-                      : "text-brand-700 hover:bg-brand-50"
-                  }`}
-                >
-                  {label}
-                </Link>
-              );
-            })}
-            {/* Profil (#22 PR1) : l'avatar remplace l'ex-engrenage de réglages
-                (#45). Point d'entrée « mon compte » (prénom, foyer, sécurité,
-                réglages de génération, déconnexion). Anneau actif sur /profil. */}
-            {(() => {
-              const actif = estActif(pathname, "/profil");
-              return (
-                <Link
-                  href="/profil"
-                  aria-label={
-                    profil?.prenom ? `Profil de ${profil.prenom}` : "Profil"
-                  }
-                  aria-current={actif ? "page" : undefined}
-                  className={`relative flex items-center justify-center rounded-full transition-colors after:absolute after:-inset-1 after:content-[''] ${
-                    actif ? "ring-2 ring-primary ring-offset-2 ring-offset-surface" : ""
-                  }`}
-                >
-                  <Avatar
-                    prenom={profil?.prenom}
-                    couleur={profil?.couleurAvatar}
-                    taille="sm"
-                  />
-                </Link>
-              );
-            })()}
-            {/* Bascule de thème clair/sombre/système (#72, P19). */}
-            <BasculeTheme />
+            {afficherNavApp ? (
+              <>
+                {LIENS.map(({ href, label }) => {
+                  const actif = estActif(pathname, href);
+                  return (
+                    <Link
+                      key={href}
+                      href={href}
+                      aria-current={actif ? "page" : undefined}
+                      // after:-inset-y-2 : étend la zone tactile verticale à ≥ 44px
+                      // (inset-x-0 pour ne pas chevaucher le lien voisin, gap-1)
+                      className={`relative rounded-full px-4 py-1.5 text-sm font-medium transition-colors after:absolute after:inset-x-0 after:-inset-y-2 after:content-[''] ${
+                        actif
+                          ? "bg-primary text-white"
+                          : "text-brand-700 hover:bg-brand-50"
+                      }`}
+                    >
+                      {label}
+                    </Link>
+                  );
+                })}
+                {/* Profil (#22 PR1) : l'avatar remplace l'ex-engrenage de réglages
+                    (#45). Point d'entrée « mon compte » (prénom, foyer, sécurité,
+                    réglages de génération, thème, déconnexion). Anneau actif sur
+                    /profil. La bascule de thème vit désormais dans /profil (#205). */}
+                {(() => {
+                  const actif = estActif(pathname, "/profil");
+                  return (
+                    <Link
+                      href="/profil"
+                      aria-label={
+                        profil?.prenom ? `Profil de ${profil.prenom}` : "Profil"
+                      }
+                      aria-current={actif ? "page" : undefined}
+                      className={`relative flex items-center justify-center rounded-full transition-colors after:absolute after:-inset-1 after:content-[''] ${
+                        actif ? "ring-2 ring-primary ring-offset-2 ring-offset-surface" : ""
+                      }`}
+                    >
+                      <Avatar
+                        prenom={profil?.prenom}
+                        couleur={profil?.couleurAvatar}
+                        taille="sm"
+                      />
+                    </Link>
+                  );
+                })()}
+              </>
+            ) : (
+              /* Déconnecté (#207) : nav minimale — pas de liens applicatifs qui
+                 rebondiraient vers /login. Seule l'aide (route publique) reste. */
+              <Link
+                href="/aide"
+                aria-current={estActif(pathname, "/aide") ? "page" : undefined}
+                className="relative rounded-full px-4 py-1.5 text-sm font-medium text-brand-700 transition-colors after:absolute after:inset-x-0 after:-inset-y-2 after:content-[''] hover:bg-brand-50"
+              >
+                Aide
+              </Link>
+            )}
           </div>
         </div>
       </nav>

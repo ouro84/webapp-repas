@@ -22,6 +22,10 @@ Section **« Sécurité »** : remplis **« Mot de passe actuel »**, **« Nouve
 
 Tu ne peux pas te connecter ? Sur l'écran de connexion, suis **« Mot de passe oublié »** : saisis ton e-mail, touche **« Envoyer le lien »**, et tu recevras un lien pour définir un nouveau mot de passe (**pense à vérifier tes spams**). Le lien t'amène sur une page **« Nouveau mot de passe »** où tu choisis le nouveau, puis tu te reconnectes.
 
+## Préférences (thème clair/sombre)
+
+Section **« Préférences »** : choisis le **thème** de l'app — **Système**, **Clair** ou **Sombre**. « Système » suit automatiquement le réglage de ton téléphone ou de ton ordinateur ; le choix s'applique immédiatement.
+
 ## Se déconnecter
 
 Le bouton **« Se déconnecter »** te déconnecte **de cet appareil uniquement** : tes autres appareils (et les autres membres du foyer) restent connectés. Tes données locales sont nettoyées au passage, pour ne rien laisser traîner à la personne suivante.
