@@ -106,4 +106,5 @@
 - [ ] `npm run build` — build de production vert
 - [ ] Preview Vercel de la branche validée avant merge (ADR-08)
 - [ ] Parcours complet sur la preview : login → génération → remplacement → courses → rechargement
+- [ ] En-têtes de sécurité présents (#188, ADR-10) : `curl --ssl-no-revoke -D - -o /dev/null <url prod>` montre `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `Permissions-Policy` (+ HSTS via Vercel) ; l'app refuse d'être chargée en iframe
 - [ ] Avant la **toute première** mise en production : réactiver la confirmation email Supabase (Authentication → Providers → Email → "Confirm email" — note ADR-02)

@@ -564,7 +564,7 @@ type Ingredient = {
 }
 ```
 
-> **Note discipline :** `categorie` et `fondDePlacard` sont définis par occurrence d'ingrédient dans une recette. Si "sel" apparaît dans 10 recettes, il doit avoir le même flag et la même catégorie dans les 10. Cette cohérence est une responsabilité à la saisie, pas une contrainte technique pour le MVP.
+> **Note discipline :** `categorie` et `fondDePlacard` sont définis par occurrence d'ingrédient dans une recette. Si "sel" apparaît dans 10 recettes, il doit avoir le même flag et la même catégorie dans les 10. Cette cohérence (un même **nom** doit garder le même flag/catégorie) reste une responsabilité **à la saisie**. Depuis l'audit F-06 (#193), la base impose néanmoins un `UNIQUE (nom, categorie, fond_de_placard)` : le triplet est **dédupliqué** côté base (find-or-create), mais deux triplets de même nom et de catégorie/flag différents peuvent toujours coexister — d'où le maintien de la discipline de saisie.
 
 ### 5.3 Unités disponibles
 

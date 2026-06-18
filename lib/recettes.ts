@@ -125,17 +125,13 @@ export async function chargerRecettesGerees(): Promise<RecetteGeree[]> {
 // Écritures (recettes personnelles) — #2 PR2
 // ============================================================================
 
-/**
- * Find-or-create d'un ingrédient du catalogue, identifié par le triplet
- * (nom, catégorie, fond de placard) — pas d'unicité SQL sur le nom seul, on
- * déduplique donc explicitement pour ne pas gonfler le catalogue partagé.
- * Retourne l'id de l'ingrédient.
- */
-async function trouverOuCreerIngredient(
+// Relit l'id d'un ingrédient par son triplet d'identité (nom, catégorie, fond
+// de placard). Sert au find-or-create et au repli en cas de course concurrente.
+async function lireIngredientParTriplet(
   client: Client,
   ingredient: Ingredient
-): Promise<string> {
-  const { data: existant, error: erreurLecture } = await client
+): Promise<string | null> {
+  const { data, error } = await client
     .from("ingredient")
     .select("id")
     .eq("nom", ingredient.nom)
@@ -143,11 +139,26 @@ async function trouverOuCreerIngredient(
     .eq("fond_de_placard", ingredient.fondDePlacard)
     .limit(1)
     .maybeSingle()
-
-  if (erreurLecture) {
-    throw new Error(`Lecture d'un ingrédient impossible : ${erreurLecture.message}`)
+  if (error) {
+    throw new Error(`Lecture d'un ingrédient impossible : ${error.message}`)
   }
-  if (existant) return existant.id
+  return data?.id ?? null
+}
+
+/**
+ * Find-or-create d'un ingrédient du catalogue, identifié par le triplet
+ * (nom, catégorie, fond de placard). La contrainte UNIQUE (#193, audit F-06)
+ * garantit l'unicité côté base ; on déduplique aussi côté client (fast path)
+ * et on gère la COURSE concurrente : si un autre insert crée le même triplet
+ * entre notre SELECT et notre INSERT, la contrainte lève 23505 → on relit la
+ * ligne gagnante au lieu d'échouer. Retourne l'id de l'ingrédient.
+ */
+async function trouverOuCreerIngredient(
+  client: Client,
+  ingredient: Ingredient
+): Promise<string> {
+  const existant = await lireIngredientParTriplet(client, ingredient)
+  if (existant) return existant
 
   const { data: cree, error: erreurInsertion } = await client
     .from("ingredient")
@@ -159,12 +170,17 @@ async function trouverOuCreerIngredient(
     .select("id")
     .single()
 
-  if (erreurInsertion || !cree) {
-    throw new Error(
-      `Création d'un ingrédient impossible : ${erreurInsertion?.message ?? "réponse vide"}`
-    )
+  if (cree) return cree.id
+
+  // 23505 = unique_violation : course concurrente sur le même triplet → relire.
+  if (erreurInsertion?.code === "23505") {
+    const apresCourse = await lireIngredientParTriplet(client, ingredient)
+    if (apresCourse) return apresCourse
   }
-  return cree.id
+
+  throw new Error(
+    `Création d'un ingrédient impossible : ${erreurInsertion?.message ?? "réponse vide"}`
+  )
 }
 
 // Lie les ingrédients saisis à une recette : résout chaque ingrédient
