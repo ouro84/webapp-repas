@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { apiError } from "@/lib/errors"
+import { limiteGeneration } from "@/lib/rate-limit"
 import {
   genererPlanning,
   joursSansLegume,
@@ -28,6 +29,19 @@ export async function POST(request: Request) {
       authError,
       "Tu dois être connecté pour générer un planning.",
       401
+    )
+  }
+
+  // Rate-limiting (#191, audit F-04) : borne le nombre de générations par
+  // utilisateur (clé = user.id). No-op si Upstash non configuré (CI/dev) et
+  // fail-open si indisponible — cf. lib/rate-limit.ts.
+  const { autorise } = await limiteGeneration(user.id)
+  if (!autorise) {
+    return apiError(
+      "POST /api/planning/generer",
+      null,
+      "Trop de générations en peu de temps. Patiente une minute puis réessaie.",
+      429
     )
   }
 

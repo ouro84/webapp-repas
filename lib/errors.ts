@@ -27,6 +27,7 @@ const HTTP_ERROR_MESSAGES: Record<number, string> = {
   401: "Tu dois être connecté pour effectuer cette action.",
   403: "Tu n'es pas autorisé à effectuer cette action.",
   404: "La ressource demandée est introuvable.",
+  429: "Trop de requêtes en peu de temps. Patiente un instant puis réessaie.",
   500: "Une erreur serveur s'est produite. Réessaie dans quelques instants.",
 }
 
