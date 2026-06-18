@@ -21,6 +21,47 @@ const ENTETES_SECURITE = [
   },
 ];
 
+// Content-Security-Policy (#188, audit F-01, palier 2). Stratégie `script-src`
+// retenue : `'unsafe-inline'` (pragmatique) — conserve le rendu PRERENDER des
+// pages statiques (/, /login) et reste simple ; le nonce (qui forcerait le rendu
+// dynamique partout) a été écarté, la surface XSS réelle étant quasi nulle
+// (React échappe, pas de rehype-raw, seul inline = script anti-FOUC statique).
+//
+// Origines autorisées (inventaire vérifié) :
+//   - script-src : Vercel Analytics/Speed Insights (va.vercel-scripts.com)
+//   - connect-src : Supabase REST + Realtime (wss), Sentry (ingest), Vercel insights
+//   - style-src 'unsafe-inline' : Tailwind v4 / sonner / next-font injectent du style inline
+//   - font-src 'self' : next/font est auto-hébergé (servi depuis /_next)
+//   - img-src data:/blob: : SVG inline, QR code (qrcode.react), avatars
+//
+// ⚠️ Livrée en `Content-Security-Policy-Report-Only` (NON bloquant) : on observe
+// d'abord les violations (console navigateur) sur les vrais parcours — Realtime à
+// deux onglets, QR d'invitation, toasts, /aide, dark mode — AVANT de passer en
+// enforcement (renommer la clé en `Content-Security-Policy`). Toute nouvelle
+// origine externe devra être ajoutée ici (cf. ADR-10).
+const CSP = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline' https://va.vercel-scripts.com",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob:",
+  "font-src 'self'",
+  "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.sentry.io https://*.ingest.sentry.io https://*.vercel-insights.com https://va.vercel-scripts.com",
+  "frame-ancestors 'none'",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "manifest-src 'self'",
+  "worker-src 'self' blob:",
+  "upgrade-insecure-requests",
+].join("; ");
+
+const ENTETES_AVEC_CSP = [
+  ...ENTETES_SECURITE,
+  // Report-only d'abord — cf. note ci-dessus (bascule en enforcement = renommer
+  // cette clé en "Content-Security-Policy").
+  { key: "Content-Security-Policy-Report-Only", value: CSP },
+];
+
 const nextConfig: NextConfig = {
   // Autorise l'accès au serveur de dev depuis le réseau local (test mobile).
   // Next 16 bloque par défaut les requêtes cross-origin vers les ressources
@@ -29,7 +70,7 @@ const nextConfig: NextConfig = {
   allowedDevOrigins: ["10.0.0.18"],
 
   async headers() {
-    return [{ source: "/:path*", headers: ENTETES_SECURITE }];
+    return [{ source: "/:path*", headers: ENTETES_AVEC_CSP }];
   },
 };
 
