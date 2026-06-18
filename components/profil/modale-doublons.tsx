@@ -93,7 +93,7 @@ export function ModaleDoublons({
                 <li key={normaliserCle(groupe)}>
                   <p className="mb-2 text-sm font-semibold text-brand-900">
                     {groupe.nom}
-                    <span className="ml-1 font-normal text-brand-700/70">
+                    <span className="ml-1 font-normal text-brand-700/85">
                       ({groupe.recettes.length})
                     </span>
                   </p>
