@@ -11,7 +11,7 @@ describe("traduireErreurAuth — mapping par code (#58)", () => {
     );
   });
 
-  test("compte déjà existant (signup)", () => {
+  test("compte déjà existant — contexte connexion : message explicite", () => {
     expect(traduireErreurAuth({ code: "user_already_exists" })).toMatch(
       /existe déjà/
     );
@@ -34,6 +34,27 @@ describe("traduireErreurAuth — mapping par code (#58)", () => {
     expect(traduireErreurAuth({ code: "email_address_invalid" })).toBe(
       "Adresse email invalide."
     );
+  });
+});
+
+describe("traduireErreurAuth — anti-énumération à l'inscription (F-05)", () => {
+  test("contexte signup : compte existant → message NEUTRE (ne révèle pas l'existence)", () => {
+    const neutre = traduireErreurAuth({ code: "user_already_exists" }, "signup");
+    expect(neutre).not.toMatch(/existe déjà/);
+    expect(neutre).toMatch(/Inscription impossible/);
+    expect(traduireErreurAuth({ code: "email_exists" }, "signup")).toBe(neutre);
+    expect(
+      traduireErreurAuth({ message: "User already registered" }, "signup")
+    ).toBe(neutre);
+  });
+
+  test("contexte signup : les autres erreurs restent spécifiques", () => {
+    expect(traduireErreurAuth({ code: "weak_password" }, "signup")).toMatch(
+      /6 caractères/
+    );
+    expect(
+      traduireErreurAuth({ code: "email_address_invalid" }, "signup")
+    ).toBe("Adresse email invalide.");
   });
 });
 

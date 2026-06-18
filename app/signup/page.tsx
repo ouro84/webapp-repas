@@ -13,7 +13,9 @@ export default function SignupPage() {
     password: string
   ): Promise<string | null> {
     const { error } = await supabase.auth.signUp({ email, password })
-    return error ? traduireErreurAuth(error) : null
+    // Contexte "signup" : neutralise le signal « compte déjà existant »
+    // (anti-énumération de comptes, audit F-05).
+    return error ? traduireErreurAuth(error, "signup") : null
   }
 
   return (
