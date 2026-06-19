@@ -276,7 +276,7 @@ function GenerationReglages({
       </p>
 
       {/* Section — temps de préparation maximum par créneau */}
-      <section className="mb-8" aria-labelledby="section-temps">
+      <section className="mb-6 rounded-2xl border border-brand-100 bg-surface p-4 md:p-5" aria-labelledby="section-temps">
         <h2 id="section-temps" className="mb-1 text-lg font-semibold text-brand-900">
           Temps de préparation maximum
         </h2>
@@ -299,7 +299,7 @@ function GenerationReglages({
                     {libelle}
                   </span>
                   {eligibles !== null && (
-                    <span className="text-xs text-brand-700/70">
+                    <span className="text-xs text-brand-700/85">
                       {eligibles} recette{eligibles > 1 ? "s" : ""} éligible
                       {eligibles > 1 ? "s" : ""}
                     </span>
@@ -317,7 +317,7 @@ function GenerationReglages({
       </section>
 
       {/* Section — privilégier le végétarien par créneau (#86 PR2, RG-26) */}
-      <section className="mb-8" aria-labelledby="section-vege">
+      <section className="mb-6 rounded-2xl border border-brand-100 bg-surface p-4 md:p-5" aria-labelledby="section-vege">
         <h2 id="section-vege" className="mb-1 text-lg font-semibold text-brand-900">
           Privilégier les repas végétariens
         </h2>
@@ -343,7 +343,7 @@ function GenerationReglages({
                     {libelle}
                   </span>
                   {eligibles !== null && (
-                    <span className="text-xs text-brand-700/70">
+                    <span className="text-xs text-brand-700/85">
                       {eligibles} recette{eligibles > 1 ? "s" : ""} végétarienne
                       {eligibles > 1 ? "s" : ""} éligible{eligibles > 1 ? "s" : ""}
                     </span>
@@ -361,7 +361,7 @@ function GenerationReglages({
       </section>
 
       {/* Section — au moins un repas légumes par jour (#49 PR2, RG-27) */}
-      <section className="mb-8" aria-labelledby="section-mix">
+      <section className="mb-6 rounded-2xl border border-brand-100 bg-surface p-4 md:p-5" aria-labelledby="section-mix">
         <h2 id="section-mix" className="mb-1 text-lg font-semibold text-brand-900">
           Équilibre des accompagnements
         </h2>
@@ -380,7 +380,7 @@ function GenerationReglages({
               Au moins un repas légumes par jour
             </span>
             {mixActif && nbLegumes !== null && (
-              <span className="text-xs text-brand-700/70">
+              <span className="text-xs text-brand-700/85">
                 {nbLegumes} recette{nbLegumes > 1 ? "s" : ""} « légumes » dans ton
                 vivier
               </span>
@@ -395,7 +395,7 @@ function GenerationReglages({
       </section>
 
       {/* Section — saisonnalité (#23 PR2, RG-28) */}
-      <section className="mb-8" aria-labelledby="section-saison">
+      <section className="mb-6 rounded-2xl border border-brand-100 bg-surface p-4 md:p-5" aria-labelledby="section-saison">
         <h2 id="section-saison" className="mb-1 text-lg font-semibold text-brand-900">
           Recettes de saison
         </h2>
@@ -417,7 +417,7 @@ function GenerationReglages({
       </section>
 
       {/* Section — nombre de personnes par défaut */}
-      <section className="mb-8" aria-labelledby="section-personnes">
+      <section className="mb-6 rounded-2xl border border-brand-100 bg-surface p-4 md:p-5" aria-labelledby="section-personnes">
         <h2
           id="section-personnes"
           className="mb-1 text-lg font-semibold text-brand-900"
