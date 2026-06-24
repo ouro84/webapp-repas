@@ -8,6 +8,8 @@
 // Aucune dépendance Supabase : on type juste la forme minimale de l'erreur,
 // ce qui rend la fonction testable en isolation.
 
+import { LONGUEUR_MIN_MDP } from "@/lib/auth-regles"
+
 export type ErreurAuth = {
   message?: string
   code?: string
@@ -50,7 +52,11 @@ const PAR_CODE: Record<string, string> = {
   user_already_exists:
     "Un compte existe déjà avec cet email. Connecte-toi plutôt.",
   email_exists: "Un compte existe déjà avec cet email. Connecte-toi plutôt.",
-  weak_password: "Mot de passe trop court : au moins 6 caractères.",
+  // Couvre les trois refus de Supabase sous le code `weak_password` (#189,
+  // F-02) : trop court, trop simple (complexité), ou compromis (HIBP / Leaked
+  // Password Protection). Message unique et actionnable, robuste quelle que soit
+  // la raison citée par Supabase.
+  weak_password: `Mot de passe trop faible : choisis-en un d'au moins ${LONGUEUR_MIN_MDP} caractères, en évitant un mot de passe courant ou déjà compromis.`,
   over_request_rate_limit:
     "Trop de tentatives. Patiente quelques minutes avant de réessayer.",
   over_email_send_rate_limit:
@@ -68,6 +74,10 @@ const PAR_MESSAGE: { motif: string; texte: string }[] = [
   { motif: "already been registered", texte: PAR_CODE.user_already_exists },
   { motif: "user already exists", texte: PAR_CODE.user_already_exists },
   { motif: "password should be at least", texte: PAR_CODE.weak_password },
+  // Mot de passe compromis (HIBP) / trop faible — variantes de message GoTrue.
+  { motif: "pwned", texte: PAR_CODE.weak_password },
+  { motif: "known to be weak", texte: PAR_CODE.weak_password },
+  { motif: "data breach", texte: PAR_CODE.weak_password },
   { motif: "rate limit", texte: PAR_CODE.over_request_rate_limit },
   { motif: "unable to validate email", texte: PAR_CODE.email_address_invalid },
 ]

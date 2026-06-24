@@ -14,8 +14,10 @@ import { useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { traduireErreurAuth } from "@/lib/messages-auth";
+import { LONGUEUR_MIN_MDP } from "@/lib/auth-regles";
 
-const LONGUEUR_MIN = 6;
+// Source unique partagée (#189) — garde-fou UX ; l'autorité réelle est Supabase.
+const LONGUEUR_MIN = LONGUEUR_MIN_MDP;
 
 export default function PageReinitialiser() {
   const supabase = createClient();

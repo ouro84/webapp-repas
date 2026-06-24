@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/client"
 import { traduireErreurAuth } from "@/lib/messages-auth"
+import { LONGUEUR_MIN_MDP } from "@/lib/auth-regles"
 import { FormulaireAuth, LienPied } from "@/components/auth/formulaire-auth"
 
 export default function SignupPage() {
@@ -22,7 +23,7 @@ export default function SignupPage() {
     <FormulaireAuth
       titre="Créer un compte"
       autocompletePassword="new-password"
-      minLengthPassword={6}
+      minLengthPassword={LONGUEUR_MIN_MDP}
       labelSoumettre="Créer mon compte"
       labelChargement="Création…"
       onSoumettre={inscrire}
