@@ -523,6 +523,24 @@ Réduire à zéro l'effort de planification hebdomadaire des repas, du choix des
 > **When** j'accède à l'app  
 > **Then** un interstitiel me propose de rejoindre le foyer de l'invitant·e ; si je suis déjà en **foyer partagé**, c'est refusé (RG-29) et expliqué
 
+> **Note de numérotation :** US-25 à US-44 sont réservées à l'épopée **B2C** (« Go public », cf. `RAFFINEMENT_B2C.md` et issues #235-249). Les **features produit** hors B2C reprennent donc à **US-45**.
+
+### US-45 — Mémoire de variété (#218, P25)
+
+> **En tant qu'** utilisateur qui génère son planning chaque semaine, je veux que la génération évite de me reproposer les plats des semaines récentes, afin de profiter d'une vraie variété sans corriger le planning à la main.
+
+> **Given** des plannings existent pour les semaines récentes  
+> **When** je génère un nouveau planning  
+> **Then** les recettes servies récemment sont **défavorisées** dans le tirage (biais souple et dégressif), à éligibilité (temps/végé/saison) égale (RG-49/50/51)
+
+> **Given** le vivier de recettes « fraîches » est insuffisant pour un créneau  
+> **When** la génération atteint ce créneau  
+> **Then** elle **se replie** sur des recettes récentes plutôt que d'échouer (la génération n'échoue jamais à cause de la variété, RG-49)
+
+> **Given** je remplace manuellement un slot (« ↺ changer » / « Sélectionner »)  
+> **When** je choisis une recette  
+> **Then** la mémoire de variété **ne s'applique pas** (RG-52, cohérent avec RG-03)
+
 ---
 
 ## 5. Modèle de données
@@ -833,7 +851,7 @@ Historique (conservé pour mémoire) : la génération visait une semaine cible 
 - **Génération** : pilotée par un **interrupteur** sur la page Réglages (« ne proposer que des recettes de saison »), **activé par défaut**. Quand il est actif, la génération complète **et** le remplacement « ↺ changer » ne proposent que des recettes de la saison de la **semaine cible**. **Dégradation gracieuse** : si le vivier de saison ne suffit pas à remplir la semaine, on complète avec des recettes hors-saison (la génération **n'échoue jamais**) et l'utilisateur est **averti** du nombre de repas hors-saison. La faisabilité ne dépend donc pas de la saison.
 - **Sélection manuelle non filtrée (RG-03 de #23)** : le sélecteur de recette (US-06) continue de proposer **toutes** les recettes, hors saison comprises — l'utilisateur arbitre.
 
-### RG-49 à RG-52 — Mémoire de variété, anti-répétition inter-semaines (US-27, #218)
+### RG-49 à RG-52 — Mémoire de variété, anti-répétition inter-semaines (US-45, #218)
 
 La génération évite de reproposer les plats des semaines récentes, sans jamais bloquer.
 
