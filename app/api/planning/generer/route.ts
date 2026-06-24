@@ -3,12 +3,19 @@ import { createClient } from "@/lib/supabase/server"
 import { apiError } from "@/lib/errors"
 import { limiteGeneration } from "@/lib/rate-limit"
 import {
+  FENETRE_VARIETE,
   genererPlanning,
   joursSansLegume,
   reposNonSaison,
   slotsVegeNonHonores,
+  type HistoriqueVariete,
 } from "@/lib/generateur"
-import { decalageEntre, semaineISO, semaineParDefaut } from "@/lib/semaines"
+import {
+  decalageEntre,
+  semaineDecalee,
+  semaineISO,
+  semaineParDefaut,
+} from "@/lib/semaines"
 import { dbRecetteToDomain } from "@/lib/adapters"
 import { dbReglagesToDomain, REGLAGES_DEFAUT } from "@/lib/reglages"
 
@@ -135,8 +142,50 @@ export async function POST(request: Request) {
     ? dbReglagesToDomain(dbReglages as DbReglages)
     : REGLAGES_DEFAUT
 
+  // RG-49/50/52 — Mémoire de variété (#218) : on lit les plannings du foyer des
+  // FENETRE_VARIETE semaines PRÉCÉDANT la cible (RLS « foyer » → uniquement le
+  // foyer courant) pour défavoriser dans le tirage les recettes servies
+  // récemment. On ne récupère que `semaine` + les `recette_id` des slots (léger).
+  // Best-effort : en cas d'erreur, on génère sans mémoire (jamais de blocage) et
+  // on journalise — jamais de catch muet. La sélection manuelle n'est pas
+  // concernée (RG-03 #23) : ce biais ne vit que dans la génération complète.
+  const borneInf = semaineDecalee(semaine, -FENETRE_VARIETE)
+  const { data: historique, error: historiqueError } = await supabase
+    .from("planning")
+    .select("semaine, planning_slot ( recette_id )")
+    .gte("semaine", borneInf)
+    .lt("semaine", semaine)
+  if (historiqueError) {
+    console.error(
+      "Lecture de l'historique de variété échouée (variété ignorée).",
+      historiqueError
+    )
+  }
+  // id de recette → ancienneté en semaines de son apparition la PLUS RÉCENTE
+  // (pénalité maximale) ; une recette vue plusieurs semaines ne compte qu'une fois.
+  const historiqueVariete: HistoriqueVariete = new Map()
+  for (const ligne of (historique ?? []) as Array<{
+    semaine: string
+    planning_slot: Array<{ recette_id: string }>
+  }>) {
+    const ancien = decalageEntre(ligne.semaine, semaine) // semaines écoulées (> 0)
+    if (ancien < 1) continue
+    for (const slot of ligne.planning_slot ?? []) {
+      const courant = historiqueVariete.get(slot.recette_id)
+      if (courant === undefined || ancien < courant) {
+        historiqueVariete.set(slot.recette_id, ancien)
+      }
+    }
+  }
+
   try {
-    const planning = genererPlanning(recettesDomain, semaine, reglages)
+    const planning = genererPlanning(
+      recettesDomain,
+      semaine,
+      reglages,
+      undefined,
+      historiqueVariete
+    )
     // RG-26 — préférence végé souple : on signale le NOMBRE de repas qui n'ont
     // pas pu être végétariens (vivier insuffisant) sans bloquer la génération.
     // Le client en fait un toast d'information (#86 PR2).

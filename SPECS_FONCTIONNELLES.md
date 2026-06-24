@@ -833,6 +833,15 @@ Historique (conservé pour mémoire) : la génération visait une semaine cible 
 - **Génération** : pilotée par un **interrupteur** sur la page Réglages (« ne proposer que des recettes de saison »), **activé par défaut**. Quand il est actif, la génération complète **et** le remplacement « ↺ changer » ne proposent que des recettes de la saison de la **semaine cible**. **Dégradation gracieuse** : si le vivier de saison ne suffit pas à remplir la semaine, on complète avec des recettes hors-saison (la génération **n'échoue jamais**) et l'utilisateur est **averti** du nombre de repas hors-saison. La faisabilité ne dépend donc pas de la saison.
 - **Sélection manuelle non filtrée (RG-03 de #23)** : le sélecteur de recette (US-06) continue de proposer **toutes** les recettes, hors saison comprises — l'utilisateur arbitre.
 
+### RG-49 à RG-52 — Mémoire de variété, anti-répétition inter-semaines (US-27, #218)
+
+La génération évite de reproposer les plats des semaines récentes, sans jamais bloquer.
+
+- **RG-49 — Biais souple** : la variété est un biais de tirage (même nature que les biais végé RG-26 / saison RG-28), **composé après** les filtres durs d'éligibilité (temps). Elle ne modifie **jamais** la faisabilité (condition de Hall) ni le palier de temps d'un créneau : la génération n'échoue jamais à cause de la variété.
+- **RG-50 — Fenêtre glissante** : la référence est de **N semaines glissantes** (`FENETRE_VARIETE` = 4, borné par la rétention ~12 semaines de #5). Les recettes servies dans cette fenêtre sont **défavorisées** dans le tirage pondéré ; au-delà, plus aucune pénalité. Si le vivier de recettes « fraîches » est insuffisant, le tirage **se replie** sur les recettes récentes (poids strictement positif) plutôt que d'échouer.
+- **RG-51 — Pénalité dégressive** : plus une recette est **récente** dans la fenêtre, plus elle est défavorisée (vue il y a 1 semaine ≫ vue il y a 4 semaines). Une recette servie plusieurs semaines ne compte que par son apparition **la plus récente** (pénalité maximale).
+- **RG-52 — Lecture serveur, génération seule** : l'historique est lu **côté serveur** au moment de la génération (`POST /api/planning/generer`, sous RLS foyer). La **sélection manuelle** et le remplacement « ↺ changer » (`remplacerSlot`) **ne sont pas concernés** (cohérent avec RG-03 #23 : l'utilisateur arbitre).
+
 ### RG-22 — Repas en « restes » (US-12)
 
 Un slot peut être marqué **« restes »** (flag par slot, `restes.dejeuner` / `restes.diner`, cf. 5.5) : l'utilisateur mangera ce qu'il a au frigo, sans cuisiner. Règles :

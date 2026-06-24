@@ -9,6 +9,7 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ### Ajouté
 
+- Mémoire de variété — moins de répétitions d'une semaine à l'autre (#218) : la génération **évite désormais de reproposer les plats des semaines récentes**. Les recettes vues récemment sont **défavorisées** dans le tirage (biais souple et **dégressif** : un plat de la semaine dernière l'est plus qu'un plat d'il y a un mois), sur une fenêtre de 4 semaines. Le biais ne bloque jamais : si le choix « frais » est insuffisant, la génération se replie sur les recettes récentes plutôt que d'échouer. La **sélection manuelle** et le « ↺ changer » ne sont pas concernés (tu gardes la main). Aucun réglage à activer, aucune donnée nouvelle (l'historique des plannings du foyer, déjà conservé, est exploité).
 - Accès rapide aux réglages depuis le planning (#206, audit #51) : une **icône réglages** (à côté de « Régénérer ») ouvre directement les **Réglages de génération**. Plus besoin de passer par le profil quand un planning ne te convient pas — tu ajustes les règles (durées, végé, légumes, saison, personnes) là où l'envie naît, puis tu régénères.
 
 ### Modifié
