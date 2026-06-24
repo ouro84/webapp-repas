@@ -86,6 +86,7 @@ export async function POST(request: Request) {
       vegetarien,
       accompagnement,
       saisons,
+      etapes,
       recette_ingredient (
         quantite,
         unite,

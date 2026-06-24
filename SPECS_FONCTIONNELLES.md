@@ -805,6 +805,16 @@ La fiche affiche **tout ce que l'on connaît** de la recette : titre, temps de p
 - **Édition** : un raccourci « Modifier » n'apparaît que pour une recette **personnelle** (éditable, cf. RLS) ; absent pour le catalogue global.
 - **Saisonnalité : hors périmètre** tant que la donnée n'existe pas (cf. backlog #P12). La fiche n'invente pas de champ ; elle l'affichera quand le modèle le portera.
 
+### RG-43 — Étapes de préparation (US « Préparation », #233)
+
+Une recette peut porter une liste **ordonnée** d'étapes de préparation (texte libre par étape).
+
+- **Modèle** : `Recette.etapes?: string[]` (optionnel ; absent/vide = pas d'étapes, comme `saisons?`/`accompagnement?`). DB : colonne `etapes text[]` **nullable**. Saisie **100 % manuelle** (pas de pré-suggestion par heuristique, contrairement à végé/accompagnement/saison).
+- **Affichage (fiche)** : section **« Préparation »** en **liste numérotée** (`<ol>`), **après** les ingrédients. Une recette **sans étapes** (catalogue global non renseigné) **masque** la section — pas de section vide ni de placeholder.
+- **Saisie (création/édition)** : éditeur d'étapes (ajout / suppression / réordonnancement par flèches haut-bas ; pas de drag&drop en V1). Les entrées vides sont écartées à l'enregistrement ; aucune n'est obligatoire.
+- **Catalogue global** : non éditable → pour lui ajouter des étapes, on passe par la **duplication+édition** (#105 PR2) ; la copie perso porte les étapes. Les 74 recettes seedées restent **sans étapes** (pas de backfill).
+- **Persistance** : la recette étant **embarquée dans le slot** persisté (la fiche lit le slot, pas Supabase, RG-20), `etapes` doit être porté de bout en bout (select → adapter → slot → relecture) sinon il disparaît d'un planning relu (piège #164).
+
 ### RG-21 — Sélection de la semaine cible (US-11) — absorbée par RG-24
 
 > **Mise à jour #5 :** le sélecteur de semaine cible de #55 est **remplacé par le navigateur de semaines** (RG-24). La génération vise désormais la **semaine affichée** ; la plage de validation serveur passe de « courante → +6 » à « −12 → +6 » (cf. RG-24), et le « mono-actif » est levé (multi-semaines).

@@ -31,6 +31,8 @@ export type SaisieRecette = {
   accompagnement: Accompagnement | null
   // Saisons (#23) : liste (éventuellement vide = toute l'année).
   saisons: Saison[]
+  // Étapes de préparation (#233) : liste ordonnée (éventuellement vide).
+  etapes: string[]
   ingredients: Ingredient[]
 }
 
@@ -43,6 +45,7 @@ const SELECT_RECETTE = `
   vegetarien,
   accompagnement,
   saisons,
+  etapes,
   recette_ingredient (
     quantite,
     unite,
@@ -223,6 +226,7 @@ export async function creerRecette(saisie: SaisieRecette): Promise<Recette> {
       vegetarien: saisie.vegetarien,
       accompagnement: saisie.accompagnement,
       saisons: saisie.saisons.length > 0 ? saisie.saisons : null,
+      etapes: saisie.etapes.length > 0 ? saisie.etapes : null,
       user_id: user.id,
     })
     .select("id")
@@ -249,6 +253,7 @@ function saisieVersRecette(id: string, saisie: SaisieRecette): Recette {
   }
   if (saisie.accompagnement) recette.accompagnement = saisie.accompagnement
   if (saisie.saisons.length > 0) recette.saisons = saisie.saisons
+  if (saisie.etapes.length > 0) recette.etapes = saisie.etapes
   return recette
 }
 
@@ -271,6 +276,7 @@ export async function modifierRecette(
       vegetarien: saisie.vegetarien,
       accompagnement: saisie.accompagnement,
       saisons: saisie.saisons.length > 0 ? saisie.saisons : null,
+      etapes: saisie.etapes.length > 0 ? saisie.etapes : null,
     })
     .eq("id", id)
 
@@ -359,6 +365,7 @@ export function recetteVersSaisie(recette: Recette): SaisieRecette {
     vegetarien: recette.vegetarien ?? false,
     accompagnement: recette.accompagnement ?? null,
     saisons: recette.saisons ?? [],
+    etapes: recette.etapes ?? [],
     ingredients: recette.ingredients,
   }
 }
