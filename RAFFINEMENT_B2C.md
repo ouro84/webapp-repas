@@ -27,7 +27,9 @@ Ce document est la source de vérité du raffinement. Une fois validé, chaque U
 
 **Ligne de départ minimale pour ouvrir au public = Lot 0 + Lot 1 + Lot 2 + Lot 3.** Lots 4→6 se déroulent pendant la montée en charge.
 
-Numérotation : les nouvelles user stories continuent la série des specs (dernière existante = US-24) → **US-25+**. Les nouvelles règles métier continuent **RG-40+**.
+Numérotation : cette épopée B2C occupe la **plage réservée US-25 à US-44** (à la suite de US-24, dernière US des specs avant le B2C). Les règles métier B2C utilisent **RG-40 à RG-42**.
+
+> ⚠️ **Réservation (résolu 2026-06-24).** US-25→44 est **exclusivement** B2C — ne pas la réutiliser pour des features produit hors B2C. Les **features produit non-B2C** reprennent à **US-45+** (déjà attribuées : US-45 variété #218, US-46 étapes #233, US-47 article manuel #216, US-48 créneau désactivable #217, US-49 favoris #219 ; prochaine = US-50). Côté RG, le produit a pris RG-43 (#233) et RG-49→52 (#218) ; les RG B2C restent en 40-42. Une collision passée (issues #216-219 avaient repris US-25→28, déjà utilisées ici par le Lot 0) a été corrigée dans SPECS et sur GitHub.
 
 ---
 
