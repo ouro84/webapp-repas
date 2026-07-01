@@ -679,7 +679,7 @@ export default function PagePlanning() {
           {etatSync !== "synchronise" && (
             <p
               role="status"
-              className="mt-0.5 text-xs text-brand-700/70"
+              className="mt-0.5 text-xs text-brand-700/85"
             >
               {etatSync === "sauvegarde"
                 ? "Sauvegarde…"

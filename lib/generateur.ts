@@ -195,6 +195,64 @@ function choisirAleatoire<T>(elements: T[], random: Aleatoire = Math.random): T 
   return elements[index]!
 }
 
+/**
+ * Mémoire de variété (#218, RG-50/RG-52) : id de recette → ancienneté EN
+ * SEMAINES de sa dernière apparition au planning (1 = la semaine précédant la
+ * cible). Une recette absente n'a pas été servie dans la fenêtre → poids plein
+ * (non pénalisée). Construite côté serveur depuis l'historique des plannings du
+ * foyer (RG-52), jamais en sélection manuelle (RG-03).
+ */
+export type HistoriqueVariete = Map<string, number>
+
+/**
+ * Fenêtre glissante de référence de la mémoire de variété (#218, RG-50), en
+ * semaines. Bornée par la rétention ~12 semaines (#5). 4 ≈ un mois : assez pour
+ * ne pas revoir un plat « du mois dernier » sans appauvrir durablement un petit
+ * vivier (au-delà de la fenêtre, plus aucune pénalité).
+ */
+export const FENETRE_VARIETE = 4
+
+/**
+ * Poids de variété d'une recette (#218, RG-49/50/51). Vaut 1 (poids plein) si la
+ * recette n'a pas été servie dans la fenêtre ; sinon une pénalité DÉGRESSIVE
+ * selon l'ancienneté : vue il y a 1 semaine = fortement défavorisée, vue il y a
+ * `fenetre` semaines = à peine. Le poids reste STRICTEMENT positif (jamais 0) :
+ * toute recette demeure sélectionnable en dernier recours → la faisabilité (Hall)
+ * est inchangée (RG-49) et le biais ne bloque jamais (repli implicite, RG-50).
+ */
+export function poidsVariete(
+  recette: Recette,
+  historique: HistoriqueVariete,
+  fenetre: number = FENETRE_VARIETE
+): number {
+  const ancien = historique.get(recette.id)
+  if (ancien === undefined || ancien < 1 || ancien > fenetre) return 1
+  // ancien ∈ [1, fenetre] → poids ∈ [1/(fenetre+1), fenetre/(fenetre+1)] ⊂ (0,1).
+  return ancien / (fenetre + 1)
+}
+
+/**
+ * Tirage pondéré (#218) : choisit un élément avec une probabilité
+ * proportionnelle à son poids (≥ 0). Généralise `choisirAleatoire` (cas des
+ * poids égaux). Repli sur un tirage uniforme si la somme des poids est nulle
+ * (cas théorique : ne survient pas tant qu'au moins un poids est > 0).
+ */
+function choisirPondere<T>(
+  elements: T[],
+  poids: (element: T) => number,
+  random: Aleatoire = Math.random
+): T {
+  const poidsParElement = elements.map((e) => Math.max(0, poids(e)))
+  const somme = poidsParElement.reduce((acc, p) => acc + p, 0)
+  if (somme <= 0) return choisirAleatoire(elements, random)
+  let seuil = random() * somme
+  for (let i = 0; i < elements.length; i++) {
+    seuil -= poidsParElement[i]!
+    if (seuil < 0) return elements[i]!
+  }
+  return elements[elements.length - 1]!
+}
+
 // Clé unique d'un slot, utilisée pour mémoriser les attributions.
 function cleSlot(jour: Jour, typeRepas: TypeRepas): string {
   return `${jour}-${typeRepas}`
@@ -214,6 +272,10 @@ function cleSlot(jour: Jour, typeRepas: TypeRepas): string {
  *            "rapide", déjeuner de semaine = "rapide"/"normal", week-end = tout.
  *  - RG-02 : aucune recette n'apparaît deux fois dans la semaine, tous slots confondus.
  *  - RG-03 : parmi les recettes éligibles restantes, le choix est aléatoire.
+ *  - RG-49/50/51 : mémoire de variété (#218) — les recettes servies dans les
+ *    `FENETRE_VARIETE` semaines précédentes sont DÉFAVORISÉES dans le tirage
+ *    (biais souple, pénalité dégressive selon l'ancienneté), composé APRÈS les
+ *    filtres durs : il ne change ni la faisabilité ni le palier de temps.
  *
  * Stratégie de remplissage : les slots les plus contraints sont attribués en
  * premier (dîners de semaine = "rapide", puis déjeuners de semaine =
@@ -226,6 +288,9 @@ function cleSlot(jour: Jour, typeRepas: TypeRepas): string {
  *                Défaut : la semaine courante.
  * @param random source d'aléa (RG-03), injectable pour des tests déterministes
  *               (#157) ; défaut `Math.random` (comportement prod inchangé).
+ * @param historiqueVariete mémoire de variété (#218, RG-49/50) : id de recette →
+ *               ancienneté en semaines de sa dernière apparition. Défaut Map vide
+ *               = aucune pénalité (comportement prod inchangé). Lu côté serveur.
  * @throws {Error} si le vivier de recettes éligibles est insuffisant pour remplir
  *                 les 14 slots sans répétition.
  */
@@ -233,7 +298,8 @@ export function genererPlanning(
   recettes: Recette[],
   semaine: string = semaineISO(),
   reglages: ReglagesGeneration = REGLAGES_DEFAUT,
-  random: Aleatoire = Math.random
+  random: Aleatoire = Math.random,
+  historiqueVariete: HistoriqueVariete = new Map()
 ): Planning {
   const slots: Slot[] = ORDRE_JOURS.flatMap((jour): Slot[] => [
     { jour, typeRepas: "dejeuner" },
@@ -288,7 +354,15 @@ export function genererPlanning(
       attributions,
       reglages
     )
-    const choisie = choisirAleatoire(candidats, random)
+    // RG-49/50/51 — mémoire de variété (#218) : tirage PONDÉRÉ dans le même
+    // ensemble de candidats (filtres durs déjà appliqués), pénalisant de façon
+    // dégressive les recettes vues récemment. Historique vide → poids tous égaux
+    // → équivaut exactement à choisirAleatoire (comportement prod inchangé).
+    const choisie = choisirPondere(
+      candidats,
+      (r) => poidsVariete(r, historiqueVariete),
+      random
+    )
     utilisees.add(choisie.id)
     attributions.set(cleSlot(slot.jour, slot.typeRepas), choisie)
   }
