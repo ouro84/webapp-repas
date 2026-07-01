@@ -14,8 +14,10 @@
 import { describe, test, expect } from "vitest";
 import {
   analyserVivier,
+  FENETRE_VARIETE,
   genererPlanning,
   joursSansLegume,
+  poidsVariete,
   prefereVegeSlot,
   reposNonSaison,
   recettesUtilisees,
@@ -23,6 +25,7 @@ import {
   remplacerSlot,
   remplacerSlotManuel,
   slotsVegeNonHonores,
+  type HistoriqueVariete,
 } from "@/lib/generateur";
 import { RECETTES_FIXTURES } from "@/tests/fixtures/recettes";
 import { REGLAGES_DEFAUT } from "@/lib/reglages";
@@ -878,6 +881,99 @@ describe("prefereVegeSlot — mappe créneau → préférence (#86 PR2)", () => 
 
   test("réglages sans préférence : toujours false", () => {
     expect(prefereVegeSlot("mardi", "diner", REGLAGES_DEFAUT)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #218 — mémoire de variété (anti-répétition inter-semaines). Biais SOUPLE et
+// DÉGRESSIF : les recettes servies récemment sont défavorisées dans le tirage,
+// jamais bloquées (la génération aboutit toujours, RG-49/50/51).
+// ---------------------------------------------------------------------------
+describe("poidsVariete — pénalité dégressive (#218, RG-49/50/51)", () => {
+  const r = (id: string): Recette => ({
+    id,
+    nom: id,
+    tempsPreparation: "rapide",
+    ingredients: [],
+  });
+
+  test("recette hors historique : poids plein (1)", () => {
+    expect(poidsVariete(r("x"), new Map())).toBe(1);
+  });
+
+  test("dégressif : plus une recette est récente, plus elle est pénalisée (RG-51)", () => {
+    // ancien = nombre de semaines écoulées depuis la dernière apparition.
+    const poids = (ancien: number) =>
+      poidsVariete(r("x"), new Map([["x", ancien]]));
+    // 1 sem < 2 sem < ... < FENETRE sem < hors-fenêtre (poids plein).
+    for (let a = 1; a < FENETRE_VARIETE; a++) {
+      expect(poids(a)).toBeLessThan(poids(a + 1));
+    }
+    expect(poids(FENETRE_VARIETE)).toBeLessThan(1);
+  });
+
+  test("hors de la fenêtre (ancien > FENETRE) : poids plein (1)", () => {
+    expect(poidsVariete(r("x"), new Map([["x", FENETRE_VARIETE + 1]]))).toBe(1);
+  });
+
+  test("poids toujours strictement positif dans la fenêtre (jamais bloquant, RG-49)", () => {
+    for (let a = 1; a <= FENETRE_VARIETE; a++) {
+      expect(poidsVariete(r("x"), new Map([["x", a]]))).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe("genererPlanning — mémoire de variété (#218, RG-49/50)", () => {
+  // Vivier de 30 recettes rapides (éligibles partout) : 15 « vues la semaine
+  // dernière » (ancien = 1, fortement pénalisées) + 15 « fraîches ».
+  const VIVIER_VARIETE = synth("rapide", 30, "v");
+  const RECENTES = new Set(VIVIER_VARIETE.slice(0, 15).map((r) => r.id));
+  const HISTORIQUE_RECENT: HistoriqueVariete = new Map(
+    [...RECENTES].map((id) => [id, 1])
+  );
+
+  test("historique vide (défaut) : comportement inchangé, 14 repas", () => {
+    const planning = genererPlanning(VIVIER_VARIETE, "2026-W30");
+    expect(tousLesRepas(planning)).toHaveLength(14);
+  });
+
+  test("défavorise nettement les recettes vues récemment (biais souple)", () => {
+    // Sans biais, les recettes récentes (50 % du vivier) apparaîtraient ~50 % du
+    // temps. Avec la pénalité dégressive, leur part doit chuter bien en dessous.
+    // Tirage seedé → résultat déterministe (pas de flake, cf. #157).
+    const rng = rngSeed(218);
+    let recent = 0;
+    let total = 0;
+    for (let i = 0; i < 60; i++) {
+      const planning = genererPlanning(
+        VIVIER_VARIETE,
+        "2026-W30",
+        undefined,
+        rng,
+        HISTORIQUE_RECENT
+      );
+      for (const repas of tousLesRepas(planning)) {
+        total++;
+        if (RECENTES.has(repas.id)) recent++;
+      }
+    }
+    // Référence non biaisée = 0,5. On exige une sous-représentation franche.
+    expect(recent / total).toBeLessThan(0.4);
+  });
+
+  test("n'échoue jamais même si TOUTES les recettes sont récentes (repli, RG-50)", () => {
+    const toutRecent: HistoriqueVariete = new Map(
+      VIVIER_VARIETE.map((r) => [r.id, 1])
+    );
+    const rng = rngSeed(218);
+    const planning = genererPlanning(
+      VIVIER_VARIETE,
+      "2026-W30",
+      undefined,
+      rng,
+      toutRecent
+    );
+    expect(tousLesRepas(planning)).toHaveLength(14);
   });
 });
 
