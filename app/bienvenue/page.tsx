@@ -223,7 +223,7 @@ export default function PageBienvenue() {
           <p className="mb-1 text-sm font-medium text-brand-900">
             Vous êtes combien à table&nbsp;?
           </p>
-          <p className="mb-2 text-xs text-brand-700/70">
+          <p className="mb-2 text-xs text-brand-700/85">
             Sert de base aux portions de tes recettes.
           </p>
           <Stepper valeur={personnes} onChange={setPersonnes} />
@@ -336,7 +336,7 @@ export default function PageBienvenue() {
 function BarreProgression({ etape }: { etape: 1 | 2 }) {
   return (
     <div className="mb-8">
-      <p className="mb-2 text-xs font-medium uppercase tracking-wide text-brand-700/70">
+      <p className="mb-2 text-xs font-medium uppercase tracking-wide text-brand-700/85">
         Étape {etape} sur 2
       </p>
       <div className="flex gap-2" aria-hidden="true">
@@ -397,7 +397,7 @@ function InterrupteurVege({
     <label className="flex cursor-pointer items-center justify-between gap-4">
       <span className="text-sm font-medium text-brand-900">
         Foyer végétarien
-        <span className="block text-xs font-normal text-brand-700/70">
+        <span className="block text-xs font-normal text-brand-700/85">
           Privilégie les recettes végé en semaine (ajustable ensuite).
         </span>
       </span>
