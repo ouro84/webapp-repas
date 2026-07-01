@@ -234,6 +234,7 @@ function ContenuRecettes() {
       vegetarien: source.vegetarien ?? false,
       accompagnement: source.accompagnement,
       saisons: source.saisons,
+      etapes: source.etapes,
       ingredients: source.ingredients,
     };
   }

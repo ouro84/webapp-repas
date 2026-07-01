@@ -143,6 +143,24 @@ export function FicheRecette({
             )}
           </div>
         )}
+
+        {/* Préparation (RG-43, #233) : liste numérotée des étapes, APRÈS les
+            ingrédients. Masquée si la recette n'a pas d'étapes (catalogue global
+            non renseigné) — pas de section vide ni de placeholder bruyant. */}
+        {recette.etapes && recette.etapes.length > 0 && (
+          <section className="mt-6">
+            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-brand-700/85">
+              Préparation
+            </h3>
+            <ol className="flex list-decimal flex-col gap-2 pl-5 text-sm text-brand-900 marker:font-semibold marker:text-brand-700/85">
+              {recette.etapes.map((etape, index) => (
+                <li key={index} className="pl-1">
+                  {etape}
+                </li>
+              ))}
+            </ol>
+          </section>
+        )}
       </div>
 
       {/* Raccourci d'édition (RG-20, #137) : proposé pour toute recette du

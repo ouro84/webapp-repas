@@ -7,6 +7,7 @@
 // ingrédient, quantités strictement positives. Aux couleurs du design system.
 
 import { useId, useState } from "react";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import type {
   Accompagnement,
   CategorieIngredient,
@@ -105,6 +106,7 @@ export function FormulaireRecette({
     vegetarien?: boolean;
     accompagnement?: Accompagnement;
     saisons?: Saison[];
+    etapes?: string[];
     ingredients: Ingredient[];
   };
   titre: string;
@@ -158,6 +160,35 @@ export function FormulaireRecette({
     );
   }
 
+  // Étapes de préparation (#233, RG-43) : liste ORDONNÉE de texte libre, saisie
+  // 100 % manuelle (pas de pré-suggestion, contrairement à vege/accompagnement/
+  // saisons). Réordonnancement par flèches haut/bas (pas de drag&drop en V1).
+  const [etapes, setEtapes] = useState<string[]>(valeurInitiale?.etapes ?? []);
+
+  function majEtape(index: number, valeur: string): void {
+    setEtapes((courantes) =>
+      courantes.map((e, i) => (i === index ? valeur : e))
+    );
+  }
+
+  function ajouterEtape(): void {
+    setEtapes((courantes) => [...courantes, ""]);
+  }
+
+  function retirerEtape(index: number): void {
+    setEtapes((courantes) => courantes.filter((_, i) => i !== index));
+  }
+
+  function deplacerEtape(index: number, sens: -1 | 1): void {
+    setEtapes((courantes) => {
+      const cible = index + sens;
+      if (cible < 0 || cible >= courantes.length) return courantes;
+      const copie = [...courantes];
+      [copie[index], copie[cible]] = [copie[cible]!, copie[index]!];
+      return copie;
+    });
+  }
+
   function majLigne(index: number, champ: Partial<LigneSaisie>): void {
     setLignes((courantes) =>
       courantes.map((l, i) => (i === index ? { ...l, ...champ } : l))
@@ -198,6 +229,9 @@ export function FormulaireRecette({
       vegetarien: vegeEffectif,
       accompagnement: accompEffectif === "" ? null : accompEffectif,
       saisons: saisonsEffectif,
+      // Étapes (#233) : on rogne et on écarte les entrées vides — les étapes sont
+      // optionnelles (aucune erreur si la liste est vide).
+      etapes: etapes.map((e) => e.trim()).filter((e) => e !== ""),
       ingredients,
     };
   }
@@ -408,6 +442,71 @@ export function FormulaireRecette({
           className="self-start rounded-full border border-brand-200 px-4 py-2 text-sm font-medium text-brand-700 transition hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100"
         >
           + Ajouter un ingrédient
+        </button>
+      </fieldset>
+
+      <fieldset className="flex flex-col gap-3">
+        <legend className="mb-1 text-sm font-medium text-brand-900">
+          Préparation
+        </legend>
+        <p className="text-xs text-brand-700/85">
+          Une étape par ligne. Laisser vide si tu ne veux pas détailler la
+          préparation.
+        </p>
+        {etapes.map((etape, index) => (
+          <div
+            key={index}
+            className="flex items-start gap-2 rounded-lg border border-brand-100 bg-surface p-3"
+          >
+            <span
+              aria-hidden="true"
+              className="mt-2 w-5 shrink-0 text-sm font-semibold text-brand-700/85"
+            >
+              {index + 1}.
+            </span>
+            <textarea
+              aria-label={`Étape ${index + 1}`}
+              value={etape}
+              onChange={(e) => majEtape(index, e.target.value)}
+              rows={2}
+              className={`${INPUT} min-h-[2.75rem] flex-1 resize-y`}
+            />
+            <div className="flex shrink-0 flex-col gap-1">
+              <button
+                type="button"
+                onClick={() => deplacerEtape(index, -1)}
+                disabled={index === 0}
+                aria-label={`Monter l'étape ${index + 1}`}
+                className="rounded-full px-2 py-1 text-brand-700/85 transition-colors hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 disabled:opacity-40"
+              >
+                <ChevronUp aria-hidden="true" className="size-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => deplacerEtape(index, 1)}
+                disabled={index === etapes.length - 1}
+                aria-label={`Descendre l'étape ${index + 1}`}
+                className="rounded-full px-2 py-1 text-brand-700/85 transition-colors hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 disabled:opacity-40"
+              >
+                <ChevronDown aria-hidden="true" className="size-4" />
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={() => retirerEtape(index)}
+              aria-label={`Retirer l'étape ${index + 1}`}
+              className="rounded-full px-3 py-2 text-sm text-brand-700/85 transition-colors hover:bg-brand-50 hover:text-red-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
+            >
+              Retirer
+            </button>
+          </div>
+        ))}
+        <button
+          type="button"
+          onClick={ajouterEtape}
+          className="self-start rounded-full border border-brand-200 px-4 py-2 text-sm font-medium text-brand-700 transition hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100"
+        >
+          + Ajouter une étape
         </button>
       </fieldset>
 

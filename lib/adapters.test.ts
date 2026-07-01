@@ -20,6 +20,7 @@ function dbRecette(id: string): DbRecette {
     vegetarien: false,
     accompagnement: null,
     saisons: null,
+    etapes: null,
     created_at: "2026-06-01T00:00:00Z",
     recette_ingredient: [
       {
@@ -127,6 +128,21 @@ describe("dbRecetteToDomain — saisons (#23)", () => {
   });
 });
 
+describe("dbRecetteToDomain — étapes (#233)", () => {
+  it("mappe null/[] en champ absent (pas d'étapes)", () => {
+    expect(dbRecetteToDomain(dbRecette("r")).etapes).toBeUndefined();
+    expect(dbRecetteToDomain({ ...dbRecette("r"), etapes: [] }).etapes).toBeUndefined();
+  });
+
+  it("conserve une liste d'étapes non vide, dans l'ordre", () => {
+    const r = dbRecetteToDomain({
+      ...dbRecette("r"),
+      etapes: ["Préchauffer le four", "Enfourner 20 min"],
+    });
+    expect(r.etapes).toEqual(["Préchauffer le four", "Enfourner 20 min"]);
+  });
+});
+
 describe("dbPlanningToDomain", () => {
   it("reconstruit un planning dans l'ordre canonique, jours avec dîner", () => {
     const slots = [
@@ -144,12 +160,13 @@ describe("dbPlanningToDomain", () => {
   // flags végé/accompagnement/saisons sur ses recettes (badges + biais
   // végé/légumes/saison). L'adaptateur les porte déjà ; le risque réel était
   // que le SELECT distant ne les remonte pas.
-  it("conserve vegetarien/accompagnement/saisons sur les recettes du planning (#164)", () => {
+  it("conserve vegetarien/accompagnement/saisons/etapes sur les recettes du planning (#164, #233)", () => {
     const recetteTaguee: DbRecette = {
       ...dbRecette("r-din"),
       vegetarien: true,
       accompagnement: "legumes",
       saisons: ["ete"],
+      etapes: ["Étape 1", "Étape 2"],
     };
     const slot: DbPlanningSlot = {
       ...dbSlot("lundi", "diner", "r-din"),
@@ -160,6 +177,9 @@ describe("dbPlanningToDomain", () => {
     expect(diner.vegetarien).toBe(true);
     expect(diner.accompagnement).toBe("legumes");
     expect(diner.saisons).toEqual(["ete"]);
+    // #233 : sans `etapes` dans SELECT_PLANNING, les étapes disparaîtraient d'un
+    // planning persisté relu (2ᵉ appareil / navigation entre semaines).
+    expect(diner.etapes).toEqual(["Étape 1", "Étape 2"]);
   });
 });
 
@@ -167,9 +187,10 @@ describe("dbPlanningToDomain", () => {
 // ci-dessus recevrait des recettes sans flags → bug #164 (invisible en
 // génération directe, frappe le 2ᵉ appareil / la navigation entre semaines).
 describe("SELECT_PLANNING — colonnes recette (régression #164)", () => {
-  it("sélectionne vegetarien, accompagnement et saisons", () => {
+  it("sélectionne vegetarien, accompagnement, saisons et etapes", () => {
     expect(SELECT_PLANNING).toContain("vegetarien");
     expect(SELECT_PLANNING).toContain("accompagnement");
     expect(SELECT_PLANNING).toContain("saisons");
+    expect(SELECT_PLANNING).toContain("etapes");
   });
 });

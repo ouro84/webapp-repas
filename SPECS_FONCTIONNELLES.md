@@ -541,6 +541,22 @@ Réduire à zéro l'effort de planification hebdomadaire des repas, du choix des
 > **When** je choisis une recette  
 > **Then** la mémoire de variété **ne s'applique pas** (RG-52, cohérent avec RG-03)
 
+### US-46 — Étapes de préparation (#233, P26)
+
+> **En tant qu'** utilisateur, je veux saisir et consulter les étapes de préparation d'une recette, afin de centraliser **quoi** manger **et comment** le cuisiner, et de réussir un plat même sans le maîtriser.
+
+> **Given** je consulte la fiche d'une recette depuis le planning  
+> **When** la recette porte des étapes  
+> **Then** la fiche affiche une section **« Préparation »** en liste numérotée, après les ingrédients (RG-43)
+
+> **Given** je consulte une recette **sans étapes** (catalogue global non renseigné)  
+> **When** j'ouvre sa fiche  
+> **Then** la section « Préparation » est **masquée** — pas de section vide (RG-43)
+
+> **Given** je crée ou j'édite une recette  
+> **When** j'ajoute, supprime ou réordonne des étapes (une par ligne)  
+> **Then** elles sont enregistrées dans l'ordre ; pour une recette du **catalogue global** (lecture seule), passer par la **duplication+édition** (#105 PR2) y porte mes étapes (RG-43)
+
 ---
 
 ## 5. Modèle de données
@@ -804,6 +820,16 @@ La fiche affiche **tout ce que l'on connaît** de la recette : titre, temps de p
 - **Groupement** : les ingrédients sont scindés en « à acheter » et « fond de placard (à vérifier) » (cf. RG-14), pour répondre au besoin « puis-je la faire sans rien acheter ».
 - **Édition** : un raccourci « Modifier » n'apparaît que pour une recette **personnelle** (éditable, cf. RLS) ; absent pour le catalogue global.
 - **Saisonnalité : hors périmètre** tant que la donnée n'existe pas (cf. backlog #P12). La fiche n'invente pas de champ ; elle l'affichera quand le modèle le portera.
+
+### RG-43 — Étapes de préparation (US-46, #233)
+
+Une recette peut porter une liste **ordonnée** d'étapes de préparation (texte libre par étape).
+
+- **Modèle** : `Recette.etapes?: string[]` (optionnel ; absent/vide = pas d'étapes, comme `saisons?`/`accompagnement?`). DB : colonne `etapes text[]` **nullable**. Saisie **100 % manuelle** (pas de pré-suggestion par heuristique, contrairement à végé/accompagnement/saison).
+- **Affichage (fiche)** : section **« Préparation »** en **liste numérotée** (`<ol>`), **après** les ingrédients. Une recette **sans étapes** (catalogue global non renseigné) **masque** la section — pas de section vide ni de placeholder.
+- **Saisie (création/édition)** : éditeur d'étapes (ajout / suppression / réordonnancement par flèches haut-bas ; pas de drag&drop en V1). Les entrées vides sont écartées à l'enregistrement ; aucune n'est obligatoire.
+- **Catalogue global** : non éditable → pour lui ajouter des étapes, on passe par la **duplication+édition** (#105 PR2) ; la copie perso porte les étapes. Les 74 recettes seedées restent **sans étapes** (pas de backfill).
+- **Persistance** : la recette étant **embarquée dans le slot** persisté (la fiche lit le slot, pas Supabase, RG-20), `etapes` doit être porté de bout en bout (select → adapter → slot → relecture) sinon il disparaît d'un planning relu (piège #164).
 
 ### RG-21 — Sélection de la semaine cible (US-11) — absorbée par RG-24
 

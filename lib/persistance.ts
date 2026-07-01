@@ -16,12 +16,13 @@ import type { DbPlanningSlot, Planning } from "@/types"
 // recette complète de chaque slot (avec ingrédients) — nécessaire pour
 // reconstruire la liste de courses côté client.
 //
-// ⚠️ La recette DOIT inclure `vegetarien`, `accompagnement` et `saisons` (#164) :
-// sans eux, un planning hydraté depuis la base (2ᵉ appareil, navigation entre
-// semaines, cache évincé) perd ces flags → badges manquants (US-10/RG-20) et
-// biais végé/légumes/saison faussés (joursSansLegume, slotsVegeNonHonores,
-// reposNonSaison, remplacerSlot). Doit rester aligné avec SELECT_RECETTE de
-// lib/recettes.ts et la route de génération. Exporté pour la garde de test.
+// ⚠️ La recette DOIT inclure `vegetarien`, `accompagnement`, `saisons` et
+// `etapes` (#164, #233) : sans eux, un planning hydraté depuis la base (2ᵉ
+// appareil, navigation entre semaines, cache évincé) perd ces données → badges
+// manquants (US-10/RG-20), étapes manquantes (RG-43) et biais végé/légumes/saison
+// faussés (joursSansLegume, slotsVegeNonHonores, reposNonSaison, remplacerSlot).
+// Doit rester aligné avec SELECT_RECETTE de lib/recettes.ts et la route de
+// génération. Exporté pour la garde de test.
 export const SELECT_PLANNING = `
   semaine,
   updated_at,
@@ -37,6 +38,7 @@ export const SELECT_PLANNING = `
       vegetarien,
       accompagnement,
       saisons,
+      etapes,
       recette_ingredient (
         quantite,
         unite,

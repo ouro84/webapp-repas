@@ -55,6 +55,14 @@ export function dbRecetteToDomain(dbRecette: DbRecette): Recette {
   if (dbRecette.saisons && dbRecette.saisons.length > 0) {
     recette.saisons = dbRecette.saisons
   }
+  // Étapes (#233) : `null`/vide en base = pas d'étapes → champ absent côté
+  // domaine (cohérent avec l'optionnalité de Recette.etapes). ⚠️ #164 : ce
+  // mapping doit être traversé par TOUS les selects qui hydratent une recette
+  // (SELECT_RECETTE, SELECT_PLANNING, route de génération) sinon les étapes
+  // disparaissent à la relecture d'un planning persisté.
+  if (dbRecette.etapes && dbRecette.etapes.length > 0) {
+    recette.etapes = dbRecette.etapes
+  }
   return recette
 }
 

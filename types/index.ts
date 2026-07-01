@@ -90,6 +90,10 @@ export type Recette = {
   // Saisons de la recette (#23, P12). Optionnel : absent ou vide = disponible
   // toute l'année (aucune contrainte saisonnière). Cf. lib/saisons.ts.
   saisons?: Saison[];
+  // Étapes de préparation (#233, RG-43). Optionnel : absent/vide = pas d'étapes
+  // (cas du catalogue global non renseigné). Liste ORDONNÉE de texte libre,
+  // saisie 100 % manuelle (pas d'heuristique, contrairement à vege/accompagnement).
+  etapes?: string[];
 };
 
 export type JourPlanning = {
@@ -242,6 +246,9 @@ export type DbRecette = {
   accompagnement: Accompagnement | null;
   // Saisons (#23, P12) : tableau Postgres text[] ; `null` ou `[]` = toute saison.
   saisons: Saison[] | null;
+  // Étapes (#233) : tableau Postgres text[] ; `null`/vide = pas d'étapes (mappé
+  // vers `undefined` côté domaine).
+  etapes: string[] | null;
   created_at: string;
   recette_ingredient: DbRecetteIngredient[]; // relation imbriquée
 };
