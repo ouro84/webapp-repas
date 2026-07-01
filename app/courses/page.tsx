@@ -230,8 +230,11 @@ export default function PageCourses() {
 
   return (
     <main id="contenu" className="mx-auto flex-1 w-full max-w-2xl p-4 md:p-8">
-      <header className="mb-6 flex flex-wrap items-center gap-3">
-        <div className="min-w-0 flex-1">
+      {/* En-tête (#211, audit #51) : titre PLEINE LARGEUR (ne se coupe plus en
+          compétition avec les boutons), actions en-dessous sur mobile et à droite
+          dès sm. Compteur reformulé pour expliciter coché / total / à vérifier. */}
+      <header className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
           <h1 className="font-display text-2xl font-semibold text-brand-900">Liste de courses</h1>
           {/* N° de semaine (RG #5) : même format que le planning */}
           {semainePlanning && (
@@ -239,14 +242,16 @@ export default function PageCourses() {
               {formaterSemaine(semainePlanning)}
             </p>
           )}
-          {/* aria-live : la progression est annoncée à chaque coche */}
+          {/* aria-live : la progression est annoncée à chaque coche. Le « à
+              vérifier » reste en terracotta = couleur de marque « Fond de placard »
+              (#67 P15), pas un signal d'alerte (cf. #212, clos by-design). */}
           <p aria-live="polite" className="text-sm text-brand-700/85">
-            {progression.coches}/{progression.total} article
-            {progression.total > 1 ? "s" : ""}
+            {progression.coches} coché{progression.coches > 1 ? "s" : ""} sur{" "}
+            {progression.total}
             {liste.fondDePlacard.length > 0 && (
               <span className="text-accent-700">
                 {" · "}
-                {liste.fondDePlacard.length} à vérifier
+                {liste.fondDePlacard.length} à vérifier dans tes placards
               </span>
             )}
           </p>
@@ -254,7 +259,7 @@ export default function PageCourses() {
               nom. aria-live pour annoncer l'arrivée/le départ d'un membre. */}
           <p
             aria-live="polite"
-            className={`mt-1 flex items-center gap-1.5 text-xs text-brand-700/70 transition-opacity ${
+            className={`mt-1 flex items-center gap-1.5 text-xs text-brand-700/85 transition-opacity ${
               autresPresents ? "opacity-100" : "opacity-0"
             }`}
           >
@@ -262,22 +267,24 @@ export default function PageCourses() {
             {autresPresents ? "Un autre membre est aussi sur la liste" : ""}
           </p>
         </div>
-        {aDesCoches(liste, coches) && (
-          <button
-            type="button"
-            onClick={toutDecocher}
-            // after:-inset-1 : étend la zone tactile à ≥ 44px sans changer le visuel
+        <div className="flex shrink-0 flex-wrap gap-2">
+          {aDesCoches(liste, coches) && (
+            <button
+              type="button"
+              onClick={toutDecocher}
+              // after:-inset-1 : étend la zone tactile à ≥ 44px sans changer le visuel
+              className="relative rounded-full border border-brand-200 px-4 py-2 text-sm font-medium text-brand-700 transition after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100"
+            >
+              Tout décocher
+            </button>
+          )}
+          <Link
+            href="/planning"
             className="relative rounded-full border border-brand-200 px-4 py-2 text-sm font-medium text-brand-700 transition after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100"
           >
-            Tout décocher
-          </button>
-        )}
-        <Link
-          href="/planning"
-          className="relative rounded-full border border-brand-200 px-4 py-2 text-sm font-medium text-brand-700 transition after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100"
-        >
-          ← Planning
-        </Link>
+            ← Planning
+          </Link>
+        </div>
       </header>
 
       {/* Une section par catégorie présente, dans l'ordre canonique (RG-05).
