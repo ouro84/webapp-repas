@@ -8,7 +8,7 @@
     "motsCles": [
       "planning"
     ],
-    "majLe": "2026-06-17T13:28:00.000Z"
+    "majLe": "2026-06-18T20:46:00.000Z"
   },
   {
     "titre": "J'ai été invité dans un foyer",
@@ -31,7 +31,7 @@
     "motsCles": [
       "planning"
     ],
-    "majLe": "2026-06-17T18:25:00.000Z"
+    "majLe": "2026-06-18T19:27:00.000Z"
   },
   {
     "titre": "Naviguer entre les semaines",
@@ -65,7 +65,7 @@
     "motsCles": [
       "recettes"
     ],
-    "majLe": "2026-06-17T18:25:00.000Z"
+    "majLe": "2026-06-18T20:41:00.000Z"
   },
   {
     "titre": "Créer, modifier, supprimer une recette",
@@ -79,6 +79,17 @@
     "majLe": "2026-06-17T18:25:00.000Z"
   },
   {
+    "titre": "Ajouter les étapes de préparation",
+    "slug": "etapes-preparation",
+    "section": "Recettes",
+    "ordre": 30,
+    "resume": "Détailler la préparation d'une recette en étapes numérotées, et les retrouver sur la fiche depuis le planning.",
+    "motsCles": [
+      "recettes"
+    ],
+    "majLe": "2026-07-01T20:18:00.000Z"
+  },
+  {
     "titre": "Cocher et organiser ma liste",
     "slug": "liste-courses",
     "section": "Courses",
@@ -87,7 +98,7 @@
     "motsCles": [
       "courses"
     ],
-    "majLe": "2026-06-17T18:24:00.000Z"
+    "majLe": "2026-06-18T21:02:00.000Z"
   },
   {
     "titre": "Régler la génération",
@@ -98,7 +109,7 @@
     "motsCles": [
       "planning"
     ],
-    "majLe": "2026-06-17T18:25:00.000Z"
+    "majLe": "2026-06-18T20:27:00.000Z"
   },
   {
     "titre": "Inviter quelqu'un dans mon foyer",
@@ -133,7 +144,7 @@
       "compte",
       "mot de passe"
     ],
-    "majLe": "2026-06-17T18:24:00.000Z"
+    "majLe": "2026-06-18T20:06:00.000Z"
   },
   {
     "titre": "Questions fréquentes",
@@ -142,7 +153,7 @@
     "ordre": 10,
     "resume": "Réponses aux problèmes les plus courants.",
     "motsCles": [],
-    "majLe": "2026-06-17T18:25:00.000Z"
+    "majLe": "2026-06-18T20:05:00.000Z"
   },
   {
     "titre": "Installer l'app sur mon téléphone",
