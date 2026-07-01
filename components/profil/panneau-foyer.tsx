@@ -228,14 +228,14 @@ export function PanneauFoyer() {
         {valide && etat.code ? (
           <div className="flex flex-col gap-3">
             <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-brand-700/70">
+              <p className="text-xs font-medium uppercase tracking-wide text-brand-700/85">
                 Code d’invitation
               </p>
               <p className="font-mono text-2xl font-semibold tracking-[0.2em] text-brand-900">
                 {etat.code}
               </p>
               {etat.expireLe && (
-                <p className="text-xs text-brand-700/70">
+                <p className="text-xs text-brand-700/85">
                   Valable jusqu’au {formaterExpiration(etat.expireLe)}
                 </p>
               )}

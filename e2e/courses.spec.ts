@@ -63,8 +63,8 @@ test("après génération d'un planning, la liste de courses n'est pas vide", as
   await expect(
     page.getByRole("heading", { name: "Liste de courses" })
   ).toBeVisible();
-  // Le compteur de progression confirme une liste non vide (« 0/38 articles … », US-05).
-  await expect(page.getByText(/^0\/[1-9]\d* articles?/)).toBeVisible();
+  // Le compteur de progression confirme une liste non vide (« 0 coché sur 38 … », US-05).
+  await expect(page.getByText(/^0 coché sur [1-9]\d*/)).toBeVisible();
   // Au moins une catégorie et plusieurs lignes d'ingrédients.
   await expect(page.locator("main section h2").first()).toBeVisible();
   expect(await page.locator("main li").count()).toBeGreaterThan(0);
@@ -117,23 +117,23 @@ test("cocher un article le raye, l'envoie en fin de catégorie et persiste au re
   await page.getByRole("checkbox", { name: /crème fraîche/ }).click();
   await expect(page.getByRole("checkbox", { name: /crème fraîche/ })).toBeChecked();
 
-  // RG-11 : rayé + déplacé en fin de catégorie. RG-14 : compteur à 1/7.
+  // RG-11 : rayé + déplacé en fin de catégorie. RG-14 : compteur à 1 sur 7.
   await expect(produitsFrais.locator("li").last()).toContainText("crème fraîche");
   await expect(
     produitsFrais.locator("li").last().locator("span").first()
   ).toHaveCSS("text-decoration-line", "line-through");
-  await expect(page.getByText(/^1\/7 articles/)).toBeVisible();
+  await expect(page.getByText(/^1 coché sur 7/)).toBeVisible();
 
   // RG-12 : la coche survit à un rechargement de page.
   await page.reload();
   await expect(page.getByRole("checkbox", { name: /crème fraîche/ })).toBeChecked();
-  await expect(page.getByText(/^1\/7 articles/)).toBeVisible();
+  await expect(page.getByText(/^1 coché sur 7/)).toBeVisible();
 
   // Décocher : retour à la place alphabétique, compteur à 0.
   await page.getByRole("checkbox", { name: /crème fraîche/ }).click();
   await expect(page.getByRole("checkbox", { name: /crème fraîche/ })).not.toBeChecked();
   await expect(produitsFrais.locator("li").first()).toContainText("crème fraîche");
-  await expect(page.getByText(/^0\/7 articles/)).toBeVisible();
+  await expect(page.getByText(/^0 coché sur 7/)).toBeVisible();
 });
 
 test("le fond de placard est cochable mais n'entre pas dans la progression (RG-14)", async ({
@@ -149,7 +149,7 @@ test("le fond de placard est cochable mais n'entre pas dans la progression (RG-1
 
   // Coché visuellement… mais le compteur d'articles à acheter reste à 0.
   await expect(page.getByRole("checkbox", { name: /beurre/ })).toBeChecked();
-  await expect(page.getByText(/^0\/7 articles/)).toBeVisible();
+  await expect(page.getByText(/^0 coché sur 7/)).toBeVisible();
 });
 
 test("« Tout décocher » retire toutes les coches, fond de placard compris", async ({
@@ -168,11 +168,11 @@ test("« Tout décocher » retire toutes les coches, fond de placard compris", a
   await expect(page.getByRole("checkbox", { name: /lardons/ })).toBeChecked();
   await page.getByRole("checkbox", { name: /beurre/ }).click();
   await expect(page.getByRole("checkbox", { name: /beurre/ })).toBeChecked();
-  await expect(page.getByText(/^1\/7 articles/)).toBeVisible();
+  await expect(page.getByText(/^1 coché sur 7/)).toBeVisible();
 
   await page.getByRole("button", { name: "Tout décocher" }).click();
 
-  await expect(page.getByText(/^0\/7 articles/)).toBeVisible();
+  await expect(page.getByText(/^0 coché sur 7/)).toBeVisible();
   await expect(page.getByRole("checkbox", { name: /lardons/ })).not.toBeChecked();
   await expect(page.getByRole("checkbox", { name: /beurre/ })).not.toBeChecked();
   await expect(page.getByRole("button", { name: "Tout décocher" })).toHaveCount(0);
@@ -257,7 +257,7 @@ test("régénérer le planning réinitialise toutes les coches (RG-13)", async (
   await page.goto("/courses");
 
   await page.getByRole("checkbox", { name: /lardons/ }).click();
-  await expect(page.getByText(/^1\/7 articles/)).toBeVisible();
+  await expect(page.getByText(/^1 coché sur 7/)).toBeVisible();
 
   // Génération complète depuis la page planning (vraies recettes, liste
   // non déterministe) : les coches doivent être effacées (RG-13).
@@ -266,7 +266,7 @@ test("régénérer le planning réinitialise toutes les coches (RG-13)", async (
   await expect(page.locator("main ul > li")).toHaveCount(7);
 
   await page.goto("/courses");
-  await expect(page.getByText(/^0\/[1-9]\d* articles?/)).toBeVisible();
+  await expect(page.getByText(/^0 coché sur [1-9]\d*/)).toBeVisible();
 });
 
 // ---------------------------------------------------------------------------

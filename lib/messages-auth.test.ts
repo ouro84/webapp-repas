@@ -18,9 +18,18 @@ describe("traduireErreurAuth — mapping par code (#58)", () => {
     expect(traduireErreurAuth({ code: "email_exists" })).toMatch(/existe déjà/);
   });
 
-  test("mot de passe trop court", () => {
+  test("mot de passe trop faible (court / simple / compromis)", () => {
     expect(traduireErreurAuth({ code: "weak_password" })).toMatch(
-      /au moins 6 caractères/
+      /au moins 8 caractères/
+    );
+  });
+
+  test("mot de passe compromis (HIBP) → message robuste (#189)", () => {
+    expect(
+      traduireErreurAuth({ message: "Password is known to be weak and easy to guess" })
+    ).toMatch(/compromis/);
+    expect(traduireErreurAuth({ message: "This password is pwned" })).toMatch(
+      /compromis/
     );
   });
 
@@ -50,7 +59,7 @@ describe("traduireErreurAuth — anti-énumération à l'inscription (F-05)", ()
 
   test("contexte signup : les autres erreurs restent spécifiques", () => {
     expect(traduireErreurAuth({ code: "weak_password" }, "signup")).toMatch(
-      /6 caractères/
+      /8 caractères/
     );
     expect(
       traduireErreurAuth({ code: "email_address_invalid" }, "signup")
@@ -74,7 +83,7 @@ describe("traduireErreurAuth — repli sur le message anglais", () => {
   test("« Password should be at least 6 characters »", () => {
     expect(
       traduireErreurAuth({ message: "Password should be at least 6 characters" })
-    ).toMatch(/6 caractères/);
+    ).toMatch(/8 caractères/);
   });
 
   test("insensible à la casse", () => {
@@ -89,7 +98,7 @@ describe("traduireErreurAuth — repli sur le message anglais", () => {
         code: "weak_password",
         message: "Invalid login credentials",
       })
-    ).toMatch(/6 caractères/);
+    ).toMatch(/8 caractères/);
   });
 });
 
