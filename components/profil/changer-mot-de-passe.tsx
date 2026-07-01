@@ -12,9 +12,10 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { traduireErreurAuth } from "@/lib/messages-auth";
+import { LONGUEUR_MIN_MDP } from "@/lib/auth-regles";
 
-// Aligne la borne sur l'inscription (#57 : min 6 imposé par Supabase).
-const LONGUEUR_MIN = 6;
+// Aligne la borne sur l'inscription via la source unique partagée (#189).
+const LONGUEUR_MIN = LONGUEUR_MIN_MDP;
 
 export function ChangerMotDePasse() {
   const supabase = createClient();
