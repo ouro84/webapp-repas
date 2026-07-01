@@ -21,6 +21,7 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ### Corrigé
 
+- Lisibilité du texte secondaire (#214, audit #51) : les libellés et descriptions affichés en gris-vert atténué passaient sous le seuil de contraste recommandé (≈ 3,6:1 en thème clair) — ils sont désormais un cran plus opaques (**≈ 5,1:1 en clair, ≈ 7,7:1 en sombre**), donc lisibles, y compris en plein soleil (utile pour la liste de courses en magasin). Aucun changement de mise en page.
 - Onboarding — interrupteur « Foyer végétarien » au rendu cassé (#204, audit #51) : sur le premier écran d'accueil, le **curseur du bouton bascule** pouvait s'afficher désynchronisé de sa piste (et mal rendu en thème sombre). Cause : deux implémentations divergentes du même interrupteur dans l'app. Désormais **un seul composant partagé** est utilisé partout (accueil + réglages), ce qui corrige l'affichage et évite tout futur écart.
 - Orthographe du bouton « Régénérer » (#208, audit #51) : le bouton du planning, le toast de confirmation et la documentation affichaient « Regénérer » (sans accent) — corrigé en **« Régénérer »**.
 

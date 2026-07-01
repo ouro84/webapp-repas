@@ -60,13 +60,13 @@ export default async function PageArticleAide({
       </Link>
 
       <header className="mt-4 mb-6">
-        <p className="text-xs font-medium uppercase tracking-wide text-brand-700/70">
+        <p className="text-xs font-medium uppercase tracking-wide text-brand-700/85">
           {meta.section}
         </p>
         <h1 className="mt-1 font-display text-2xl font-semibold text-brand-900">
           {meta.titre}
         </h1>
-        <p className="mt-1 text-xs text-brand-700/70">Mis à jour le {majLe}</p>
+        <p className="mt-1 text-xs text-brand-700/85">Mis à jour le {majLe}</p>
       </header>
 
       <article>
