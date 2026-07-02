@@ -16,6 +16,13 @@ name: CI
 
 on:
   pull_request:
+    # Économie de minutes : une PR qui ne touche que de la doc ne lance PAS la CI
+    # (rien à tester). paths-ignore UNIQUEMENT ici — le push sur main reste intact
+    # pour que migrate-prod tourne toujours (un merge doc-only → migrate-prod no-op).
+    paths-ignore:
+      - "**/*.md"
+      - "content/aide/**"
+      - "revueDesign/**"
   push:
     branches: [main]
   # Déclenchement manuel : filet de sécurité quand GitHub « zappe » le run push
@@ -24,10 +31,21 @@ on:
   # (et donc migrate-prod, cf. son `if` ci-dessous) sur main à la demande.
   workflow_dispatch:
 
+# Économie de minutes : un nouveau push sur une PR annule le run précédent encore
+# en cours (plus de N runs complets pour N commits rapprochés). Garde-fou : PAS
+# d'annulation sur main — un migrate-prod en vol ne doit jamais être coupé.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 jobs:
   # Lint + tests unitaires — indépendant de Supabase/Playwright, tourne EN
   # PARALLÈLE des e2e (plus sur le chemin critique de l'e2e).
   unit:
+    # Économie de minutes : sur push vers main, le tree mergé a DÉJÀ passé la CI
+    # complète sur staging pendant la PR → on ne re-joue ni unit ni e2e ; seul
+    # migrate-prod tourne. La garde CI-verte-avant-merge reste assurée par la PR.
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -51,6 +69,7 @@ jobs:
   # partitions e2e en dépendent). `db push` est idempotent ; le faire dans un job
   # à part évite deux `db push` concurrents (course sur l'historique de migration).
   migrate-staging:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -78,6 +97,7 @@ jobs:
   # navigateur Playwright »). Ici UN SEUL job peuple le cache ; les e2e ne font plus
   # que le RESTAURER (restore-only, jamais save → plus aucune course).
   playwright-cache:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -108,24 +128,25 @@ jobs:
         timeout-minutes: 5
         run: npx playwright install chromium
 
-  # E2E en jobs parallèles (cf. projets playwright + Phase 2) :
-  #  - jetable : specs à comptes jetables uniques → un job, workers:4 ;
-  #  - partage : specs du compte partagé → réparties en 5 GROUPES de fichiers
-  #    équilibrés (~10-15 tests), CHACUN sur SON PROPRE compte (E2E_EMAIL distinct
-  #    p1..p5, auto-créé par auth.setup idempotent). Isolation par compte → les
-  #    groupes ne se courent pas dessus (workers:1 intra-groupe, parallélisme
-  #    INTER-groupes). Aucun changement de specs/helpers : helpers.ts et
-  #    auth.setup.ts lisent déjà process.env.E2E_EMAIL.
-  # NB : groupes EXPLICITES plutôt que `--shard` (Playwright shard par fichier →
-  # déséquilibre, planning.spec à lui seul pèse lourd → scindé en planning.spec +
-  # planning-edition.spec). À rééquilibrer si on ajoute des specs. Chaque job
-  # build l'app en prod (webServer) et tourne concurremment.
+  # E2E en 2 jobs (cf. projets playwright + Phase 2). ÉCONOMIE DE MINUTES :
+  # priorité aux minutes facturées, PAS au temps d'horloge (inversion du choix
+  # historique 6-way). On paie `npm ci` + `next build` 2× au lieu de 6× :
+  #  - jetable : specs à comptes jetables uniques → workers:4 (comptes distincts
+  #    par spec, parallélisme sûr).
+  #  - partage : TOUT le projet e2e-partage en UN SEUL job, workers:1, UN SEUL
+  #    compte (p1) → exécution EN SÉRIE. La sérialité rétablit l'isolation des
+  #    données qu'assurait avant le split par compte (p1..p5) : pas de course
+  #    même sur un compte unique. Coût : ~20 min d'horloge (vs ~5) — assumé.
+  # Comptes p2..p5 désormais DORMANTS (accumulation assumée sur staging, sans
+  # impact). Aucun changement de specs/helpers (E2E_EMAIL lu depuis l'env).
   e2e:
+    # Cf. `unit` : non re-joué sur push vers main (déjà validé par la PR).
+    if: github.event_name == 'pull_request'
     # playwright-cache peuple le cache du navigateur AVANT ces jobs → ils le
     # restaurent (rapide) au lieu de le télécharger chacun (cf. ce job).
     needs: [migrate-staging, playwright-cache]
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
@@ -135,31 +156,11 @@ jobs:
             workers: 4
             files: ""
             email: claude-e2e-test@example.com
-          - name: partage-1
+          - name: partage
             project: e2e-partage
             workers: 1
-            files: "e2e/planning.spec.ts"
+            files: ""
             email: claude-e2e-p1@example.com
-          - name: partage-2
-            project: e2e-partage
-            workers: 1
-            files: "e2e/planning-edition.spec.ts"
-            email: claude-e2e-p2@example.com
-          - name: partage-3
-            project: e2e-partage
-            workers: 1
-            files: "e2e/courses.spec.ts e2e/accueil.spec.ts"
-            email: claude-e2e-p3@example.com
-          - name: partage-4
-            project: e2e-partage
-            workers: 1
-            files: "e2e/recettes.spec.ts e2e/reglages.spec.ts"
-            email: claude-e2e-p4@example.com
-          - name: partage-5
-            project: e2e-partage
-            workers: 1
-            files: "e2e/profil.spec.ts e2e/foyer.spec.ts e2e/auth.spec.ts e2e/coches-realtime.spec.ts e2e/alerte-planning.spec.ts"
-            email: claude-e2e-p5@example.com
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
@@ -247,7 +248,10 @@ jobs:
     # push sur main (nominal) OU déclenchement manuel (rattrapage si le run push
     # d'un merge a été zappé par GitHub).
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-    needs: [unit, e2e]
+    # PAS de `needs: [unit, e2e]` : ces jobs sont SKIPPED sur push (économie de
+    # minutes, cf. leur `if`) — un `needs` sur un job skipped rendrait migrate-prod
+    # skipped à son tour. La garde CI-verte est déjà assurée sur la PR (le tree
+    # mergé y a passé unit + e2e sur staging). Ne PAS réintroduire ce needs.
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
