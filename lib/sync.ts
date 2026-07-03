@@ -38,6 +38,7 @@ import { semaineDecalee, semaineISO, semaineParDefaut } from "@/lib/semaines";
 import {
   ancreCourante,
   cycleDecale,
+  LONGUEUR_DEFAUT,
   planningDuCycle,
   semainesDuCycle,
 } from "@/lib/cycles";
@@ -933,15 +934,25 @@ async function chargerCycleDansCache(
       .filter((r): r is { planning: Planning; updatedAt: string } => r !== null)
       .map((r) => r.planning);
     definirCyclePlanning(planningDuCycle(plannings, ancre, longueur));
-    // Coches par-article (#56 PR4), clées par ancre (#257) : blob + référence.
-    appliquerBlobDistant(await chargerCochesDistantes(ancre));
+    // Pose l'ancre affichée AVANT toute opération sur les coches : `flusherCoches`
+    // lit `ancreActive()` (dérivé du cycle affiché) et doit donc viser le NOUVEAU
+    // cycle, pas l'ancien — sinon un flush dirty-first pousserait sous la mauvaise
+    // ancre. Déplacé depuis après le bloc coches/try (#257, revue).
+    definirCycleAffiche(ancre, longueur);
+    // Coches par-article (#56 PR4), clées par ancre (#257) : dirty-first — des
+    // coches locales NON poussées font foi, on ne les écrase pas par le serveur
+    // (miroir de la garde de `hydraterCoches`, désormais inaccessible pour /courses).
+    if (estDirtyCoches()) {
+      void flusherCoches(); // des coches locales non poussées font foi
+    } else {
+      appliquerBlobDistant(await chargerCochesDistantes(ancre));
+    }
     definirEtat("synchronise");
   } catch (erreur) {
     console.error("Chargement du cycle échoué.", erreur);
   } finally {
     hydratationCochesEnCours = false;
   }
-  definirCycleAffiche(ancre, longueur);
   // (Ré)abonne le temps réel des coches à l'ancre désormais affichée.
   void synchroniserAbonnementCoches(ancre);
 }
@@ -954,7 +965,9 @@ async function chargerCycleDansCache(
 export async function hydraterCycle(): Promise<void> {
   const jour = await chargerJourCoursesFoyer().catch(() => 1); // fail-open : lundi
   const ancre = ancreCourante(new Date(), jour);
-  const longueur = await chargerLongueurCycle(ancre);
+  // Gardé (revue) : une rejection non catchée deviendrait un unhandledRejection
+  // sous `void hydraterCycle()` — repli sur LONGUEUR_DEFAUT au lieu de planter.
+  const longueur = await chargerLongueurCycle(ancre).catch(() => LONGUEUR_DEFAUT);
   await chargerCycleDansCache(ancre, longueur);
   // Rétention (#257, miroir de purgerHistorique) : fire-and-forget, jamais bloquant.
   void purgerCyclesAvant(cycleDecale(ancre, -12)).catch(() => {});
