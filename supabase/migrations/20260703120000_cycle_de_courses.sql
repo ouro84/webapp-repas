@@ -12,6 +12,13 @@
 --    par-article en référençant la colonne `semaine`, supprimée en 3c ci-dessous
 --    — sans ce repointage, l'offboarding échouerait au runtime (colonne absente)
 --    la première fois qu'un membre quitterait un foyer avec des coches en cours.
+--    Complétée pour cloner aussi `cycle_courses` (étirements de cycle du
+--    partant), sur le même principe que le clone des coches par-article.
+-- 5) Repointage de rejoindre_foyer() (#56 PR3) : la table `cycle_courses`
+--    (section 2) référence `foyers` SANS `on delete cascade` → sans purger
+--    `cycle_courses` du foyer solo quitté avant `delete from foyers`, la
+--    jonction échouerait systématiquement (violation de clé étrangère) dès
+--    qu'un utilisateur aurait étiré un cycle avant de rejoindre un foyer.
 
 -- ============================================================================
 -- 1. Réglage foyer : jour de courses
@@ -176,6 +183,14 @@ begin
     select v_new, ancre, cle, quantite
     from etat_courses_article where foyer_id = v_old;
 
+  -- ----- Cycle de courses (#257) : longueur des cycles étirés ----------------
+  -- Sans ce clone, le partant perdrait les étirements de cycle déjà posés
+  -- (« Couvre N j ») ; le nouveau foyer solo repartirait sur la longueur
+  -- par défaut (7) pour toute ancre pourtant déjà étirée dans l'ancien foyer.
+  insert into cycle_courses (foyer_id, ancre, longueur)
+    select v_new, ancre, longueur
+    from cycle_courses where foyer_id = v_old;
+
   -- ----- Détachement du profil (EN DERNIER) ----------------------------------
   -- Le foyer quitté reste intact : les membres restants conservent tout.
   update profiles set foyer_id = v_new where user_id = auth.uid();
@@ -184,3 +199,65 @@ $$;
 
 revoke execute on function quitter_foyer() from public;
 grant execute on function quitter_foyer() to authenticated;
+
+-- ============================================================================
+-- 5. Repointage de rejoindre_foyer() (#56 PR3) : purge de cycle_courses
+-- ============================================================================
+-- rejoindre_foyer() (20260611180000_coches_par_article.sql) purge le foyer
+-- solo quitté avant `delete from foyers`. La table `cycle_courses` (section 2
+-- ci-dessus) référence `foyers(id)` SANS `on delete cascade` : si le partant a
+-- étiré un cycle (« Couvre N j ») avant de rejoindre, la ligne résiduelle dans
+-- `cycle_courses` ferait échouer `delete from foyers` (violation de clé
+-- étrangère, 23503) → la jonction entière échouerait (rollback), rendant le
+-- foyer impossible à rejoindre. Recréée à l'identique (même corps que PR3),
+-- avec l'ajout d'une purge de `cycle_courses` dans le bloc de nettoyage.
+create or replace function rejoindre_foyer(p_code text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_old uuid := mon_foyer();
+  v_target uuid;
+  v_membres_old int;
+begin
+  if v_old is null then
+    raise exception 'Aucun foyer rattaché à l''utilisateur courant';
+  end if;
+
+  select id into v_target
+    from foyers
+    where code_invitation = upper(trim(p_code))
+      and expire_le > now();
+
+  if v_target is null then
+    raise exception 'Code invalide ou expiré';
+  end if;
+  if v_target = v_old then
+    raise exception 'Tu fais déjà partie de ce foyer';
+  end if;
+
+  -- RG-29 : un seul foyer à la fois.
+  select count(*) into v_membres_old from profiles where foyer_id = v_old;
+  if v_membres_old > 1 then
+    raise exception 'Quitte d''abord ton foyer actuel avant d''en rejoindre un autre';
+  end if;
+
+  -- RG-33 : fusion cumulative des catalogues (collisions de noms conservées).
+  update recette set foyer_id = v_target where foyer_id = v_old;
+
+  -- Rattachement du profil au foyer rejoint.
+  update profiles set foyer_id = v_target where user_id = auth.uid();
+
+  -- Nettoyage du foyer solo quitté (FK foyers non ON DELETE CASCADE).
+  delete from recette_masquee where foyer_id = v_old;
+  delete from etat_courses_article where foyer_id = v_old;
+  delete from cycle_courses where foyer_id = v_old;
+  delete from planning where foyer_id = v_old;
+  delete from foyers where id = v_old;
+end;
+$$;
+
+revoke execute on function rejoindre_foyer(text) from public;
+grant execute on function rejoindre_foyer(text) to authenticated;

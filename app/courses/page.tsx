@@ -43,6 +43,7 @@ import {
   useCyclePlanning,
   naviguerCycle,
   etirerCycle,
+  type CycleAffiche,
 } from "@/lib/sync";
 import { libelleCycle, LONGUEUR_MAX } from "@/lib/cycles";
 import { accorderNom } from "@/lib/pluriels";
@@ -121,6 +122,61 @@ function avecTransition(majEtat: () => void): void {
   document.startViewTransition(() => {
     flushSync(majEtat);
   });
+}
+
+// ============================================================================
+// Navigateur de cycle (#257, M1) — extrait pour être rendu à la fois dans
+// l'état vide et l'état chargé : un cycle SANS repas planifié peut avoir un
+// voisin (précédent/suivant) qui EN a — sans ce navigateur dans l'état vide,
+// impossible d'anticiper/consulter un cycle adjacent depuis un cycle vide.
+// ============================================================================
+function NavigateurCycle({ cycle }: { cycle: CycleAffiche }) {
+  return (
+    <div className="mt-2 flex flex-col gap-2">
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          aria-label="Cycle précédent"
+          onClick={() => void naviguerCycle(-1)}
+          className="relative flex size-7 shrink-0 items-center justify-center rounded-full border border-brand-200 text-brand-700 transition after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.92] motion-reduce:active:scale-100"
+        >
+          <ChevronLeft aria-hidden="true" className="size-4" />
+        </button>
+        <span className="text-xs font-medium text-brand-700/85">
+          {libelleCycle(cycle.ancre, cycle.longueur)}
+        </span>
+        <button
+          type="button"
+          aria-label="Cycle suivant"
+          onClick={() => void naviguerCycle(1)}
+          className="relative flex size-7 shrink-0 items-center justify-center rounded-full border border-brand-200 text-brand-700 transition after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.92] motion-reduce:active:scale-100"
+        >
+          <ChevronRight aria-hidden="true" className="size-4" />
+        </button>
+      </div>
+      <div className="flex items-center gap-2 text-xs text-brand-700/85">
+        <span>Couvre {cycle.longueur} j</span>
+        <button
+          type="button"
+          aria-label="Réduire d’un jour"
+          disabled={cycle.longueur <= 1}
+          onClick={() => void etirerCycle(cycle.longueur - 1)}
+          className="relative flex size-6 shrink-0 items-center justify-center rounded-full border border-brand-200 font-medium transition after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.92] motion-reduce:active:scale-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
+        >
+          <span aria-hidden="true">−</span>
+        </button>
+        <button
+          type="button"
+          aria-label="Ajouter un jour"
+          disabled={cycle.longueur >= LONGUEUR_MAX}
+          onClick={() => void etirerCycle(cycle.longueur + 1)}
+          className="relative flex size-6 shrink-0 items-center justify-center rounded-full border border-brand-200 font-medium transition after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.92] motion-reduce:active:scale-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
+        >
+          <span aria-hidden="true">+</span>
+        </button>
+      </div>
+    </div>
+  );
 }
 
 // ============================================================================
@@ -211,9 +267,13 @@ export default function PageCourses() {
   if (liste === null) {
     return (
       <main id="contenu" className="flex flex-1 flex-col items-center justify-center gap-8 p-8">
-        <div className="text-center">
+        <div className="flex flex-col items-center text-center">
           <h1 className="font-display text-2xl font-semibold text-brand-900">Liste de courses</h1>
           <p className="mt-2 text-brand-700/85">Aucun repas planifié sur ce cycle</p>
+          {/* Navigateur de cycle (#257, M1) : un cycle vide peut avoir un
+              voisin non vide — permettre d'anticiper/consulter sans repasser
+              par /planning. */}
+          {cycle && <NavigateurCycle cycle={cycle} />}
         </div>
         <Link
           href="/planning"
@@ -241,52 +301,7 @@ export default function PageCourses() {
               n° de semaine, US-03 devient « une fenêtre de N jours » plutôt
               qu'une semaine ISO fixe) + étirement de la fenêtre. Rendu
               seulement une fois le cycle hydraté (évite un flash sans libellé). */}
-          {cycle && (
-            <div className="mt-2 flex flex-col gap-2">
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  aria-label="Cycle précédent"
-                  onClick={() => void naviguerCycle(-1)}
-                  className="relative flex size-7 shrink-0 items-center justify-center rounded-full border border-brand-200 text-brand-700 transition after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.92] motion-reduce:active:scale-100"
-                >
-                  <ChevronLeft aria-hidden="true" className="size-4" />
-                </button>
-                <span className="text-xs font-medium text-brand-700/85">
-                  {libelleCycle(cycle.ancre, cycle.longueur)}
-                </span>
-                <button
-                  type="button"
-                  aria-label="Cycle suivant"
-                  onClick={() => void naviguerCycle(1)}
-                  className="relative flex size-7 shrink-0 items-center justify-center rounded-full border border-brand-200 text-brand-700 transition after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.92] motion-reduce:active:scale-100"
-                >
-                  <ChevronRight aria-hidden="true" className="size-4" />
-                </button>
-              </div>
-              <div className="flex items-center gap-2 text-xs text-brand-700/85">
-                <span>Couvre {cycle.longueur} j</span>
-                <button
-                  type="button"
-                  aria-label="Réduire d’un jour"
-                  disabled={cycle.longueur <= 1}
-                  onClick={() => void etirerCycle(cycle.longueur - 1)}
-                  className="relative flex size-6 shrink-0 items-center justify-center rounded-full border border-brand-200 font-medium transition after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.92] motion-reduce:active:scale-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
-                >
-                  <span aria-hidden="true">−</span>
-                </button>
-                <button
-                  type="button"
-                  aria-label="Ajouter un jour"
-                  disabled={cycle.longueur >= LONGUEUR_MAX}
-                  onClick={() => void etirerCycle(cycle.longueur + 1)}
-                  className="relative flex size-6 shrink-0 items-center justify-center rounded-full border border-brand-200 font-medium transition after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.92] motion-reduce:active:scale-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
-                >
-                  <span aria-hidden="true">+</span>
-                </button>
-              </div>
-            </div>
-          )}
+          {cycle && <NavigateurCycle cycle={cycle} />}
           {/* aria-live : la progression est annoncée à chaque coche. Le « à
               vérifier » reste en terracotta = couleur de marque « Fond de placard »
               (#67 P15), pas un signal d'alerte (cf. #212, clos by-design). */}
