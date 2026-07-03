@@ -10,6 +10,7 @@
 
 import { createClient } from "@/lib/supabase/client"
 import { dbPlanningToDomain } from "@/lib/adapters"
+import { LONGUEUR_DEFAUT } from "@/lib/cycles"
 import type { DbPlanningSlot, Planning } from "@/types"
 
 // Sélection imbriquée : le planning, ses slots (avec personnes/restes) et la
@@ -96,12 +97,13 @@ export async function listerSemainesDistantes(): Promise<string[]> {
   return (data ?? []).map((r) => (r as { semaine: string }).semaine)
 }
 
-/** Purge l'historique : supprime plannings (slots en cascade) et coches des
- *  semaines strictement antérieures à `cutoff` (rétention, #5). La comparaison
+/** Purge l'historique : supprime les plannings (slots en cascade) des semaines
+ *  strictement antérieures à `cutoff` (rétention, #5). La comparaison
  *  lexicographique des id ISO "AAAA-Wnn" (zéro-paddés) = ordre chronologique.
  *  La RLS « foyer » (#56) restreint déjà aux lignes du foyer courant : pas de
  *  filtre d'appartenance ici, juste la borne (qui satisfait aussi l'exigence
- *  PostgREST d'un filtre sur tout DELETE). */
+ *  PostgREST d'un filtre sur tout DELETE). Le volet coches est purgé
+ *  séparément par `purgerCyclesAvant` (#257, ancre ≠ semaine). */
 export async function purgerSemainesAvant(cutoff: string): Promise<void> {
   const supabase = createClient()
 
@@ -110,12 +112,16 @@ export async function purgerSemainesAvant(cutoff: string): Promise<void> {
     .delete()
     .lt("semaine", cutoff)
   if (e1) throw new Error(`Purge des plannings impossible : ${e1.message}`)
+}
 
-  const { error: e2 } = await supabase
-    .from("etat_courses_article")
-    .delete()
-    .lt("semaine", cutoff)
-  if (e2) throw new Error(`Purge des coches impossible : ${e2.message}`)
+/** Purge des coches des cycles dont l'ancre est antérieure au cutoff (#257). */
+export async function purgerCyclesAvant(cutoffAncre: string): Promise<void> {
+  const supabase = createClient()
+  const { error } = await supabase
+    .from("etat_courses_article").delete().lt("ancre", cutoffAncre)
+  if (error) throw new Error(`Purge coches impossible : ${error.message}`)
+  // cycle_courses : purge des longueurs obsolètes.
+  await supabase.from("cycle_courses").delete().lt("ancre", cutoffAncre)
 }
 
 /** Foyer de l'utilisateur courant (pour scoper les canaux temps réel par foyer,
@@ -190,18 +196,18 @@ export async function sauvegarderPlanningDistant(
 }
 
 /**
- * Coches distantes d'une semaine, reconstruites en blob `{ "nom|unité":
- * quantité }` depuis les lignes par-article (#56 PR4). Renvoie un objet vide si
- * aucune ligne (pas de null : l'absence de coche = blob vide).
+ * Coches distantes d'une ancre de cycle, reconstruites en blob `{ "nom|unité":
+ * quantité }` depuis les lignes par-article (#56 PR4, #257). Renvoie un objet
+ * vide si aucune ligne (pas de null : l'absence de coche = blob vide).
  */
 export async function chargerCochesDistantes(
-  semaine: string
+  ancre: string
 ): Promise<Record<string, number>> {
   const supabase = createClient()
   const { data, error } = await supabase
     .from("etat_courses_article")
     .select("cle, quantite")
-    .eq("semaine", semaine)
+    .eq("ancre", ancre)
 
   if (error) {
     throw new Error(`Chargement des coches distantes impossible : ${error.message}`)
@@ -222,7 +228,7 @@ export async function chargerCochesDistantes(
 
 /** Coche un article (upsert d'une ligne ; mémorise la quantité pour RG-12). */
 export async function cocherArticleDistant(
-  semaine: string,
+  ancre: string,
   cle: string,
   quantite: number
 ): Promise<void> {
@@ -230,8 +236,8 @@ export async function cocherArticleDistant(
   const { error } = await supabase
     .from("etat_courses_article")
     .upsert(
-      { semaine, cle, quantite },
-      { onConflict: "foyer_id,semaine,cle" }
+      { ancre, cle, quantite },
+      { onConflict: "foyer_id,ancre,cle" }
     )
   if (error) {
     throw new Error(`Cochage impossible : ${error.message}`)
@@ -240,29 +246,54 @@ export async function cocherArticleDistant(
 
 /** Décoche un article (delete de sa ligne ; le foyer est filtré par la RLS). */
 export async function decocherArticleDistant(
-  semaine: string,
+  ancre: string,
   cle: string
 ): Promise<void> {
   const supabase = createClient()
   const { error } = await supabase
     .from("etat_courses_article")
     .delete()
-    .eq("semaine", semaine)
+    .eq("ancre", ancre)
     .eq("cle", cle)
   if (error) {
     throw new Error(`Décochage impossible : ${error.message}`)
   }
 }
 
-/** Vide toutes les coches d'une semaine (« Tout décocher » / régénération
- *  RG-13). Un seul DELETE par semaine plutôt que N décochages. */
-export async function viderCochesDistantes(semaine: string): Promise<void> {
+/** Vide toutes les coches d'une ancre de cycle (« Tout décocher » /
+ *  régénération RG-13). Un seul DELETE par ancre plutôt que N décochages. */
+export async function viderCochesDistantes(ancre: string): Promise<void> {
   const supabase = createClient()
   const { error } = await supabase
     .from("etat_courses_article")
     .delete()
-    .eq("semaine", semaine)
+    .eq("ancre", ancre)
   if (error) {
     throw new Error(`Vidage des coches impossible : ${error.message}`)
   }
+}
+
+/** Longueur persistée d'un cycle (défaut LONGUEUR_DEFAUT si aucune ligne,
+ *  #257). Best-effort : une erreur de lecture retombe sur le défaut plutôt que
+ *  de bloquer l'affichage de la liste de courses. */
+export async function chargerLongueurCycle(ancre: string): Promise<number> {
+  const supabase = createClient()
+  const { data, error } = await supabase
+    .from("cycle_courses").select("longueur").eq("ancre", ancre).maybeSingle()
+  if (error) return LONGUEUR_DEFAUT
+  return data?.longueur ?? LONGUEUR_DEFAUT
+}
+
+/** Écrit la longueur d'un cycle (upsert) ; supprime la ligne si elle revient
+ *  au défaut (#257 — pas de ligne = comportement par défaut implicite). */
+export async function definirLongueurCycle(ancre: string, longueur: number): Promise<void> {
+  const supabase = createClient()
+  if (longueur === LONGUEUR_DEFAUT) {
+    const { error } = await supabase.from("cycle_courses").delete().eq("ancre", ancre)
+    if (error) throw new Error(`Réglage cycle impossible : ${error.message}`)
+    return
+  }
+  const { error } = await supabase
+    .from("cycle_courses").upsert({ ancre, longueur }, { onConflict: "foyer_id,ancre" })
+  if (error) throw new Error(`Réglage cycle impossible : ${error.message}`)
 }
