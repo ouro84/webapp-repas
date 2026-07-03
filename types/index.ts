@@ -225,9 +225,20 @@ export type DbRecetteIngredient = {
 // Record<cle, quantite> reconstruit depuis ces lignes (cf. lib/coches.ts).
 export type DbEtatCourseArticle = {
   foyer_id: string;
-  semaine: string;
+  // Re-clé sur l'ancre du cycle de courses (#257) : la fenêtre n'est plus la
+  // semaine ISO mais `ancre` (date "AAAA-MM-JJ" du jour de courses foyer).
+  ancre: string;
   cle: string;
   quantite: number;
+  updated_at: string;
+};
+
+// Forme DB de `cycle_courses` (#257) — longueur par cycle (création paresseuse ;
+// absent = LONGUEUR_DEFAUT). `cle` métier = (foyer_id, ancre).
+export type DbCycleCourses = {
+  foyer_id: string;
+  ancre: string;    // date ISO "AAAA-MM-JJ"
+  longueur: number; // 1..14
   updated_at: string;
 };
 
