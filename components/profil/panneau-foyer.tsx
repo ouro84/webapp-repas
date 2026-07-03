@@ -273,7 +273,7 @@ export function PanneauFoyer() {
                 aria-label={jour.nom}
                 title={jour.nom}
                 onClick={() => choisirJourCourses(jour.valeur, jour.nom)}
-                className={`min-w-9 rounded-full px-3 py-1.5 text-sm transition active:scale-95 motion-reduce:active:scale-100 ${
+                className={`min-w-9 rounded-full px-3 py-1.5 text-sm transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-95 motion-reduce:active:scale-100 ${
                   actif
                     ? "bg-primary text-white"
                     : "text-brand-700 hover:bg-brand-50"
