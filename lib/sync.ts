@@ -63,6 +63,10 @@ const CLE_SEMAINE = "semaine_affichee";
 // du jour de courses foyer) + longueur. JSON { ancre, longueur }. C'est CETTE
 // ancre — pas la semaine — qui clé la chaîne coches (cf. ancreActive).
 const CLE_CYCLE = "cycle_affiche";
+// Planning PROJETÉ du cycle affiché (#257) — clé DÉDIÉE, distincte de
+// `planning_courant` : ce planning est synthétique (jours possiblement
+// dupliqués sur un cycle > 7 j), jamais poussé en base (cf. store plus bas).
+const CLE_CYCLE_PLANNING = "cycle_planning";
 
 const DELAI_DEBOUNCE_MS = 800;
 
@@ -83,6 +87,10 @@ export function reinitialiserCacheFoyer(): void {
   localStorage.removeItem(CLE_MAJ_COCHES);
   localStorage.removeItem(CLE_DIRTY_COCHES);
   localStorage.removeItem("planning_snapshot"); // CLE_SNAPSHOT de lib/stockage
+  // Le foyer a changé → le cycle affiché et son planning projeté (#257) sont
+  // périmés (autre foyer = autres plannings/jour de courses).
+  localStorage.removeItem(CLE_CYCLE);
+  localStorage.removeItem(CLE_CYCLE_PLANNING);
 }
 
 // ---------------------------------------------------------------------------
@@ -187,27 +195,63 @@ export function useCycleAffiche(): CycleAffiche | null {
 }
 
 // ---------------------------------------------------------------------------
-// Planning PROJETÉ du cycle (#257) — store EN MÉMOIRE (pas de localStorage, pas
-// de push). Contrairement à storePlanning (poussé en base par sauvegarder_planning),
-// le planning du cycle est synthétique (semaine = une ancre-DATE, `jour` possiblement
-// dupliqués sur un cycle > 7 j) : l'écrire dans storePlanning corromprait les données
-// de planning. /courses lit donc son planning ICI (via useCyclePlanning).
+// Planning PROJETÉ du cycle (#257) — store adossé à LOCALSTORAGE (clé dédiée
+// CLE_CYCLE_PLANNING, distincte de `planning_courant`), mais JAMAIS poussé en
+// base : contrairement à storePlanning (poussé par sauvegarder_planning), le
+// planning du cycle est synthétique (semaine = une ancre-DATE, `jour`
+// possiblement dupliqués sur un cycle > 7 j) — l'écrire dans storePlanning
+// corromprait les données de planning, et `planifierPush` ne s'y abonne pas.
+// localStorage évite le flash d'état vide au reload et permet aux e2e de le
+// seeder. /courses lit ce planning via useCyclePlanning.
 // ---------------------------------------------------------------------------
-let cyclePlanning: Planning | null = null;
 const abonnesCyclePlanning = new Set<() => void>();
 
 function definirCyclePlanning(planning: Planning | null): void {
-  cyclePlanning = planning;
+  if (planning === null) {
+    localStorage.removeItem(CLE_CYCLE_PLANNING);
+  } else {
+    localStorage.setItem(CLE_CYCLE_PLANNING, JSON.stringify(planning));
+  }
   for (const rappel of abonnesCyclePlanning) rappel();
+}
+
+// Cache de parsing mémoïsé : useSyncExternalStore exige que getSnapshot
+// renvoie une référence STABLE tant que la valeur brute n'a pas changé, sous
+// peine d'avertissement React (« getSnapshot should be cached ») — comparer
+// la chaîne brute évite de re-parser (et de renvoyer un nouvel objet) à
+// chaque lecture.
+let cacheRawCyclePlanning: string | null = null;
+let cacheParsedCyclePlanning: Planning | null = null;
+
+function lireCyclePlanning(): Planning | null {
+  let brut: string | null = null;
+  try {
+    brut = localStorage.getItem(CLE_CYCLE_PLANNING);
+  } catch {
+    brut = null;
+  }
+  if (brut !== cacheRawCyclePlanning) {
+    cacheRawCyclePlanning = brut;
+    try {
+      cacheParsedCyclePlanning = brut ? (JSON.parse(brut) as Planning) : null;
+    } catch {
+      cacheParsedCyclePlanning = null;
+    }
+  }
+  return cacheParsedCyclePlanning;
 }
 
 const storeCyclePlanning = {
   sAbonner(rappel: () => void): () => void {
     abonnesCyclePlanning.add(rappel);
-    return () => abonnesCyclePlanning.delete(rappel);
+    window.addEventListener("storage", rappel);
+    return () => {
+      abonnesCyclePlanning.delete(rappel);
+      window.removeEventListener("storage", rappel);
+    };
   },
-  lire: (): Planning | null => cyclePlanning,
-  lireServeur: (): Planning | null => null,
+  lire: lireCyclePlanning,
+  lireServeur: (): null => null,
 };
 
 /** Planning projeté du cycle affiché (ou null avant hydratation). Pour /courses. */
@@ -911,12 +955,13 @@ export async function naviguerVers(semaine: string): Promise<void> {
 // Un cycle = une ancre (date ISO du jour de courses foyer) + une longueur. Il se
 // projette par-dessus le stockage par semaine ISO : on charge les 1-2 plannings
 // des semaines touchées et on recolle le planning projeté (planningDuCycle) dans
-// storeCyclePlanning (en mémoire, JAMAIS poussé). Les coches, elles, sont clées
-// PAR ANCRE (etat_courses_article.ancre) — chargées ici et suivies en temps réel.
+// storeCyclePlanning (localStorage, clé dédiée CLE_CYCLE_PLANNING, JAMAIS poussé).
+// Les coches, elles, sont clées PAR ANCRE (etat_courses_article.ancre) — chargées
+// ici et suivies en temps réel.
 // ---------------------------------------------------------------------------
 
 /**
- * Charge un cycle dans le cache : planning projeté (en mémoire) + coches (par
+ * Charge un cycle dans le cache : planning projeté (localStorage) + coches (par
  * ancre) + abonnement temps réel des coches. Pose le cycle affiché. Utilisé par
  * /courses (hydratation, navigation, étirement). N'écrit JAMAIS dans storePlanning.
  */
