@@ -189,8 +189,12 @@ export default function PageCourses() {
     });
   }
 
-  // --- État chargement (RG-09) : prérendu serveur + calcul initial ---
-  if (!hydrate) {
+  // --- État chargement (RG-09) : prérendu serveur + calcul initial. Couvre
+  // aussi le cycle pas encore résolu (`cycle === null`, hydraterCycle() en
+  // cours) — sans cette garde, la toute première visite (rien en
+  // localStorage) tombait dans l'état vide le temps d'un rendu, même pour un
+  // utilisateur qui a bien un planning (#257). ---
+  if (!hydrate || cycle === null) {
     return (
       <main id="contenu" className="flex flex-1 flex-col items-center justify-center p-8">
         {/* role="status" : annonce le chargement aux lecteurs d'écran */}
@@ -201,19 +205,15 @@ export default function PageCourses() {
     );
   }
 
-  // --- État vide (RG-09) : aucun repas planifié sur le cycle affiché (soit
-  // aucun planning n'a encore été généré, soit aucune semaine chargée ne
+  // --- État vide (RG-09) : cycle résolu mais aucun repas planifié dessus
+  // (aucun planning n'a encore été généré, ou aucune semaine chargée ne
   // couvre les jours du cycle courant) ---
   if (liste === null) {
     return (
       <main id="contenu" className="flex flex-1 flex-col items-center justify-center gap-8 p-8">
         <div className="text-center">
           <h1 className="font-display text-2xl font-semibold text-brand-900">Liste de courses</h1>
-          <p className="mt-2 text-brand-700/85">
-            {cycle
-              ? "Aucun repas planifié sur ce cycle"
-              : "Génère d’abord un planning"}
-          </p>
+          <p className="mt-2 text-brand-700/85">Aucun repas planifié sur ce cycle</p>
         </div>
         <Link
           href="/planning"
