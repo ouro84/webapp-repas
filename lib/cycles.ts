@@ -7,7 +7,7 @@
 // semaineISO() reconstruit l'identifiant depuis les getters locaux.
 
 import { semaineISO } from "@/lib/semaines"
-import type { Jour } from "@/types"
+import type { Jour, Planning, JourPlanning } from "@/types"
 
 export const LONGUEUR_DEFAUT = 7
 export const LONGUEUR_MAX = 14
@@ -98,4 +98,22 @@ export function cyclesSelectionnables(
     options.push({ ancre: cycleDecale(courante, offset), offset })
   }
   return options
+}
+
+/**
+ * Planning synthétique limité aux jours du cycle, recollé depuis les plannings
+ * par semaine chargés. Les doublons de `jour` (cycle > 7 j) sont conservés :
+ * genererListeCourses agrège par ingrédient, pas par jour. Jours sans slot omis.
+ */
+export function planningDuCycle(
+  plannings: Planning[], ancre: string, longueur: number,
+): Planning {
+  const parSemaine = new Map(plannings.map((p) => [p.semaine, p]))
+  const jours: JourPlanning[] = []
+  for (const dateISO of joursDuCycle(ancre, longueur)) {
+    const { semaine, jour } = dateVersSemaineJour(dateISO)
+    const jp = parSemaine.get(semaine)?.jours.find((j) => j.jour === jour)
+    if (jp) jours.push(jp)
+  }
+  return { semaine: ancre, jours }
 }

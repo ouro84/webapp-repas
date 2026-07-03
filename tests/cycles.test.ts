@@ -2,7 +2,10 @@ import { describe, it, expect } from "vitest"
 import {
   ancreCourante, cycleDecale, joursDuCycle, semainesDuCycle,
   dateVersSemaineJour, libelleCycle, cyclesSelectionnables, LONGUEUR_DEFAUT,
+  planningDuCycle,
 } from "@/lib/cycles"
+import type { Planning } from "@/types"
+import { genererListeCourses } from "@/lib/courses"
 
 describe("ancreCourante", () => {
   it("renvoie aujourd'hui si on EST le jour de courses (jeudi=4)", () => {
@@ -77,3 +80,40 @@ describe("cyclesSelectionnables", () => {
 })
 
 it("LONGUEUR_DEFAUT vaut 7", () => { expect(LONGUEUR_DEFAUT).toBe(7) })
+
+describe("planningDuCycle", () => {
+  const recette = (nom: string) => ({
+    id: nom, nom, tempsPreparation: "rapide" as const,
+    ingredients: [{ nom: "pâtes", quantite: 200, unite: "g" as const,
+      categorie: "epicerie" as const, fondDePlacard: false }],
+  })
+
+  const w28: Planning = { semaine: "2026-W28", jours: [
+    { jour: "jeudi" as const, diner: recette("A") },
+    { jour: "vendredi" as const, diner: recette("B") },
+  ]}
+  const w29: Planning = { semaine: "2026-W29", jours: [
+    { jour: "lundi" as const, diner: recette("C") },
+    { jour: "mardi" as const, diner: recette("D") },
+  ]}
+
+  it("recolle les jours des 2 semaines dans la fenêtre, sans reliquat", () => {
+    const p = planningDuCycle([w28, w29], "2026-07-09", 7) // jeudi 9 → mercredi 15
+    const jours = p.jours.map((j) => j.jour)
+    // jeudi/vendredi (W28) + lundi/mardi (W29) ; PAS lundi..mercredi de W28
+    expect(jours).toEqual(["jeudi", "vendredi", "lundi", "mardi"])
+  })
+
+  it("produit une seule liste de courses agrégée sur la fenêtre", () => {
+    const p = planningDuCycle([w28, w29], "2026-07-09", 7)
+    const liste = genererListeCourses(p)
+    const epicerie = liste?.normal.find((c) => c.categorie === "epicerie")
+    // 4 dîners × 200 g de pâtes = 800 g
+    expect(epicerie?.ingredients[0].quantite).toBe(800)
+  })
+
+  it("jours hors planning omis (cycle partiellement vide)", () => {
+    const p = planningDuCycle([w28], "2026-07-09", 7)
+    expect(p.jours.map((j) => j.jour)).toEqual(["jeudi", "vendredi"])
+  })
+})
