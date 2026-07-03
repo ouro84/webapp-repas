@@ -214,15 +214,17 @@ les cartes planning existantes ; l'édition écrit dans les slots semaine sous-j
 
 ## 10. Découpage en PRs
 
+Principe : **une PR unique apporte de la valeur observable**. On ne scinde pas le socle
+invisible de la valeur visible → PR1 livre l'expérience complète du cycle d'un bloc.
+
 | PR | Contenu | Priorité |
 |----|---------|----------|
-| **PR1a** | Migration (`jour_courses`, `cycle_courses`, re-clé coches + backfill lundi, purge) + `lib/cycles.ts` + tests unitaires. Défaut lundi/7 → **zéro changement observable**. | Socle (must) |
-| **PR1b** | `/courses` projection cycle + navigation + étirement longueur + réglage foyer `/profil` + re-clé sync/realtime. | **Must (la valeur)** |
+| **PR1** | Migration (`jour_courses`, `cycle_courses`, re-clé coches + backfill lundi, purge) + `lib/cycles.ts` + tests unitaires + `/courses` projection cycle + navigation + étirement longueur + réglage foyer `/profil` + re-clé sync/realtime. | **Must (la valeur)** |
 | **PR2** | RPC `sauvegarder_slots` + route `{ancre,longueur}` + bouton « Générer mon cycle ». | Strong NTH |
 | **PR3** | Vue planning cycle (toggle `/planning`). | Bonus |
 
-**Ordre migrations (staging partagé)** : merger la PR-migration (PR1a) **en premier**, puis
-`git merge main` dans les branches suivantes.
+**Ordre migrations (staging partagé)** : PR1 porte la migration ; la merger **avant** PR2/PR3,
+puis `git merge main` dans les branches suivantes.
 
 ---
 
