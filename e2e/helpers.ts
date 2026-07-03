@@ -99,6 +99,29 @@ async function jetonTest(request: APIRequestContext): Promise<{
 }
 
 /**
+ * Remet le jour de courses du foyer de test à LUNDI (1) via PATCH REST — c'est
+ * l'ancre du cycle de courses non calendaire (#257, `ancreCourante` de
+ * lib/cycles.ts). Le foyer étant partagé (comme les réglages/le profil), une
+ * spec qui le laisse à un autre jour (ex. jeudi) ferait diverger l'ancre vue
+ * par les specs suivantes (courses.spec, coches-realtime.spec…), qui supposent
+ * toutes l'ancrage par défaut lundi. Grant au niveau colonne (même pattern que
+ * `profiles` en #22 PR1) : le rôle authenticated ne peut écrire QUE
+ * `jour_courses` sur `foyers` ; la RLS (`id = mon_foyer()`) scope déjà à la
+ * ligne du foyer de test — pas de filtre explicite par id nécessaire (mirroir
+ * de `nettoyerReglagesDistants`). À appeler en beforeEach ET afterAll de toute
+ * spec qui modifie le jour de courses (cf. cycle-courses.spec.ts).
+ */
+export async function reinitialiserJourCoursesDistant(
+  request: APIRequestContext
+): Promise<void> {
+  const { url, headers } = await jetonTest(request);
+  await request.patch(`${url}/rest/v1/foyers?id=not.is.null`, {
+    headers: { ...headers, "Content-Type": "application/json" },
+    data: { jour_courses: 1 },
+  });
+}
+
+/**
  * Supprime tous les masquages de recettes du compte de test (#105) via DELETE
  * REST. Le masquage (« suppression » d'une recette par défaut) persiste en base
  * pour l'utilisateur : sans nettoyage, une recette du catalogue masquée par un

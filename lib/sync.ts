@@ -978,7 +978,25 @@ async function chargerCycleDansCache(
     const plannings = resultats
       .filter((r): r is { planning: Planning; updatedAt: string } => r !== null)
       .map((r) => r.planning);
-    definirCyclePlanning(planningDuCycle(plannings, ancre, longueur));
+    const projete = planningDuCycle(plannings, ancre, longueur);
+    // Local fait foi si le backend n'a RIEN pour cette ancre (#257) — miroir du
+    // « planning local non horodaté fait foi » du #6/#104, adapté au cycle (qui
+    // n'a pas d'horodatage propre : c'est un planning SYNTHÉTIQUE, jamais poussé
+    // en base, cf. commentaire de CLE_CYCLE_PLANNING plus haut). Utile en e2e
+    // (planning injecté directement dans `cycle_planning`, le backend étant vidé
+    // par `nettoyerEtatDistant`) et en offline (rien à récupérer du serveur). On
+    // ne garde le local QUE s'il porte la MÊME ancre que celle visée : une
+    // navigation vers une autre ancre ne doit jamais hériter du cache d'une
+    // ancre différente (l'état vide reste correct dans ce cas).
+    const local = lireCyclePlanning();
+    const localFaitFoi =
+      projete.jours.length === 0 &&
+      local !== null &&
+      local.semaine === ancre &&
+      local.jours.length > 0;
+    if (!localFaitFoi) {
+      definirCyclePlanning(projete);
+    }
     // Pose l'ancre affichée AVANT toute opération sur les coches : `flusherCoches`
     // lit `ancreActive()` (dérivé du cycle affiché) et doit donc viser le NOUVEAU
     // cycle, pas l'ancien — sinon un flush dirty-first pousserait sous la mauvaise

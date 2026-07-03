@@ -5,18 +5,32 @@
 // l'abonnement Supabase Realtime. Valide aussi l'anti-clobber par-article (les
 // deux peuvent cocher des articles différents sans s'écraser).
 //
+// Depuis #257, les coches sont clées par ANCRE de cycle (pas par semaine) et
+// /courses lit son planning projeté depuis `cycle_planning` (pas
+// `planning_courant`, cf. lib/sync.ts) : les deux appareils injectent donc le
+// même planning dans `cycle_planning` avec `semaine` posé à la MÊME ancre (jour
+// de courses foyer = lundi par défaut, remis par `reinitialiserJourCoursesDistant`),
+// pour partager le même canal temps réel `coches:<foyer>:<ancre>`.
+//
 // ⚠️ Tape une vraie instance Supabase (staging en CI) avec le Realtime activé :
 // comme les autres specs, ne pas lancer en local (.env.local = prod). La
 // latence du push temps réel est absorbée par des `expect.poll`/timeouts longs.
 
 import { test, expect, type Browser, type Page } from "@playwright/test";
 import { recetteFixture } from "../tests/fixtures/recettes";
-import { nettoyerEtatDistant } from "./helpers";
+import { nettoyerEtatDistant, reinitialiserJourCoursesDistant } from "./helpers";
 import { semaineISO } from "../lib/semaines";
+import { ancreCourante } from "../lib/cycles";
 import type { Jour, Planning } from "../types";
 
-// Même planning déterministe que courses.spec (lardons + tagliatelles + …),
-// semaine COURANTE pour ne pas déclencher la garde de semaine passée (RG-24).
+// Ancre du cycle avec le jour de courses par défaut (lundi, ISO 1) — celle que
+// `hydraterCycle()` calculera au montage tant que le foyer de test reste sur
+// son réglage par défaut (remis par reinitialiserJourCoursesDistant ci-dessous).
+const ANCRE_LUNDI = ancreCourante(new Date(), 1);
+
+// Même planning déterministe que courses.spec (lardons + tagliatelles + …).
+// Le `semaine` d'origine n'est pas significatif : ouvrirCourses le remplace
+// par l'ANCRE du cycle visé avant injection dans `cycle_planning`.
 function planningDeterministe(): Planning {
   const choisies = [
     recetteFixture("omelette-aux-champignons"),
@@ -31,22 +45,33 @@ function planningDeterministe(): Planning {
 }
 
 // Ouvre /courses dans un contexte neuf (même session authentifiée) avec le
-// planning injecté et les drapeaux de sync purgés — comme le beforeEach de
-// courses.spec, mais au niveau contexte (un par « appareil »).
+// planning injecté dans le cache du CYCLE affiché (#257 : `cycle_planning` +
+// `cycle_affiche`, pas `planning_courant`) et les drapeaux de sync purgés —
+// comme le beforeEach de courses.spec, mais au niveau contexte (un par
+// « appareil »). Le garde-fou « local fait foi si le backend est vide pour
+// cette ancre » (lib/sync.ts) préserve l'injection tant que `semaine` du
+// planning injecté vaut bien l'ancre du cycle (ANCRE_LUNDI).
 async function ouvrirCourses(browser: Browser, planning: Planning): Promise<Page> {
   const context = await browser.newContext({ storageState: "e2e/.auth/user.json" });
-  await context.addInitScript((contenu) => {
-    for (const c of [
-      "planning_courant_maj",
-      "planning_dirty",
-      "courses_cochees",
-      "courses_cochees_maj",
-      "courses_dirty",
-    ]) {
-      localStorage.removeItem(c);
-    }
-    localStorage.setItem("planning_courant", contenu as string);
-  }, JSON.stringify(planning));
+  await context.addInitScript(
+    ([cyclePlanningJSON, cycleAfficheJSON]) => {
+      for (const c of [
+        "planning_courant_maj",
+        "planning_dirty",
+        "courses_cochees",
+        "courses_cochees_maj",
+        "courses_dirty",
+      ]) {
+        localStorage.removeItem(c);
+      }
+      localStorage.setItem("cycle_planning", cyclePlanningJSON as string);
+      localStorage.setItem("cycle_affiche", cycleAfficheJSON as string);
+    },
+    [
+      JSON.stringify({ ...planning, semaine: ANCRE_LUNDI }),
+      JSON.stringify({ ancre: ANCRE_LUNDI, longueur: 7 }),
+    ]
+  );
   const page = await context.newPage();
   await page.goto("/courses");
   // Attendre que la liste soit rendue (page hydratée → abonnement Realtime posé).
@@ -56,6 +81,10 @@ async function ouvrirCourses(browser: Browser, planning: Planning): Promise<Page
 
 test.beforeEach(async ({ request }) => {
   await nettoyerEtatDistant(request);
+  // Jour de courses du foyer remis à lundi (#257) : sinon une ancre héritée
+  // d'une autre spec ferait diverger l'ancre injectée ci-dessus de celle que
+  // hydraterCycle() calcule réellement au montage.
+  await reinitialiserJourCoursesDistant(request);
 });
 
 test("une coche posée sur un appareil apparaît en temps réel sur l'autre (US-20, RG-32)", async ({
