@@ -42,7 +42,7 @@
     "motsCles": [
       "planning"
     ],
-    "majLe": "2026-06-17T18:25:00.000Z"
+    "majLe": "2026-07-03T19:08:00.000Z"
   },
   {
     "titre": "Changer, choisir, marquer « Restes »",
@@ -90,6 +90,18 @@
     "majLe": "2026-07-01T20:18:00.000Z"
   },
   {
+    "titre": "Ma liste suit mon cycle de courses",
+    "slug": "cycle-courses",
+    "section": "Courses",
+    "ordre": 5,
+    "resume": "Régler ton jour de courses : la liste couvre ta fenêtre réelle (ex. jeudi→mercredi), pas la semaine du lundi.",
+    "motsCles": [
+      "courses",
+      "foyer"
+    ],
+    "majLe": "2026-07-04T13:53:00.000Z"
+  },
+  {
     "titre": "Cocher et organiser ma liste",
     "slug": "liste-courses",
     "section": "Courses",
@@ -98,7 +110,7 @@
     "motsCles": [
       "courses"
     ],
-    "majLe": "2026-06-18T21:02:00.000Z"
+    "majLe": "2026-07-03T19:08:00.000Z"
   },
   {
     "titre": "Régler la génération",

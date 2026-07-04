@@ -2,7 +2,7 @@ _Ta liste de courses se construit toute seule à partir de ton planning. Voici c
 
 ## Ce que tu trouves dans la liste
 
-Depuis le planning, touche **« Liste de courses → »**. L'app parcourt **tous les repas de la semaine affichée** et en additionne les ingrédients, rangés **par rayon** dans l'ordre d'un parcours de magasin :
+Depuis le planning, touche **« Liste de courses → »**. L'app parcourt **tous les repas de ton cycle de courses** — la fenêtre de jours qui va d'une virée à la suivante (voir _Ma liste suit mon cycle de courses_) — et en additionne les ingrédients, rangés **par rayon** dans l'ordre d'un parcours de magasin :
 
 1. Viandes & Poissons
 
@@ -74,6 +74,6 @@ Pour une nouvelle virée de courses, touche **« Tout décocher »** en haut (le
 
 ## Et si la liste est vide ?
 
-Si tu arrives sur l'écran et qu'il affiche **« Génère d'abord un planning »**, c'est qu'aucun planning n'existe pour la semaine affichée. Touche **« Aller au planning »**, génère ta semaine, et la liste se remplira automatiquement.
+Si l'écran affiche **« Aucun repas planifié sur ce cycle »**, c'est qu'aucun repas n'est prévu sur la fenêtre du cycle affiché. Touche **« Aller au planning »**, génère tes repas, et la liste se remplira automatiquement.
 
-> 📅 Chaque semaine a **sa propre liste et ses propres coches**. Si tu navigues vers une autre semaine dans le planning, la liste de courses suit cette semaine — tes coches de la semaine en cours sont conservées, pas mélangées.
+> 📅 Chaque **cycle** a **sa propre liste et ses propres coches**. En haut de la liste, les flèches **‹** **›** passent d'un cycle à l'autre — pour anticiper ta prochaine virée ou revoir une précédente — sans mélanger les coches. Tu peux aussi **étirer** la fenêtre avec **« Couvre N j »** [− / +]. Voir _Ma liste suit mon cycle de courses_.

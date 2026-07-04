@@ -24,6 +24,7 @@ import {
   purgerCyclesAvant,
   purgerSemainesAvant,
   sauvegarderPlanningDistant,
+  sauvegarderSlotsDistant,
   viderCochesDistantes,
 } from "@/lib/persistance";
 import { parserCoches, type Coches } from "@/lib/coches";
@@ -658,7 +659,9 @@ function couperTempsReel(): Promise<void> {
       semainePlanningAbonnee = null;
     })
     .catch((e) => console.error("Arrêt temps réel du planning échoué.", e));
-  return Promise.all([chaineCoches, chainePlanning]).then(() => undefined);
+  return Promise.all([chaineCoches, chainePlanning, couperPlanningCycle()]).then(
+    () => undefined
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -787,6 +790,175 @@ async function majAbonnementPlanning(semaine: string | null): Promise<void> {
       (payload) => surEventPlanning(foyer, semaine, payload)
     )
     .subscribe();
+}
+
+// ---------------------------------------------------------------------------
+// Temps réel du PLANNING côté CYCLE (#259, PR2) — restaure l'alerte US-21 sur
+// /courses (limitation de PR1). Un cycle touche 1-2 semaines ISO : on s'abonne à
+// la table `planning` pour CHACUNE. À réception d'un changement, on re-projette
+// le cycle depuis la base et on compare la signature AVANT/APRÈS ; si le contenu
+// visible du cycle a changé, on déclenche l'alerte intrusive (réutilise le même
+// store/modale que #56 PR5). L'écho de notre PROPRE génération est filtré par la
+// signature (rafraichirCycleGenere a déjà posé le nouveau contenu localement) et,
+// pendant la fenêtre de génération, par le drapeau `suppressionAlerteCycle`.
+// ---------------------------------------------------------------------------
+let suppressionAlerteCycle = false;
+let traitementCycleEnCours = false;
+// Dernier updated_at serveur connu PAR SEMAINE ISO du cycle (discriminant écho /
+// changement distant, comme `planning_courant_maj` pour la semaine #56 PR5) : un
+// event dont l'updated_at est <= au connu est un écho de notre propre écriture
+// (ou un event obsolète) → ignoré. Rempli à chaque pull et à chaque push cycle.
+const majPlanningCycle = new Map<string, number>();
+
+// Re-projette le cycle affiché depuis la base (planning des 1-2 semaines
+// touchées). Écrase la projection locale (contrairement à chargerCycleDansCache,
+// PAS de dirty-first : un re-pull US-21/génération DOIT refléter la base).
+// Mémorise au passage l'updated_at de chaque semaine (discriminant d'écho).
+async function rechargerProjectionCycle(ancre: string, longueur: number): Promise<void> {
+  const semaines = semainesDuCycle(ancre, longueur);
+  const resultats = await Promise.all(semaines.map((s) => chargerPlanningDistant(s)));
+  const plannings: Planning[] = [];
+  semaines.forEach((s, i) => {
+    const r = resultats[i];
+    majPlanningCycle.set(s, r ? Date.parse(r.updatedAt) : 0);
+    if (r) plannings.push(r.planning);
+  });
+  definirCyclePlanning(planningDuCycle(plannings, ancre, longueur));
+}
+
+async function traiterChangementCycleDistant(): Promise<void> {
+  if (suppressionAlerteCycle || traitementCycleEnCours) return;
+  const courant = lireCycleAffiche();
+  if (!courant) return;
+  traitementCycleEnCours = true;
+  try {
+    const sigAvant = signaturePlanning(lireCyclePlanning());
+    await rechargerProjectionCycle(courant.ancre, courant.longueur);
+    if (
+      lireCycleAffiche()?.ancre === courant.ancre &&
+      signaturePlanning(lireCyclePlanning()) !== sigAvant
+    ) {
+      declencherAlertePlanning();
+    }
+  } finally {
+    traitementCycleEnCours = false;
+  }
+}
+
+// Canaux planning du cycle, un par semaine ISO touchée (clés = semaine).
+const canauxPlanningCycle = new Map<string, RealtimeChannel>();
+let chainePlanningCycle: Promise<void> = Promise.resolve();
+
+// Filtre l'écho de nos propres écritures (updated_at <= connu pour la semaine)
+// avant de traiter un changement distant du planning du cycle (US-21).
+function surEventPlanningCycle(
+  semaine: string,
+  payload: {
+    eventType: "INSERT" | "UPDATE" | "DELETE";
+    new: { updated_at?: string };
+    old: { updated_at?: string };
+  }
+): void {
+  const ligne = payload.eventType === "DELETE" ? payload.old : payload.new;
+  const majEvent = ligne.updated_at ? Date.parse(ligne.updated_at) : 0;
+  if (!Number.isFinite(majEvent) || majEvent <= (majPlanningCycle.get(semaine) ?? 0)) {
+    return; // écho de notre propre écriture ou event obsolète
+  }
+  void traiterChangementCycleDistant();
+}
+
+function synchroniserAbonnementPlanningCycle(
+  ancre: string | null,
+  longueur: number
+): Promise<void> {
+  chainePlanningCycle = chainePlanningCycle
+    .then(() => majAbonnementPlanningCycle(ancre, longueur))
+    .catch((e) => console.error("Abonnement temps réel du planning (cycle) échoué.", e));
+  return chainePlanningCycle;
+}
+
+async function majAbonnementPlanningCycle(
+  ancre: string | null,
+  longueur: number
+): Promise<void> {
+  const voulues = ancre ? new Set(semainesDuCycle(ancre, longueur)) : new Set<string>();
+  // Retire les canaux des semaines qui ne font plus partie du cycle.
+  for (const [s, canal] of canauxPlanningCycle) {
+    if (!voulues.has(s)) {
+      await client().removeChannel(canal);
+      canauxPlanningCycle.delete(s);
+    }
+  }
+  if (voulues.size === 0) return;
+  const foyer = await assurerFoyerId();
+  if (foyer === null) return;
+  await assurerAuthRealtime();
+  for (const s of voulues) {
+    if (canauxPlanningCycle.has(s)) continue;
+    const topic = `planning-cycle:${foyer}:${s}`;
+    await retirerCanalTopic(topic);
+    const canal = client()
+      .channel(topic)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "planning", filter: `semaine=eq.${s}` },
+        (payload) => surEventPlanningCycle(s, payload)
+      )
+      .subscribe();
+    canauxPlanningCycle.set(s, canal);
+  }
+}
+
+function couperPlanningCycle(): Promise<void> {
+  chainePlanningCycle = chainePlanningCycle
+    .then(async () => {
+      for (const canal of canauxPlanningCycle.values()) {
+        await client().removeChannel(canal);
+      }
+      canauxPlanningCycle.clear();
+    })
+    .catch((e) => console.error("Arrêt temps réel du planning (cycle) échoué.", e));
+  return chainePlanningCycle;
+}
+
+/**
+ * Applique une génération fenêtrée (#259) : persiste chaque semaine touchée via
+ * `sauvegarder_slots` (upsert des seuls jours du cycle, sans écraser les jours
+ * voisins), invalide les coches du cycle (RG-13) et re-projette depuis la base.
+ * Le drapeau `suppressionAlerteCycle` évite que l'écho realtime de nos propres
+ * écritures ne déclenche l'alerte US-21 pendant la fenêtre de génération.
+ */
+export async function appliquerGenerationCycle(
+  semaines: Array<{ semaine: string; jours: Planning["jours"] }>
+): Promise<void> {
+  suppressionAlerteCycle = true;
+  try {
+    for (const { semaine, jours } of semaines) {
+      const maj = await sauvegarderSlotsDistant(semaine, jours);
+      // Mémorise l'updated_at de notre propre écriture → son écho realtime sera
+      // filtré (en plus du drapeau de suppression, cf. surEventPlanningCycle).
+      majPlanningCycle.set(semaine, Date.parse(maj));
+    }
+    await rafraichirCycleGenere();
+  } finally {
+    suppressionAlerteCycle = false;
+  }
+}
+
+/** Invalide les coches du cycle affiché (RG-13) et re-projette le planning depuis
+ *  la base (après une génération fenêtrée). */
+async function rafraichirCycleGenere(): Promise<void> {
+  const courant = lireCycleAffiche();
+  if (!courant) return;
+  await viderCochesDistantes(courant.ancre).catch((e) =>
+    console.error("Invalidation des coches du cycle (RG-13) échouée.", e)
+  );
+  localStorage.removeItem(CLE_DIRTY_COCHES);
+  cochesConnues = {};
+  applicationDistanteEnCours = true;
+  storeCoches.effacer();
+  applicationDistanteEnCours = false;
+  await rechargerProjectionCycle(courant.ancre, courant.longueur);
 }
 
 // ---- Présence anonyme « en magasin » (bonus validé, RG-31) ----
@@ -965,9 +1137,13 @@ async function chargerCycleDansCache(
     const resultats = await Promise.all(
       semaines.map((s) => chargerPlanningDistant(s))
     );
-    const plannings = resultats
-      .filter((r): r is { planning: Planning; updatedAt: string } => r !== null)
-      .map((r) => r.planning);
+    const plannings: Planning[] = [];
+    semaines.forEach((s, i) => {
+      const r = resultats[i];
+      // Mémorise l'updated_at par semaine (discriminant d'écho realtime, US-21).
+      majPlanningCycle.set(s, r ? Date.parse(r.updatedAt) : 0);
+      if (r) plannings.push(r.planning);
+    });
     const projete = planningDuCycle(plannings, ancre, longueur);
     // Local fait foi si le backend n'a RIEN pour cette ancre (#257) — miroir du
     // « planning local non horodaté fait foi » du #6/#104, adapté au cycle (qui
@@ -1006,8 +1182,10 @@ async function chargerCycleDansCache(
   } finally {
     hydratationCochesEnCours = false;
   }
-  // (Ré)abonne le temps réel des coches à l'ancre désormais affichée.
+  // (Ré)abonne le temps réel des coches à l'ancre désormais affichée + le
+  // temps réel du PLANNING sur les 1-2 semaines du cycle (alerte US-21, #259).
   void synchroniserAbonnementCoches(ancre);
+  void synchroniserAbonnementPlanningCycle(ancre, longueur);
 }
 
 /**
@@ -1166,9 +1344,12 @@ function demarrerSyncCoches(): () => void {
     if (estDirtyCoches()) void flusherCoches();
   };
   window.addEventListener("online", surRetourEnLigne);
-  // Réabonnement « à chaud » (nav SPA) ; au chargement froid, hydraterCycle pose
-  // l'abonnement une fois l'ancre résolue.
-  void synchroniserAbonnementCoches(ancreActive());
+  // Réabonnement « à chaud » (nav SPA) : coches (par ancre) + planning du cycle
+  // (alerte US-21, #259). Au chargement froid, hydraterCycle → chargerCycleDansCache
+  // (re)posent les deux une fois l'ancre/longueur résolues.
+  const cycle = lireCycleAffiche();
+  void synchroniserAbonnementCoches(cycle?.ancre ?? null);
+  void synchroniserAbonnementPlanningCycle(cycle?.ancre ?? null, cycle?.longueur ?? LONGUEUR_DEFAUT);
   return () => {
     desabonnerCoches();
     window.removeEventListener("online", surRetourEnLigne);

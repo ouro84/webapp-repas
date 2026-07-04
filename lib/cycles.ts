@@ -128,6 +128,34 @@ export function cyclesSelectionnables(
 }
 
 /**
+ * Génération fenêtrée (#259, PR2) — regroupe les jours d'un planning GÉNÉRÉ (14
+ * slots d'une semaine ISO, keyé par jour de semaine) selon le cycle, indexé par
+ * semaine ISO pour la persistance par-semaine (`sauvegarder_slots`).
+ *
+ * Pour chaque date du cycle, on associe le `JourPlanning` du même jour de semaine
+ * du planning généré. Un jour de semaine est UNIQUE dans une semaine ISO donnée →
+ * aucune collision au sein d'une même semaine. Sur un cycle > 7 j, un jour de
+ * semaine peut se répéter (dans une AUTRE semaine ISO) : il réutilise alors la
+ * même recette générée (limitation mineure et assumée, cf. §9 « chevauchement »).
+ * Jours sans `JourPlanning` correspondant omis (robustesse).
+ */
+export function planningGenereParSemaine(
+  planningGenere: Planning, ancre: string, longueur: number,
+): Map<string, JourPlanning[]> {
+  const parJour = new Map(planningGenere.jours.map((jp) => [jp.jour, jp]))
+  const parSemaine = new Map<string, JourPlanning[]>()
+  for (const dateISO of joursDuCycle(ancre, longueur)) {
+    const { semaine, jour } = dateVersSemaineJour(dateISO)
+    const jp = parJour.get(jour)
+    if (!jp) continue
+    const liste = parSemaine.get(semaine) ?? []
+    if (!liste.some((x) => x.jour === jour)) liste.push(jp)
+    parSemaine.set(semaine, liste)
+  }
+  return parSemaine
+}
+
+/**
  * Planning synthétique limité aux jours du cycle, recollé depuis les plannings
  * par semaine chargés. Les doublons de `jour` (cycle > 7 j) sont conservés :
  * genererListeCourses agrège par ingrédient, pas par jour. Jours sans slot omis.

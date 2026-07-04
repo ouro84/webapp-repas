@@ -585,6 +585,22 @@ Réduire à zéro l'effort de planification hebdomadaire des repas, du choix des
 > **When** je consulte `/courses`  
 > **Then** le nouveau jour ne s'applique **qu'aux cycles futurs** — les cycles déjà passés restent accessibles en navigation avec leur ancre d'origine (RG-54)
 
+### US-48 — Générer mon cycle (#259, P27)
+
+> **En tant qu'** utilisateur devant sa liste de courses, je veux **générer tous les repas de mon cycle en un clic**, sans repasser par la vue planning semaine par semaine.
+
+> **Given** je suis sur `/courses` (cycle affiché, éventuellement vide)  
+> **When** je clique sur **« Générer mon cycle »**  
+> **Then** tous les repas du cycle sont générés (y compris quand il chevauche deux semaines ISO) et la liste de courses se recalcule immédiatement sur la fenêtre exacte (RG-56)
+
+> **Given** le cycle chevauche deux semaines ISO, dont l'une contient déjà des repas hors du cycle  
+> **When** je génère mon cycle  
+> **Then** seuls les jours du cycle sont (ré)écrits — les jours hors cycle des semaines touchées sont **préservés** (RG-56)
+
+> **Given** j'avais coché des articles sur le cycle  
+> **When** je (re)génère mon cycle  
+> **Then** les coches du cycle sont **réinitialisées** (RG-13, cohérent avec la régénération planning), et un autre membre « en magasin » est **alerté** de la modification (US-21, RG-55)
+
 ---
 
 ## 5. Modèle de données
@@ -838,6 +854,7 @@ La liste de courses (US-03/RG-05) n'est plus fenêtrée sur la semaine ISO mais 
 - **RG-53 — Fenêtre `ancre + longueur`** : un cycle est défini par une **ancre** (date du dernier jour de courses du foyer survenu au plus tard aujourd'hui) et une **longueur** (nombre de jours couverts, défaut **7**, étirable de **1 à 14**). La liste agrège exactement les repas planifiés sur les jours du cycle (les jours d'un cycle > 7 j peuvent chevaucher la semaine ISO suivante et donc le cycle suivant — chevauchement assumé, coches indépendantes par cycle). La navigation `/courses` (‹ cycle précédent / suivant ›) est indépendante de la navigation par semaine de `/planning` (RG-24) : les deux coexistent. Étirer la longueur ne décale **pas** l'ancre du cycle suivant (cadence fixe : +7 j).
 - **RG-54 — Réglage foyer & rétro-compatibilité** : le jour de courses (`jourCourses`, ISO 1=lundi…7=dimanche) est un réglage **du foyer** (pas de l'utilisateur), car les coches sont partagées au foyer ; défaut **lundi**. Avec ce défaut, le cycle **coïncide exactement** avec la semaine ISO lundi→dimanche — **zéro changement de comportement observable** pour un foyer qui ne touche pas ce réglage. Changer le jour de courses ne s'applique qu'aux **cycles futurs** : les ancres et coches déjà constituées restent accessibles telles quelles en navigation.
 - **RG-55 — Coches par cycle, temps réel inchangé** : les coches de la liste (RG-10 à RG-14) sont clées par **ancre de cycle** (et non plus par semaine) ; la synchronisation temps réel entre membres du foyer (US-20) et la présence « en magasin » (RG-31) fonctionnent à l'identique, à l'échelle du cycle affiché.
+- **RG-56 — Génération fenêtrée (US-48, #259)** : « Générer mon cycle » remplit les 14 slots du cycle affiché (saison = ancre du cycle ; `lib/generateur.ts` inchangé), répartis dans les **1-2 semaines ISO** touchées et persistés **par semaine** en n'écrivant **que** les jours du cycle (les jours hors cycle des semaines touchées sont préservés). Comme toute génération complète, elle **réinitialise les coches** du cycle (RG-13) et bump la version du planning → un membre « en magasin » est alerté (US-21/RG-55). La navigation planning par semaine (RG-24) reste la vue de référence « on mange quoi ce soir ? ».
 
 ### RG-19 — Snapshot d'annulation (US-09)
 

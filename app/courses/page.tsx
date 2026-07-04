@@ -23,8 +23,11 @@
 import Link from "next/link";
 import { useMemo, useState, useSyncExternalStore } from "react";
 import { flushSync } from "react-dom";
-import { ChevronLeft, ChevronRight, Users } from "lucide-react";
+import { toast } from "sonner";
+import { ChevronLeft, ChevronRight, Sparkles, Users } from "lucide-react";
 import { genererListeCourses } from "@/lib/courses";
+import { parseApiError } from "@/lib/errors";
+import { messagesAvertissementGeneration } from "@/lib/avertissements-generation";
 import {
   aDesCoches,
   basculerCoche,
@@ -43,6 +46,7 @@ import {
   useCyclePlanning,
   naviguerCycle,
   etirerCycle,
+  appliquerGenerationCycle,
   type CycleAffiche,
 } from "@/lib/sync";
 import { libelleCycle, LONGUEUR_MAX } from "@/lib/cycles";
@@ -51,6 +55,7 @@ import { formaterQuantite } from "@/lib/unites";
 import type {
   CategorieIngredient,
   Ingredient,
+  JourPlanning,
   ListeCourses,
 } from "@/types";
 
@@ -207,6 +212,53 @@ export default function PageCourses() {
   // pseudo-catégorie pour la section dédiée.
   const [replies, setReplies] = useState<ReadonlySet<string>>(new Set());
 
+  // Génération fenêtrée « Générer mon cycle » (#259) : remplit d'un coup les
+  // repas du cycle affiché (1-2 semaines ISO), sans quitter /courses.
+  const [enGeneration, setEnGeneration] = useState(false);
+
+  async function genererMonCycle(): Promise<void> {
+    if (!cycle || enGeneration) return;
+    setEnGeneration(true);
+    try {
+      const reponse = await fetch("/api/planning/generer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ancre: cycle.ancre, longueur: cycle.longueur }),
+      });
+      if (!reponse.ok) {
+        toast.error(await parseApiError(reponse));
+        return;
+      }
+      const {
+        semaines,
+        vegeNonHonore = 0,
+        mixNonHonore = 0,
+        saisonNonHonore = 0,
+      } = (await reponse.json()) as {
+        semaines: Array<{ semaine: string; jours: JourPlanning[] }>;
+        vegeNonHonore?: number;
+        mixNonHonore?: number;
+        saisonNonHonore?: number;
+      };
+      // Persiste chaque semaine touchée (sauvegarder_slots), invalide les coches
+      // du cycle (RG-13) et re-projette depuis la base (cf. lib/sync.ts).
+      await appliquerGenerationCycle(semaines);
+      toast.success("Cycle généré");
+      for (const message of messagesAvertissementGeneration({
+        vegeNonHonore,
+        mixNonHonore,
+        saisonNonHonore,
+      })) {
+        toast.warning(message);
+      }
+    } catch (erreur) {
+      console.error("Génération du cycle échouée.", erreur);
+      toast.error("Impossible de générer le cycle. Vérifie ta connexion et réessaie.");
+    } finally {
+      setEnGeneration(false);
+    }
+  }
+
   // Agrégation (RG-05) recalculée uniquement quand le planning projeté du
   // cycle change. Un cycle sans aucun repas planifié (aucune semaine chargée
   // ne couvre ses jours) produit une liste sans lignes : traité comme l'état
@@ -275,9 +327,20 @@ export default function PageCourses() {
               par /planning. */}
           {cycle && <NavigateurCycle cycle={cycle} />}
         </div>
+        {/* Génération fenêtrée (#259) : remplir le cycle affiché d'un clic,
+            sans passer par /planning (D3 « Générer mon cycle »). */}
+        <button
+          type="button"
+          onClick={() => void genererMonCycle()}
+          disabled={enGeneration}
+          className="inline-flex items-center gap-2 rounded-full bg-primary px-8 py-4 text-lg font-medium text-white transition hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          <Sparkles aria-hidden="true" className="size-5" />
+          {enGeneration ? "Génération…" : "Générer mon cycle"}
+        </button>
         <Link
           href="/planning"
-          className="rounded-full bg-primary px-8 py-4 text-lg font-medium text-white transition hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100"
+          className="relative text-sm font-medium text-brand-700 underline-offset-4 transition after:absolute after:-inset-2 after:content-[''] hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
         >
           Aller au planning
         </Link>
@@ -328,6 +391,16 @@ export default function PageCourses() {
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
+          {/* Régénérer le cycle affiché (#259) — invalide les coches (RG-13). */}
+          <button
+            type="button"
+            onClick={() => void genererMonCycle()}
+            disabled={enGeneration}
+            className="relative inline-flex items-center gap-1.5 rounded-full border border-brand-200 px-4 py-2 text-sm font-medium text-brand-700 transition after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <Sparkles aria-hidden="true" className="size-4" />
+            {enGeneration ? "Génération…" : "Générer mon cycle"}
+          </button>
           {aDesCoches(liste, coches) && (
             <button
               type="button"

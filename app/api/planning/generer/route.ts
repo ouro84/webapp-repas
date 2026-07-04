@@ -16,6 +16,12 @@ import {
   semaineISO,
   semaineParDefaut,
 } from "@/lib/semaines"
+import {
+  dateVersSemaineJour,
+  LONGUEUR_DEFAUT,
+  LONGUEUR_MAX,
+  planningGenereParSemaine,
+} from "@/lib/cycles"
 import { dbRecetteToDomain } from "@/lib/adapters"
 import { dbReglagesToDomain, REGLAGES_DEFAUT } from "@/lib/reglages"
 
@@ -52,15 +58,52 @@ export async function POST(request: Request) {
     )
   }
 
-  // Semaine cible (US-11/US-14) : lue dans le corps, validée contre la plage de
-  // navigation (−12 → +6 semaines) calculée côté serveur — le client n'en est
-  // pas l'autorité. Corps absent / sans semaine → défaut (semaine courante, ou
-  // prochaine le week-end).
+  // Corps : deux modes exclusifs (#259).
+  //  • Mode SEMAINE (US-11/US-14, /planning) : `{ semaine }` → un planning de 14
+  //    slots pour cette semaine ISO.
+  //  • Mode CYCLE (#259, /courses « Générer mon cycle ») : `{ ancre, longueur }`
+  //    → on remplit les jours du cycle (fenêtre non calendaire), répartis dans
+  //    les 1-2 semaines ISO touchées et renvoyés PAR SEMAINE (le client persiste
+  //    chaque semaine via `sauvegarder_slots` sans écraser les jours voisins).
+  // Dans les deux cas, la plage de navigation (−12 → +6 semaines) est validée
+  // côté serveur — le client n'en est pas l'autorité.
   const corps = (await request.json().catch(() => null)) as {
     semaine?: unknown
+    ancre?: unknown
+    longueur?: unknown
   } | null
+
+  const modeCycle = corps != null && typeof corps.ancre === "string"
+
+  // Semaine cible de la GÉNÉRATION (et de l'historique de variété). En mode
+  // cycle, c'est la semaine ISO de l'ancre (saison = ancre du cycle, cf. design).
   let semaine = semaineParDefaut()
-  if (corps && typeof corps.semaine === "string") {
+  let ancre = ""
+  let longueur = LONGUEUR_DEFAUT
+
+  if (modeCycle) {
+    ancre = corps!.ancre as string
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(ancre)) {
+      return apiError("POST /api/planning/generer", null, "Ancre de cycle invalide.", 400)
+    }
+    if (corps!.longueur !== undefined) {
+      const n = Number(corps!.longueur)
+      if (!Number.isInteger(n) || n < 1 || n > LONGUEUR_MAX) {
+        return apiError("POST /api/planning/generer", null, "Longueur de cycle invalide.", 400)
+      }
+      longueur = n
+    }
+    semaine = dateVersSemaineJour(ancre).semaine
+    const decalage = decalageEntre(semaineISO(new Date()), semaine)
+    if (decalage < -SEMAINES_PASSEES || decalage > SEMAINES_FUTURES) {
+      return apiError(
+        "POST /api/planning/generer",
+        null,
+        "Cycle hors de la plage autorisée.",
+        400
+      )
+    }
+  } else if (corps && typeof corps.semaine === "string") {
     if (!/^\d{4}-W\d{2}$/.test(corps.semaine)) {
       return apiError("POST /api/planning/generer", null, "Semaine invalide.", 400)
     }
@@ -197,6 +240,19 @@ export async function POST(request: Request) {
     // RG-28 — saisonnalité : on signale le NOMBRE de repas complétés hors-saison
     // par dégradation gracieuse (vivier de saison insuffisant) (#23 PR2).
     const saisonNonHonore = reposNonSaison(planning, reglages).length
+
+    // Mode cycle (#259) : on projette le planning généré sur les jours du cycle,
+    // regroupés par semaine ISO. Le client persiste chaque semaine via
+    // `sauvegarder_slots` (upsert des seuls jours du cycle) puis re-projette.
+    if (modeCycle) {
+      const parSemaine = planningGenereParSemaine(planning, ancre, longueur)
+      const semaines = Array.from(parSemaine, ([s, jours]) => ({ semaine: s, jours }))
+      return NextResponse.json(
+        { semaines, vegeNonHonore, mixNonHonore, saisonNonHonore },
+        { status: 200 }
+      )
+    }
+
     return NextResponse.json(
       { planning, vegeNonHonore, mixNonHonore, saisonNonHonore },
       { status: 200 }
