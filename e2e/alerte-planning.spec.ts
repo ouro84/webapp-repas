@@ -8,12 +8,11 @@
 // ⚠️ Repose sur la GÉNÉRATION (catalogue global) → fiable en CI (staging seedé),
 // pas en local (.env.local = prod). Deux contextes = deux appareils.
 //
-// ⚠️ test.fixme (#257 PR1) : LIMITATION CONNUE ASSUMÉE. Depuis le cycle de
-// courses, /courses utilise `useSyncCourses()` qui NE câble PAS le temps réel
-// planning (seulement les coches) → l'alerte US-21 ne se déclenche plus « en
-// magasin ». C'est documenté (CLAUDE.md, design §limitations) et RESTAURÉ en
-// PR2 (#259, génération fenêtrée qui re-câble le temps réel planning côté
-// cycle). Ré-activer ce test dans #259.
+// ✅ RESTAURÉ en PR2 (#259) : /courses re-câble le temps réel du planning côté
+// CYCLE (lib/sync.ts → synchroniserAbonnementPlanningCycle : un abonnement par
+// semaine ISO touchée par le cycle affiché). À réception d'un changement, la
+// projection du cycle est re-pull et sa signature comparée → l'alerte US-21 se
+// déclenche à nouveau « en magasin » (levée du test.fixme de PR1 #257).
 
 import { test, expect } from "./fixtures";
 import type { Browser, Page } from "@playwright/test";
@@ -29,7 +28,7 @@ test.beforeEach(async ({ request }) => {
   await nettoyerEtatDistant(request);
 });
 
-test.fixme("un membre en magasin est alerté quand le planning change à la maison (US-21)", async ({
+test("un membre en magasin est alerté quand le planning change à la maison (US-21)", async ({
   browser,
 }) => {
   // --- Appareil A : génère un planning puis part « en magasin » (courses) ---

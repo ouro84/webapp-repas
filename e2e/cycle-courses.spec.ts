@@ -135,3 +135,19 @@ test("changer le jour de courses puis naviguer les cycles", async ({ page }) => 
     page.getByRole("heading", { name: "Liste de courses" })
   ).toBeVisible();
 });
+
+test("« Générer mon cycle » remplit la liste depuis l'état vide (#259)", async ({
+  page,
+}) => {
+  // Génération RÉELLE (catalogue global) → fiable en CI (staging seedé), pas en
+  // local sur prod. Défaut lundi + backend vidé (beforeEach) ⇒ /courses état vide.
+  await page.goto("/courses");
+  await expect(page.getByText("Aucun repas planifié sur ce cycle")).toBeVisible();
+
+  // Un clic remplit tout le cycle sans quitter /courses (D3 « Générer mon cycle »).
+  await page.getByRole("button", { name: "Générer mon cycle" }).click();
+
+  // La liste se peuple : compteur de progression + au moins un article cochable.
+  await expect(page.getByText(/coché.? sur [1-9]/)).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator("main li").first()).toBeVisible();
+});

@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest"
 import {
   ancreCourante, ancreParDefaut, cycleDecale, joursDuCycle, semainesDuCycle,
   dateVersSemaineJour, libelleCycle, cyclesSelectionnables, LONGUEUR_DEFAUT,
-  planningDuCycle,
+  planningDuCycle, planningGenereParSemaine,
 } from "@/lib/cycles"
 import type { Planning } from "@/types"
 import { genererListeCourses } from "@/lib/courses"
@@ -134,5 +134,43 @@ describe("planningDuCycle", () => {
   it("jours hors planning omis (cycle partiellement vide)", () => {
     const p = planningDuCycle([w28], "2026-07-09", 7)
     expect(p.jours.map((j) => j.jour)).toEqual(["jeudi", "vendredi"])
+  })
+})
+
+describe("planningGenereParSemaine (#259)", () => {
+  const recette = (nom: string) => ({
+    id: nom, nom, tempsPreparation: "rapide" as const, ingredients: [],
+  })
+  // Planning GÉNÉRÉ d'une semaine ISO : keyé par jour de semaine (7 jours).
+  const genere: Planning = {
+    semaine: "2026-W28",
+    jours: (["lundi","mardi","mercredi","jeudi","vendredi","samedi","dimanche"] as const)
+      .map((jour) => ({ jour, diner: recette(jour), dejeuner: recette(`${jour}-dej`) })),
+  }
+
+  it("un cycle lundi/7 (rétro-compat) → 1 semaine, 7 jours", () => {
+    const m = planningGenereParSemaine(genere, "2026-07-06", 7) // lundi 6 juillet
+    expect([...m.keys()]).toEqual(["2026-W28"])
+    expect(m.get("2026-W28")!.map((j) => j.jour)).toEqual([
+      "lundi","mardi","mercredi","jeudi","vendredi","samedi","dimanche",
+    ])
+  })
+
+  it("un cycle jeudi→mercredi → 2 semaines ISO, jours répartis, sans reliquat", () => {
+    const m = planningGenereParSemaine(genere, "2026-07-09", 7) // jeudi 9 → mercredi 15
+    expect([...m.keys()]).toEqual(["2026-W28", "2026-W29"])
+    // W28 = jeudi/vendredi/samedi/dimanche ; W29 = lundi/mardi/mercredi.
+    expect(m.get("2026-W28")!.map((j) => j.jour)).toEqual([
+      "jeudi","vendredi","samedi","dimanche",
+    ])
+    expect(m.get("2026-W29")!.map((j) => j.jour)).toEqual([
+      "lundi","mardi","mercredi",
+    ])
+  })
+
+  it("ne duplique pas un même (semaine, jour) au sein d'une semaine", () => {
+    const m = planningGenereParSemaine(genere, "2026-07-06", 7)
+    const jours = m.get("2026-W28")!.map((j) => j.jour)
+    expect(new Set(jours).size).toBe(jours.length)
   })
 })

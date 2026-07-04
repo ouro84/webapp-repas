@@ -195,6 +195,38 @@ export async function sauvegarderPlanningDistant(
   return data as string
 }
 
+// Construit les slots d'une liste de jours (génération fenêtrée #259) — même
+// forme que construireSlots mais sur un sous-ensemble de jours (les jours du
+// cycle tombant dans UNE semaine ISO). Réutilise la logique par jour.
+function construireSlotsJours(jours: Planning["jours"]): ReturnType<typeof construireSlots> {
+  return construireSlots({ semaine: "", jours })
+}
+
+/**
+ * Persiste SEULEMENT les slots fournis d'une semaine via la RPC ATOMIQUE
+ * `sauvegarder_slots` (#259) : upsert des (jour, type_repas) fournis sans toucher
+ * aux autres jours de la semaine (contrairement à sauvegarder_planning qui
+ * remplace toute la semaine). Utilisée par la génération fenêtrée « Générer mon
+ * cycle » : un cycle non calendaire ne couvre qu'une partie de chaque semaine ISO
+ * touchée. Renvoie l'updated_at posé par le trigger serveur (#104).
+ */
+export async function sauvegarderSlotsDistant(
+  semaine: string,
+  jours: Planning["jours"]
+): Promise<string> {
+  const supabase = createClient()
+  const { data, error } = await supabase.rpc("sauvegarder_slots", {
+    p_semaine: semaine,
+    p_slots: construireSlotsJours(jours),
+  })
+  if (error || !data) {
+    throw new Error(
+      `Sauvegarde des slots impossible : ${error?.message ?? "réponse vide"}`
+    )
+  }
+  return data as string
+}
+
 /**
  * Coches distantes d'une ancre de cycle, reconstruites en blob `{ "nom|unité":
  * quantité }` depuis les lignes par-article (#56 PR4, #257). Renvoie un objet
