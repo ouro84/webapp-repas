@@ -12,6 +12,7 @@
     "test:run": "vitest run",
     "test:ui": "vitest --ui",
     "test:e2e": "playwright test",
+    "test:e2e:staging": "node scripts/e2e-staging.mjs",
     "pull:aide": "node scripts/pull-aide.mjs"
   },
   "dependencies": {
