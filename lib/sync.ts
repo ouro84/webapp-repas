@@ -163,13 +163,31 @@ function definirCycleAffiche(ancre: string, longueur: number): void {
   for (const rappel of abonnesCycle) rappel();
 }
 
+// Cache de parsing mémoïsé — IMPÉRATIF pour useSyncExternalStore : getSnapshot
+// doit renvoyer une référence STABLE tant que la valeur brute n'a pas changé.
+// Sans ce cache, `JSON.parse` renvoyait un nouvel objet à CHAQUE render → React
+// détectait un changement en boucle → « Maximum update depth exceeded » (React
+// #185) → error boundary sur /courses dès que le cycle est hydraté (#257, bug
+// corrigé). Même mémoïsation que lireCyclePlanning ci-dessous.
+let cacheRawCycleAffiche: string | null = null;
+let cacheParsedCycleAffiche: CycleAffiche | null = null;
+
 function lireCycleAffiche(): CycleAffiche | null {
+  let brut: string | null = null;
   try {
-    const brut = localStorage.getItem(CLE_CYCLE);
-    return brut ? (JSON.parse(brut) as CycleAffiche) : null;
+    brut = localStorage.getItem(CLE_CYCLE);
   } catch {
-    return null;
+    brut = null;
   }
+  if (brut !== cacheRawCycleAffiche) {
+    cacheRawCycleAffiche = brut;
+    try {
+      cacheParsedCycleAffiche = brut ? (JSON.parse(brut) as CycleAffiche) : null;
+    } catch {
+      cacheParsedCycleAffiche = null;
+    }
+  }
+  return cacheParsedCycleAffiche;
 }
 
 const storeCycle = {

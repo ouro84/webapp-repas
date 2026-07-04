@@ -102,6 +102,15 @@ test("après génération d'un planning, la liste de courses n'est pas vide", as
   await page.getByRole("button", { name: "Générer mon planning" }).click();
   await expect(page.locator("main ul > li")).toHaveCount(7);
 
+  // Depuis #257, /courses NE lit PLUS `planning_courant` (local) mais PROJETTE
+  // le planning depuis la BASE (chargerCycleDansCache). Il faut donc attendre
+  // que le push débounce (800 ms) ait persisté le planning généré AVANT de
+  // naviguer, sinon /courses hydrate un backend encore vide → liste vide (mirroir
+  // de foyer-clonage.spec, même contrainte).
+  await expect
+    .poll(async () => page.evaluate(() => localStorage.getItem("planning_dirty")))
+    .toBeNull();
+
   await page.getByRole("link", { name: "Liste de courses →" }).click();
   await page.waitForURL("**/courses");
 
