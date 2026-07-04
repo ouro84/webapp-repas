@@ -57,6 +57,17 @@
     "majLe": "2026-06-17T18:24:00.000Z"
   },
   {
+    "titre": "Voir mon planning par cycle",
+    "slug": "vue-cycle-planning",
+    "section": "Planning",
+    "ordre": 40,
+    "resume": "Basculer le planning sur la fenêtre de tes courses (Semaine | Cycle) pour voir ce qui est prévu jusqu'à ta prochaine virée.",
+    "motsCles": [
+      "planning"
+    ],
+    "majLe": "2026-07-04T14:15:00.000Z"
+  },
+  {
     "titre": "Le catalogue et mes recettes",
     "slug": "catalogue-recettes",
     "section": "Recettes",
