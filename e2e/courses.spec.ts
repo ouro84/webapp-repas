@@ -1,19 +1,43 @@
 // Parcours critiques n°2 — la liste de courses (US-03, RG-05)
 // et n°3 — les articles cochables en magasin (US-05, RG-10 à RG-14).
 // Session authentifiée via le projet "setup" (storageState).
+//
+// Depuis #257, /courses affiche le CYCLE de courses (planning projeté en
+// mémoire, clé localStorage dédiée `cycle_planning`), plus `planning_courant`
+// (semaine ISO fixe) — cf. lib/sync.ts. Les fixtures déterministes sont donc
+// injectées dans `cycle_planning` (+ `cycle_affiche` pour l'ancre/longueur),
+// avec `semaine` posé à l'ANCRE du cycle courant (jour de courses foyer =
+// lundi par défaut, remis par `reinitialiserJourCoursesDistant`) : le garde-fou
+// « local fait foi si le backend est vide pour cette ancre » (#257, lib/sync.ts)
+// ne préserve l'injection que si elle porte la MÊME ancre que celle calculée
+// par `hydraterCycle()` au montage.
 
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import { recetteFixture } from "../tests/fixtures/recettes";
-import { nettoyerEtatDistant } from "./helpers";
-import { semaineISO } from "../lib/semaines";
+import { nettoyerEtatDistant, reinitialiserJourCoursesDistant } from "./helpers";
+import { semaineISO, semaineParDefaut } from "../lib/semaines";
+import { ancreParDefaut } from "../lib/cycles";
 import type { Jour, Planning } from "../types";
+
+// Ancre du cycle avec le jour de courses par DÉFAUT (lundi, ISO 1) — c'est
+// l'ancre que `hydraterCycle()` calculera au montage tant que le foyer de test
+// n'a pas été réglé sur un autre jour (cf. reinitialiserJourCoursesDistant,
+// appelé ci-dessous en beforeEach). `ancreParDefaut` (pas `ancreCourante`) car
+// hydraterCycle applique le décalage WEEK-END (samedi/dimanche → cycle suivant,
+// #257) : l'injection doit porter la MÊME ancre, sinon le garde-fou « local fait
+// foi » la rejette le week-end (ancre injectée ≠ ancre calculée).
+const ANCRE_LUNDI = ancreParDefaut(new Date(), 1);
 
 test.beforeEach(async ({ page, request }) => {
   // État distant vierge (#6) : sinon un planning persisté réapparaîtrait à
   // l'hydratation (casse l'état vide attendu par le test « après génération »).
-  // Les clés de sync locales sont purgées avant chaque chargement ; les tests
-  // posent eux-mêmes planning_courant via leur propre addInitScript.
   await nettoyerEtatDistant(request);
+  // Jour de courses du foyer remis à lundi (#257) : sinon une ancre héritée
+  // d'une autre spec (ex. cycle-courses.spec) ferait diverger l'ancre calculée
+  // ici de celle injectée dans les fixtures ci-dessous.
+  await reinitialiserJourCoursesDistant(request);
+  // Les clés de sync locales sont purgées avant chaque chargement ; les tests
+  // posent eux-mêmes cycle_planning/cycle_affiche via leur propre addInitScript.
   await page.addInitScript(() => {
     for (const c of [
       "planning_courant_maj",
@@ -26,6 +50,29 @@ test.beforeEach(async ({ page, request }) => {
     }
   });
 });
+
+// Injecte un planning directement dans le cache du CYCLE affiché (#257) :
+// `cycle_planning` (bypass la projection réseau normalement faite par
+// chargerCycleDansCache) + `cycle_affiche` (ancre/longueur), pour que
+// useCycleAffiche/useCyclePlanning résolvent sans attendre l'hydratation
+// réseau. Le `semaine` du planning DOIT valoir l'ancre visée (c'est ainsi que
+// /courses identifie le planning projeté, cf. lib/cycles.ts#planningDuCycle).
+async function injecterCyclePlanning(
+  page: Page,
+  planning: Planning,
+  ancre: string = ANCRE_LUNDI
+): Promise<void> {
+  await page.addInitScript(
+    ([cyclePlanningJSON, cycleAfficheJSON]) => {
+      localStorage.setItem("cycle_planning", cyclePlanningJSON as string);
+      localStorage.setItem("cycle_affiche", cycleAfficheJSON as string);
+    },
+    [
+      JSON.stringify({ ...planning, semaine: ancre }),
+      JSON.stringify({ ancre, longueur: 7 }),
+    ]
+  );
+}
 
 // Planning déterministe injecté en localStorage (découplage, issue #29).
 // Composition agrégée attendue (fixtures figées) : 7 articles à acheter —
@@ -41,8 +88,9 @@ function planningDeterministe(): Planning {
   ];
   const jours: Jour[] = ["lundi", "mardi", "mercredi"];
   return {
-    // Semaine COURANTE (calculée au run) : un planning injecté daté dans le
-    // passé déclencherait la garde de confirmation #5 (RG-24) à la modif/regen.
+    // Semaine : non significative ici (le planning est injecté directement
+    // dans cycle_planning, pas reconstruit depuis le stockage par semaine) —
+    // injecterCyclePlanning la remplace par l'ANCRE du cycle visé.
     semaine: semaineISO(),
     jours: choisies.map((recette, i) => ({ jour: jours[i]!, diner: recette })),
   };
@@ -56,6 +104,15 @@ test("après génération d'un planning, la liste de courses n'est pas vide", as
   await page.goto("/planning");
   await page.getByRole("button", { name: "Générer mon planning" }).click();
   await expect(page.locator("main ul > li")).toHaveCount(7);
+
+  // Depuis #257, /courses NE lit PLUS `planning_courant` (local) mais PROJETTE
+  // le planning depuis la BASE (chargerCycleDansCache). Il faut donc attendre
+  // que le push débounce (800 ms) ait persisté le planning généré AVANT de
+  // naviguer, sinon /courses hydrate un backend encore vide → liste vide (mirroir
+  // de foyer-clonage.spec, même contrainte).
+  await expect
+    .poll(async () => page.evaluate(() => localStorage.getItem("planning_dirty")))
+    .toBeNull();
 
   await page.getByRole("link", { name: "Liste de courses →" }).click();
   await page.waitForURL("**/courses");
@@ -73,10 +130,7 @@ test("après génération d'un planning, la liste de courses n'est pas vide", as
 test("les catégories d'ingrédients et le fond de placard sont visibles", async ({
   page,
 }) => {
-  await page.addInitScript(
-    (contenu) => localStorage.setItem("planning_courant", contenu),
-    JSON.stringify(planningDeterministe())
-  );
+  await injecterCyclePlanning(page, planningDeterministe());
   await page.goto("/courses");
 
   // Les sections de catégories attendues pour ces recettes (RG-05, étape 5).
@@ -100,10 +154,7 @@ test("les catégories d'ingrédients et le fond de placard sont visibles", async
 test("cocher un article le raye, l'envoie en fin de catégorie et persiste au rechargement", async ({
   page,
 }) => {
-  await page.addInitScript(
-    (contenu) => localStorage.setItem("planning_courant", contenu),
-    JSON.stringify(planningDeterministe())
-  );
+  await injecterCyclePlanning(page, planningDeterministe());
   await page.goto("/courses");
 
   const produitsFrais = page
@@ -139,10 +190,7 @@ test("cocher un article le raye, l'envoie en fin de catégorie et persiste au re
 test("le fond de placard est cochable mais n'entre pas dans la progression (RG-14)", async ({
   page,
 }) => {
-  await page.addInitScript(
-    (contenu) => localStorage.setItem("planning_courant", contenu),
-    JSON.stringify(planningDeterministe())
-  );
+  await injecterCyclePlanning(page, planningDeterministe());
   await page.goto("/courses");
 
   await page.getByRole("checkbox", { name: /beurre/ }).click();
@@ -155,10 +203,7 @@ test("le fond de placard est cochable mais n'entre pas dans la progression (RG-1
 test("« Tout décocher » retire toutes les coches, fond de placard compris", async ({
   page,
 }) => {
-  await page.addInitScript(
-    (contenu) => localStorage.setItem("planning_courant", contenu),
-    JSON.stringify(planningDeterministe())
-  );
+  await injecterCyclePlanning(page, planningDeterministe());
   await page.goto("/courses");
 
   // Le bouton n'apparaît qu'à partir de la première coche.
@@ -179,10 +224,7 @@ test("« Tout décocher » retire toutes les coches, fond de placard compris", a
 });
 
 test("une section de catégorie se replie et se déplie (US-05)", async ({ page }) => {
-  await page.addInitScript(
-    (contenu) => localStorage.setItem("planning_courant", contenu),
-    JSON.stringify(planningDeterministe())
-  );
+  await injecterCyclePlanning(page, planningDeterministe());
   await page.goto("/courses");
 
   const enTete = page.getByRole("button", { name: "Épicerie" });
@@ -199,10 +241,7 @@ test("une section de catégorie se replie et se déplie (US-05)", async ({ page 
 test("une catégorie entièrement cochée glisse en bas de liste, titre rayé (#111)", async ({
   page,
 }) => {
-  await page.addInitScript(
-    (contenu) => localStorage.setItem("planning_courant", contenu),
-    JSON.stringify(planningDeterministe())
-  );
+  await injecterCyclePlanning(page, planningDeterministe());
   await page.goto("/courses");
 
   // Titres de section dans l'ordre du DOM (catégories normales puis fond de
@@ -250,20 +289,33 @@ test("une catégorie entièrement cochée glisse en bas de liste, titre rayé (#
 test("régénérer le planning réinitialise toutes les coches (RG-13)", async ({
   page,
 }) => {
+  // /courses lit le cycle projeté ; /planning lit `planning_courant` (par
+  // semaine). Pour que /planning propose « Régénérer » (et non « Générer »), on
+  // injecte AUSSI un planning_courant à la semaine que /planning affiche par
+  // défaut (semaineParDefaut) — sinon /planning serait vide (#257 : deux stores
+  // distincts, cf. lib/sync.ts). Le cycle_planning injecté sert la coche initiale.
   await page.addInitScript(
     (contenu) => localStorage.setItem("planning_courant", contenu),
-    JSON.stringify(planningDeterministe())
+    JSON.stringify({ ...planningDeterministe(), semaine: semaineParDefaut() })
   );
+  await injecterCyclePlanning(page, planningDeterministe());
   await page.goto("/courses");
 
   await page.getByRole("checkbox", { name: /lardons/ }).click();
   await expect(page.getByText(/^1 coché sur 7/)).toBeVisible();
 
   // Génération complète depuis la page planning (vraies recettes, liste
-  // non déterministe) : les coches doivent être effacées (RG-13).
+  // non déterministe) : les coches doivent être effacées (RG-13). La
+  // régénération vise semaineParDefaut, que le cycle par défaut recouvre
+  // (ancreParDefaut, cf. ANCRE_LUNDI) : le cycle affiché récupère donc bien ce
+  // planning fraîchement régénéré (projeté depuis la base).
   await page.goto("/planning");
   await page.getByRole("button", { name: "Régénérer" }).click();
   await expect(page.locator("main ul > li")).toHaveCount(7);
+  // Attendre la persistance (le cycle /courses projette depuis la BASE, #257).
+  await expect
+    .poll(async () => page.evaluate(() => localStorage.getItem("planning_dirty")))
+    .toBeNull();
 
   await page.goto("/courses");
   await expect(page.getByText(/^0 coché sur [1-9]\d*/)).toBeVisible();
@@ -276,10 +328,7 @@ test("régénérer le planning réinitialise toutes les coches (RG-13)", async (
 test("l'état coché est resynchronisé depuis la base sur un device au cache vide (US-13)", async ({
   page,
 }) => {
-  await page.addInitScript(
-    (contenu) => localStorage.setItem("planning_courant", contenu),
-    JSON.stringify(planningDeterministe())
-  );
+  await injecterCyclePlanning(page, planningDeterministe());
   await page.goto("/courses");
 
   await page.getByRole("checkbox", { name: /lardons/ }).click();
@@ -309,10 +358,8 @@ test("les libellés s'accordent en nombre selon la quantité (US-08)", async ({
   // Planning forgé : un ingrédient pièce au singulier (1), un au pluriel (3),
   // un nom de masse invariable (200 g). La page lit le planning brut depuis
   // localStorage — pas besoin que la recette existe dans le dataset (#29).
-  const planning = {
-    // Semaine COURANTE (calculée au run) : un planning injecté daté dans le
-    // passé déclencherait la garde de confirmation #5 (RG-24) à la modif/regen.
-    semaine: semaineISO(),
+  const planning: Planning = {
+    semaine: semaineISO(), // remplacé par l'ancre dans injecterCyclePlanning
     jours: [
       {
         jour: "lundi",
@@ -329,10 +376,7 @@ test("les libellés s'accordent en nombre selon la quantité (US-08)", async ({
       },
     ],
   };
-  await page.addInitScript(
-    (contenu) => localStorage.setItem("planning_courant", contenu),
-    JSON.stringify(planning)
-  );
+  await injecterCyclePlanning(page, planning);
   await page.goto("/courses");
 
   // Quantité 1 → singulier ; quantité 3 → pluriel ; masse → invariable.

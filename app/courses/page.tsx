@@ -1,16 +1,20 @@
 "use client";
 
-// Page Liste de courses — agrégation depuis le planning courant (US-03, RG-05)
-// + articles cochables en magasin (US-05, RG-10 à RG-14).
+// Page Liste de courses — agrégation depuis le CYCLE de courses affiché (#257,
+// remplace la semaine ISO fixe de US-03/RG-05) + articles cochables en magasin
+// (US-05, RG-10 à RG-14).
 //
 // États d'interface (RG-09) : chargement (avant hydratation), vide (aucun
-// planning sauvegardé), chargé. La liste est recalculée à la volée depuis
-// localStorage["planning_courant"] (section 5.6) via genererListeCourses() ;
-// les coches vivent dans localStorage["courses_cochees"] (RG-12).
+// repas planifié sur le cycle affiché), chargé. La liste est recalculée à la
+// volée depuis le planning PROJETÉ du cycle (lib/sync.ts, useCyclePlanning —
+// store en mémoire, distinct du planning par semaine de /planning) via
+// genererListeCourses() ; les coches vivent dans localStorage["courses_cochees"]
+// (RG-12), synchronisées par ancre de cycle (cf. lib/sync.ts).
 //
-// Les deux clés localStorage sont branchées via useSyncExternalStore et les
-// mini-stores partagés de lib/stockage.ts. Côté serveur les snapshots valent
-// null : la page est prérendue en état "Chargement…", puis hydratée.
+// Le cycle affiché et son planning projeté sont branchés via useSyncExternalStore
+// (useCycleAffiche/useCyclePlanning) ; les coches via storeCoches (lib/stockage.ts).
+// Côté serveur les snapshots valent null : la page est prérendue en état
+// "Chargement…", puis hydratée.
 //
 // Animation de réordonnancement (RG-11) : un article coché glisse en fin de
 // catégorie via l'API View Transitions quand le navigateur la supporte —
@@ -19,7 +23,7 @@
 import Link from "next/link";
 import { useMemo, useState, useSyncExternalStore } from "react";
 import { flushSync } from "react-dom";
-import { Users } from "lucide-react";
+import { ChevronLeft, ChevronRight, Users } from "lucide-react";
 import { genererListeCourses } from "@/lib/courses";
 import {
   aDesCoches,
@@ -31,16 +35,23 @@ import {
   trierAvecCoches,
   trierCategoriesAvecCoches,
 } from "@/lib/coches";
-import { storeCoches, storePlanning } from "@/lib/stockage";
-import { useSync, usePresenceCourses } from "@/lib/sync";
-import { formaterSemaine } from "@/lib/semaines";
+import { storeCoches } from "@/lib/stockage";
+import {
+  useSyncCourses,
+  usePresenceCourses,
+  useCycleAffiche,
+  useCyclePlanning,
+  naviguerCycle,
+  etirerCycle,
+  type CycleAffiche,
+} from "@/lib/sync";
+import { libelleCycle, LONGUEUR_MAX } from "@/lib/cycles";
 import { accorderNom } from "@/lib/pluriels";
 import { formaterQuantite } from "@/lib/unites";
 import type {
   CategorieIngredient,
   Ingredient,
   ListeCourses,
-  Planning,
 } from "@/types";
 
 // Vrai uniquement après hydratation côté navigateur — permet d'afficher
@@ -114,24 +125,79 @@ function avecTransition(majEtat: () => void): void {
 }
 
 // ============================================================================
+// Navigateur de cycle (#257, M1) — extrait pour être rendu à la fois dans
+// l'état vide et l'état chargé : un cycle SANS repas planifié peut avoir un
+// voisin (précédent/suivant) qui EN a — sans ce navigateur dans l'état vide,
+// impossible d'anticiper/consulter un cycle adjacent depuis un cycle vide.
+// ============================================================================
+function NavigateurCycle({ cycle }: { cycle: CycleAffiche }) {
+  return (
+    <div className="mt-2 flex flex-col gap-2">
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          aria-label="Cycle précédent"
+          onClick={() => void naviguerCycle(-1)}
+          className="relative flex size-7 shrink-0 items-center justify-center rounded-full border border-brand-200 text-brand-700 transition after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.92] motion-reduce:active:scale-100"
+        >
+          <ChevronLeft aria-hidden="true" className="size-4" />
+        </button>
+        <span className="text-xs font-medium text-brand-700/85">
+          {libelleCycle(cycle.ancre, cycle.longueur)}
+        </span>
+        <button
+          type="button"
+          aria-label="Cycle suivant"
+          onClick={() => void naviguerCycle(1)}
+          className="relative flex size-7 shrink-0 items-center justify-center rounded-full border border-brand-200 text-brand-700 transition after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.92] motion-reduce:active:scale-100"
+        >
+          <ChevronRight aria-hidden="true" className="size-4" />
+        </button>
+      </div>
+      <div className="flex items-center gap-2 text-xs text-brand-700/85">
+        <span>Couvre {cycle.longueur} j</span>
+        <button
+          type="button"
+          aria-label="Réduire d’un jour"
+          disabled={cycle.longueur <= 1}
+          onClick={() => void etirerCycle(cycle.longueur - 1)}
+          className="relative flex size-6 shrink-0 items-center justify-center rounded-full border border-brand-200 font-medium transition after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.92] motion-reduce:active:scale-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
+        >
+          <span aria-hidden="true">−</span>
+        </button>
+        <button
+          type="button"
+          aria-label="Ajouter un jour"
+          disabled={cycle.longueur >= LONGUEUR_MAX}
+          onClick={() => void etirerCycle(cycle.longueur + 1)}
+          className="relative flex size-6 shrink-0 items-center justify-center rounded-full border border-brand-200 font-medium transition after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.92] motion-reduce:active:scale-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
+        >
+          <span aria-hidden="true">+</span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
 // Composant page
 // ============================================================================
 
 export default function PageCourses() {
   const hydrate = useHydratation();
-  const brutPlanning = useSyncExternalStore(
-    storePlanning.sAbonner,
-    storePlanning.lire,
-    storePlanning.lireServeur
-  );
   const brutCoches = useSyncExternalStore(
     storeCoches.sAbonner,
     storeCoches.lire,
     storeCoches.lireServeur
   );
-  // Synchro multi-device (US-13) : hydrate le planning depuis la base au
-  // montage (ouvrir /courses sur un device neuf récupère le planning).
-  useSync();
+  // Synchro par cycle (#257) : hydrate le CYCLE (planning projeté, en mémoire)
+  // et les coches (par ancre) au montage — pas de push planning, pas de temps
+  // réel planning (/courses n'écrit jamais le planning, cf. lib/sync.ts).
+  useSyncCourses();
+  // Cycle actuellement affiché ({ ancre, longueur }) et son planning projeté —
+  // stores dédiés (#257), distincts de storePlanning (semaine unique).
+  const cycle = useCycleAffiche();
+  const planningCycle = useCyclePlanning();
   // Présence anonyme « en magasin » (#56 PR4, RG-31) : vrai si un autre membre
   // du foyer est aussi sur la liste de courses en ce moment.
   const autresPresents = usePresenceCourses();
@@ -141,31 +207,16 @@ export default function PageCourses() {
   // pseudo-catégorie pour la section dédiée.
   const [replies, setReplies] = useState<ReadonlySet<string>>(new Set());
 
-  // Agrégation (RG-05) recalculée uniquement quand le planning change.
+  // Agrégation (RG-05) recalculée uniquement quand le planning projeté du
+  // cycle change. Un cycle sans aucun repas planifié (aucune semaine chargée
+  // ne couvre ses jours) produit une liste sans lignes : traité comme l'état
+  // vide, au même titre qu'aucun cycle hydraté (planningCycle === null).
   const liste = useMemo<ListeCourses | null>(() => {
-    if (brutPlanning === null) return null;
-    try {
-      const planning = JSON.parse(brutPlanning) as Planning;
-      return genererListeCourses(planning);
-    } catch (erreur) {
-      // Donnée corrompue : on la signale et on retombe en état vide.
-      console.error(`localStorage["planning_courant"] illisible.`, erreur);
-      return null;
-    }
-  }, [brutPlanning]);
-
-  // Semaine du planning affiché (#5) — affichée en tête, même format que le planning.
-  const semainePlanning = useMemo<string | null>(() => {
-    if (brutPlanning === null) return null;
-    try {
-      return (JSON.parse(brutPlanning) as Planning).semaine;
-    } catch (erreur) {
-      // Planning local corrompu : on retombe sur l'état vide, mais on le trace
-      // (jamais de catch muet, cf. CLAUDE.md / #166).
-      console.error("Planning local illisible (semaine).", erreur);
-      return null;
-    }
-  }, [brutPlanning]);
+    if (planningCycle === null) return null;
+    const resultat = genererListeCourses(planningCycle);
+    const vide = resultat.normal.length === 0 && resultat.fondDePlacard.length === 0;
+    return vide ? null : resultat;
+  }, [planningCycle]);
 
   // Coches valides ou non : parserCoches tolère l'absence et la corruption.
   const coches = useMemo(() => parserCoches(brutCoches), [brutCoches]);
@@ -194,8 +245,12 @@ export default function PageCourses() {
     });
   }
 
-  // --- État chargement (RG-09) : prérendu serveur + calcul initial ---
-  if (!hydrate) {
+  // --- État chargement (RG-09) : prérendu serveur + calcul initial. Couvre
+  // aussi le cycle pas encore résolu (`cycle === null`, hydraterCycle() en
+  // cours) — sans cette garde, la toute première visite (rien en
+  // localStorage) tombait dans l'état vide le temps d'un rendu, même pour un
+  // utilisateur qui a bien un planning (#257). ---
+  if (!hydrate || cycle === null) {
     return (
       <main id="contenu" className="flex flex-1 flex-col items-center justify-center p-8">
         {/* role="status" : annonce le chargement aux lecteurs d'écran */}
@@ -206,13 +261,19 @@ export default function PageCourses() {
     );
   }
 
-  // --- État vide (RG-09) : aucun planning à agréger ---
+  // --- État vide (RG-09) : cycle résolu mais aucun repas planifié dessus
+  // (aucun planning n'a encore été généré, ou aucune semaine chargée ne
+  // couvre les jours du cycle courant) ---
   if (liste === null) {
     return (
       <main id="contenu" className="flex flex-1 flex-col items-center justify-center gap-8 p-8">
-        <div className="text-center">
+        <div className="flex flex-col items-center text-center">
           <h1 className="font-display text-2xl font-semibold text-brand-900">Liste de courses</h1>
-          <p className="mt-2 text-brand-700/85">Génère d&apos;abord un planning</p>
+          <p className="mt-2 text-brand-700/85">Aucun repas planifié sur ce cycle</p>
+          {/* Navigateur de cycle (#257, M1) : un cycle vide peut avoir un
+              voisin non vide — permettre d'anticiper/consulter sans repasser
+              par /planning. */}
+          {cycle && <NavigateurCycle cycle={cycle} />}
         </div>
         <Link
           href="/planning"
@@ -236,12 +297,11 @@ export default function PageCourses() {
       <header className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <h1 className="font-display text-2xl font-semibold text-brand-900">Liste de courses</h1>
-          {/* N° de semaine (RG #5) : même format que le planning */}
-          {semainePlanning && (
-            <p className="text-xs text-brand-700/85">
-              {formaterSemaine(semainePlanning)}
-            </p>
-          )}
+          {/* Cycle de courses (#257) : libellé + navigateur ‹ / › (remplace le
+              n° de semaine, US-03 devient « une fenêtre de N jours » plutôt
+              qu'une semaine ISO fixe) + étirement de la fenêtre. Rendu
+              seulement une fois le cycle hydraté (évite un flash sans libellé). */}
+          {cycle && <NavigateurCycle cycle={cycle} />}
           {/* aria-live : la progression est annoncée à chaque coche. Le « à
               vérifier » reste en terracotta = couleur de marque « Fond de placard »
               (#67 P15), pas un signal d'alerte (cf. #212, clos by-design). */}

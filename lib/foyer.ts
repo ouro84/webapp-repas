@@ -23,14 +23,18 @@ export type EtatFoyer = {
   // Expiration ISO du code (null si pas de code). Le code peut être expiré
   // même si non-null : l'UI le compare à l'instant courant.
   expireLe: string | null
+  // Jour de courses du foyer (ISO 1=lundi … 7=dimanche), ancre du cycle de
+  // courses non calendaire (#257). Défaut serveur 1 (rétro-compatible ≡ semaine
+  // ISO tant que non modifié).
+  jourCourses: number
 }
 
-/** Charge l'état du foyer de l'utilisateur courant (compteur + code). */
+/** Charge l'état du foyer de l'utilisateur courant (compteur + code + jour de courses). */
 export async function chargerFoyer(): Promise<EtatFoyer> {
   const supabase = createClient()
   const [membresRes, foyerRes] = await Promise.all([
     supabase.from("profiles").select("user_id", { count: "exact", head: true }),
-    supabase.from("foyers").select("code_invitation, expire_le").maybeSingle(),
+    supabase.from("foyers").select("code_invitation, expire_le, jour_courses").maybeSingle(),
   ])
   if (membresRes.error) {
     throw new Error(`Chargement du foyer impossible : ${membresRes.error.message}`)
@@ -42,6 +46,42 @@ export async function chargerFoyer(): Promise<EtatFoyer> {
     membres: membresRes.count ?? 1,
     code: foyerRes.data?.code_invitation ?? null,
     expireLe: foyerRes.data?.expire_le ?? null,
+    jourCourses: foyerRes.data?.jour_courses ?? 1,
+  }
+}
+
+/**
+ * Jour de courses du foyer (ISO 1=lundi … 7=dimanche ; défaut 1 si absent ou
+ * en erreur — jamais bloquant, cf. `chargerReglages`/dégradation gracieuse).
+ * La RLS de `foyers` (`id = mon_foyer()`) restreint déjà la lecture à la seule
+ * ligne du foyer courant : pas besoin de scoper explicitement par id.
+ */
+export async function chargerJourCoursesFoyer(): Promise<number> {
+  const supabase = createClient()
+  const { data, error } = await supabase.from("foyers").select("jour_courses").maybeSingle()
+  if (error || !data) return 1
+  return data.jour_courses
+}
+
+/**
+ * Écrit le jour de courses du foyer. Le grant-colonne posé par la migration
+ * (#257, même pattern que `profiles` en #22 PR1) restreint le client à cette
+ * seule colonne — `code_invitation`/`expire_le` restent hors de portée. Comme
+ * pour la lecture, la RLS (`id = mon_foyer()`) scope déjà la ligne cible.
+ */
+export async function definirJourCoursesFoyer(jour: number): Promise<void> {
+  const supabase = createClient()
+  // Filtre OBLIGATOIRE : PostgREST rejette un UPDATE sans clause WHERE
+  // (« 21000: UPDATE requires a WHERE clause », garde anti-écrasement de table).
+  // `not id is null` matche toutes les lignes ; la RLS (`id = mon_foyer()`) borne
+  // déjà la mise à jour à la SEULE ligne du foyer courant (le client ne connaît
+  // pas son foyer_id sans lecture). Miroir du helper e2e reinitialiserJourCoursesDistant.
+  const { error } = await supabase
+    .from("foyers")
+    .update({ jour_courses: jour })
+    .not("id", "is", null)
+  if (error) {
+    throw new Error(`Réglage du jour de courses impossible : ${error.message}`)
   }
 }
 

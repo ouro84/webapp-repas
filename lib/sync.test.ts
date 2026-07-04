@@ -210,3 +210,39 @@ describe("purge de rétention (RG-24)", () => {
     expect(persistance.purgerSemainesAvant).toHaveBeenCalledWith(cutoff);
   });
 });
+
+// Non-régression #257 : les getSnapshot des stores de cycle doivent renvoyer une
+// référence STABLE tant que la valeur brute localStorage n'a pas changé. Sinon
+// useSyncExternalStore boucle (« Maximum update depth exceeded », React #185) et
+// /courses tombe sur son error boundary dès que le cycle est hydraté. Bug vécu :
+// lireCycleAffiche re-parsait à chaque appel (contrairement à lireCyclePlanning).
+describe("stores de cycle — stabilité du snapshot (#257, anti-boucle React #185)", () => {
+  it("useCycleAffiche : ne boucle pas et renvoie une référence stable", async () => {
+    const { useCycleAffiche } = await chargerSync();
+    const { renderHook } = await import("@testing-library/react");
+    localStorage.setItem(
+      "cycle_affiche",
+      JSON.stringify({ ancre: "2026-06-29", longueur: 7 })
+    );
+    // Sans mémoïsation, ce render throwait (re-render infini).
+    const { result, rerender } = renderHook(() => useCycleAffiche());
+    expect(result.current).toEqual({ ancre: "2026-06-29", longueur: 7 });
+    const premier = result.current;
+    rerender();
+    expect(result.current).toBe(premier); // même référence → pas de boucle
+  });
+
+  it("useCyclePlanning : renvoie une référence stable", async () => {
+    const { useCyclePlanning } = await chargerSync();
+    const { renderHook } = await import("@testing-library/react");
+    localStorage.setItem(
+      "cycle_planning",
+      JSON.stringify(planning("2026-06-29"))
+    );
+    const { result, rerender } = renderHook(() => useCyclePlanning());
+    expect(result.current?.semaine).toBe("2026-06-29");
+    const premier = result.current;
+    rerender();
+    expect(result.current).toBe(premier);
+  });
+});

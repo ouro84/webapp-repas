@@ -19,6 +19,7 @@ import { QRCodeSVG } from "qrcode.react";
 import { toast } from "sonner";
 import {
   chargerFoyer,
+  definirJourCoursesFoyer,
   genererCodeInvitation,
   quitterFoyer,
   rejoindreFoyer,
@@ -53,6 +54,18 @@ function formaterExpiration(iso: string): string {
     minute: "2-digit",
   });
 }
+
+// Jours ISO (1 = lundi … 7 = dimanche). La lettre affichée peut se répéter
+// (mardi/mercredi = « M ») ; aria-label/title portent le nom complet distinct.
+const JOURS_SEMAINE = [
+  { valeur: 1, lettre: "L", nom: "lundi" },
+  { valeur: 2, lettre: "M", nom: "mardi" },
+  { valeur: 3, lettre: "M", nom: "mercredi" },
+  { valeur: 4, lettre: "J", nom: "jeudi" },
+  { valeur: 5, lettre: "V", nom: "vendredi" },
+  { valeur: 6, lettre: "S", nom: "samedi" },
+  { valeur: 7, lettre: "D", nom: "dimanche" },
+] as const;
 
 export function PanneauFoyer() {
   const [etat, setEtat] = useState<EtatFoyer | null>(null);
@@ -134,6 +147,16 @@ export function PanneauFoyer() {
       toast.success("Code copié");
     } catch {
       toast.error("Copie impossible.");
+    }
+  }
+
+  async function choisirJourCourses(jour: number, nom: string): Promise<void> {
+    try {
+      await definirJourCoursesFoyer(jour);
+      await rafraichir();
+      toast.success(`Jour de courses : ${nom}`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Enregistrement impossible.");
     }
   }
 
@@ -222,6 +245,46 @@ export function PanneauFoyer() {
           ? `Vous êtes ${etat.membres} à partager recettes, planning et liste de courses.`
           : "Tu es seul·e dans ton foyer. Invite quelqu’un pour tout partager : recettes, planning et liste de courses."}
       </p>
+
+      {/* Jour de courses : ancre du cycle non calendaire (#257). */}
+      <section
+        className="mb-6 rounded-2xl border border-brand-100 bg-surface p-4"
+        aria-labelledby="titre-jour-courses"
+      >
+        <h3 id="titre-jour-courses" className="mb-1 font-medium text-brand-900">
+          Jour de courses
+        </h3>
+        <p className="mb-3 text-sm text-brand-700">
+          Ta liste de courses couvre 7 jours à partir de ce jour.
+        </p>
+        <div
+          role="radiogroup"
+          aria-label="Jour de courses"
+          className="inline-flex rounded-full border border-brand-200 bg-surface p-0.5"
+        >
+          {JOURS_SEMAINE.map((jour) => {
+            const actif = etat.jourCourses === jour.valeur;
+            return (
+              <button
+                key={jour.valeur}
+                type="button"
+                role="radio"
+                aria-checked={actif}
+                aria-label={jour.nom}
+                title={jour.nom}
+                onClick={() => choisirJourCourses(jour.valeur, jour.nom)}
+                className={`min-w-9 rounded-full px-3 py-1.5 text-sm transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-95 motion-reduce:active:scale-100 ${
+                  actif
+                    ? "bg-primary text-white"
+                    : "text-brand-700 hover:bg-brand-50"
+                }`}
+              >
+                {jour.lettre}
+              </button>
+            );
+          })}
+        </div>
+      </section>
 
       {/* Inviter : génération + partage du code (RG-30 : tout membre peut). */}
       <div className="mb-6 rounded-2xl border border-brand-100 p-4">

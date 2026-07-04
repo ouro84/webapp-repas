@@ -557,6 +557,34 @@ Réduire à zéro l'effort de planification hebdomadaire des repas, du choix des
 > **When** j'ajoute, supprime ou réordonne des étapes (une par ligne)  
 > **Then** elles sont enregistrées dans l'ordre ; pour une recette du **catalogue global** (lecture seule), passer par la **duplication+édition** (#105 PR2) y porte mes étapes (RG-43)
 
+### US-47 — Cycle de courses (#257, P27)
+
+> **En tant qu'** utilisateur qui ne fait pas ses courses du lundi au dimanche mais sur une fenêtre glissante ancrée sur son jour de courses habituel, je veux que **la liste de courses couvre exactement les repas jusqu'à ma prochaine virée**, sans reliquat ni liste éclatée sur deux semaines calendaires.
+
+> **Given** le foyer a réglé son **jour de courses** (ex. jeudi)  
+> **When** j'ouvre `/courses`  
+> **Then** la liste agrège les repas du **cycle courant** — la fenêtre `ancre (dernier jour de courses ≤ aujourd'hui) + longueur` (7 jours par défaut) — et non ceux de la semaine calendaire (RG-53)
+
+> **Given** je n'ai jamais modifié le jour de courses de mon foyer (défaut lundi)  
+> **When** j'ouvre `/courses`  
+> **Then** le cycle affiché **coïncide exactement** avec la semaine ISO en cours — aucun changement observable par rapport à avant #257 (RG-54)
+
+> **Given** je suis sur `/courses`  
+> **When** je navigue au cycle précédent ou suivant (‹ / ›)  
+> **Then** la liste et ses coches basculent sur le cycle ciblé, indépendamment de la navigation par semaine de `/planning` (RG-53)
+
+> **Given** ma virée couvre plus de 7 jours (ex. je pars 9 jours)  
+> **When** j'étire la longueur du cycle affiché (jusqu'à 14 jours)  
+> **Then** la liste inclut les repas des jours supplémentaires, puisés dans la semaine ISO suivante, sans dupliquer d'ingrédient ni de reliquat (RG-53)
+
+> **Given** je coche des articles sur la liste de mon cycle courant  
+> **When** un autre membre du foyer ouvre la liste du **même** cycle  
+> **Then** les coches se synchronisent en temps réel entre les deux, comme pour la semaine avant #257 (RG-55)
+
+> **Given** je change le jour de courses de mon foyer  
+> **When** je consulte `/courses`  
+> **Then** le nouveau jour ne s'applique **qu'aux cycles futurs** — les cycles déjà passés restent accessibles en navigation avec leur ancre d'origine (RG-54)
+
 ---
 
 ## 5. Modèle de données
@@ -672,7 +700,8 @@ Un snapshot d'annulation (US-09) est conservé sous la clé `planning_snapshot` 
 
 - **Foyer** = unité de partage. Toute donnée partagée appartient à un foyer (`foyer_id`), pas à un compte. Tables `foyers` et `profiles` (un profil par compte, rattaché à un foyer). **Modèle « foyer de 1 systématique »** : chaque compte naît dans son propre foyer (créé à l'inscription) — il n'y a donc pas d'action « créer un foyer », on **invite** ou on **rejoint** (US-19).
 - **Scope foyer** : `recette` (avec `foyer_id IS NULL` = **catalogue global** en lecture seule), `recette_ingredient`, `planning`/`planning_slot`, `etat_courses_article`, `recette_masquee`. **`reglages` reste par-utilisateur** (chaque membre a ses propres règles de génération).
-- **Coches par article** : table `etat_courses_article (foyer_id, semaine, cle, quantite)` — **une ligne par article** (remplace l'ancien blob `etat_courses`), condition d'un temps réel sans écrasement mutuel (RG-32).
+- **Coches par article** : table `etat_courses_article (foyer_id, ancre, cle, quantite)` — **une ligne par article** (remplace l'ancien blob `etat_courses`), condition d'un temps réel sans écrasement mutuel (RG-32). Depuis #257, la clé est l'**ancre du cycle de courses** (date), plus la semaine ISO (cf. RG-53/55).
+- **Cycle de courses (#257)** : `foyers.jour_courses` (smallint ISO 1=lundi…7=dimanche, défaut 1) ancre la fenêtre de `/courses` ; table `cycle_courses (foyer_id, ancre, longueur)` ne porte une ligne que si la longueur diffère du défaut (7 j, création paresseuse). Le planning reste stocké par semaine ISO (§5.5) ; le cycle en est une **projection** (`lib/cycles.ts`), pas une entité de stockage du planning.
 - **Isolation** : chaque membre ne voit que les données de son foyer (+ le catalogue global). Les écritures partagées sensibles (planning, jonction, sortie) passent par des **fonctions serveur transactionnelles** (atomicité + dérivation du foyer côté serveur).
 
 ---
@@ -801,6 +830,14 @@ Une catégorie est **terminée** lorsqu'elle contient au moins un article **et**
 - **Pas de repli automatique** : la catégorie reste **ouverte** ; le repli manuel (chevron) demeure disponible et indépendant. Choix de design assumé : éviter le mouvement de contenu sous le doigt en magasin, la pénalité d'annulation et le conflit auto/manuel.
 - **Réversibilité** : décocher un article fait remonter la catégorie à sa place canonique parmi les catégories en cours, et retire le rayé — sans geste supplémentaire. L'invalidation d'une coche par changement de quantité (RG-12) produit le même retour automatique.
 - **Fond de placard** : son titre se raye quand tous ses articles sont vérifiés, mais il **reste toujours en dernier** (hors progression, RG-14) — pas de réordonnancement.
+
+### RG-53 à RG-55 — Cycle de courses, fenêtre non calendaire (US-47, #257)
+
+La liste de courses (US-03/RG-05) n'est plus fenêtrée sur la semaine ISO mais sur un **cycle** ancré sur le jour de courses du foyer. Le stockage du planning (par semaine ISO) est inchangé : le cycle est une **projection**.
+
+- **RG-53 — Fenêtre `ancre + longueur`** : un cycle est défini par une **ancre** (date du dernier jour de courses du foyer survenu au plus tard aujourd'hui) et une **longueur** (nombre de jours couverts, défaut **7**, étirable de **1 à 14**). La liste agrège exactement les repas planifiés sur les jours du cycle (les jours d'un cycle > 7 j peuvent chevaucher la semaine ISO suivante et donc le cycle suivant — chevauchement assumé, coches indépendantes par cycle). La navigation `/courses` (‹ cycle précédent / suivant ›) est indépendante de la navigation par semaine de `/planning` (RG-24) : les deux coexistent. Étirer la longueur ne décale **pas** l'ancre du cycle suivant (cadence fixe : +7 j).
+- **RG-54 — Réglage foyer & rétro-compatibilité** : le jour de courses (`jourCourses`, ISO 1=lundi…7=dimanche) est un réglage **du foyer** (pas de l'utilisateur), car les coches sont partagées au foyer ; défaut **lundi**. Avec ce défaut, le cycle **coïncide exactement** avec la semaine ISO lundi→dimanche — **zéro changement de comportement observable** pour un foyer qui ne touche pas ce réglage. Changer le jour de courses ne s'applique qu'aux **cycles futurs** : les ancres et coches déjà constituées restent accessibles telles quelles en navigation.
+- **RG-55 — Coches par cycle, temps réel inchangé** : les coches de la liste (RG-10 à RG-14) sont clées par **ancre de cycle** (et non plus par semaine) ; la synchronisation temps réel entre membres du foyer (US-20) et la présence « en magasin » (RG-31) fonctionnent à l'identique, à l'échelle du cycle affiché.
 
 ### RG-19 — Snapshot d'annulation (US-09)
 

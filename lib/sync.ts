@@ -16,9 +16,12 @@ import { storeCoches, storePlanning } from "@/lib/stockage";
 import {
   chargerCochesDistantes,
   chargerFoyerId,
+  chargerLongueurCycle,
   chargerPlanningDistant,
   cocherArticleDistant,
   decocherArticleDistant,
+  definirLongueurCycle,
+  purgerCyclesAvant,
   purgerSemainesAvant,
   sauvegarderPlanningDistant,
   viderCochesDistantes,
@@ -32,6 +35,14 @@ import {
 import { signaturePlanning } from "@/lib/planning-diff";
 import { createClient } from "@/lib/supabase/client";
 import { semaineDecalee, semaineISO, semaineParDefaut } from "@/lib/semaines";
+import {
+  ancreParDefaut,
+  cycleDecale,
+  LONGUEUR_DEFAUT,
+  planningDuCycle,
+  semainesDuCycle,
+} from "@/lib/cycles";
+import { chargerJourCoursesFoyer } from "@/lib/foyer";
 import type { Planning } from "@/types";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 
@@ -48,6 +59,14 @@ const CLE_DIRTY_COCHES = "courses_dirty";
 // Semaine actuellement affichée (navigation historique #5) — partagée
 // planning ↔ courses.
 const CLE_SEMAINE = "semaine_affichee";
+// Cycle de courses actuellement affiché sur /courses (#257) : ancre (date ISO
+// du jour de courses foyer) + longueur. JSON { ancre, longueur }. C'est CETTE
+// ancre — pas la semaine — qui clé la chaîne coches (cf. ancreActive).
+const CLE_CYCLE = "cycle_affiche";
+// Planning PROJETÉ du cycle affiché (#257) — clé DÉDIÉE, distincte de
+// `planning_courant` : ce planning est synthétique (jours possiblement
+// dupliqués sur un cycle > 7 j), jamais poussé en base (cf. store plus bas).
+const CLE_CYCLE_PLANNING = "cycle_planning";
 
 const DELAI_DEBOUNCE_MS = 800;
 
@@ -68,6 +87,10 @@ export function reinitialiserCacheFoyer(): void {
   localStorage.removeItem(CLE_MAJ_COCHES);
   localStorage.removeItem(CLE_DIRTY_COCHES);
   localStorage.removeItem("planning_snapshot"); // CLE_SNAPSHOT de lib/stockage
+  // Le foyer a changé → le cycle affiché et son planning projeté (#257) sont
+  // périmés (autre foyer = autres plannings/jour de courses).
+  localStorage.removeItem(CLE_CYCLE);
+  localStorage.removeItem(CLE_CYCLE_PLANNING);
 }
 
 // ---------------------------------------------------------------------------
@@ -123,6 +146,138 @@ export function useSemaineAffichee(): string | null {
     storeSemaine.sAbonner,
     storeSemaine.lire,
     storeSemaine.lireServeur
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Cycle affiché (#257) — store externe adossé à localStorage. Porte l'ancre
+// (date ISO) et la longueur du cycle courant sur /courses. C'est la source de
+// `ancreActive()`, qui clé toute la chaîne coches (flush / hydrate / temps réel).
+// ---------------------------------------------------------------------------
+export type CycleAffiche = { ancre: string; longueur: number };
+
+const abonnesCycle = new Set<() => void>();
+
+function definirCycleAffiche(ancre: string, longueur: number): void {
+  localStorage.setItem(CLE_CYCLE, JSON.stringify({ ancre, longueur }));
+  for (const rappel of abonnesCycle) rappel();
+}
+
+// Cache de parsing mémoïsé — IMPÉRATIF pour useSyncExternalStore : getSnapshot
+// doit renvoyer une référence STABLE tant que la valeur brute n'a pas changé.
+// Sans ce cache, `JSON.parse` renvoyait un nouvel objet à CHAQUE render → React
+// détectait un changement en boucle → « Maximum update depth exceeded » (React
+// #185) → error boundary sur /courses dès que le cycle est hydraté (#257, bug
+// corrigé). Même mémoïsation que lireCyclePlanning ci-dessous.
+let cacheRawCycleAffiche: string | null = null;
+let cacheParsedCycleAffiche: CycleAffiche | null = null;
+
+function lireCycleAffiche(): CycleAffiche | null {
+  let brut: string | null = null;
+  try {
+    brut = localStorage.getItem(CLE_CYCLE);
+  } catch {
+    brut = null;
+  }
+  if (brut !== cacheRawCycleAffiche) {
+    cacheRawCycleAffiche = brut;
+    try {
+      cacheParsedCycleAffiche = brut ? (JSON.parse(brut) as CycleAffiche) : null;
+    } catch {
+      cacheParsedCycleAffiche = null;
+    }
+  }
+  return cacheParsedCycleAffiche;
+}
+
+const storeCycle = {
+  sAbonner(rappel: () => void): () => void {
+    abonnesCycle.add(rappel);
+    window.addEventListener("storage", rappel);
+    return () => {
+      abonnesCycle.delete(rappel);
+      window.removeEventListener("storage", rappel);
+    };
+  },
+  lire: lireCycleAffiche,
+  lireServeur: (): null => null,
+};
+
+/** Cycle actuellement affiché ({ ancre, longueur }), ou null avant hydratation. */
+export function useCycleAffiche(): CycleAffiche | null {
+  return useSyncExternalStore(
+    storeCycle.sAbonner,
+    storeCycle.lire,
+    storeCycle.lireServeur
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Planning PROJETÉ du cycle (#257) — store adossé à LOCALSTORAGE (clé dédiée
+// CLE_CYCLE_PLANNING, distincte de `planning_courant`), mais JAMAIS poussé en
+// base : contrairement à storePlanning (poussé par sauvegarder_planning), le
+// planning du cycle est synthétique (semaine = une ancre-DATE, `jour`
+// possiblement dupliqués sur un cycle > 7 j) — l'écrire dans storePlanning
+// corromprait les données de planning, et `planifierPush` ne s'y abonne pas.
+// localStorage évite le flash d'état vide au reload et permet aux e2e de le
+// seeder. /courses lit ce planning via useCyclePlanning.
+// ---------------------------------------------------------------------------
+const abonnesCyclePlanning = new Set<() => void>();
+
+function definirCyclePlanning(planning: Planning | null): void {
+  if (planning === null) {
+    localStorage.removeItem(CLE_CYCLE_PLANNING);
+  } else {
+    localStorage.setItem(CLE_CYCLE_PLANNING, JSON.stringify(planning));
+  }
+  for (const rappel of abonnesCyclePlanning) rappel();
+}
+
+// Cache de parsing mémoïsé : useSyncExternalStore exige que getSnapshot
+// renvoie une référence STABLE tant que la valeur brute n'a pas changé, sous
+// peine d'avertissement React (« getSnapshot should be cached ») — comparer
+// la chaîne brute évite de re-parser (et de renvoyer un nouvel objet) à
+// chaque lecture.
+let cacheRawCyclePlanning: string | null = null;
+let cacheParsedCyclePlanning: Planning | null = null;
+
+function lireCyclePlanning(): Planning | null {
+  let brut: string | null = null;
+  try {
+    brut = localStorage.getItem(CLE_CYCLE_PLANNING);
+  } catch {
+    brut = null;
+  }
+  if (brut !== cacheRawCyclePlanning) {
+    cacheRawCyclePlanning = brut;
+    try {
+      cacheParsedCyclePlanning = brut ? (JSON.parse(brut) as Planning) : null;
+    } catch {
+      cacheParsedCyclePlanning = null;
+    }
+  }
+  return cacheParsedCyclePlanning;
+}
+
+const storeCyclePlanning = {
+  sAbonner(rappel: () => void): () => void {
+    abonnesCyclePlanning.add(rappel);
+    window.addEventListener("storage", rappel);
+    return () => {
+      abonnesCyclePlanning.delete(rappel);
+      window.removeEventListener("storage", rappel);
+    };
+  },
+  lire: lireCyclePlanning,
+  lireServeur: (): null => null,
+};
+
+/** Planning projeté du cycle affiché (ou null avant hydratation). Pour /courses. */
+export function useCyclePlanning(): Planning | null {
+  return useSyncExternalStore(
+    storeCyclePlanning.sAbonner,
+    storeCyclePlanning.lire,
+    storeCyclePlanning.lireServeur
   );
 }
 
@@ -243,9 +398,18 @@ function estDirtyCoches(): boolean {
   return localStorage.getItem(CLE_DIRTY_COCHES) === "1";
 }
 
-// Les coches sont propres à une semaine (#5) : celle du planning actif.
+// Semaine du planning actif (#5) — clé de la chaîne PLANNING (push + temps réel
+// planning sur /planning). NE clé PLUS les coches (cf. ancreActive).
 function semaineActive(): string | null {
   return planningLocal()?.semaine ?? null;
+}
+
+// Ancre du CYCLE affiché (#257) — clé de toute la chaîne COCHES (flush / hydrate
+// / temps réel des coches). Null tant qu'aucun cycle n'est affiché (ex. sur
+// /planning avant toute visite de /courses) → les opérations coches y sont un
+// no-op sûr (les gardes `ancre === null` retournent tôt).
+function ancreActive(): string | null {
+  return lireCycleAffiche()?.ancre ?? null;
 }
 
 function cochesLocales(): Coches {
@@ -267,8 +431,8 @@ async function flusherCoches(): Promise<void> {
     reFlushCochesDemande = true;
     return;
   }
-  const semaine = semaineActive();
-  if (semaine === null) {
+  const ancre = ancreActive();
+  if (ancre === null) {
     localStorage.removeItem(CLE_DIRTY_COCHES);
     return;
   }
@@ -285,13 +449,13 @@ async function flusherCoches(): Promise<void> {
   try {
     if (Object.keys(local).length === 0) {
       // Vidage complet (Tout décocher / régénération RG-13) → un seul DELETE.
-      await viderCochesDistantes(semaine);
+      await viderCochesDistantes(ancre);
     } else {
       for (const op of ops) {
         if (op.type === "cocher") {
-          await cocherArticleDistant(semaine, op.cle, op.quantite);
+          await cocherArticleDistant(ancre, op.cle, op.quantite);
         } else {
-          await decocherArticleDistant(semaine, op.cle);
+          await decocherArticleDistant(ancre, op.cle);
         }
       }
     }
@@ -339,12 +503,12 @@ async function hydraterCoches(): Promise<void> {
     void flusherCoches();
     return;
   }
-  const semaine = semaineActive();
-  if (semaine === null) return;
+  const ancre = ancreActive();
+  if (ancre === null) return;
   const local = cochesLocales();
   let distant: Coches;
   try {
-    distant = await chargerCochesDistantes(semaine);
+    distant = await chargerCochesDistantes(ancre);
   } catch (erreur) {
     console.error("Chargement des coches distantes échoué.", erreur);
     return;
@@ -415,14 +579,14 @@ function appliquerEventLocal(event: EventCoche): void {
 
 type LigneArticle = Partial<{
   foyer_id: string;
-  semaine: string;
+  ancre: string;
   cle: string;
   quantite: number;
 }>;
 
 function surEventCoche(
   foyer: string,
-  semaine: string,
+  ancre: string,
   payload: {
     eventType: "INSERT" | "UPDATE" | "DELETE";
     new: LigneArticle;
@@ -431,13 +595,13 @@ function surEventCoche(
 ): void {
   // DELETE : la ligne est dans `old` (`new` vaut `{}`, pas null → un `??` la
   // raterait). INSERT/UPDATE : dans `new`. (REPLICA IDENTITY FULL garantit que
-  // `old` porte foyer_id/semaine/cle au DELETE.)
+  // `old` porte foyer_id/ancre/cle au DELETE.)
   const ligne = (
     payload.eventType === "DELETE" ? payload.old : payload.new
   ) as LigneArticle;
-  // Filtrage défensif (la RLS sécurise déjà, le filtre serveur cible la semaine).
+  // Filtrage défensif (la RLS sécurise déjà, le filtre serveur cible l'ancre).
   if (ligne.foyer_id && ligne.foyer_id !== foyer) return;
-  if (ligne.semaine && ligne.semaine !== semaine) return;
+  if (ligne.ancre && ligne.ancre !== ancre) return;
   if (!ligne.cle) return;
   appliquerEventLocal(
     payload.eventType === "DELETE"
@@ -456,35 +620,35 @@ async function retirerCanalTopic(topic: string): Promise<void> {
 }
 
 let canalCoches: RealtimeChannel | null = null;
-let semaineAbonnee: string | null = null;
+let ancreAbonnee: string | null = null;
 // Sérialise (dés)abonnements coches : le cleanup async d'un effet croise le
 // montage suivant (nav SPA, double-invoke strict-mode en dev) → sans file, deux
 // abonnements au même topic se chevauchent et lèvent l'erreur ci-dessus.
 let chaineCoches: Promise<void> = Promise.resolve();
 
-// (Ré)abonne le canal temps réel des coches à la semaine donnée (idempotent,
+// (Ré)abonne le canal temps réel des coches à l'ancre (cycle) donnée (idempotent,
 // sérialisé). Les erreurs sont avalées (journalisées) pour ne jamais devenir des
 // unhandledRejection.
-function synchroniserAbonnementCoches(semaine: string | null): Promise<void> {
+function synchroniserAbonnementCoches(ancre: string | null): Promise<void> {
   chaineCoches = chaineCoches
-    .then(() => majAbonnementCoches(semaine))
+    .then(() => majAbonnementCoches(ancre))
     .catch((e) => console.error("Abonnement temps réel des coches échoué.", e));
   return chaineCoches;
 }
 
-async function majAbonnementCoches(semaine: string | null): Promise<void> {
-  if (semaine === semaineAbonnee && (semaine === null || canalCoches)) return;
-  semaineAbonnee = semaine;
+async function majAbonnementCoches(ancre: string | null): Promise<void> {
+  if (ancre === ancreAbonnee && (ancre === null || canalCoches)) return;
+  ancreAbonnee = ancre;
   if (canalCoches) {
     await client().removeChannel(canalCoches);
     canalCoches = null;
   }
-  if (semaine === null) return;
+  if (ancre === null) return;
   const foyer = await assurerFoyerId();
-  if (foyer === null || semaineAbonnee !== semaine) return; // semaine rechangée
+  if (foyer === null || ancreAbonnee !== ancre) return; // ancre rechangée
   await assurerAuthRealtime();
-  if (semaineAbonnee !== semaine) return;
-  const topic = `coches:${foyer}:${semaine}`;
+  if (ancreAbonnee !== ancre) return;
+  const topic = `coches:${foyer}:${ancre}`;
   await retirerCanalTopic(topic); // sécurité contre un canal résiduel de même topic
   canalCoches = client()
     .channel(topic)
@@ -494,9 +658,9 @@ async function majAbonnementCoches(semaine: string | null): Promise<void> {
         event: "*",
         schema: "public",
         table: "etat_courses_article",
-        filter: `semaine=eq.${semaine}`,
+        filter: `ancre=eq.${ancre}`,
       },
-      (payload) => surEventCoche(foyer, semaine, payload)
+      (payload) => surEventCoche(foyer, ancre, payload)
     )
     .subscribe();
 }
@@ -510,7 +674,7 @@ function couperTempsReel(): Promise<void> {
         await client().removeChannel(canalCoches);
         canalCoches = null;
       }
-      semaineAbonnee = null;
+      ancreAbonnee = null;
     })
     .catch((e) => console.error("Arrêt temps réel des coches échoué.", e));
   chainePlanning = chainePlanning
@@ -586,7 +750,7 @@ async function traiterChangementPlanningDistant(semaine: string): Promise<void> 
   traitementPlanningEnCours = true;
   try {
     const sigAvant = signaturePlanning(planningLocal());
-    await chargerSemaineDansCache(semaine); // force le re-pull (planning + coches)
+    await chargerSemaineDansCache(semaine); // force le re-pull du planning
     if (semaineActive() === semaine && signaturePlanning(planningLocal()) !== sigAvant) {
       declencherAlertePlanning();
     }
@@ -763,12 +927,14 @@ async function attendreSync(): Promise<boolean> {
   return !(estDirty() || estDirtyCoches());
 }
 
-// Charge une semaine dans le cache (planning + coches) SANS flush ni garde, et
-// sans déclencher de push (gardes d'hydratation). Une semaine sans planning
-// vide le cache → état vide. Pose la semaine affichée.
+// Charge une semaine dans le cache PLANNING SANS flush ni garde, et sans
+// déclencher de push (gardes d'hydratation). Une semaine sans planning vide le
+// cache → état vide. Pose la semaine affichée. Depuis #257, cette fonction ne
+// touche PLUS aux coches : elles sont propres au CYCLE (clé = ancre, ≠ semaine)
+// et gérées par chargerCycleDansCache (/courses). La page /planning n'affiche
+// pas la liste de courses, donc aucun besoin d'y hydrater les coches.
 async function chargerSemaineDansCache(semaine: string): Promise<void> {
   hydratationEnCours = true;
-  hydratationCochesEnCours = true;
   try {
     const distant = await chargerPlanningDistant(semaine);
     if (distant) {
@@ -779,19 +945,14 @@ async function chargerSemaineDansCache(semaine: string): Promise<void> {
       localStorage.removeItem(CLE_MAJ);
     }
     localStorage.removeItem(CLE_DIRTY);
-
-    // Coches par-article (#56 PR4) : reconstruit le blob + pose la référence.
-    appliquerBlobDistant(await chargerCochesDistantes(semaine));
     definirEtat("synchronise");
   } catch (erreur) {
     console.error("Chargement de la semaine échoué.", erreur);
   } finally {
     hydratationEnCours = false;
-    hydratationCochesEnCours = false;
   }
   definirSemaineAffichee(semaine);
-  // (Ré)abonne le temps réel (coches + planning) à la semaine désormais affichée.
-  void synchroniserAbonnementCoches(semaine);
+  // (Ré)abonne le temps réel du planning à la semaine désormais affichée.
   void synchroniserAbonnementPlanning(semaine);
 }
 
@@ -804,6 +965,121 @@ export async function naviguerVers(semaine: string): Promise<void> {
   if (semaine === localStorage.getItem(CLE_SEMAINE)) return; // déjà affichée
   if (!(await attendreSync())) return; // hors-ligne : ne pas perdre les écritures
   await chargerSemaineDansCache(semaine);
+}
+
+// ---------------------------------------------------------------------------
+// Cycle de courses (#257) — chargement / navigation / étirement.
+//
+// Un cycle = une ancre (date ISO du jour de courses foyer) + une longueur. Il se
+// projette par-dessus le stockage par semaine ISO : on charge les 1-2 plannings
+// des semaines touchées et on recolle le planning projeté (planningDuCycle) dans
+// storeCyclePlanning (localStorage, clé dédiée CLE_CYCLE_PLANNING, JAMAIS poussé).
+// Les coches, elles, sont clées PAR ANCRE (etat_courses_article.ancre) — chargées
+// ici et suivies en temps réel.
+// ---------------------------------------------------------------------------
+
+/**
+ * Charge un cycle dans le cache : planning projeté (localStorage) + coches (par
+ * ancre) + abonnement temps réel des coches. Pose le cycle affiché. Utilisé par
+ * /courses (hydratation, navigation, étirement). N'écrit JAMAIS dans storePlanning.
+ */
+async function chargerCycleDansCache(
+  ancre: string,
+  longueur: number
+): Promise<void> {
+  hydratationCochesEnCours = true;
+  try {
+    const semaines = semainesDuCycle(ancre, longueur);
+    const resultats = await Promise.all(
+      semaines.map((s) => chargerPlanningDistant(s))
+    );
+    const plannings = resultats
+      .filter((r): r is { planning: Planning; updatedAt: string } => r !== null)
+      .map((r) => r.planning);
+    const projete = planningDuCycle(plannings, ancre, longueur);
+    // Local fait foi si le backend n'a RIEN pour cette ancre (#257) — miroir du
+    // « planning local non horodaté fait foi » du #6/#104, adapté au cycle (qui
+    // n'a pas d'horodatage propre : c'est un planning SYNTHÉTIQUE, jamais poussé
+    // en base, cf. commentaire de CLE_CYCLE_PLANNING plus haut). Utile en e2e
+    // (planning injecté directement dans `cycle_planning`, le backend étant vidé
+    // par `nettoyerEtatDistant`) et en offline (rien à récupérer du serveur). On
+    // ne garde le local QUE s'il porte la MÊME ancre que celle visée : une
+    // navigation vers une autre ancre ne doit jamais hériter du cache d'une
+    // ancre différente (l'état vide reste correct dans ce cas).
+    const local = lireCyclePlanning();
+    const localFaitFoi =
+      projete.jours.length === 0 &&
+      local !== null &&
+      local.semaine === ancre &&
+      local.jours.length > 0;
+    if (!localFaitFoi) {
+      definirCyclePlanning(projete);
+    }
+    // Pose l'ancre affichée AVANT toute opération sur les coches : `flusherCoches`
+    // lit `ancreActive()` (dérivé du cycle affiché) et doit donc viser le NOUVEAU
+    // cycle, pas l'ancien — sinon un flush dirty-first pousserait sous la mauvaise
+    // ancre. Déplacé depuis après le bloc coches/try (#257, revue).
+    definirCycleAffiche(ancre, longueur);
+    // Coches par-article (#56 PR4), clées par ancre (#257) : dirty-first — des
+    // coches locales NON poussées font foi, on ne les écrase pas par le serveur
+    // (miroir de la garde de `hydraterCoches`, désormais inaccessible pour /courses).
+    if (estDirtyCoches()) {
+      void flusherCoches(); // des coches locales non poussées font foi
+    } else {
+      appliquerBlobDistant(await chargerCochesDistantes(ancre));
+    }
+    definirEtat("synchronise");
+  } catch (erreur) {
+    console.error("Chargement du cycle échoué.", erreur);
+  } finally {
+    hydratationCochesEnCours = false;
+  }
+  // (Ré)abonne le temps réel des coches à l'ancre désormais affichée.
+  void synchroniserAbonnementCoches(ancre);
+}
+
+/**
+ * Hydrate le cycle courant (appelé au montage de /courses). L'ancre dérive du
+ * jour de courses du foyer (fail-open lundi) ; la longueur est lue en base
+ * (défaut 7). Purge de rétention best-effort (cycles > 12 semaines) — une fois.
+ */
+export async function hydraterCycle(): Promise<void> {
+  const jour = await chargerJourCoursesFoyer().catch(() => 1); // fail-open : lundi
+  // ancreParDefaut (pas ancreCourante) : le week-end, la génération vise la
+  // semaine prochaine (semaineParDefaut) → on décale le cycle par défaut pour la
+  // couvrir, sinon /courses afficherait un cycle courant vide/écoulé (#257).
+  const ancre = ancreParDefaut(new Date(), jour);
+  // Gardé (revue) : une rejection non catchée deviendrait un unhandledRejection
+  // sous `void hydraterCycle()` — repli sur LONGUEUR_DEFAUT au lieu de planter.
+  const longueur = await chargerLongueurCycle(ancre).catch(() => LONGUEUR_DEFAUT);
+  await chargerCycleDansCache(ancre, longueur);
+  // Rétention (#257, miroir de purgerHistorique) : fire-and-forget, jamais bloquant.
+  void purgerCyclesAvant(cycleDecale(ancre, -12)).catch(() => {});
+}
+
+/**
+ * Navigue vers un autre cycle (offset en nombre de cycles, ± vs affiché). Flushe
+ * d'abord les écritures en attente (sinon perte) ; si le flush échoue (hors-ligne),
+ * la navigation est annulée. La longueur du cycle cible est lue en base.
+ */
+export async function naviguerCycle(offset: number): Promise<void> {
+  const courant = lireCycleAffiche();
+  if (!courant) return;
+  if (!(await attendreSync())) return; // hors-ligne : ne pas perdre les écritures
+  const ancre = cycleDecale(courant.ancre, offset);
+  const longueur = await chargerLongueurCycle(ancre);
+  await chargerCycleDansCache(ancre, longueur);
+}
+
+/**
+ * Étire (ou raccourcit) le cycle affiché : persiste la nouvelle longueur puis
+ * recharge le cycle (le planning projeté et les jours touchés changent).
+ */
+export async function etirerCycle(longueur: number): Promise<void> {
+  const courant = lireCycleAffiche();
+  if (!courant) return;
+  await definirLongueurCycle(courant.ancre, longueur);
+  await chargerCycleDansCache(courant.ancre, longueur);
 }
 
 // Hydratation UNE FOIS par session (par chargement complet de page). Les
@@ -850,7 +1126,9 @@ export async function hydrater(): Promise<void> {
     definirSemaineAffichee(local.semaine);
     if (estDirty()) void pousser();
     await hydraterCoches();
-    void synchroniserAbonnementCoches(local.semaine);
+    // Coches clées par CYCLE (#257) : réabonnement sur l'ancre active (null hors
+    // /courses → no-op sûr), pas sur la semaine du planning.
+    void synchroniserAbonnementCoches(ancreActive());
     void synchroniserAbonnementPlanning(local.semaine);
     return;
   }
@@ -871,11 +1149,12 @@ function demarrerSync(): () => void {
     if (estDirtyCoches()) void flusherCoches();
   };
   window.addEventListener("online", surRetourEnLigne);
-  // Temps réel (#56 PR4/PR5) : abonnement aux coches + au planning du foyer si
-  // une semaine est déjà connue (nav SPA « à chaud » ; au chargement froid,
-  // l'abonnement est posé par hydrater/chargerSemaineDansCache une fois la
-  // semaine résolue). La PRÉSENCE est gérée à part (usePresenceCourses).
-  void synchroniserAbonnementCoches(semaineActive());
+  // Temps réel (#56 PR4/PR5) : abonnement aux coches (par ANCRE de cycle, #257 —
+  // null hors /courses → no-op) + au planning du foyer si une semaine/ancre est
+  // déjà connue (nav SPA « à chaud » ; au chargement froid, l'abonnement est posé
+  // par hydrater/chargerSemaineDansCache/chargerCycleDansCache une fois résolu).
+  // La PRÉSENCE est gérée à part (usePresenceCourses).
+  void synchroniserAbonnementCoches(ancreActive());
   void synchroniserAbonnementPlanning(semaineActive());
   return () => {
     desabonnerPlanning();
@@ -899,6 +1178,46 @@ export function useSync(): EtatSync {
   useEffect(() => {
     const arreter = demarrerSync();
     void hydrater();
+    return arreter;
+  }, []);
+  return etatCourant;
+}
+
+// Démarre la synchro CÔTÉ COCHES uniquement (#257, pour /courses) : abonnement
+// aux écritures de coches + temps réel des coches (par ancre) + rejeu au retour
+// en ligne. Volontairement PAS d'abonnement storePlanning→push, PAS d'hydratation
+// de la semaine, PAS de temps réel planning : /courses affiche un CYCLE (planning
+// projeté en mémoire), pas la semaine du planning courant. Retourne l'arrêt.
+function demarrerSyncCoches(): () => void {
+  const desabonnerCoches = storeCoches.sAbonner(surChangementCoches);
+  const surRetourEnLigne = () => {
+    if (estDirtyCoches()) void flusherCoches();
+  };
+  window.addEventListener("online", surRetourEnLigne);
+  // Réabonnement « à chaud » (nav SPA) ; au chargement froid, hydraterCycle pose
+  // l'abonnement une fois l'ancre résolue.
+  void synchroniserAbonnementCoches(ancreActive());
+  return () => {
+    desabonnerCoches();
+    window.removeEventListener("online", surRetourEnLigne);
+    void couperTempsReel();
+  };
+}
+
+/**
+ * Hook de page /courses (#257) : démarre la synchro des coches et hydrate le
+ * CYCLE courant au montage (au lieu de la semaine). Renvoie l'état de synchro.
+ * Ne wire ni le push planning ni le temps réel planning (cf. demarrerSyncCoches).
+ */
+export function useSyncCourses(): EtatSync {
+  const etatCourant = useSyncExternalStore(
+    storeEtatSync.sAbonner,
+    storeEtatSync.lire,
+    storeEtatSync.lireServeur
+  );
+  useEffect(() => {
+    const arreter = demarrerSyncCoches();
+    void hydraterCycle();
     return arreter;
   }, []);
   return etatCourant;
