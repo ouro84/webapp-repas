@@ -3,7 +3,8 @@
 // recette de test porte le SUFFIXE du run pour être identifiable, et un
 // teardown (afterAll) supprime tout ce que le run a créé — pas d'accumulation.
 
-import { test, expect, request as apiRequest, type Page } from "@playwright/test";
+import { test, expect } from "./fixtures";
+import { request as apiRequest, type Page } from "@playwright/test";
 import { nettoyerRecettesDistantes, nettoyerMasquagesDistants } from "./helpers";
 
 // Suffixe unique au run (Date.now est autorisé dans les tests Playwright).

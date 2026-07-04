@@ -15,7 +15,8 @@
 // PR2 (#259, génération fenêtrée qui re-câble le temps réel planning côté
 // cycle). Ré-activer ce test dans #259.
 
-import { test, expect, type Browser, type Page } from "@playwright/test";
+import { test, expect } from "./fixtures";
+import type { Browser, Page } from "@playwright/test";
 import { nettoyerEtatDistant } from "./helpers";
 
 // Ouvre une page authentifiée dans un contexte neuf (un « appareil »).

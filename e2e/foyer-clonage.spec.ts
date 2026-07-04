@@ -18,12 +18,11 @@
 // (planning + liste de courses non vides), tandis que X CONSERVE tout
 // (pérennité), les deux foyers devenant indépendants.
 
-import {
-  test,
-  expect,
-  type APIRequestContext,
-  type BrowserContext,
-  type Page,
+import { test, expect, attacherGardeCrash } from "./fixtures";
+import type {
+  APIRequestContext,
+  BrowserContext,
+  Page,
 } from "@playwright/test";
 import {
   E2E_PASSWORD,
@@ -60,8 +59,13 @@ async function inscrire(
 
 // Connecte le compte dans un contexte neuf (un « appareil ») via la vraie page
 // /login, et renvoie la page authentifiée (sur /planning).
-async function connecter(context: BrowserContext, email: string): Promise<Page> {
+async function connecter(
+  context: BrowserContext,
+  email: string,
+  gardes?: { erreurs: string[] }[]
+): Promise<Page> {
   const page = await context.newPage();
+  gardes?.push(attacherGardeCrash(page)); // garde anti-crash (specs multi-contexte)
   await page.goto("/login");
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Mot de passe", { exact: true }).fill(E2E_PASSWORD);
@@ -91,8 +95,12 @@ test("quitter un foyer partagé clone les données chez le partant, sans rien re
   const ctxX = await browser.newContext(vierge);
   const ctxY = await browser.newContext(vierge);
 
+  // Gardes anti-crash React pour les pages créées à la main (la fixture auto ne
+  // couvre que la `page` par défaut, inutilisée ici). Cf. e2e/fixtures.ts.
+  const gardes: { erreurs: string[] }[] = [];
+
   // --- X : génère un planning (données du foyer), puis invite ---
-  const x = await connecter(ctxX, emailX);
+  const x = await connecter(ctxX, emailX, gardes);
   await x.getByRole("button", { name: "Générer mon planning" }).click();
   await expect(x.locator("main ul > li")).toHaveCount(7);
   // Attendre la persistance du planning avant que Y le rejoigne/clone.
@@ -109,7 +117,7 @@ test("quitter un foyer partagé clone les données chez le partant, sans rien re
   expect(code).toMatch(CODE_RX);
 
   // --- Y : rejoint le foyer de X ---
-  const y = await connecter(ctxY, emailY);
+  const y = await connecter(ctxY, emailY, gardes);
   await y.goto("/profil");
   await y.getByLabel("Rejoindre un foyer").fill(code);
   await y.getByRole("button", { name: "Rejoindre" }).click();
@@ -138,6 +146,9 @@ test("quitter un foyer partagé clone les données chez le partant, sans rien re
   // PÉRENNITÉ : X conserve son planning (rien ne lui a été retiré à la sortie de Y).
   await x.goto("/planning");
   await expect(x.locator("main ul > li")).toHaveCount(7);
+
+  // Aucun crash React (error boundary) sur les deux appareils.
+  expect(gardes.flatMap((g) => g.erreurs)).toEqual([]);
 
   await ctxX.close();
   await ctxY.close();

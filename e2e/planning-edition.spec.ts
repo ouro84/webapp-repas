@@ -5,7 +5,8 @@
 // en parallèle de l'autre moitié) — MÊME beforeEach (état vierge) et MÊMES
 // imports. Session authentifiée via le projet "setup" (storageState).
 
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect } from "./fixtures";
+import type { Page } from "@playwright/test";
 import { recetteFixture } from "../tests/fixtures/recettes";
 import { nettoyerEtatDistant } from "./helpers";
 import { semaineParDefaut } from "../lib/semaines";

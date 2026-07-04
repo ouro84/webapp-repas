@@ -26,7 +26,7 @@
 // `injecterCyclePlanning` dans courses.spec.ts), sans dépendre d'une
 // génération réelle ni d'une course avec le débounce de synchronisation.
 
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 import { nettoyerEtatDistant, reinitialiserJourCoursesDistant } from "./helpers";
 import { ancreParDefaut } from "../lib/cycles";
 import type { Planning } from "../types";

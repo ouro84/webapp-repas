@@ -4,7 +4,7 @@
 // authentifié hors de /login et /signup (vers /planning). On neutralise donc
 // le storageState hérité du projet "setup".
 
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 
 test.use({ storageState: { cookies: [], origins: [] } });
 
