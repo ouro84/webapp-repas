@@ -12,12 +12,18 @@
 import { test, expect } from "@playwright/test";
 import { recetteFixture } from "../tests/fixtures/recettes";
 import { nettoyerEtatDistant } from "./helpers";
-import { semaineISO } from "../lib/semaines";
+import { semaineParDefaut } from "../lib/semaines";
+import { ancreParDefaut } from "../lib/cycles";
+
+// Ancre du cycle par défaut (jour de courses lundi) — celle que hydraterCycle
+// calcule au montage de /courses (#257 ; inclut le décalage week-end).
+const ANCRE = ancreParDefaut(new Date(), 1);
 
 test.beforeEach(async ({ page, request }) => {
   // Base vierge pour le compte de test (planning + coches).
   await nettoyerEtatDistant(request);
-  // Purge le cache local AVANT le chargement de la page (toutes les clés de sync).
+  // Purge le cache local AVANT le chargement de la page (toutes les clés de sync,
+  // y compris celles du cycle #257 — sinon un cycle d'un test précédent fuiterait).
   await page.addInitScript(() => {
     for (const c of [
       "planning_courant",
@@ -27,6 +33,8 @@ test.beforeEach(async ({ page, request }) => {
       "courses_cochees_maj",
       "courses_dirty",
       "semaine_affichee",
+      "cycle_planning",
+      "cycle_affiche",
     ]) {
       localStorage.removeItem(c);
     }
@@ -184,15 +192,24 @@ test("modifier une semaine passée demande confirmation (US-14, RG-24)", async (
 test("marquer un repas en « restes » l'exclut de la liste de courses (US-12)", async ({
   page,
 }) => {
-  const planning = {
-    // Semaine COURANTE (calculée au run) : un planning injecté daté dans le
-    // passé déclencherait la garde de confirmation #5 (RG-24) à la modif/regen.
-    semaine: semaineISO(),
-    jours: [{ jour: "lundi", diner: recetteFixture("omelette-aux-champignons") }],
-  };
+  const omelette = recetteFixture("omelette-aux-champignons");
+  const jourNormal = { jour: "lundi", diner: omelette };
+  // planning_courant (fixture) pilote la carte /planning et son bouton restes ;
+  // cycle_planning alimente la projection /courses. Depuis #257, /courses lit le
+  // CYCLE (projeté depuis la base) et un planning fixture (id slug) n'est pas
+  // persistable → on reflète l'état « restes » dans le cycle via page.evaluate
+  // (le pont /planning→base→/courses n'existe pas pour une fixture).
   await page.addInitScript(
-    (contenu) => localStorage.setItem("planning_courant", contenu),
-    JSON.stringify(planning)
+    ([pc, cp, ca]) => {
+      localStorage.setItem("planning_courant", pc as string);
+      localStorage.setItem("cycle_planning", cp as string);
+      localStorage.setItem("cycle_affiche", ca as string);
+    },
+    [
+      JSON.stringify({ semaine: semaineParDefaut(), jours: [jourNormal] }),
+      JSON.stringify({ semaine: ANCRE, jours: [jourNormal] }),
+      JSON.stringify({ ancre: ANCRE, longueur: 7 }),
+    ]
   );
   await page.goto("/planning");
 
@@ -203,7 +220,7 @@ test("marquer un repas en « restes » l'exclut de la liste de courses (US-12)",
   await page.waitForURL("**/courses");
   await expect(page.getByRole("checkbox", { name: /œufs/ })).toBeVisible();
 
-  // Marquer le dîner de lundi en « restes » (bouton de la card).
+  // Marquer le dîner de lundi en « restes » (bouton de la card, sur /planning).
   await page.getByRole("link", { name: "← Planning" }).click();
   await page.waitForURL("**/planning");
   await carteLundi
@@ -213,18 +230,36 @@ test("marquer un repas en « restes » l'exclut de la liste de courses (US-12)",
   await expect(
     carteLundi.getByRole("button", { name: "Cuisiner le dîner de lundi" })
   ).toBeVisible();
+  // Reflète le « restes » dans le cycle projeté (fixture non persistable, #257) :
+  // hydraterCycle relira ce cycle local au prochain montage de /courses.
+  await page.evaluate(
+    (cp) => localStorage.setItem("cycle_planning", cp),
+    JSON.stringify({
+      semaine: ANCRE,
+      jours: [{ jour: "lundi", diner: omelette, restes: { diner: true } }],
+    })
+  );
 
-  // Les œufs ont disparu de la liste de courses (RG-22).
+  // Les œufs ont disparu de la liste de courses (RG-22). Le SEUL repas étant en
+  // restes, la liste devient vide → /courses passe en état VIDE (« Aucun repas
+  // planifié sur ce cycle »), dont le lien de retour est « Aller au planning »
+  // et non « ← Planning » (celui-ci n'existe qu'à l'état chargé). On revient donc
+  // par la nav, robuste dans les deux états.
   await page.getByRole("link", { name: "Liste de courses →" }).click();
   await page.waitForURL("**/courses");
   await expect(page.getByRole("checkbox", { name: /œufs/ })).toHaveCount(0);
+  await expect(page.getByText("Aucun repas planifié sur ce cycle")).toBeVisible();
 
   // « Cuisiner » restaure le repas → les œufs reviennent.
-  await page.getByRole("link", { name: "← Planning" }).click();
+  await page.getByRole("navigation").getByRole("link", { name: "Planning" }).click();
   await page.waitForURL("**/planning");
   await carteLundi
     .getByRole("button", { name: "Cuisiner le dîner de lundi" })
     .click();
+  await page.evaluate(
+    (cp) => localStorage.setItem("cycle_planning", cp),
+    JSON.stringify({ semaine: ANCRE, jours: [jourNormal] })
+  );
   await page.getByRole("link", { name: "Liste de courses →" }).click();
   await page.waitForURL("**/courses");
   await expect(page.getByRole("checkbox", { name: /œufs/ })).toBeVisible();
