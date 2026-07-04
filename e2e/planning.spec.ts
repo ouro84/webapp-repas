@@ -429,6 +429,12 @@ test("une sélection manuelle conserve les coches de la liste de courses (RG-15/
   // complet rejouerait l'init script du beforeEach, qui purge le planning.
   await page.getByRole("button", { name: "Générer mon planning" }).click();
   await expect(page.locator("main ul > li")).toHaveCount(7);
+  // Attendre la persistance : /courses projette le cycle depuis la BASE (#257),
+  // pas depuis planning_courant local → sans ce flush, /courses hydrate un
+  // backend encore vide (push débounce 800 ms) → liste vide → pas de coche.
+  await expect
+    .poll(async () => page.evaluate(() => localStorage.getItem("planning_dirty")))
+    .toBeNull();
 
   await page.getByRole("link", { name: "Liste de courses →" }).click();
   await page.waitForURL("**/courses");

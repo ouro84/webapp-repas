@@ -224,6 +224,11 @@ test("annuler une régénération restaure aussi les coches effacées (US-09, RG
   // l'addInitScript du beforeEach, qui purge le planning.
   await page.getByRole("button", { name: "Générer mon planning" }).click();
   await expect(page.locator("main ul > li")).toHaveCount(7);
+  // Attendre la persistance : /courses projette le cycle depuis la BASE (#257) →
+  // sans ce flush, /courses hydrate un backend encore vide (push débounce 800 ms).
+  await expect
+    .poll(async () => page.evaluate(() => localStorage.getItem("planning_dirty")))
+    .toBeNull();
 
   // Cocher un article côté courses.
   await page.getByRole("link", { name: "Liste de courses →" }).click();
