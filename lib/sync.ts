@@ -150,58 +150,72 @@ export function useSemaineAffichee(): string | null {
 }
 
 // ---------------------------------------------------------------------------
-// Cycle affiché (#257) — store externe adossé à localStorage. Porte l'ancre
-// (date ISO) et la longueur du cycle courant sur /courses. C'est la source de
-// `ancreActive()`, qui clé toute la chaîne coches (flush / hydrate / temps réel).
+// Factory de store localStorage-JSON pour useSyncExternalStore (#257, refactor
+// post-rétro). CENTRALISE la mémoïsation du parse : `lire` (getSnapshot) DOIT
+// renvoyer une référence STABLE tant que la chaîne brute n'a pas changé — sinon
+// useSyncExternalStore boucle → « Maximum update depth exceeded » (React #185) →
+// error boundary. Ce bug est arrivé en #257 sur un store objet non mémoïsé ; la
+// factory le rend STRUCTURELLEMENT impossible pour tout nouveau store. `ecrire`
+// (null → removeItem) notifie les abonnés ; l'event `storage` couvre les autres
+// onglets. Snapshot serveur = null (prérendu en état vide, cf. lib/stockage).
+// N'utiliser QUE pour des stores JAMAIS poussés en base (cf. commentaires ci-
+// dessous) — la persistance planning/coches a sa propre mécanique.
+// ---------------------------------------------------------------------------
+function creerStoreJSON<T>(cle: string) {
+  const abonnes = new Set<() => void>();
+  let cacheRaw: string | null = null;
+  let cacheParsed: T | null = null;
+  function lire(): T | null {
+    let brut: string | null = null;
+    try {
+      brut = localStorage.getItem(cle);
+    } catch {
+      brut = null;
+    }
+    if (brut !== cacheRaw) {
+      cacheRaw = brut;
+      try {
+        cacheParsed = brut ? (JSON.parse(brut) as T) : null;
+      } catch {
+        cacheParsed = null;
+      }
+    }
+    return cacheParsed;
+  }
+  function ecrire(valeur: T | null): void {
+    if (valeur === null) localStorage.removeItem(cle);
+    else localStorage.setItem(cle, JSON.stringify(valeur));
+    for (const rappel of abonnes) rappel();
+  }
+  return {
+    sAbonner(rappel: () => void): () => void {
+      abonnes.add(rappel);
+      window.addEventListener("storage", rappel);
+      return () => {
+        abonnes.delete(rappel);
+        window.removeEventListener("storage", rappel);
+      };
+    },
+    lire,
+    lireServeur: (): null => null,
+    ecrire,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Cycle affiché (#257) — store adossé à localStorage. Porte l'ancre (date ISO)
+// et la longueur du cycle courant sur /courses. Source de `ancreActive()`, qui
+// clé toute la chaîne coches (flush / hydrate / temps réel).
 // ---------------------------------------------------------------------------
 export type CycleAffiche = { ancre: string; longueur: number };
 
-const abonnesCycle = new Set<() => void>();
+const storeCycle = creerStoreJSON<CycleAffiche>(CLE_CYCLE);
 
 function definirCycleAffiche(ancre: string, longueur: number): void {
-  localStorage.setItem(CLE_CYCLE, JSON.stringify({ ancre, longueur }));
-  for (const rappel of abonnesCycle) rappel();
+  storeCycle.ecrire({ ancre, longueur });
 }
 
-// Cache de parsing mémoïsé — IMPÉRATIF pour useSyncExternalStore : getSnapshot
-// doit renvoyer une référence STABLE tant que la valeur brute n'a pas changé.
-// Sans ce cache, `JSON.parse` renvoyait un nouvel objet à CHAQUE render → React
-// détectait un changement en boucle → « Maximum update depth exceeded » (React
-// #185) → error boundary sur /courses dès que le cycle est hydraté (#257, bug
-// corrigé). Même mémoïsation que lireCyclePlanning ci-dessous.
-let cacheRawCycleAffiche: string | null = null;
-let cacheParsedCycleAffiche: CycleAffiche | null = null;
-
-function lireCycleAffiche(): CycleAffiche | null {
-  let brut: string | null = null;
-  try {
-    brut = localStorage.getItem(CLE_CYCLE);
-  } catch {
-    brut = null;
-  }
-  if (brut !== cacheRawCycleAffiche) {
-    cacheRawCycleAffiche = brut;
-    try {
-      cacheParsedCycleAffiche = brut ? (JSON.parse(brut) as CycleAffiche) : null;
-    } catch {
-      cacheParsedCycleAffiche = null;
-    }
-  }
-  return cacheParsedCycleAffiche;
-}
-
-const storeCycle = {
-  sAbonner(rappel: () => void): () => void {
-    abonnesCycle.add(rappel);
-    window.addEventListener("storage", rappel);
-    return () => {
-      abonnesCycle.delete(rappel);
-      window.removeEventListener("storage", rappel);
-    };
-  },
-  lire: lireCycleAffiche,
-  lireServeur: (): null => null,
-};
+const lireCycleAffiche = storeCycle.lire;
 
 /** Cycle actuellement affiché ({ ancre, longueur }), ou null avant hydratation. */
 export function useCycleAffiche(): CycleAffiche | null {
@@ -222,55 +236,13 @@ export function useCycleAffiche(): CycleAffiche | null {
 // localStorage évite le flash d'état vide au reload et permet aux e2e de le
 // seeder. /courses lit ce planning via useCyclePlanning.
 // ---------------------------------------------------------------------------
-const abonnesCyclePlanning = new Set<() => void>();
+const storeCyclePlanning = creerStoreJSON<Planning>(CLE_CYCLE_PLANNING);
 
 function definirCyclePlanning(planning: Planning | null): void {
-  if (planning === null) {
-    localStorage.removeItem(CLE_CYCLE_PLANNING);
-  } else {
-    localStorage.setItem(CLE_CYCLE_PLANNING, JSON.stringify(planning));
-  }
-  for (const rappel of abonnesCyclePlanning) rappel();
+  storeCyclePlanning.ecrire(planning);
 }
 
-// Cache de parsing mémoïsé : useSyncExternalStore exige que getSnapshot
-// renvoie une référence STABLE tant que la valeur brute n'a pas changé, sous
-// peine d'avertissement React (« getSnapshot should be cached ») — comparer
-// la chaîne brute évite de re-parser (et de renvoyer un nouvel objet) à
-// chaque lecture.
-let cacheRawCyclePlanning: string | null = null;
-let cacheParsedCyclePlanning: Planning | null = null;
-
-function lireCyclePlanning(): Planning | null {
-  let brut: string | null = null;
-  try {
-    brut = localStorage.getItem(CLE_CYCLE_PLANNING);
-  } catch {
-    brut = null;
-  }
-  if (brut !== cacheRawCyclePlanning) {
-    cacheRawCyclePlanning = brut;
-    try {
-      cacheParsedCyclePlanning = brut ? (JSON.parse(brut) as Planning) : null;
-    } catch {
-      cacheParsedCyclePlanning = null;
-    }
-  }
-  return cacheParsedCyclePlanning;
-}
-
-const storeCyclePlanning = {
-  sAbonner(rappel: () => void): () => void {
-    abonnesCyclePlanning.add(rappel);
-    window.addEventListener("storage", rappel);
-    return () => {
-      abonnesCyclePlanning.delete(rappel);
-      window.removeEventListener("storage", rappel);
-    };
-  },
-  lire: lireCyclePlanning,
-  lireServeur: (): null => null,
-};
+const lireCyclePlanning = storeCyclePlanning.lire;
 
 /** Planning projeté du cycle affiché (ou null avant hydratation). Pour /courses. */
 export function useCyclePlanning(): Planning | null {
