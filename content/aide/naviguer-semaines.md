@@ -12,13 +12,13 @@ Tu peux naviguer de **12 semaines en arrière** à **6 semaines en avant**. Au-d
 
 ## Chaque semaine est indépendante
 
-C'est le point important : **chaque semaine a son propre planning et sa propre liste de courses**.
+C'est le point important : **chaque semaine a son propre planning**.
 
 - Une semaine que tu n'as jamais générée s'affiche **vide** (« Aucun planning pour cette semaine — lance la génération ! ») : tu peux la générer comme la semaine en cours.
 
-- Tes coches de courses, tes « restes » et tes modifications restent **attachés à leur semaine** — naviguer ne les mélange pas.
+- Tes « restes » et tes modifications restent **attachés à leur semaine** — naviguer ne les mélange pas. (Les **coches de courses**, elles, suivent le **cycle de courses**, pas la semaine — voir _Ma liste suit mon cycle de courses_.)
 
-> 💡 La **liste de courses suit la semaine affichée**. Si tu passes à la semaine prochaine sur le planning, la liste de courses bascule elle aussi sur cette semaine.
+> 💡 Cette navigation concerne le **planning**. La **liste de courses**, elle, se navigue par **cycle de courses** — ancré sur ton jour de courses (voir _Ma liste suit mon cycle de courses_) — indépendamment des semaines du planning.
 
 ## Modifier une semaine déjà passée
 
