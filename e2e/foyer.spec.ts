@@ -15,7 +15,7 @@
 // sont couverts par `foyer-clonage.spec.ts`, qui crée des comptes JETABLES
 // dédiés (disjoints du compte partagé).
 
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 
 // 8 caractères de l'alphabet de generer_code_invitation (sans I/O/0/1).
 const CODE_RX = /^[A-HJ-NP-Z2-9]{8}$/;

@@ -9,7 +9,7 @@
 // responsive #64) a été scindée dans planning-edition.spec.ts (perf CI : les
 // deux moitiés tournent en parallèle sur des comptes dédiés).
 
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 import { recetteFixture } from "../tests/fixtures/recettes";
 import { nettoyerEtatDistant } from "./helpers";
 import { semaineParDefaut } from "../lib/semaines";

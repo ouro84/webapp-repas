@@ -11,7 +11,7 @@
 // sur staging) → validation EN CI uniquement ; NE PAS lancer en local
 // (.env.local pointe la prod).
 
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 import { E2E_PASSWORD, lireEnvLocal, lireReglagesDistants } from "./helpers";
 
 const RUN = Date.now();

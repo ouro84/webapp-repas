@@ -1,7 +1,7 @@
 // Identité de marque sur l'accueil (#59) : logo + nom « On mange quoi ? » +
 // baseline, et lien de marque dans la nav. Page publique, pas de sync/DB.
 
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 
 test("l'accueil affiche le nom et la baseline de marque (#59)", async ({
   page,

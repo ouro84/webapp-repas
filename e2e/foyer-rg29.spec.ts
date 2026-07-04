@@ -8,12 +8,11 @@
 // accumulation assumée sur staging. Validation EN CI uniquement (jonction réelle
 // + RLS staging) ; NE PAS lancer en local (.env.local pointe la prod).
 
-import {
-  test,
-  expect,
-  type APIRequestContext,
-  type BrowserContext,
-  type Page,
+import { test, expect } from "./fixtures";
+import type {
+  APIRequestContext,
+  BrowserContext,
+  Page,
 } from "@playwright/test";
 import {
   E2E_PASSWORD,

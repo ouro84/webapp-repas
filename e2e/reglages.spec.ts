@@ -9,7 +9,7 @@
 // supposent « génération = 2 personnes »). On nettoie aussi l'état distant +
 // le cache local pour que /planning parte d'un état vide.
 
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 import { nettoyerEtatDistant, nettoyerReglagesDistants } from "./helpers";
 
 test.beforeEach(async ({ page, request }) => {

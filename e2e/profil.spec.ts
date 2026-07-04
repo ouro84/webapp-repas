@@ -21,7 +21,7 @@
 // (session séparée, refresh token distinct) avant de se déconnecter — la session
 // partagée reste intacte (même esprit que foyer-clonage avec ses comptes dédiés).
 
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 import { E2E_EMAIL, E2E_PASSWORD, reinitialiserProfilDistant } from "./helpers";
 
 test.beforeEach(async ({ request }) => {

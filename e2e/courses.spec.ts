@@ -12,7 +12,8 @@
 // ne préserve l'injection que si elle porte la MÊME ancre que celle calculée
 // par `hydraterCycle()` au montage.
 
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect } from "./fixtures";
+import type { Page } from "@playwright/test";
 import { recetteFixture } from "../tests/fixtures/recettes";
 import { nettoyerEtatDistant, reinitialiserJourCoursesDistant } from "./helpers";
 import { semaineISO, semaineParDefaut } from "../lib/semaines";

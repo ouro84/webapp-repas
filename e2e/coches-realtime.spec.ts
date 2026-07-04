@@ -16,7 +16,8 @@
 // comme les autres specs, ne pas lancer en local (.env.local = prod). La
 // latence du push temps réel est absorbée par des `expect.poll`/timeouts longs.
 
-import { test, expect, type Browser, type Page } from "@playwright/test";
+import { test, expect, attacherGardeCrash } from "./fixtures";
+import type { Browser, Page } from "@playwright/test";
 import { recetteFixture } from "../tests/fixtures/recettes";
 import { nettoyerEtatDistant, reinitialiserJourCoursesDistant } from "./helpers";
 import { semaineISO } from "../lib/semaines";
@@ -75,11 +76,22 @@ async function ouvrirCourses(browser: Browser, planning: Planning): Promise<Page
     ]
   );
   const page = await context.newPage();
+  gardesCrash.push(attacherGardeCrash(page)); // garde anti-crash React (multi-contexte)
   await page.goto("/courses");
   // Attendre que la liste soit rendue (page hydratée → abonnement Realtime posé).
   await expect(page.getByRole("checkbox", { name: /lardons/ })).toBeVisible();
   return page;
 }
+
+// Gardes anti-crash des pages créées à la main (la fixture auto ne couvre que la
+// `page` par défaut, inutilisée ici). Vérifiées puis réinitialisées après chaque
+// test. Cf. e2e/fixtures.ts.
+const gardesCrash: { erreurs: string[] }[] = [];
+test.afterEach(() => {
+  const erreurs = gardesCrash.flatMap((g) => g.erreurs);
+  gardesCrash.length = 0;
+  expect(erreurs, `Crash React détecté : ${erreurs.join(" | ")}`).toEqual([]);
+});
 
 test.beforeEach(async ({ request }) => {
   await nettoyerEtatDistant(request);

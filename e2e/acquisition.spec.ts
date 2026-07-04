@@ -10,12 +10,11 @@
 // Repose sur la génération réelle (catalogue global seedé) + le foyer partagé →
 // validation EN CI uniquement ; NE PAS lancer en local (.env.local = prod).
 
-import {
-  test,
-  expect,
-  type APIRequestContext,
-  type BrowserContext,
-  type Page,
+import { test, expect } from "./fixtures";
+import type {
+  APIRequestContext,
+  BrowserContext,
+  Page,
 } from "@playwright/test";
 import {
   E2E_PASSWORD,
