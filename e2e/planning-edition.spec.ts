@@ -5,10 +5,41 @@
 // en parallèle de l'autre moitié) — MÊME beforeEach (état vierge) et MÊMES
 // imports. Session authentifiée via le projet "setup" (storageState).
 
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import { recetteFixture } from "../tests/fixtures/recettes";
 import { nettoyerEtatDistant } from "./helpers";
-import { semaineISO } from "../lib/semaines";
+import { semaineParDefaut } from "../lib/semaines";
+import { ancreParDefaut } from "../lib/cycles";
+import type { Planning } from "../types";
+
+// Ancre du cycle par défaut (jour de courses = lundi) — celle que hydraterCycle
+// calcule au montage de /courses (#257). `ancreParDefaut` inclut le décalage
+// week-end, comme la semaine visée par la génération (semaineParDefaut).
+const ANCRE = ancreParDefaut(new Date(), 1);
+
+// Depuis #257, /courses ne lit PLUS `planning_courant` (local) : il projette le
+// planning du CYCLE (store `cycle_planning`), normalement rempli depuis la BASE.
+// Un planning FIXTURE (id de recette = slug, pas un UUID) NE PEUT PAS être
+// persisté (`sauvegarder_planning` rejette « invalid input syntax for type
+// uuid ») → le pont /planning→base→/courses est impossible avec des fixtures.
+// On injecte donc `cycle_planning` DIRECTEMENT à l'état voulu (comme
+// courses.spec), qui est exactement ce que /courses projette. Le garde-fou
+// « local fait foi si la base est vide pour cette ancre » (#257) préserve
+// l'injection (la base est vidée par nettoyerEtatDistant). La mécanique du
+// stepper sur /planning est couverte par ailleurs (persistance : test « stepper
+// borné » ; mise à l'échelle affichée : fiche recette US-10).
+async function injecterCycle(page: Page, planning: Planning): Promise<void> {
+  await page.addInitScript(
+    ([cp, ca]) => {
+      localStorage.setItem("cycle_planning", cp as string);
+      localStorage.setItem("cycle_affiche", ca as string);
+    },
+    [
+      JSON.stringify({ ...planning, semaine: ANCRE }),
+      JSON.stringify({ ancre: ANCRE, longueur: 7 }),
+    ]
+  );
+}
 
 test.beforeEach(async ({ page, request }) => {
   // Base vierge pour le compte de test (planning + coches).
@@ -61,9 +92,13 @@ test("le stepper de personnes est borné et persiste au rechargement", async ({
 
   // Persistance via aller-retour SPA (et non reload : l'addInitScript du
   // beforeEach re-purgerait le planning — cf. piège documenté CLAUDE.md).
-  await page.getByRole("link", { name: "Liste de courses →" }).click();
-  await page.waitForURL("**/courses");
-  await page.getByRole("link", { name: "← Planning" }).click();
+  // Round-trip par la NAV (Recettes → Planning) plutôt que /courses : depuis
+  // #257, /courses projette le cycle depuis la base et son lien « ← Planning »
+  // n'existe qu'à l'état chargé — un cycle vide (planning pas encore poussé)
+  // n'aurait pas ce lien. La nav découple ce test de l'état de /courses.
+  await page.getByRole("navigation").getByRole("link", { name: "Recettes" }).click();
+  await page.waitForURL("**/recettes");
+  await page.getByRole("navigation").getByRole("link", { name: "Planning" }).click();
   await page.waitForURL("**/planning");
   await expect(page.locator("main ul > li").first()).toContainText("4 pers.");
 });
@@ -71,33 +106,23 @@ test("le stepper de personnes est borné et persiste au rechargement", async ({
 test("modifier le nombre de personnes met à l'échelle la liste de courses (RG-17)", async ({
   page,
 }) => {
-  // Planning déterministe : omelette (6 œufs) au dîner de lundi.
-  const planning = {
-    // Semaine COURANTE (calculée au run) : un planning injecté daté dans le
-    // passé déclencherait la garde de confirmation #5 (RG-24) à la modif/regen.
-    semaine: semaineISO(),
-    jours: [{ jour: "lundi", diner: recetteFixture("omelette-aux-champignons") }],
+  // Omelette (base 2 pers = 6 œufs) au dîner de lundi, slot fixé à 4 personnes :
+  // la liste de courses doit mettre à l'échelle (×2 → 12 œufs). On injecte le
+  // cycle directement à 4 pers (cf. injecterCycle, #257) plutôt que de piloter
+  // le stepper /planning, dont l'effet ne transite plus vers /courses via un
+  // planning fixture non persistable.
+  const omelette = recetteFixture("omelette-aux-champignons");
+  const planning: Planning = {
+    semaine: ANCRE,
+    // Le nombre de personnes est porté par le SLOT (JourPlanning.personnes),
+    // pas par la recette (dont la base reste 2, RG-16).
+    jours: [{ jour: "lundi", diner: omelette, personnes: { diner: 4 } }],
   };
-  await page.addInitScript(
-    (contenu) => localStorage.setItem("planning_courant", contenu),
-    JSON.stringify(planning)
-  );
-  await page.goto("/planning");
-
-  // 4 personnes sur le dîner de lundi → œufs ×2.
-  const carteLundi = page.locator("main ul > li").first();
-  await carteLundi
-    .getByRole("button", { name: "Plus de personnes pour le dîner de lundi" })
-    .click();
-  await carteLundi
-    .getByRole("button", { name: "Plus de personnes pour le dîner de lundi" })
-    .click();
-  await expect(carteLundi).toContainText("4 pers.");
-
-  await page.getByRole("link", { name: "Liste de courses →" }).click();
+  await injecterCycle(page, planning);
+  await page.goto("/courses");
   await page.waitForURL("**/courses");
 
-  // 6 œufs (recette) → 12 à 4 personnes.
+  // 6 œufs (recette, base 2 pers) → 12 à 4 personnes (RG-17).
   const ligneOeufs = page.locator("li", { hasText: "œufs" }).first();
   await expect(ligneOeufs).toContainText("12");
 });
@@ -105,35 +130,31 @@ test("modifier le nombre de personnes met à l'échelle la liste de courses (RG-
 test("modifier les personnes invalide la coche de l'article touché, pas les autres (RG-12)", async ({
   page,
 }) => {
-  const planning = {
-    // Semaine COURANTE (calculée au run) : un planning injecté daté dans le
-    // passé déclencherait la garde de confirmation #5 (RG-24) à la modif/regen.
-    semaine: semaineISO(),
-    jours: [{ jour: "lundi", diner: recetteFixture("omelette-aux-champignons") }],
-  };
-  await page.addInitScript(
-    (contenu) => localStorage.setItem("planning_courant", contenu),
-    JSON.stringify(planning)
-  );
-  await page.goto("/planning");
-
-  // Cocher les œufs côté courses.
-  await page.getByRole("link", { name: "Liste de courses →" }).click();
-  await page.waitForURL("**/courses");
+  const omelette = recetteFixture("omelette-aux-champignons");
+  // Phase 1 — cycle à 2 pers (œufs = 6) : on coche les œufs.
+  await injecterCycle(page, {
+    semaine: ANCRE,
+    jours: [{ jour: "lundi", diner: omelette, personnes: { diner: 2 } }],
+  });
+  await page.goto("/courses");
   await page.getByRole("checkbox", { name: /œufs/ }).click();
   await expect(page.getByRole("checkbox", { name: /œufs/ })).toBeChecked();
+  // La coche est persistée (par CLÉ+quantité, pas par id de recette → valide même
+  // pour une fixture) : on attend le flush pour la relire après rechargement.
+  await expect
+    .poll(async () => page.evaluate(() => localStorage.getItem("courses_dirty")))
+    .toBeNull();
 
-  // Augmenter les personnes : la quantité d'œufs change → coche invalidée.
-  await page.getByRole("link", { name: "← Planning" }).click();
-  await page.waitForURL("**/planning");
-  await page
-    .locator("main ul > li")
-    .first()
-    .getByRole("button", { name: "Plus de personnes pour le dîner de lundi" })
-    .click();
-
-  await page.getByRole("link", { name: "Liste de courses →" }).click();
-  await page.waitForURL("**/courses");
+  // Phase 2 — le nombre de personnes passe à 4 (œufs = 12). Simulé par une
+  // ré-injection du cycle à 4 pers (le pont stepper /planning → /courses via un
+  // planning fixture n'est pas persistable, #257). La coche posée à l'ancienne
+  // quantité (6) ne correspond plus → invalidée (RG-12, cf. lib/coches).
+  await injecterCycle(page, {
+    semaine: ANCRE,
+    jours: [{ jour: "lundi", diner: omelette, personnes: { diner: 4 } }],
+  });
+  await page.reload();
+  await expect(page.locator("li", { hasText: "œufs" }).first()).toContainText("12");
   await expect(page.getByRole("checkbox", { name: /œufs/ })).not.toBeChecked();
 });
 
@@ -242,9 +263,9 @@ test("la fiche d'une recette s'ouvre au clic sur le nom, à l'échelle du slot e
 }) => {
   // Omelette : œufs + champignons (à acheter), beurre + poivre (fond de placard).
   const planning = {
-    // Semaine COURANTE (calculée au run) : un planning injecté daté dans le
-    // passé déclencherait la garde de confirmation #5 (RG-24) à la modif/regen.
-    semaine: semaineISO(),
+    // semaineParDefaut (jamais dans le passé → pas de garde de confirmation #5
+    // RG-24) : la fiche se lit sur /planning, qui affiche cette semaine.
+    semaine: semaineParDefaut(),
     jours: [{ jour: "lundi", diner: recetteFixture("omelette-aux-champignons") }],
   };
   await page.addInitScript(

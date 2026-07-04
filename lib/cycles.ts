@@ -41,6 +41,33 @@ export function ancreCourante(aujourdhui: Date, jourCourses: number): string {
   return versISO(d)
 }
 
+/**
+ * Ancre du cycle affiché PAR DÉFAUT au montage de /courses (#257).
+ *
+ * En semaine, c'est l'ancre courante (`ancreCourante` : dernier jour de courses
+ * ≤ aujourd'hui). Le WEEK-END, la génération vise déjà la semaine PROCHAINE
+ * (`semaineParDefaut` de lib/semaines : offset +1 le samedi/dimanche, US-11) ;
+ * on décale donc le cycle par défaut d'un cran pour qu'il COUVRE cette semaine
+ * générée — sinon /courses afficherait le cycle courant (souvent déjà écoulé le
+ * week-end, la virée de courses de la semaine ayant eu lieu) et la liste
+ * fraîchement générée n'apparaîtrait que sous « Cycle suivant ». On restaure
+ * ainsi le comportement d'avant #257 (« la liste générée s'affiche sur
+ * /courses »), qui tenait quand /courses lisait `planning_courant` (planning
+ * actif, hors semaine) au lieu de projeter un cycle ancré sur aujourd'hui.
+ *
+ * Règle week-end IDENTIQUE à `semaineParDefaut` (getDay 0=dimanche ou 6=samedi)
+ * pour rester alignés par construction. La navigation (`cycleDecale`) et la
+ * sélection restent basées sur `ancreCourante` — seul le DÉFAUT est décalé.
+ * (En PR2, la génération devient fenêtrée sur le cycle : cette divergence
+ * ISO-semaine ↔ cycle disparaît.)
+ */
+export function ancreParDefaut(aujourdhui: Date, jourCourses: number): string {
+  const ancre = ancreCourante(aujourdhui, jourCourses)
+  const jour = aujourdhui.getDay() // 0 = dimanche, 6 = samedi
+  const enWeekend = jour === 0 || jour === 6
+  return enWeekend ? cycleDecale(ancre, 1) : ancre
+}
+
 /** Ancre décalée de n cycles (n×7 jours). */
 export function cycleDecale(ancre: string, n: number): string {
   const d = depuisISO(ancre)

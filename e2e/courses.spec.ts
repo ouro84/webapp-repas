@@ -15,15 +15,18 @@
 import { test, expect, type Page } from "@playwright/test";
 import { recetteFixture } from "../tests/fixtures/recettes";
 import { nettoyerEtatDistant, reinitialiserJourCoursesDistant } from "./helpers";
-import { semaineISO } from "../lib/semaines";
-import { ancreCourante } from "../lib/cycles";
+import { semaineISO, semaineParDefaut } from "../lib/semaines";
+import { ancreParDefaut } from "../lib/cycles";
 import type { Jour, Planning } from "../types";
 
 // Ancre du cycle avec le jour de courses par DÉFAUT (lundi, ISO 1) — c'est
 // l'ancre que `hydraterCycle()` calculera au montage tant que le foyer de test
 // n'a pas été réglé sur un autre jour (cf. reinitialiserJourCoursesDistant,
-// appelé ci-dessous en beforeEach).
-const ANCRE_LUNDI = ancreCourante(new Date(), 1);
+// appelé ci-dessous en beforeEach). `ancreParDefaut` (pas `ancreCourante`) car
+// hydraterCycle applique le décalage WEEK-END (samedi/dimanche → cycle suivant,
+// #257) : l'injection doit porter la MÊME ancre, sinon le garde-fou « local fait
+// foi » la rejette le week-end (ancre injectée ≠ ancre calculée).
+const ANCRE_LUNDI = ancreParDefaut(new Date(), 1);
 
 test.beforeEach(async ({ page, request }) => {
   // État distant vierge (#6) : sinon un planning persisté réapparaîtrait à
@@ -286,6 +289,15 @@ test("une catégorie entièrement cochée glisse en bas de liste, titre rayé (#
 test("régénérer le planning réinitialise toutes les coches (RG-13)", async ({
   page,
 }) => {
+  // /courses lit le cycle projeté ; /planning lit `planning_courant` (par
+  // semaine). Pour que /planning propose « Régénérer » (et non « Générer »), on
+  // injecte AUSSI un planning_courant à la semaine que /planning affiche par
+  // défaut (semaineParDefaut) — sinon /planning serait vide (#257 : deux stores
+  // distincts, cf. lib/sync.ts). Le cycle_planning injecté sert la coche initiale.
+  await page.addInitScript(
+    (contenu) => localStorage.setItem("planning_courant", contenu),
+    JSON.stringify({ ...planningDeterministe(), semaine: semaineParDefaut() })
+  );
   await injecterCyclePlanning(page, planningDeterministe());
   await page.goto("/courses");
 
@@ -294,12 +306,16 @@ test("régénérer le planning réinitialise toutes les coches (RG-13)", async (
 
   // Génération complète depuis la page planning (vraies recettes, liste
   // non déterministe) : les coches doivent être effacées (RG-13). La
-  // génération vise la semaine COURANTE, qui recouvre forcément l'ancre du
-  // cycle (jour de courses = lundi, cf. ANCRE_LUNDI) : le cycle affiché
-  // récupère donc bien ce planning fraîchement régénéré.
+  // régénération vise semaineParDefaut, que le cycle par défaut recouvre
+  // (ancreParDefaut, cf. ANCRE_LUNDI) : le cycle affiché récupère donc bien ce
+  // planning fraîchement régénéré (projeté depuis la base).
   await page.goto("/planning");
   await page.getByRole("button", { name: "Régénérer" }).click();
   await expect(page.locator("main ul > li")).toHaveCount(7);
+  // Attendre la persistance (le cycle /courses projette depuis la BASE, #257).
+  await expect
+    .poll(async () => page.evaluate(() => localStorage.getItem("planning_dirty")))
+    .toBeNull();
 
   await page.goto("/courses");
   await expect(page.getByText(/^0 coché sur [1-9]\d*/)).toBeVisible();

@@ -20,13 +20,15 @@ import { test, expect, type Browser, type Page } from "@playwright/test";
 import { recetteFixture } from "../tests/fixtures/recettes";
 import { nettoyerEtatDistant, reinitialiserJourCoursesDistant } from "./helpers";
 import { semaineISO } from "../lib/semaines";
-import { ancreCourante } from "../lib/cycles";
+import { ancreParDefaut } from "../lib/cycles";
 import type { Jour, Planning } from "../types";
 
 // Ancre du cycle avec le jour de courses par défaut (lundi, ISO 1) — celle que
 // `hydraterCycle()` calculera au montage tant que le foyer de test reste sur
 // son réglage par défaut (remis par reinitialiserJourCoursesDistant ci-dessous).
-const ANCRE_LUNDI = ancreCourante(new Date(), 1);
+// `ancreParDefaut` (pas `ancreCourante`) pour inclure le décalage WEEK-END
+// appliqué par hydraterCycle (#257) : l'injection doit matcher l'ancre calculée.
+const ANCRE_LUNDI = ancreParDefaut(new Date(), 1);
 
 // Même planning déterministe que courses.spec (lardons + tagliatelles + …).
 // Le `semaine` d'origine n'est pas significatif : ouvrirCourses le remplace

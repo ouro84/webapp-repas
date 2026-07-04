@@ -71,7 +71,15 @@ export async function chargerJourCoursesFoyer(): Promise<number> {
  */
 export async function definirJourCoursesFoyer(jour: number): Promise<void> {
   const supabase = createClient()
-  const { error } = await supabase.from("foyers").update({ jour_courses: jour })
+  // Filtre OBLIGATOIRE : PostgREST rejette un UPDATE sans clause WHERE
+  // (« 21000: UPDATE requires a WHERE clause », garde anti-écrasement de table).
+  // `not id is null` matche toutes les lignes ; la RLS (`id = mon_foyer()`) borne
+  // déjà la mise à jour à la SEULE ligne du foyer courant (le client ne connaît
+  // pas son foyer_id sans lecture). Miroir du helper e2e reinitialiserJourCoursesDistant.
+  const { error } = await supabase
+    .from("foyers")
+    .update({ jour_courses: jour })
+    .not("id", "is", null)
   if (error) {
     throw new Error(`Réglage du jour de courses impossible : ${error.message}`)
   }

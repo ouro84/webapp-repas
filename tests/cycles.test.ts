@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import {
-  ancreCourante, cycleDecale, joursDuCycle, semainesDuCycle,
+  ancreCourante, ancreParDefaut, cycleDecale, joursDuCycle, semainesDuCycle,
   dateVersSemaineJour, libelleCycle, cyclesSelectionnables, LONGUEUR_DEFAUT,
   planningDuCycle,
 } from "@/lib/cycles"
@@ -23,6 +23,25 @@ describe("ancreCourante", () => {
   it("défaut lundi (1) = début de semaine ISO", () => {
     // mercredi 8 juillet → lundi 6 juillet
     expect(ancreCourante(new Date("2026-07-08T10:00:00"), 1)).toBe("2026-07-06")
+  })
+})
+
+describe("ancreParDefaut", () => {
+  it("en semaine, vaut ancreCourante (aucun décalage)", () => {
+    // mercredi 8 juillet, jour de courses lundi → lundi 6 juillet (= ancreCourante)
+    const j = new Date("2026-07-08T10:00:00")
+    expect(ancreParDefaut(j, 1)).toBe(ancreCourante(j, 1))
+    expect(ancreParDefaut(j, 1)).toBe("2026-07-06")
+  })
+  it("le SAMEDI, décale d'un cycle (la génération vise la semaine prochaine)", () => {
+    // samedi 4 juillet, jour de courses lundi : ancreCourante = lundi 29 juin ;
+    // ancreParDefaut = lundi suivant 6 juillet (couvre la semaine générée).
+    expect(ancreCourante(new Date("2026-07-04T10:00:00"), 1)).toBe("2026-06-29")
+    expect(ancreParDefaut(new Date("2026-07-04T10:00:00"), 1)).toBe("2026-07-06")
+  })
+  it("le DIMANCHE, décale aussi d'un cycle", () => {
+    // dimanche 5 juillet, jour de courses lundi → lundi 6 juillet
+    expect(ancreParDefaut(new Date("2026-07-05T10:00:00"), 1)).toBe("2026-07-06")
   })
 })
 

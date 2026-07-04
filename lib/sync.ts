@@ -36,7 +36,7 @@ import { signaturePlanning } from "@/lib/planning-diff";
 import { createClient } from "@/lib/supabase/client";
 import { semaineDecalee, semaineISO, semaineParDefaut } from "@/lib/semaines";
 import {
-  ancreCourante,
+  ancreParDefaut,
   cycleDecale,
   LONGUEUR_DEFAUT,
   planningDuCycle,
@@ -1045,7 +1045,10 @@ async function chargerCycleDansCache(
  */
 export async function hydraterCycle(): Promise<void> {
   const jour = await chargerJourCoursesFoyer().catch(() => 1); // fail-open : lundi
-  const ancre = ancreCourante(new Date(), jour);
+  // ancreParDefaut (pas ancreCourante) : le week-end, la génération vise la
+  // semaine prochaine (semaineParDefaut) → on décale le cycle par défaut pour la
+  // couvrir, sinon /courses afficherait un cycle courant vide/écoulé (#257).
+  const ancre = ancreParDefaut(new Date(), jour);
   // Gardé (revue) : une rejection non catchée deviendrait un unhandledRejection
   // sous `void hydraterCycle()` — repli sur LONGUEUR_DEFAUT au lieu de planter.
   const longueur = await chargerLongueurCycle(ancre).catch(() => LONGUEUR_DEFAUT);

@@ -28,7 +28,7 @@
 
 import { test, expect } from "@playwright/test";
 import { nettoyerEtatDistant, reinitialiserJourCoursesDistant } from "./helpers";
-import { ancreCourante } from "../lib/cycles";
+import { ancreParDefaut } from "../lib/cycles";
 import type { Planning } from "../types";
 
 test.beforeEach(async ({ request }) => {
@@ -65,8 +65,10 @@ test("changer le jour de courses puis naviguer les cycles", async ({ page }) => 
 
   // Ancre du cycle jeudi calculée dans le test — c'est exactement ce que
   // hydraterCycle() calculera au montage de /courses désormais que le jour
-  // de courses du foyer vaut 4 (cf. ci-dessus).
-  const ancreJeudi = ancreCourante(new Date(), 4);
+  // de courses du foyer vaut 4 (cf. ci-dessus). `ancreParDefaut` (pas
+  // `ancreCourante`) pour inclure le décalage WEEK-END appliqué par
+  // hydraterCycle (#257) — sinon l'injection ne matcherait pas le samedi/dimanche.
+  const ancreJeudi = ancreParDefaut(new Date(), 4);
 
   // Planning synthétique déterministe, injecté directement dans le cache du
   // cycle (localStorage `cycle_planning` + `cycle_affiche`), à la même ancre
