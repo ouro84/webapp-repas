@@ -88,6 +88,34 @@ test("la génération affiche un planning de 7 jours avec leurs 14 repas", async
   await expect(lienReglages).toHaveAttribute("href", "/reglages");
 });
 
+test("la bascule « Cycle » affiche la vue planning calée sur le cycle (#260)", async ({
+  page,
+}) => {
+  // Génère un planning réel puis attends sa persistance : la vue cycle lit la
+  // BASE (chargerPlanningDistant), pas le cache local (#260, lecture d'abord).
+  await page.getByRole("button", { name: "Générer mon planning" }).click();
+  await expect(page.locator("main ul > li")).toHaveCount(7);
+  await expect
+    .poll(async () => page.evaluate(() => localStorage.getItem("planning_dirty")))
+    .toBeNull();
+
+  // Bascule en vue Cycle → libellé de la fenêtre + jours du cycle rendus.
+  await page.getByRole("button", { name: "Cycle", exact: true }).click();
+  await expect(page.getByText(/^Courses du /)).toBeVisible();
+  await expect(page.locator("main ul > li").first()).toBeVisible();
+  // Lecture seule : pas de bouton d'édition de slot dans la vue cycle.
+  await expect(
+    page.getByRole("button", { name: /^Changer le/ })
+  ).toHaveCount(0);
+
+  // Retour en vue Semaine → la grille hebdomadaire revient (7 jours).
+  await page.getByRole("button", { name: "Semaine", exact: true }).click();
+  await expect(page.locator("main ul > li")).toHaveCount(7);
+  await expect(
+    page.getByRole("heading", { name: "Mon planning de la semaine" })
+  ).toBeVisible();
+});
+
 // ---------------------------------------------------------------------------
 // US-14 — navigation entre semaines + génération de la semaine affichée (#5).
 // Assertions relatives pour rester robustes à la date du run.

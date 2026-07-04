@@ -65,6 +65,7 @@ import { BadgeAccompagnement } from "@/components/ui/badge-accompagnement";
 import { BadgeSaison } from "@/components/ui/badge-saison";
 import { SelecteurRecette } from "@/components/planning/selecteur-recette";
 import { FicheRecette } from "@/components/planning/fiche-recette";
+import { VuePlanningCycle } from "@/components/planning/vue-cycle";
 import { ConfirmationModale } from "@/components/ui/confirmation";
 import type { Jour, JourPlanning, Planning, Recette } from "@/types";
 
@@ -188,6 +189,44 @@ function ChevronSemaine({ direction }: { direction: "gauche" | "droite" }) {
   );
 }
 
+// Bascule de vue « Semaine | Cycle » (#260, PR3) : segmented control. La vue
+// semaine (défaut) est le driver quotidien ; la vue cycle (lecture seule) cale
+// l'affichage sur la fenêtre de la liste de courses.
+function BasculeVue({
+  vue,
+  onChange,
+}: {
+  vue: "semaine" | "cycle";
+  onChange: (v: "semaine" | "cycle") => void;
+}) {
+  const base =
+    "relative rounded-full px-3 py-1.5 text-sm font-medium transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600";
+  return (
+    <div
+      role="group"
+      aria-label="Vue du planning"
+      className="inline-flex rounded-full border border-brand-200 p-0.5"
+    >
+      <button
+        type="button"
+        aria-pressed={vue === "semaine"}
+        onClick={() => onChange("semaine")}
+        className={`${base} ${vue === "semaine" ? "bg-primary text-white" : "text-brand-700 hover:bg-brand-50"}`}
+      >
+        Semaine
+      </button>
+      <button
+        type="button"
+        aria-pressed={vue === "cycle"}
+        onClick={() => onChange("cycle")}
+        className={`${base} ${vue === "cycle" ? "bg-primary text-white" : "text-brand-700 hover:bg-brand-50"}`}
+      >
+        Cycle
+      </button>
+    </div>
+  );
+}
+
 // Slots d'un jour dans l'ordre d'affichage : déjeuner (week-end) puis dîner.
 function slotsDuJour(
   jp: JourPlanning
@@ -272,6 +311,10 @@ export default function PagePlanning() {
   const [confirmation, setConfirmation] = useState<{
     executer: () => void;
   } | null>(null);
+  // Vue affichée (#260, PR3) : « semaine » (calendaire, driver quotidien, défaut)
+  // ou « cycle » (fenêtre de courses, lecture seule). Défaut semaine = comportement
+  // inchangé ; état éphémère (non persisté).
+  const [vue, setVue] = useState<"semaine" | "cycle">("semaine");
 
   // Liste plate des recettes (sélecteur, remplacement aléatoire) + ensemble des
   // ids MODIFIABLES depuis la fiche (#137) — dérivés des recettes gérées.
@@ -623,6 +666,33 @@ export default function PagePlanning() {
     );
   }
 
+  // --- Vue CYCLE (#260, PR3) : lecture seule, calée sur la fenêtre de courses.
+  // Court-circuite les états semaine (vide/chargé) : le cycle peut avoir des
+  // repas même si la semaine affichée est vide, et inversement. ---
+  if (vue === "cycle") {
+    return (
+      <main id="contenu" className="flex-1 p-4 md:p-8">
+        <header className="mb-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+          <div className="min-w-0 flex-1">
+            <h1 className="font-display text-2xl font-semibold text-brand-900">
+              Mon planning
+            </h1>
+          </div>
+          <div className="flex items-center gap-2">
+            <BasculeVue vue={vue} onChange={setVue} />
+            <Link
+              href="/courses"
+              className="relative rounded-full bg-primary px-4 py-2 text-center text-sm font-medium text-white transition-colors after:absolute after:-inset-1 after:content-[''] hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
+            >
+              Liste de courses →
+            </Link>
+          </div>
+        </header>
+        <VuePlanningCycle idsModifiables={idsModifiables} />
+      </main>
+    );
+  }
+
   // --- État vide (RG-09) : semaine affichée sans planning (#5) ---
   if (planning === null) {
     return (
@@ -635,6 +705,9 @@ export default function PagePlanning() {
             Aucun planning pour cette semaine — lance la génération !
           </p>
         </div>
+        {/* Bascule Semaine | Cycle (#260) : accessible même sans planning de
+            semaine, pour consulter le cycle. */}
+        <BasculeVue vue={vue} onChange={setVue} />
         {/* Navigation entre semaines (#5) — après hydratation (date client). */}
         {navPret && (
           <NavigateurSemaine
@@ -689,7 +762,9 @@ export default function PagePlanning() {
         </div>
         {/* Actions : pleine largeur partagée sur mobile, compactes dès sm.
             after:-inset-1 étend la zone tactile à ≥ 44px sans changer le visuel. */}
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Bascule Semaine | Cycle (#260, PR3). */}
+          <BasculeVue vue={vue} onChange={setVue} />
           {/* Accès contextuel aux réglages de génération (#206, audit #51) :
               l'intention « ce planning ne me ressemble pas » naît ici → on
               rapproche le levier de l'action, au lieu de l'enfouir dans /profil.
