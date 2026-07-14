@@ -261,7 +261,15 @@ export async function nettoyerRecettesDistantes(
  */
 export async function fermerModaleDoublonsSiPresente(page: Page): Promise<void> {
   const modale = page.getByRole("dialog", { name: "Recettes en double" });
-  if (await modale.isVisible({ timeout: 3_000 }).catch(() => false)) {
+  // `isVisible()` seul n'attend pas (contrairement à `expect().toBeVisible()`) :
+  // la modale peut apparaître après un court aller-retour réseau (RPC de
+  // jonction puis détection des doublons) → il faut la GUETTER un court
+  // instant, pas juste constater son absence immédiate.
+  const apparue = await modale
+    .waitFor({ state: "visible", timeout: 3_000 })
+    .then(() => true)
+    .catch(() => false);
+  if (apparue) {
     await modale.getByRole("button", { name: /Plus tard|Terminé/ }).click();
   }
 }
