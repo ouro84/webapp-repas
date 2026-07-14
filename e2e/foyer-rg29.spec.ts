@@ -16,6 +16,7 @@ import type {
 } from "@playwright/test";
 import {
   E2E_PASSWORD,
+  fermerModaleDoublonsSiPresente,
   lireEnvLocal,
   marquerOnboardingCompletDistant,
 } from "./helpers";
@@ -84,6 +85,10 @@ test("rejoindre est refusé en foyer partagé : il faut quitter d'abord (RG-29)"
     // Y rejoint le foyer de X → passe en foyer PARTAGÉ.
     await y.getByLabel("Rejoindre un foyer").fill(code);
     await y.getByRole("button", { name: "Rejoindre" }).click();
+    // La jonction peut ouvrir la modale de dédoublonnage (RG-33) si le
+    // catalogue effectif contient des noms en double — comportement légitime,
+    // à fermer avant de vérifier la suite (elle masquerait « Quitter »).
+    await fermerModaleDoublonsSiPresente(y);
     await expect(y.getByRole("button", { name: "Quitter le foyer" })).toBeVisible();
 
     // RG-29 : en foyer partagé, le champ « Rejoindre » DISPARAÎT et un message

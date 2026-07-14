@@ -26,6 +26,7 @@ import type {
 } from "@playwright/test";
 import {
   E2E_PASSWORD,
+  fermerModaleDoublonsSiPresente,
   lireEnvLocal,
   marquerOnboardingCompletDistant,
 } from "./helpers";
@@ -121,6 +122,10 @@ test("quitter un foyer partagé clone les données chez le partant, sans rien re
   await y.goto("/profil");
   await y.getByLabel("Rejoindre un foyer").fill(code);
   await y.getByRole("button", { name: "Rejoindre" }).click();
+  // La jonction peut ouvrir la modale de dédoublonnage (RG-33) si le
+  // catalogue effectif contient des noms en double — comportement légitime,
+  // à fermer avant de vérifier la suite (elle masquerait « Quitter »).
+  await fermerModaleDoublonsSiPresente(y);
   // Jonction → reload ; le panneau passe en mode partagé (bouton « Quitter »).
   await expect(y.getByRole("button", { name: "Quitter le foyer" })).toBeVisible();
   // Y voit bien le planning PARTAGÉ de X (foyer commun).
