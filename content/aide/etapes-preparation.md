@@ -4,7 +4,7 @@ _Une recette, ce n'est pas que des ingrédients : tu peux noter comment la prép
 
 Depuis le planning, touche le **nom d'un plat** pour ouvrir sa **fiche**. Si la recette a des étapes, une section **« Préparation »** s'affiche **après les ingrédients**, en **liste numérotée**.
 
-> 💡 Une recette sans étapes n'affiche **aucune** section « Préparation » — pas de bloc vide. Les recettes du catalogue par défaut n'en ont pas : à toi de les ajouter.
+> 💡 Une recette sans étapes n'affiche **aucune** section « Préparation » — pas de bloc vide. La plupart des recettes du catalogue par défaut ont déjà leurs étapes ; certaines (ou tes propres recettes) n'en ont pas encore — à toi de les compléter.
 
 ## Ajouter des étapes à une recette
 
