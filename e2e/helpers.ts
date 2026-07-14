@@ -7,7 +7,7 @@
 // casserait l'état vide attendu.
 
 import { readFileSync } from "node:fs";
-import type { APIRequestContext } from "@playwright/test";
+import type { APIRequestContext, Page } from "@playwright/test";
 
 export const E2E_EMAIL = process.env.E2E_EMAIL ?? "claude-e2e-test@example.com";
 export const E2E_PASSWORD =
@@ -248,4 +248,20 @@ export async function nettoyerRecettesDistantes(
     `${url}/rest/v1/recette?nom=like.*${encodeURIComponent(suffixe)}*`,
     { headers }
   );
+}
+
+/**
+ * Ferme la modale « Recettes en double » (ModaleDoublons, #56 PR3, RG-33) si
+ * elle s'affiche après une jonction de foyer — elle apparaît dès que le
+ * catalogue effectif du compte contient deux recettes de même nom (globales
+ * ou du foyer rejoint), ce qui bloquerait sinon l'assertion suivante (modale
+ * au-dessus du reste de la page). Comportement légitime de l'app, pas un bug :
+ * tout parcours e2e qui rejoint un foyer par code doit tolérer son apparition.
+ * No-op si la modale n'apparaît pas (délai court, ne ralentit pas le test).
+ */
+export async function fermerModaleDoublonsSiPresente(page: Page): Promise<void> {
+  const modale = page.getByRole("dialog", { name: "Recettes en double" });
+  if (await modale.isVisible({ timeout: 3_000 }).catch(() => false)) {
+    await modale.getByRole("button", { name: /Plus tard|Terminé/ }).click();
+  }
 }
