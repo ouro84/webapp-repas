@@ -14,7 +14,7 @@ const SUFFIXE = `${Date.now()}`;
 // cible aux tests « catalogue ». Depuis #105 PR2, « Modifier » est UNIFORME → on
 // ne peut plus repérer une recette par défaut par l'absence de ce bouton ; on la
 // cible par son nom exact.
-const RECETTE_CATALOGUE = "Poulet basquaise";
+const RECETTE_CATALOGUE = "Poulet rôti, pommes de terre";
 
 // Les masquages (#105 : « suppression » d'une recette du catalogue) persistent
 // en base pour le compte de test partagé. On les purge AVANT chaque test (un
