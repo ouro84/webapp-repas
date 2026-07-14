@@ -89,12 +89,14 @@ if (!FRAGMENT) {
   lignes.push("");
 }
 
-lignes.push("  -- Ingrédients distincts du catalogue.");
+lignes.push("  -- Ingrédients distincts du catalogue (table PARTAGÉE, jamais vidée : on");
+lignes.push("  -- réutilise les triplets déjà présents plutôt que d'échouer sur la");
+lignes.push("  -- contrainte UNIQUE(nom, categorie, fond_de_placard) — #193, #269).");
 lignes.push("  insert into ingredient (nom, categorie, fond_de_placard) values");
 const valsIng = [...ingredients.values()].map(
   (i) => `    (${q(i.nom)}, ${q(i.categorie)}, ${i.fondDePlacard})`
 );
-lignes.push(valsIng.join(",\n") + ";");
+lignes.push(valsIng.join(",\n") + "\n    on conflict (nom, categorie, fond_de_placard) do nothing;");
 lignes.push("");
 lignes.push("  -- Recettes globales + leurs liens ingrédients.");
 for (const r of recettes) {

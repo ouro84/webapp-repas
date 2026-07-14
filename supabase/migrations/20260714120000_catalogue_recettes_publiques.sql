@@ -64,7 +64,9 @@ begin
   end if;
 
   -- 2. Nouveau catalogue global (154 recettes) — fragment généré.
-  -- Ingrédients distincts du catalogue.
+  -- Ingrédients distincts du catalogue (table PARTAGÉE, jamais vidée : on
+  -- réutilise les triplets déjà présents plutôt que d'échouer sur la
+  -- contrainte UNIQUE(nom, categorie, fond_de_placard) — #193, #269).
   insert into ingredient (nom, categorie, fond_de_placard) values
     ('spaghetti', 'epicerie', true),
     ('lardons', 'viandes-poissons', false),
@@ -272,7 +274,8 @@ begin
     ('haricots noirs', 'epicerie', true),
     ('saucisse fumée', 'viandes-poissons', false),
     ('pâte de curry massaman', 'epicerie', true),
-    ('épices korma', 'epicerie', true);
+    ('épices korma', 'epicerie', true)
+    on conflict (nom, categorie, fond_de_placard) do nothing;
 
   -- Recettes globales + leurs liens ingrédients.
   insert into recette (nom, temps_preparation, vegetarien, accompagnement, saisons, etapes, user_id) values ('Pâtes à la carbonara', 'rapide', false, 'feculents', null, array['Faire cuire les spaghetti dans l''eau bouillante salée.', 'Faire revenir les lardons à sec dans une poêle.', 'Battre les œufs avec le parmesan et le poivre.', 'Hors du feu, mélanger les pâtes égouttées, les lardons et l''appareil aux œufs.'], null) returning id into rid;
