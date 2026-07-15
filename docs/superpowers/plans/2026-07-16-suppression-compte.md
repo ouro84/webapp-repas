@@ -799,7 +799,59 @@ git commit -m "docs: suppression de compte — CLAUDE.md, specs, changelog (#237
 
 ---
 
-### Task 9: Vérification finale et vague de régression
+### Task 9: Documentation utilisateur (Notion) + `pull:aide`
+
+Doc utilisateur = **Notion** (base « Guide OMQ »), pas le repo directement (modèle B, cf.
+CLAUDE.md « Doc utilisateur `/aide` »). Un nouvel article dédié plutôt qu'une extension de
+l'article existant — même granularité « un sujet par page » que le reste du guide.
+
+**Files:**
+- Create (via l'outil Notion, pas un fichier local) : page « Supprimer mon compte », Section
+  « Mon compte », slug `supprimer-compte`, Ordre 20 (l'article existant `mon-compte` est à
+  Ordre 10, seul de la section).
+- Modify (via l'outil Notion) : page « Profil, avatar et mot de passe » (id
+  `3821583a-7e1e-8124-bd52-c7092cb714e5`) — ajouter un lien croisé.
+- Modify (généré par le script, pas édité à la main) : `content/aide/index.json`,
+  `content/aide/supprimer-compte.md`.
+
+- [ ] **Step 1: Créer l'article Notion**
+
+Via `mcp__claude_ai_Notion__notion-create-pages`, parent
+`{"type": "data_source_id", "data_source_id": "5e367a02-a31a-483a-ab43-44837874ad30"}`,
+propriétés `{"Titre": "Supprimer mon compte", "Section": "Mon compte", "Slug":
+"supprimer-compte", "Ordre": 20, "Statut": "Publié", "Résumé": "Supprimer définitivement ton
+compte et tes données, après confirmation.", "Mots-clés": "[\"compte\"]"}`. Contenu (ton
+tutoiement, style des autres articles) couvrant : où trouver la section (bas de `/profil`),
+ce qu'il faut saisir (mot de passe + le mot SUPPRIMER), ce qui est supprimé en solo (tout,
+y compris le foyer) vs en foyer partagé (toi seulement — tes recettes restent visibles pour
+les autres, non attribuées), l'irréversibilité, la redirection vers une page de confirmation.
+
+- [ ] **Step 2: Lien croisé depuis l'article existant**
+
+Via `mcp__claude_ai_Notion__notion-update-page` (`command: "update_content"`), ajouter une
+ligne dans la page « Profil, avatar et mot de passe » sous la section « Se déconnecter »,
+avant « Identité ≠ réglages », renvoyant vers *Supprimer mon compte* pour la suppression
+définitive du compte.
+
+- [ ] **Step 3: Tirer le contenu dans le repo**
+
+```bash
+npm run pull:aide
+```
+
+Expected: liste des 20 articles publiés incluant `Mon compte / Supprimer mon compte
+(supprimer-compte)`.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add content/aide/index.json content/aide/supprimer-compte.md content/aide/mon-compte.md
+git commit -m "docs: article d'aide « Supprimer mon compte » (#237)"
+```
+
+---
+
+### Task 10: Vérification finale et vague de régression
 
 - [ ] **Step 1: Suite complète**
 
