@@ -68,6 +68,10 @@ Tout en bas, une section **« Fond de placard »** regroupe les ingrédients que
 
 Ils sont cochables comme les autres, mais **hors du compteur de progression** — d'où la mention **« … à vérifier dans tes placards »** affichée à côté de ton compteur « N cochés sur M ». Petite différence avec les rayons : le fond de placard se **raye** quand tout est vérifié, mais ne remonte ni ne descend (il reste toujours en dernier).
 
+## Ajouter un article qui n'est pas dans une recette
+
+Sacs poubelle, piles, produits d'entretien… touche **« Ajouter un article »** en haut de la liste pour l'ajouter directement, sans passer par une recette. Voir _Ajouter un article hors planning_.
+
 ## Repartir d'une liste vierge
 
 Pour une nouvelle virée de courses, touche **« Tout décocher »** en haut (le bouton n'apparaît que s'il y a au moins une case cochée). Toutes les cases se vident d'un coup.
