@@ -63,7 +63,7 @@ async function main() {
     throw new Error("Port 3000 occupé — arrête le serveur dev (sinon Playwright réutiliserait un serveur PROD).")
   }
 
-  process.stdout.write("→ Récupération de la clé anon staging… ")
+  process.stdout.write("→ Récupération des clés anon + service_role staging… ")
   const rep = await fetch(`https://api.supabase.com/v1/projects/${STAGING_REF}/api-keys`, {
     headers: { Authorization: `Bearer ${token}` },
   })
@@ -71,12 +71,24 @@ async function main() {
   const cles = await rep.json()
   const anon = Array.isArray(cles) ? cles.find((k) => k.name === "anon")?.api_key : null
   if (!anon) throw new Error("Clé anon staging introuvable dans la réponse management")
+  // service_role (#237, suppression de compte) : sans ce repointage, la route
+  // qui appelle admin.auth.admin.deleteUser() utiliserait la clé service_role
+  // PROD (restée dans .env.local) contre l'URL STAGING — échec d'authentification
+  // (JWT signé avec le secret du mauvais projet). Best-effort : si absente de la
+  // réponse (compte/projet sans cette clé), on continue sans la swapper — seules
+  // les features nécessitant service_role en seraient affectées.
+  const serviceRole = Array.isArray(cles) ? cles.find((k) => k.name === "service_role")?.api_key : null
   console.log("ok")
 
-  const staging = prod
+  let staging = prod
     .replace(/^NEXT_PUBLIC_SUPABASE_URL=.*$/m, `NEXT_PUBLIC_SUPABASE_URL=https://${STAGING_REF}.supabase.co`)
     .replace(/^NEXT_PUBLIC_SUPABASE_ANON_KEY=.*$/m, `NEXT_PUBLIC_SUPABASE_ANON_KEY=${anon}`)
   if (!staging.includes(STAGING_REF)) throw new Error("Échec du repointage de l'URL staging")
+  if (serviceRole) {
+    staging = staging.replace(/^SUPABASE_SERVICE_ROLE_KEY=.*$/m, `SUPABASE_SERVICE_ROLE_KEY=${serviceRole}`)
+  } else {
+    console.warn("⚠️  Clé service_role staging introuvable — SUPABASE_SERVICE_ROLE_KEY reste la valeur PROD (les features service_role échoueront contre staging).")
+  }
 
   copyFileSync(ENV, BAK)
   let restaure = false

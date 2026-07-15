@@ -30,6 +30,10 @@ Section **« Préférences »** : choisis le **thème** de l'app — **Système*
 
 Le bouton **« Se déconnecter »** te déconnecte **de cet appareil uniquement** : tes autres appareils (et les autres membres du foyer) restent connectés. Tes données locales sont nettoyées au passage, pour ne rien laisser traîner à la personne suivante.
 
+## Supprimer mon compte
+
+Si tu souhaites partir définitivement, tout en bas de la page se trouve une section **« Zone dangereuse »** qui te permet de supprimer ton compte et tes données. Voir _Supprimer mon compte_.
+
 ## Identité ≠ réglages
 
 > 💡 **« Mon profil »**, c'est _qui tu es et avec qui tu cuisines_. Pour régler _comment l'app génère tes repas_ (durées, végé, saison, personnes…), c'est une autre page : le lien **« Réglages de génération → »** depuis ton profil (voir _Régler la génération_).

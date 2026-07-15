@@ -88,7 +88,8 @@ export async function proxy(request: NextRequest) {
     user &&
     !pathname.startsWith("/api") &&
     !pathname.startsWith("/auth") &&
-    !pathname.startsWith("/legal")
+    !pathname.startsWith("/legal") &&
+    !pathname.startsWith("/compte-supprime")
   ) {
     // Fail-open sur erreur (profil illisible/transitoire OU Supabase
     // indisponible, #169) : on considère l'utilisateur onboardé pour ne jamais

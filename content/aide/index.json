@@ -190,7 +190,18 @@
       "compte",
       "mot de passe"
     ],
-    "majLe": "2026-06-18T20:06:00.000Z"
+    "majLe": "2026-07-15T21:05:00.000Z"
+  },
+  {
+    "titre": "Supprimer mon compte",
+    "slug": "supprimer-compte",
+    "section": "Mon compte",
+    "ordre": 20,
+    "resume": "Supprimer définitivement ton compte et tes données, après confirmation.",
+    "motsCles": [
+      "compte"
+    ],
+    "majLe": "2026-07-15T21:05:00.000Z"
   },
   {
     "titre": "Questions fréquentes",

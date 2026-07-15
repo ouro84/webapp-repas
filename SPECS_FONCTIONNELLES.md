@@ -655,6 +655,26 @@ Réduire à zéro l'effort de planification hebdomadaire des repas, du choix des
 > **When** je vais sur `/profil`, section « Vie privée »  
 > **Then** un interrupteur reflète mon choix et me permet de le **révoquer ou l'accorder** à tout moment (RG-69)
 
+### US-31 — Suppression de compte (#237, épopée B2C #234)
+
+> **En tant qu'** utilisateur, je veux pouvoir supprimer définitivement mon compte et mes données, afin d'exercer mon droit à l'effacement (RGPD art. 17).
+
+> **Given** je suis sur `/profil`, section « Zone dangereuse »  
+> **When** je saisis mon mot de passe, tape exactement « SUPPRIMER » et confirme  
+> **Then** mon compte et mes données sont supprimés, je suis déconnecté et redirigé vers une page de confirmation publique (RG-70)
+
+> **Given** je suis **seul** dans mon foyer  
+> **When** je supprime mon compte  
+> **Then** tout est purgé — foyer, recettes, plannings, coches, réglages, profil — sauf le catalogue global, jamais touché (RG-70)
+
+> **Given** je partage mon foyer avec d'autres membres  
+> **When** je supprime mon compte  
+> **Then** je suis retiré, mes recettes **restent visibles** pour les autres (elles ne sont plus attribuées à personne), et le reste du foyer est **intact** (RG-70)
+
+> **Given** je saisis un mot de passe incorrect  
+> **When** je confirme la suppression  
+> **Then** rien n'est supprimé, un message m'indique que le mot de passe est incorrect
+
 ---
 
 ## 5. Modèle de données
@@ -1078,6 +1098,14 @@ Un foyer peut exprimer une préférence explicite pour une recette, sans jamais 
 > **Given** j'ai accepté ou refusé le suivi  
 > **When** je me rends sur `/profil`  
 > **Then** l'interrupteur « Vie privée » reflète mon choix et me permet de le changer (RG-69)
+
+### RG-70 — Suppression de compte, droit à l'effacement (US-31, #237)
+
+- **Ré-authentification + confirmation forte** : la suppression exige le mot de passe actuel (`signInWithPassword`, contrôle de sécurité réel) **et** la saisie exacte du mot « SUPPRIMER » (confirmation UX contre le clic accidentel, aucune valeur de sécurité). Section « Zone dangereuse », dernier bloc de `/profil`.
+- **Solo (1 membre du foyer)** : purge intégrale — coches par-article, articles manuels, cycles étirés, préférences, masquages, plannings (+ slots), recettes (+ ingrédients), profil, puis le foyer lui-même. Le catalogue global (`foyer_id IS NULL`) n'est jamais concerné.
+- **Partagé (2+ membres)** : le partant est retiré (suppression de sa seule ligne `profiles`) ; ses recettes créées dans le foyer **restent visibles pour les autres** (réattribuées à aucun auteur, `foyer_id` inchangé — la visibilité d'une recette ne dépend que de `foyer_id` depuis #56). Rien d'autre n'est touché : planning, coches et recettes des autres membres sont intacts.
+- **Piège d'implémentation** : `recette.user_id` référence `auth.users(id)` en **cascade** — la purge/réattribution des données doit impérativement s'exécuter **avant** la suppression du compte d'authentification, jamais après, sous peine de détruire par ricochet les recettes d'un foyer partagé.
+- **Irréversible et immédiat** : pas de délai de grâce, pas d'annulation différée.
 
 ### RG-22 — Repas en « restes » (US-12)
 

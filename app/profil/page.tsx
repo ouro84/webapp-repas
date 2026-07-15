@@ -20,6 +20,7 @@ import { reinitialiserCacheFoyer } from "@/lib/sync";
 import { EditionIdentite } from "@/components/profil/edition-identite";
 import { ChangerMotDePasse } from "@/components/profil/changer-mot-de-passe";
 import { PanneauFoyer } from "@/components/profil/panneau-foyer";
+import { SupprimerCompte } from "@/components/profil/supprimer-compte";
 import { SelecteurTheme } from "@/components/ui/selecteur-theme";
 import { Interrupteur } from "@/components/ui/interrupteur";
 import {
@@ -127,6 +128,10 @@ export default function PageProfil() {
         >
           Se déconnecter
         </button>
+      </div>
+
+      <div className="mt-8 border-t border-brand-100 pt-6">
+        <SupprimerCompte />
       </div>
     </main>
   );
