@@ -18,16 +18,27 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { chargerReglages, sauvegarderReglages } from "@/lib/reglages-data";
 import { chargerRecettes } from "@/lib/recettes";
-import { ORDRE_TEMPS, rangTemps, REGLAGES_DEFAUT } from "@/lib/reglages";
+import {
+  ORDRE_TEMPS,
+  rangTemps,
+  REGLAGES_DEFAUT,
+  auMoinsUnCreneauActif,
+} from "@/lib/reglages";
 import { analyserVivier } from "@/lib/generateur";
 import { PERSONNES_MAX, PERSONNES_MIN } from "@/lib/personnes";
 import { Interrupteur } from "@/components/ui/interrupteur";
-import type { Recette, ReglagesGeneration, TempsPreparation } from "@/types";
+import type { Recette, ReglagesGeneration, PlafondCreneau } from "@/types";
 
-const LIBELLE_TEMPS: Record<TempsPreparation, string> = {
+// Ordre d'affichage du contrôle segmenté : les plafonds de temps, puis
+// « Aucun » (#217, RG-44) — dernier, car c'est l'exception (« je ne cuisine
+// pas ce repas »), pas le cas courant.
+const ORDRE_PLAFONDS: PlafondCreneau[] = [...ORDRE_TEMPS, "aucun"];
+
+const LIBELLE_PLAFOND: Record<PlafondCreneau, string> = {
   rapide: "Rapide",
   normal: "Normal",
   long: "Long",
+  aucun: "—",
 };
 
 // Les 4 créneaux paramétrables, dans l'ordre d'affichage. Organisés en section
@@ -40,15 +51,15 @@ const CRENEAUX: { cle: CleCreneau; libelle: string }[] = [
   { cle: "dinerWeekend", libelle: "Dîner le week-end" },
 ];
 
-// Contrôle segmenté (radiogroup) : Rapide / Normal / Long.
+// Contrôle segmenté (radiogroup) : Rapide / Normal / Long / Aucun (#217).
 function SegmentPlafond({
   libelleId,
   valeur,
   onChange,
 }: {
   libelleId: string;
-  valeur: TempsPreparation;
-  onChange: (temps: TempsPreparation) => void;
+  valeur: PlafondCreneau;
+  onChange: (plafond: PlafondCreneau) => void;
 }) {
   return (
     <div
@@ -56,20 +67,21 @@ function SegmentPlafond({
       aria-labelledby={libelleId}
       className="inline-flex rounded-full border border-brand-200 bg-surface p-0.5"
     >
-      {ORDRE_TEMPS.map((t) => {
-        const actif = t === valeur;
+      {ORDRE_PLAFONDS.map((p) => {
+        const actif = p === valeur;
         return (
           <button
-            key={t}
+            key={p}
             type="button"
             role="radio"
             aria-checked={actif}
-            onClick={() => onChange(t)}
+            aria-label={p === "aucun" ? "Aucun (je ne cuisine pas ce repas)" : undefined}
+            onClick={() => onChange(p)}
             className={`rounded-full px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 ${
               actif ? "bg-primary text-white" : "text-brand-700 hover:bg-brand-50"
             }`}
           >
-            {LIBELLE_TEMPS[t]}
+            {LIBELLE_PLAFOND[p]}
           </button>
         );
       })}
@@ -156,7 +168,10 @@ export default function PageReglages() {
     () => (form && recettes ? analyserVivier(recettes, form) : null),
     [form, recettes]
   );
-  const faisable = analyse ? analyse.suffisant : true;
+  // RG-47 (#217) : au moins un créneau doit rester actif — garde indépendante
+  // de la faisabilité du vivier (B3), bloque l'enregistrement elle aussi.
+  const creneauValide = form ? auMoinsUnCreneauActif(form.plafonds) : true;
+  const faisable = (analyse ? analyse.suffisant : true) && creneauValide;
 
   async function enregistrer(): Promise<void> {
     if (form === null || !modifie || !faisable) return;
@@ -188,6 +203,7 @@ export default function PageReglages() {
         recettes={recettes}
         analyse={analyse}
         faisable={faisable}
+        creneauValide={creneauValide}
         modifie={modifie}
         enregistrement={enregistrement}
         enregistrer={enregistrer}
@@ -212,6 +228,7 @@ function GenerationReglages({
   recettes,
   analyse,
   faisable,
+  creneauValide,
   modifie,
   enregistrement,
   enregistrer,
@@ -221,15 +238,18 @@ function GenerationReglages({
   recettes: Recette[] | null;
   analyse: ReturnType<typeof analyserVivier> | null;
   faisable: boolean;
+  creneauValide: boolean;
   modifie: boolean;
   enregistrement: boolean;
   enregistrer: () => Promise<void>;
 }) {
-  function definirPlafond(cle: CleCreneau, temps: TempsPreparation): void {
-    setForm((f) => (f ? { ...f, plafonds: { ...f.plafonds, [cle]: temps } } : f));
+  function definirPlafond(cle: CleCreneau, plafond: PlafondCreneau): void {
+    setForm((f) => (f ? { ...f, plafonds: { ...f.plafonds, [cle]: plafond } } : f));
   }
-  function nbEligibles(plafond: TempsPreparation): number | null {
-    if (recettes === null) return null;
+  // « Aucun » (#217) : pas de plafond de temps à parler d'éligibilité — ce
+  // créneau n'est simplement pas généré.
+  function nbEligibles(plafond: PlafondCreneau): number | null {
+    if (recettes === null || plafond === "aucun") return null;
     const max = rangTemps(plafond);
     return recettes.filter((r) => rangTemps(r.tempsPreparation) <= max).length;
   }
@@ -248,8 +268,8 @@ function GenerationReglages({
       return { ...f, vegetarienPrefere: { ...base, [cle]: valeur } };
     });
   }
-  function nbVegeEligibles(plafond: TempsPreparation): number | null {
-    if (recettes === null) return null;
+  function nbVegeEligibles(plafond: PlafondCreneau): number | null {
+    if (recettes === null || plafond === "aucun") return null;
     const max = rangTemps(plafond);
     return recettes.filter(
       (r) => r.vegetarien === true && rangTemps(r.tempsPreparation) <= max
@@ -302,6 +322,11 @@ function GenerationReglages({
                     <span className="text-xs text-brand-700/85">
                       {eligibles} recette{eligibles > 1 ? "s" : ""} éligible
                       {eligibles > 1 ? "s" : ""}
+                    </span>
+                  )}
+                  {form.plafonds[cle] === "aucun" && (
+                    <span className="text-xs text-brand-700/85">
+                      Ce repas n’est pas généré.
                     </span>
                   )}
                 </div>
@@ -433,8 +458,19 @@ function GenerationReglages({
         />
       </section>
 
+      {/* RG-47 (#217) : au moins un créneau doit rester actif. */}
+      {!creneauValide && (
+        <p
+          role="alert"
+          className="mb-4 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800"
+        >
+          Au moins un repas doit rester actif — tu ne peux pas tous les régler
+          sur « — ».
+        </p>
+      )}
+
       {/* B3 — configuration infaisable : on explique et on bloque l'enregistrement */}
-      {!faisable && analyse?.message && (
+      {creneauValide && !faisable && analyse?.message && (
         <p
           role="alert"
           className="mb-4 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800"

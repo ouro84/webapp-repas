@@ -18,6 +18,7 @@ import type {
   Jour,
   Saison,
   TempsPreparation,
+  PlafondCreneau,
   ReglagesGeneration,
 } from "@/types"
 
@@ -36,7 +37,7 @@ const ORDRE_JOURS: Jour[] = [
   "dimanche",
 ]
 
-type TypeRepas = "diner" | "dejeuner"
+export type TypeRepas = "diner" | "dejeuner"
 
 type Slot = {
   jour: Jour
@@ -64,8 +65,43 @@ function plafondSlot(
   jour: Jour,
   typeRepas: TypeRepas,
   reglages: ReglagesGeneration
-): TempsPreparation {
+): PlafondCreneau {
   return reglages.plafonds[creneauSlot(jour, typeRepas)]
+}
+
+/**
+ * Vrai si le créneau (jour × type de repas) est actif, c.-à-d. si son plafond
+ * n'est pas « Aucun » (#217, RG-44/45). Un créneau « Aucun » n'est jamais
+ * généré, ni affiché, ni compté dans la liste de courses.
+ */
+export function creneauActif(
+  jour: Jour,
+  typeRepas: TypeRepas,
+  reglages: ReglagesGeneration
+): boolean {
+  return plafondSlot(jour, typeRepas, reglages) !== "aucun"
+}
+
+/**
+ * Filtre un planning DÉJÀ CONSTRUIT en retirant les slots dont le créneau est
+ * désactivé (#217, RG-46) — appliqué au moment de l'affichage/agrégation, pas
+ * à la génération. Le planning passé n'est jamais muté. Réversible par
+ * construction : comme le filtre s'applique toujours au planning PERSISTÉ
+ * (jamais modifié par cette fonction), réactiver le créneau et refiltrer
+ * depuis l'original restaure exactement le slot d'origine (recette, restes),
+ * sans action supplémentaire.
+ */
+export function retirerCreneauxDesactives(
+  planning: Planning,
+  reglages: ReglagesGeneration
+): Planning {
+  const jours: JourPlanning[] = planning.jours.map((jp) => {
+    const nouveau: JourPlanning = { ...jp }
+    if (!creneauActif(jp.jour, "dejeuner", reglages)) delete nouveau.dejeuner
+    if (!creneauActif(jp.jour, "diner", reglages)) delete nouveau.diner
+    return nouveau
+  })
+  return { semaine: planning.semaine, jours }
 }
 
 /**
@@ -301,10 +337,12 @@ export function genererPlanning(
   random: Aleatoire = Math.random,
   historiqueVariete: HistoriqueVariete = new Map()
 ): Planning {
+  // RG-44/46 (#217) : un créneau « Aucun » n'est même pas tenté — ni compté
+  // dans le vivier requis (cf. analyserVivier), ni généré.
   const slots: Slot[] = ORDRE_JOURS.flatMap((jour): Slot[] => [
     { jour, typeRepas: "dejeuner" },
     { jour, typeRepas: "diner" },
-  ])
+  ]).filter((slot) => creneauActif(slot.jour, slot.typeRepas, reglages))
 
   // Slots contraints (plafond le plus bas → vivier le plus restreint) d'abord,
   // slots permissifs ensuite (RG-01). Comme toute recette éligible sur un slot
@@ -373,8 +411,8 @@ export function genererPlanning(
   // inchangée (RG-16), seul le défaut affiché change.
   const jours: JourPlanning[] = ORDRE_JOURS.map((jour) => ({
     jour,
-    dejeuner: attributions.get(cleSlot(jour, "dejeuner"))!,
-    diner: attributions.get(cleSlot(jour, "diner"))!,
+    dejeuner: attributions.get(cleSlot(jour, "dejeuner")),
+    diner: attributions.get(cleSlot(jour, "diner")),
     personnes: {
       dejeuner: reglages.personnesDefaut,
       diner: reglages.personnesDefaut,
@@ -529,7 +567,7 @@ export function remplacerSlotManuel(
 export function recettesUtilisees(planning: Planning): Set<string> {
   const ids = new Set<string>()
   for (const jp of planning.jours) {
-    ids.add(jp.diner.id)
+    if (jp.diner) ids.add(jp.diner.id)
     if (jp.dejeuner) ids.add(jp.dejeuner.id)
   }
   return ids
@@ -663,13 +701,16 @@ export function analyserVivier(
   // tous les niveaux ≥ r (ses slots ne peuvent piocher que dans temps ≤ r).
   const besoin = ORDRE_TEMPS.map(() => 0)
   const p = reglages.plafonds
-  const creneaux: [keyof typeof SLOTS_PAR_CRENEAU, TempsPreparation][] = [
+  const creneaux: [keyof typeof SLOTS_PAR_CRENEAU, PlafondCreneau][] = [
     ["dejeunerSemaine", p.dejeunerSemaine],
     ["dinerSemaine", p.dinerSemaine],
     ["dejeunerWeekend", p.dejeunerWeekend],
     ["dinerWeekend", p.dinerWeekend],
   ]
   for (const [cle, plafond] of creneaux) {
+    // RG-46 (#217) : un créneau « Aucun » ne pèse sur aucun niveau de la
+    // condition de Hall — il n'est jamais compté comme un slot à remplir.
+    if (plafond === "aucun") continue
     for (let k = rangTemps(plafond); k < ORDRE_TEMPS.length; k++) {
       besoin[k]! += SLOTS_PAR_CRENEAU[cle]
     }
@@ -707,7 +748,7 @@ export function remplacerRecetteDansPlanning(
   let modifie = false
   const jours: JourPlanning[] = planning.jours.map((jp) => {
     const nouveau: JourPlanning = { ...jp }
-    if (jp.diner.id === recette.id) {
+    if (jp.diner && jp.diner.id === recette.id) {
       nouveau.diner = recette
       modifie = true
     }

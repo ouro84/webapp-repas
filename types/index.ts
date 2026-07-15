@@ -44,6 +44,12 @@ export type CategorieIngredient =
 export type TempsPreparation = "rapide" | "normal" | "long";
 // rapide : < 20 min | normal : 20–45 min | long : > 45 min
 
+// Valeur de plafond d'un créneau de réglages (#217, US-48) : un temps de
+// préparation maximum, OU "aucun" — le créneau n'est pas généré du tout
+// (≠ un plafond, RG-44). Distinct de TempsPreparation (qui reste la valeur
+// d'une RECETTE : une recette n'a jamais de temps "aucun").
+export type PlafondCreneau = TempsPreparation | "aucun";
+
 // Accompagnement dominant d'une recette (#49, P11) : féculent (pâtes, riz,
 // pommes de terre…) ou légume (plat tourné légumes). Optionnel côté domaine :
 // beaucoup de plats n'en ont pas (plat unique, viande seule…) — absent = non
@@ -99,8 +105,10 @@ export type Recette = {
 export type JourPlanning = {
   jour: Jour;
   dejeuner?: Recette; // peuplé chaque jour à la génération (#3) ; optionnel pour
-                      // relire les plannings antérieurs à 14 repas
-  diner: Recette;
+                      // relire les plannings antérieurs à 14 repas OU si le
+                      // créneau est désactivé (#217, « Aucun »)
+  diner?: Recette;    // optionnel depuis #217 pour la même raison (créneau
+                      // désactivable) — auparavant toujours requis
   // Nombre de personnes par slot (US-07, RG-16). Optionnel : champ absent = 2
   // (défaut), ce qui rend relisables sans migration les plannings persistés
   // avant cette feature.
@@ -124,10 +132,10 @@ export type Planning = {
 export type ReglagesGeneration = {
   personnesDefaut: number; // borné [1;12]
   plafonds: {
-    dejeunerSemaine: TempsPreparation;
-    dinerSemaine: TempsPreparation;
-    dejeunerWeekend: TempsPreparation;
-    dinerWeekend: TempsPreparation;
+    dejeunerSemaine: PlafondCreneau;
+    dinerSemaine: PlafondCreneau;
+    dejeunerWeekend: PlafondCreneau;
+    dinerWeekend: PlafondCreneau;
   };
   // Préférence « privilégier le végétarien » par créneau (#86 PR2, US-16,
   // RG-26). Optionnel (absent = aucune préférence = comportement antérieur),
@@ -159,10 +167,10 @@ export type ReglagesGeneration = {
 export type DbReglages = {
   user_id: string; // PK — réglages propres à chaque membre
   personnes_defaut: number;
-  max_dejeuner_semaine: TempsPreparation;
-  max_diner_semaine: TempsPreparation;
-  max_dejeuner_weekend: TempsPreparation;
-  max_diner_weekend: TempsPreparation;
+  max_dejeuner_semaine: PlafondCreneau;
+  max_diner_semaine: PlafondCreneau;
+  max_dejeuner_weekend: PlafondCreneau;
+  max_diner_weekend: PlafondCreneau;
   vege_dejeuner_semaine: boolean;
   vege_diner_semaine: boolean;
   vege_dejeuner_weekend: boolean;

@@ -14,6 +14,7 @@
 import { describe, test, expect } from "vitest";
 import {
   analyserVivier,
+  creneauActif,
   FENETRE_VARIETE,
   genererPlanning,
   joursSansLegume,
@@ -24,6 +25,7 @@ import {
   remplacerRecetteDansPlanning,
   remplacerSlot,
   remplacerSlotManuel,
+  retirerCreneauxDesactives,
   slotsVegeNonHonores,
   type HistoriqueVariete,
 } from "@/lib/generateur";
@@ -85,7 +87,7 @@ const RECETTES_PLUS: Recette[] = [
 // Tous les repas d'un planning, tous slots confondus.
 function tousLesRepas(planning: Planning): Recette[] {
   return planning.jours.flatMap((jp) =>
-    jp.dejeuner ? [jp.dejeuner, jp.diner] : [jp.diner]
+    [jp.dejeuner, jp.diner].filter((r): r is Recette => r !== undefined)
   );
 }
 
@@ -93,7 +95,8 @@ function tousLesRepas(planning: Planning): Recette[] {
 function dinersDeSemaine(planning: Planning): Recette[] {
   return planning.jours
     .filter((jp) => JOURS_SEMAINE.includes(jp.jour))
-    .map((jp) => jp.diner);
+    .map((jp) => jp.diner)
+    .filter((r): r is Recette => r !== undefined);
 }
 
 // Déjeuners du lundi au vendredi (désormais présents chaque jour).
@@ -108,7 +111,7 @@ function dejeunersDeSemaine(planning: Planning): Recette[] {
 function idsWeekend(planning: Planning): string[] {
   return planning.jours
     .filter((jp) => jp.jour === "samedi" || jp.jour === "dimanche")
-    .flatMap((jp) => [jp.dejeuner!.id, jp.diner.id]);
+    .flatMap((jp) => [jp.dejeuner!.id, jp.diner!.id]);
 }
 
 // ---------------------------------------------------------------------------
@@ -243,15 +246,15 @@ describe("remplacerSlot — RG-04 remplacement individuel", () => {
     const resultat = remplacerSlot(planning, "mardi", "diner", RECETTES_PLUS, undefined, rng);
 
     expect(resultat).not.toBeNull();
-    const avantMardi = planning.jours.find((jp) => jp.jour === "mardi")!.diner;
-    const apresMardi = resultat!.jours.find((jp) => jp.jour === "mardi")!.diner;
+    const avantMardi = planning.jours.find((jp) => jp.jour === "mardi")!.diner!;
+    const apresMardi = resultat!.jours.find((jp) => jp.jour === "mardi")!.diner!;
     expect(apresMardi.id).not.toBe(avantMardi.id);
 
     // Tous les autres slots sont strictement inchangés.
     for (const jp of resultat!.jours) {
       if (jp.jour === "mardi") continue;
       const original = planning.jours.find((o) => o.jour === jp.jour)!;
-      expect(jp.diner.id).toBe(original.diner.id);
+      expect(jp.diner?.id).toBe(original.diner?.id);
       expect(jp.dejeuner?.id).toBe(original.dejeuner?.id);
     }
   });
@@ -262,7 +265,7 @@ describe("remplacerSlot — RG-04 remplacement individuel", () => {
       const planning = genererPlanning(RECETTES_PLUS, undefined, undefined, rng);
       const resultat = remplacerSlot(planning, "lundi", "diner", RECETTES_PLUS, undefined, rng);
       expect(resultat).not.toBeNull();
-      const nouveau = resultat!.jours.find((jp) => jp.jour === "lundi")!.diner;
+      const nouveau = resultat!.jours.find((jp) => jp.jour === "lundi")!.diner!;
       expect(nouveau.tempsPreparation).toBe("rapide");
     }
   });
@@ -355,13 +358,13 @@ describe("remplacerSlotManuel — RG-15 sélection manuelle (US-06)", () => {
     const resultat = remplacerSlotManuel(planning, "mercredi", "diner", choisie);
 
     expect(resultat).not.toBeNull();
-    expect(resultat!.jours.find((jp) => jp.jour === "mercredi")!.diner.id).toBe(
+    expect(resultat!.jours.find((jp) => jp.jour === "mercredi")!.diner!.id).toBe(
       choisie.id
     );
     for (const jp of resultat!.jours) {
       if (jp.jour === "mercredi") continue;
       const original = planning.jours.find((o) => o.jour === jp.jour)!;
-      expect(jp.diner.id).toBe(original.diner.id);
+      expect(jp.diner?.id).toBe(original.diner?.id);
       expect(jp.dejeuner?.id).toBe(original.dejeuner?.id);
     }
   });
@@ -371,7 +374,7 @@ describe("remplacerSlotManuel — RG-15 sélection manuelle (US-06)", () => {
     const longue = LONGUES[0]!;
     const resultat = remplacerSlotManuel(planning, "mardi", "diner", longue);
 
-    expect(resultat!.jours.find((jp) => jp.jour === "mardi")!.diner.id).toBe(
+    expect(resultat!.jours.find((jp) => jp.jour === "mardi")!.diner!.id).toBe(
       longue.id
     );
   });
@@ -388,7 +391,7 @@ describe("remplacerSlotManuel — RG-15 sélection manuelle (US-06)", () => {
 
   test("by-passe RG-02 : le doublon est permis dans le planning", () => {
     const planning = genererPlanning(RECETTES);
-    const dejaServie = planning.jours.find((jp) => jp.jour === "lundi")!.diner;
+    const dejaServie = planning.jours.find((jp) => jp.jour === "lundi")!.diner!;
     const resultat = remplacerSlotManuel(planning, "jeudi", "diner", dejaServie);
 
     const repas = tousLesRepas(resultat!);
@@ -449,7 +452,7 @@ describe("recettesUtilisees — ids des recettes du planning (US-06)", () => {
 
   test("un doublon issu d'une sélection manuelle ne produit qu'un seul id", () => {
     const planning = genererPlanning(RECETTES);
-    const dejaServie = planning.jours.find((jp) => jp.jour === "lundi")!.diner;
+    const dejaServie = planning.jours.find((jp) => jp.jour === "lundi")!.diner!;
     const avecDoublon = remplacerSlotManuel(planning, "mardi", "diner", dejaServie)!;
 
     expect(recettesUtilisees(avecDoublon).size).toBe(13); // 14 slots, 13 recettes
@@ -462,7 +465,7 @@ describe("recettesUtilisees — ids des recettes du planning (US-06)", () => {
 describe("remplacerRecetteDansPlanning — RG-03 (#2)", () => {
   test("met à jour tous les slots référençant la recette éditée", () => {
     const planning = genererPlanning(RECETTES);
-    const cible = planning.jours[0]!.diner;
+    const cible = planning.jours[0]!.diner!;
     const editee: Recette = {
       ...cible,
       nom: `${cible.nom} (modifiée)`,
@@ -473,8 +476,8 @@ describe("remplacerRecetteDansPlanning — RG-03 (#2)", () => {
 
     const maj = remplacerRecetteDansPlanning(planning, editee)!;
     expect(maj).not.toBeNull();
-    expect(maj.jours[0]!.diner.nom).toBe(`${cible.nom} (modifiée)`);
-    expect(maj.jours[0]!.diner.ingredients).toHaveLength(1);
+    expect(maj.jours[0]!.diner!.nom).toBe(`${cible.nom} (modifiée)`);
+    expect(maj.jours[0]!.diner!.ingredients).toHaveLength(1);
   });
 
   test("retourne null si la recette n'est pas au planning", () => {
@@ -490,7 +493,7 @@ describe("remplacerRecetteDansPlanning — RG-03 (#2)", () => {
 
   test("préserve le nombre de personnes du slot et n'altère pas l'original", () => {
     const base = genererPlanning(RECETTES);
-    const cible = base.jours[0]!.diner;
+    const cible = base.jours[0]!.diner!;
     // Slot lundi réglé à 4 personnes.
     const planning: Planning = {
       ...base,
@@ -504,7 +507,7 @@ describe("remplacerRecetteDansPlanning — RG-03 (#2)", () => {
     const maj = remplacerRecetteDansPlanning(planning, editee)!;
 
     expect(maj.jours[0]!.personnes).toEqual({ diner: 4 }); // personnes conservé
-    expect(maj.jours[0]!.diner.nom).toBe("Éditée");
+    expect(maj.jours[0]!.diner!.nom).toBe("Éditée");
     expect(JSON.stringify(planning)).toBe(instantane); // original non muté
   });
 });
@@ -551,6 +554,132 @@ describe("analyserVivier — alerte vivier insuffisant (#2)", () => {
     const a = analyserVivier([]);
     expect(a.suffisant).toBe(false);
     expect(a.total).toBe(0);
+  });
+
+  test("un créneau « aucun » (#217) n'est plus compté dans la condition de Hall", () => {
+    // Dîner de semaine désactivé : les 5 rapides qu'il exigeait ne sont plus
+    // requis. Un vivier qui échouerait normalement (trop peu de rapides) passe.
+    const reglages: ReglagesGeneration = {
+      ...REGLAGES_DEFAUT,
+      plafonds: { ...REGLAGES_DEFAUT.plafonds, dinerSemaine: "aucun" },
+    };
+    // 9 recettes : 0 rapide, 9 normales — insuffisant par défaut (5 dîners
+    // rapides impossibles), mais suffisant si ce créneau est désactivé (il ne
+    // reste que 5 déjeuners de semaine "normal" + 4 slots week-end "long" = 9).
+    const vivier = recettesOf(0, 9, 0);
+    expect(analyserVivier(vivier, REGLAGES_DEFAUT).suffisant).toBe(false);
+    expect(analyserVivier(vivier, reglages).suffisant).toBe(true);
+  });
+});
+
+describe("creneauActif (#217, RG-44/45)", () => {
+  test("faux uniquement quand le plafond du créneau est « aucun »", () => {
+    const reglages: ReglagesGeneration = {
+      ...REGLAGES_DEFAUT,
+      plafonds: { ...REGLAGES_DEFAUT.plafonds, dinerSemaine: "aucun" },
+    };
+    expect(creneauActif("lundi", "diner", reglages)).toBe(false);
+    expect(creneauActif("lundi", "dejeuner", reglages)).toBe(true);
+    expect(creneauActif("samedi", "diner", reglages)).toBe(true);
+  });
+
+  test("vrai pour les 4 créneaux avec REGLAGES_DEFAUT", () => {
+    expect(creneauActif("lundi", "diner", REGLAGES_DEFAUT)).toBe(true);
+    expect(creneauActif("lundi", "dejeuner", REGLAGES_DEFAUT)).toBe(true);
+    expect(creneauActif("samedi", "dejeuner", REGLAGES_DEFAUT)).toBe(true);
+    expect(creneauActif("dimanche", "diner", REGLAGES_DEFAUT)).toBe(true);
+  });
+});
+
+describe("retirerCreneauxDesactives (#217, RG-46)", () => {
+  const reglages: ReglagesGeneration = {
+    ...REGLAGES_DEFAUT,
+    plafonds: { ...REGLAGES_DEFAUT.plafonds, dinerSemaine: "aucun" },
+  };
+
+  test("retire uniquement les slots du créneau désactivé", () => {
+    const planning = genererPlanning(RECETTES);
+    const filtre = retirerCreneauxDesactives(planning, reglages);
+
+    for (const jp of filtre.jours) {
+      if (JOURS_SEMAINE.includes(jp.jour)) {
+        expect(jp.diner).toBeUndefined();
+        expect(jp.dejeuner).toBeDefined();
+      } else {
+        expect(jp.diner).toBeDefined();
+        expect(jp.dejeuner).toBeDefined();
+      }
+    }
+  });
+
+  test("ne mute pas le planning original", () => {
+    const planning = genererPlanning(RECETTES);
+    const instantane = JSON.stringify(planning);
+    retirerCreneauxDesactives(planning, reglages);
+    expect(JSON.stringify(planning)).toBe(instantane);
+  });
+
+  test("préserve les slots non concernés (restes, personnes)", () => {
+    const base = genererPlanning(RECETTES);
+    const planning: Planning = {
+      ...base,
+      jours: base.jours.map((jp, i) =>
+        i === 0 ? { ...jp, personnes: { dejeuner: 4 } } : jp
+      ),
+    };
+    const filtre = retirerCreneauxDesactives(planning, reglages);
+    expect(filtre.jours[0]!.personnes).toEqual({ dejeuner: 4 });
+  });
+
+  test("jour entièrement vidé si les deux créneaux du jour sont désactivés", () => {
+    const toutAucun: ReglagesGeneration = {
+      ...REGLAGES_DEFAUT,
+      plafonds: {
+        dejeunerSemaine: "aucun",
+        dinerSemaine: "aucun",
+        dejeunerWeekend: "long",
+        dinerWeekend: "long",
+      },
+    };
+    const planning = genererPlanning(RECETTES);
+    const filtre = retirerCreneauxDesactives(planning, toutAucun);
+    for (const jp of filtre.jours) {
+      if (JOURS_SEMAINE.includes(jp.jour)) {
+        expect(jp.dejeuner).toBeUndefined();
+        expect(jp.diner).toBeUndefined();
+      }
+    }
+  });
+
+  test("réversible : refiltrer le planning ORIGINAL avec le créneau réactivé le restaure intact", () => {
+    // La réversibilité vient du fait que le filtre s'applique toujours au
+    // planning PERSISTÉ (jamais muté, cf. test précédent) : réactiver le
+    // créneau et refiltrer DEPUIS L'ORIGINAL redonne le planning de départ —
+    // aucune action supplémentaire n'est nécessaire côté UI.
+    const planning = genererPlanning(RECETTES);
+    const filtre = retirerCreneauxDesactives(planning, reglages);
+    expect(filtre).not.toEqual(planning); // sanity : le filtre a bien un effet
+    expect(retirerCreneauxDesactives(planning, REGLAGES_DEFAUT)).toEqual(planning);
+  });
+});
+
+describe("genererPlanning — créneau « Aucun » (#217, RG-44/46)", () => {
+  test("ne génère aucun slot pour un créneau désactivé", () => {
+    const reglages: ReglagesGeneration = {
+      ...REGLAGES_DEFAUT,
+      plafonds: { ...REGLAGES_DEFAUT.plafonds, dinerSemaine: "aucun" },
+    };
+    const planning = genererPlanning(RECETTES, undefined, reglages);
+    for (const jp of planning.jours) {
+      if (JOURS_SEMAINE.includes(jp.jour)) {
+        expect(jp.diner).toBeUndefined();
+      } else {
+        expect(jp.diner).toBeDefined();
+      }
+      expect(jp.dejeuner).toBeDefined();
+    }
+    // 14 - 5 dîners de semaine = 9 repas générés.
+    expect(tousLesRepas(planning)).toHaveLength(9);
   });
 });
 
@@ -691,7 +820,7 @@ describe("genererPlanning — préférence végétarienne souple (#86 PR2)", () 
       const planning = genererPlanning(vivier, "2026-W30", reglages);
       const resultat = remplacerSlot(planning, "lundi", "diner", vivier, reglages);
       expect(resultat).not.toBeNull();
-      const nouveau = resultat!.jours.find((jp) => jp.jour === "lundi")!.diner;
+      const nouveau = resultat!.jours.find((jp) => jp.jour === "lundi")!.diner!;
       expect(nouveau.vegetarien).toBe(true);
     }
   });
@@ -852,7 +981,7 @@ describe("genererPlanning — saisonnalité, filtre dur à dégradation (#23 PR2
       const planning = genererPlanning(vivier, SEMAINE_ETE, REGLAGES_DEFAUT);
       const resultat = remplacerSlot(planning, "lundi", "diner", vivier, REGLAGES_DEFAUT);
       expect(resultat).not.toBeNull();
-      const remplacante = resultat!.jours.find((jp) => jp.jour === "lundi")!.diner;
+      const remplacante = resultat!.jours.find((jp) => jp.jour === "lundi")!.diner!;
       expect(remplacante.saisons).toContain(SAISON_ETE);
     }
   });

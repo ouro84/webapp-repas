@@ -33,12 +33,15 @@ import { personnesDuSlot } from "@/lib/personnes";
 import { estRestes } from "@/lib/restes";
 import { chargerJourCoursesFoyer } from "@/lib/foyer";
 import { chargerLongueurCycle, chargerPlanningDistant } from "@/lib/persistance";
+import { creneauActif } from "@/lib/generateur";
+import { chargerReglages } from "@/lib/reglages-data";
+import { REGLAGES_DEFAUT } from "@/lib/reglages";
 import { BadgeTemps } from "@/components/planning/badge-temps";
 import { BadgeVegetarien } from "@/components/ui/badge-vegetarien";
 import { BadgeAccompagnement } from "@/components/ui/badge-accompagnement";
 import { BadgeSaison } from "@/components/ui/badge-saison";
 import { FicheRecette } from "@/components/planning/fiche-recette";
-import type { JourPlanning, Planning, Recette } from "@/types";
+import type { JourPlanning, Planning, Recette, ReglagesGeneration } from "@/types";
 
 type TypeRepas = "dejeuner" | "diner";
 
@@ -55,16 +58,28 @@ function libelleJourDate(dateISO: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-// Slots d'un jour dans l'ordre d'affichage : déjeuner (si présent) puis dîner.
+// Slots d'un jour dans l'ordre d'affichage : déjeuner puis dîner. `recette`
+// est absente si le slot n'a jamais été généré (planning antérieur/créneau
+// jamais rempli) OU si son créneau est désactivé (« Aucun », #217, RG-44/46)
+// — même filtre live que la vue Semaine, appliqué ici par slot (cette vue
+// projette des dates de plusieurs semaines, pas un `Planning` unique, donc pas
+// de `retirerCreneauxDesactives` direct).
 function slotsDuJour(
-  jp: JourPlanning
-): { typeRepas: TypeRepas; libelle: string; recette: Recette }[] {
-  const slots: { typeRepas: TypeRepas; libelle: string; recette: Recette }[] = [];
-  if (jp.dejeuner) {
-    slots.push({ typeRepas: "dejeuner", libelle: "Déjeuner", recette: jp.dejeuner });
-  }
-  slots.push({ typeRepas: "diner", libelle: "Dîner", recette: jp.diner });
-  return slots;
+  jp: JourPlanning,
+  reglages: ReglagesGeneration
+): { typeRepas: TypeRepas; libelle: string; recette: Recette | undefined }[] {
+  return [
+    {
+      typeRepas: "dejeuner" as const,
+      libelle: "Déjeuner",
+      recette: creneauActif(jp.jour, "dejeuner", reglages) ? jp.dejeuner : undefined,
+    },
+    {
+      typeRepas: "diner" as const,
+      libelle: "Dîner",
+      recette: creneauActif(jp.jour, "diner", reglages) ? jp.diner : undefined,
+    },
+  ];
 }
 
 export function VuePlanningCycle({
@@ -83,6 +98,23 @@ export function VuePlanningCycle({
     recette: Recette;
     personnes: number;
   } | null>(null);
+  // Réglages (#217) : pilotent le filtre live des créneaux désactivés. Défaut
+  // tant que non chargés = comportement antérieur (tout actif).
+  const [reglages, setReglages] = useState<ReglagesGeneration>(REGLAGES_DEFAUT);
+
+  useEffect(() => {
+    let actif = true;
+    chargerReglages()
+      .then((r) => {
+        if (actif) setReglages(r);
+      })
+      .catch((erreur) => {
+        console.error("Chargement des réglages échoué (défauts appliqués).", erreur);
+      });
+    return () => {
+      actif = false;
+    };
+  }, []);
 
   // Charge (ou recharge) le cycle d'ancre donnée : lit les 1-2 semaines touchées.
   const chargerCycle = useCallback(async (ancreCible: string) => {
@@ -187,7 +219,7 @@ export function VuePlanningCycle({
                 <p className="text-sm text-brand-700/70">Rien de prévu.</p>
               ) : (
                 <div className="grid gap-3 sm:grid-cols-2">
-                  {slotsDuJour(jp).map((slot) => (
+                  {slotsDuJour(jp, reglages).map((slot) => (
                     <CarteLecture
                       key={slot.typeRepas}
                       libelle={slot.libelle}
@@ -195,6 +227,7 @@ export function VuePlanningCycle({
                       personnes={personnesDuSlot(jp, slot.typeRepas)}
                       restes={estRestes(jp, slot.typeRepas)}
                       onVoir={() =>
+                        slot.recette &&
                         setFicheOuverte({
                           recette: slot.recette,
                           personnes: personnesDuSlot(jp, slot.typeRepas),
@@ -232,11 +265,23 @@ function CarteLecture({
   onVoir,
 }: {
   libelle: string;
-  recette: Recette;
+  recette: Recette | undefined;
   personnes: number;
   restes: boolean;
   onVoir: () => void;
 }) {
+  // Créneau désactivé (« Aucun », #217, RG-44/46) : emplacement conservé, état
+  // vide sobre — même traitement que la vue Semaine (SlotRepas).
+  if (!recette) {
+    return (
+      <div className="rounded-lg border border-dashed border-brand-100 bg-brand-50/30 p-3 text-center shadow-sm">
+        <p className="text-xs font-medium uppercase tracking-wide text-brand-700/85">
+          {libelle}
+        </p>
+        <p className="mt-2 text-sm text-brand-700/70">Pas de repas prévu</p>
+      </div>
+    );
+  }
   if (restes) {
     return (
       <div className="rounded-lg border border-dashed border-brand-200 bg-brand-50/50 p-3 shadow-sm">

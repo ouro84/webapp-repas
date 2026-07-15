@@ -9,7 +9,12 @@
 // plafond » généralise la table en dur d'avant #45 : les valeurs par défaut
 // (REGLAGES_DEFAUT) reproduisent exactement le comportement antérieur.
 
-import type { ReglagesGeneration, DbReglages, TempsPreparation } from "@/types"
+import type {
+  ReglagesGeneration,
+  DbReglages,
+  TempsPreparation,
+  PlafondCreneau,
+} from "@/types"
 import { PERSONNES_MAX, PERSONNES_MIN } from "@/lib/personnes"
 
 // Ordre croissant des temps de préparation : le rang sert de comparaison
@@ -20,10 +25,26 @@ export function rangTemps(temps: TempsPreparation): number {
   return ORDRE_TEMPS.indexOf(temps)
 }
 
-/** Temps de préparation autorisés sur un créneau de plafond donné (≤ plafond). */
-export function tempsAuPlafond(plafond: TempsPreparation): TempsPreparation[] {
+/**
+ * Temps de préparation autorisés sur un créneau de plafond donné (≤ plafond).
+ * « Aucun » (#217, RG-44) n'autorise aucun temps : le créneau n'est jamais
+ * généré (aucune recette ne peut y être éligible).
+ */
+export function tempsAuPlafond(plafond: PlafondCreneau): TempsPreparation[] {
+  if (plafond === "aucun") return []
   const max = rangTemps(plafond)
   return ORDRE_TEMPS.filter((t) => rangTemps(t) <= max)
+}
+
+/**
+ * RG-47 (#217) : au moins un créneau doit rester actif — la génération d'un
+ * planning entièrement vide est interdite. Garde de faisabilité au save des
+ * réglages (page /reglages) et à la validation (validerReglages).
+ */
+export function auMoinsUnCreneauActif(
+  plafonds: ReglagesGeneration["plafonds"]
+): boolean {
+  return Object.values(plafonds).some((p) => p !== "aucun")
 }
 
 // Valeurs par défaut = comportement d'avant #45 (cf. ancienne table
@@ -41,6 +62,11 @@ export const REGLAGES_DEFAUT: ReglagesGeneration = {
 
 function estTemps(valeur: unknown): valeur is TempsPreparation {
   return typeof valeur === "string" && ORDRE_TEMPS.includes(valeur as TempsPreparation)
+}
+
+// Plafond valide (#217) : un temps de préparation, ou "aucun" (créneau désactivé).
+function estPlafond(valeur: unknown): valeur is PlafondCreneau {
+  return valeur === "aucun" || estTemps(valeur)
 }
 
 // Normalise la préférence végé par créneau (#86 PR2). Optionnelle : `undefined`
@@ -83,10 +109,21 @@ export function validerReglages(brut: unknown): ReglagesGeneration | null {
 
   const { dejeunerSemaine, dinerSemaine, dejeunerWeekend, dinerWeekend } = p
   if (
-    !estTemps(dejeunerSemaine) ||
-    !estTemps(dinerSemaine) ||
-    !estTemps(dejeunerWeekend) ||
-    !estTemps(dinerWeekend)
+    !estPlafond(dejeunerSemaine) ||
+    !estPlafond(dinerSemaine) ||
+    !estPlafond(dejeunerWeekend) ||
+    !estPlafond(dinerWeekend)
+  ) {
+    return null
+  }
+  // RG-47 : au moins un créneau doit rester actif.
+  if (
+    !auMoinsUnCreneauActif({
+      dejeunerSemaine,
+      dinerSemaine,
+      dejeunerWeekend,
+      dinerWeekend,
+    })
   ) {
     return null
   }

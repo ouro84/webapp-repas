@@ -68,8 +68,8 @@ describe("dbSlotToJourPlanning", () => {
     ];
     const jp = dbSlotToJourPlanning(slots, "lundi");
     expect(jp.dejeuner?.id).toBe("r-dej");
-    expect(jp.diner.id).toBe("r-din");
-    expect(jp.diner.ingredients).toHaveLength(1);
+    expect(jp.diner?.id).toBe("r-din");
+    expect(jp.diner?.ingredients).toHaveLength(1);
   });
 
   it("n'attache personnes/restes que pour les valeurs non-défaut", () => {
@@ -91,10 +91,16 @@ describe("dbSlotToJourPlanning", () => {
     expect(regle.restes).toEqual({ diner: true });
   });
 
-  it("lève si le dîner manque (slot obligatoire, section 5.5)", () => {
-    expect(() =>
-      dbSlotToJourPlanning([dbSlot("lundi", "dejeuner", "r")], "lundi")
-    ).toThrow();
+  it("n'attache pas de dîner si le slot est absent (créneau désactivé, #217)", () => {
+    const jp = dbSlotToJourPlanning([dbSlot("lundi", "dejeuner", "r")], "lundi");
+    expect(jp.dejeuner?.id).toBe("r");
+    expect(jp.diner).toBeUndefined();
+  });
+
+  it("n'attache pas de déjeuner si le slot est absent (créneau désactivé, #217)", () => {
+    const jp = dbSlotToJourPlanning([dbSlot("lundi", "diner", "r")], "lundi");
+    expect(jp.diner?.id).toBe("r");
+    expect(jp.dejeuner).toBeUndefined();
   });
 });
 
@@ -144,7 +150,7 @@ describe("dbRecetteToDomain — étapes (#233)", () => {
 });
 
 describe("dbPlanningToDomain", () => {
-  it("reconstruit un planning dans l'ordre canonique, jours avec dîner", () => {
+  it("reconstruit un planning dans l'ordre canonique, jours avec au moins un slot", () => {
     const slots = [
       dbSlot("lundi", "diner", "l"),
       dbSlot("mardi", "dejeuner", "ma-dej"),
@@ -154,6 +160,14 @@ describe("dbPlanningToDomain", () => {
     expect(planning.semaine).toBe("2026-W23");
     expect(planning.jours.map((j) => j.jour)).toEqual(["lundi", "mardi"]);
     expect(planning.jours[1]!.dejeuner?.id).toBe("ma-dej");
+  });
+
+  it("inclut un jour dont seul le déjeuner est présent (créneau dîner désactivé, #217)", () => {
+    const slots = [dbSlot("lundi", "dejeuner", "l-dej")];
+    const planning = dbPlanningToDomain("2026-W23", slots);
+    expect(planning.jours.map((j) => j.jour)).toEqual(["lundi"]);
+    expect(planning.jours[0]!.dejeuner?.id).toBe("l-dej");
+    expect(planning.jours[0]!.diner).toBeUndefined();
   });
 
   // Régression #164 : un planning hydraté depuis la base doit CONSERVER les
@@ -173,7 +187,7 @@ describe("dbPlanningToDomain", () => {
       recette: recetteTaguee,
     };
     const planning = dbPlanningToDomain("2026-W23", [slot]);
-    const diner = planning.jours[0]!.diner;
+    const diner = planning.jours[0]!.diner!;
     expect(diner.vegetarien).toBe(true);
     expect(diner.accompagnement).toBe("legumes");
     expect(diner.saisons).toEqual(["ete"]);
