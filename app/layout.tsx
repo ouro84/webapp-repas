@@ -7,6 +7,8 @@ import "./globals.css";
 import { NavBar } from "@/components/ui/nav";
 import { AlerteModifPlanning } from "@/components/ui/alerte-modif-planning";
 import { InvitationEnAttente } from "@/components/ui/invitation-en-attente";
+import { BandeauCookies } from "@/components/ui/bandeau-cookies";
+import { PiedDePage } from "@/components/ui/pied-de-page";
 
 // Identité de marque (#66, P14) — pairing rond et chaleureux qui remplace Geist
 // (police « outil de dev », neutre). Fredoka habille le wordmark et les titres
@@ -110,6 +112,7 @@ export default function RootLayout({
           }}
         />
         {children}
+        <PiedDePage />
         {/* Alerte intrusive de modif planning (#56 PR5, US-21) — montée une
             seule fois ici ; inerte hors des pages synchronisées. */}
         <AlerteModifPlanning />
@@ -117,6 +120,9 @@ export default function RootLayout({
             deep-link ?code= et propose à un membre existant de rejoindre le
             foyer ; inerte sur le tunnel et les pages d'auth. */}
         <InvitationEnAttente />
+        {/* Bandeau cookies (#236, US-30) — non bloquant, se rend lui-même en
+            null tant qu'un choix (accepter/refuser) n'a pas été fait. */}
+        <BandeauCookies />
         {/* Vercel Analytics : mesure d'audience, sans cookie */}
         <Analytics />
         {/* Vercel Speed Insights : mesure des Core Web Vitals en réel */}

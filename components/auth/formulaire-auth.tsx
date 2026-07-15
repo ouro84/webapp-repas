@@ -26,6 +26,7 @@ export function FormulaireAuth({
   labelChargement,
   onSoumettre,
   pied,
+  cguRequise = false,
 }: {
   titre: string;
   /** "current-password" en connexion, "new-password" à l'inscription. */
@@ -36,10 +37,15 @@ export function FormulaireAuth({
   /** Soumet les identifiants ; renvoie un message d'erreur, ou null si succès. */
   onSoumettre: (email: string, password: string) => Promise<string | null>;
   pied: React.ReactNode;
+  /** Signup uniquement (#235, US-29) : case CGU non pré-cochée, obligatoire —
+   *  bloque la soumission (jamais envoyée à onSoumettre) tant qu'elle n'est
+   *  pas cochée. Absente en connexion. */
+  cguRequise?: boolean;
 }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [motDePasseVisible, setMotDePasseVisible] = useState(false);
+  const [cguAcceptees, setCguAcceptees] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
   const [chargement, setChargement] = useState(false);
   const refEmail = useRef<HTMLInputElement>(null);
@@ -47,6 +53,12 @@ export function FormulaireAuth({
 
   async function soumettre(evenement: React.FormEvent) {
     evenement.preventDefault();
+    // RG #235 : la case CGU (signup) bloque AVANT tout appel réseau — jamais
+    // de compte créé sans acceptation explicite côté client.
+    if (cguRequise && !cguAcceptees) {
+      setErreur("Tu dois accepter les CGU et la politique de confidentialité pour créer un compte.");
+      return;
+    }
     setChargement(true);
     setErreur(null);
 
@@ -127,6 +139,29 @@ export function FormulaireAuth({
               </button>
             </div>
           </div>
+
+          {cguRequise && (
+            <label className="flex items-start gap-2 text-sm text-brand-900">
+              <input
+                type="checkbox"
+                checked={cguAcceptees}
+                onChange={(e) => setCguAcceptees(e.target.checked)}
+                required
+                className="mt-0.5 size-4 shrink-0 cursor-pointer accent-brand-600"
+              />
+              <span>
+                J&apos;accepte les{" "}
+                <Link
+                  href="/legal/cgu"
+                  target="_blank"
+                  className="text-brand-700 underline underline-offset-2 hover:text-brand-900"
+                >
+                  Conditions générales d&apos;utilisation et la politique de confidentialité
+                </Link>
+                .
+              </span>
+            </label>
+          )}
 
           {erreur !== null && (
             // role="alert" : annoncé immédiatement aux lecteurs d'écran

@@ -21,8 +21,19 @@ import { EditionIdentite } from "@/components/profil/edition-identite";
 import { ChangerMotDePasse } from "@/components/profil/changer-mot-de-passe";
 import { PanneauFoyer } from "@/components/profil/panneau-foyer";
 import { SelecteurTheme } from "@/components/ui/selecteur-theme";
+import { Interrupteur } from "@/components/ui/interrupteur";
+import {
+  accepterConsentement,
+  refuserConsentement,
+  useConsentementAnalytics,
+} from "@/lib/consentement";
 
 export default function PageProfil() {
+  // Vie privée (#236, US-30) : révocation/octroi du consentement analytics
+  // depuis /profil, en plus du bandeau. `null` (aucun choix fait) s'affiche
+  // décoché — le bandeau reste, lui, la première sollicitation du choix.
+  const consentement = useConsentementAnalytics();
+
   async function deconnecter(): Promise<void> {
     try {
       // scope 'local' : déconnecte CET appareil sans révoquer les sessions des
@@ -65,6 +76,28 @@ export default function PageProfil() {
             </span>
           </span>
           <SelecteurTheme />
+        </div>
+      </section>
+      <div className="mb-8 border-t border-brand-100" />
+
+      {/* Vie privée (#236, US-30) : révocable à tout moment, indépendamment du
+          bandeau (qui ne se réaffiche pas une fois un choix fait). */}
+      <section aria-labelledby="titre-vie-privee" className="mb-8">
+        <h2 id="titre-vie-privee" className="mb-4 text-lg font-semibold text-brand-900">
+          Vie privée
+        </h2>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <span id="libelle-consentement-analytics" className="text-sm font-medium text-brand-900">
+            Mesure d&apos;audience
+            <span className="block text-xs font-normal text-brand-700/85">
+              Autoriser une mesure d&apos;audience anonymisée pour améliorer l&apos;app.
+            </span>
+          </span>
+          <Interrupteur
+            actif={consentement === true}
+            onChange={(actif) => (actif ? accepterConsentement() : refuserConsentement())}
+            libelleId="libelle-consentement-analytics"
+          />
         </div>
       </section>
       <div className="mb-8 border-t border-brand-100" />
