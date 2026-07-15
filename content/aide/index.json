@@ -133,7 +133,18 @@
     "motsCles": [
       "courses"
     ],
-    "majLe": "2026-07-03T19:08:00.000Z"
+    "majLe": "2026-07-15T18:53:00.000Z"
+  },
+  {
+    "titre": "Ajouter un article hors planning",
+    "slug": "article-manuel",
+    "section": "Courses",
+    "ordre": 20,
+    "resume": "Ajoute des articles qui n'ont rien à voir avec tes repas (sacs poubelle, piles…) : ils rejoignent ta liste, sont modifiables et ne disparaissent jamais tout seuls.",
+    "motsCles": [
+      "courses"
+    ],
+    "majLe": "2026-07-15T18:53:00.000Z"
   },
   {
     "titre": "Régler la génération",
