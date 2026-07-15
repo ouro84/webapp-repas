@@ -247,6 +247,55 @@ export async function lireReglagesDistants(
 }
 
 /**
+ * Lit les colonnes RGPD (#235) du profil d'un compte (par mot de passe) via
+ * GET REST — vérifie que le signup a bien horodaté l'acceptation des CGU.
+ */
+export async function lireProfilRgpdDistant(
+  request: APIRequestContext,
+  email: string,
+  password: string
+): Promise<{ cgu_version: number | null; cgu_acceptees_le: string | null }> {
+  const url = lireEnvLocal("NEXT_PUBLIC_SUPABASE_URL");
+  const anon = lireEnvLocal("NEXT_PUBLIC_SUPABASE_ANON_KEY");
+  const auth = await request.post(`${url}/auth/v1/token?grant_type=password`, {
+    headers: { apikey: anon, "Content-Type": "application/json" },
+    data: { email, password },
+  });
+  if (!auth.ok()) {
+    throw new Error(`Auth REST de ${email} impossible : HTTP ${auth.status()}`);
+  }
+  const { access_token: jeton } = (await auth.json()) as { access_token: string };
+  const res = await request.get(
+    `${url}/rest/v1/profiles?select=cgu_version,cgu_acceptees_le`,
+    { headers: { apikey: anon, Authorization: `Bearer ${jeton}` } }
+  );
+  if (!res.ok()) {
+    throw new Error(`Lecture du profil RGPD impossible : HTTP ${res.status()}`);
+  }
+  const rows = (await res.json()) as Array<{
+    cgu_version: number | null;
+    cgu_acceptees_le: string | null;
+  }>;
+  return rows[0] ?? { cgu_version: null, cgu_acceptees_le: null };
+}
+
+/**
+ * Remet le consentement analytics (#236) du compte de test PARTAGÉ à NULL
+ * (aucun choix) via PATCH REST. À appeler en beforeEach ET afterAll de
+ * rgpd.spec.ts : un choix résiduel ferait diverger la lecture de l'interrupteur
+ * « Vie privée » de /profil pour les runs suivants.
+ */
+export async function reinitialiserConsentementDistant(
+  request: APIRequestContext
+): Promise<void> {
+  const { url, headers } = await jetonTest(request);
+  await request.patch(`${url}/rest/v1/profiles?user_id=not.is.null`, {
+    headers: { ...headers, "Content-Type": "application/json" },
+    data: { consentement_analytics: null },
+  });
+}
+
+/**
  * Réinitialise l'identité du profil du compte de test (#22) : prénom et couleur
  * d'avatar remis à null via PATCH REST. Le compte étant partagé, un prénom
  * résiduel ferait dériver l'avatar de la nav d'un run à l'autre. NE touche PAS

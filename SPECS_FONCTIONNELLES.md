@@ -615,6 +615,46 @@ Réduire à zéro l'effort de planification hebdomadaire des repas, du choix des
 > **Given** je n'ai jamais touché la bascule  
 > **Then** la vue **« Semaine »** (calendaire) reste l'affichage par défaut — aucun changement de comportement (RG-57)
 
+### US-29 — Cadre légal et acceptation des CGU (#235, épopée B2C #234)
+
+> **En tant qu'** utilisateur, je veux savoir qui édite l'application et à quelles conditions je l'utilise, afin de créer mon compte en toute connaissance de cause.
+
+> **Given** je suis sur l'écran d'inscription  
+> **When** je consulte le formulaire  
+> **Then** une case à cocher, **non pré-cochée**, m'invite à accepter les CGU et la politique de confidentialité (un seul lien combiné) avant de pouvoir créer mon compte (RG-64)
+
+> **Given** je n'ai pas coché la case  
+> **When** je clique sur « Créer mon compte »  
+> **Then** l'inscription est bloquée côté client, un message m'indique que l'acceptation est requise, et **aucun compte n'est créé** (RG-64)
+
+> **Given** je viens de créer mon compte (case cochée)  
+> **When** l'inscription réussit  
+> **Then** la version des CGU acceptée et la date d'acceptation sont enregistrées sur mon profil (RG-65)
+
+> **Given** je suis déconnecté, ou en cours d'onboarding (`/bienvenue`)  
+> **When** j'ouvre un lien vers les CGU, la politique de confidentialité ou les mentions légales  
+> **Then** la page s'affiche normalement — ces routes ne sont ni protégées ni bloquées par le tunnel d'onboarding (RG-66)
+
+### US-30 — Consentement aux cookies de mesure d'audience (#236, épopée B2C #234)
+
+> **En tant qu'** utilisateur, je veux choisir si mon usage de l'application est mesuré à des fins de statistiques, et pouvoir changer d'avis à tout moment.
+
+> **Given** je visite l'application pour la première fois (aucun choix fait)  
+> **When** une page se charge, quelle qu'elle soit  
+> **Then** un bandeau non bloquant propose **Accepter** et **Refuser** à égale prominence, avec un lien vers la politique de confidentialité (RG-67)
+
+> **Given** j'ai fait un choix (Accepter ou Refuser)  
+> **When** je recharge la page ou j'en visite une autre  
+> **Then** le bandeau ne réapparaît plus — mon choix est mémorisé (RG-67)
+
+> **Given** mon navigateur envoie le signal Do Not Track  
+> **When** je visite l'application  
+> **Then** le consentement est réglé sur refus automatiquement, **sans jamais afficher le bandeau** (RG-68)
+
+> **Given** j'ai fait un choix, quel qu'il soit  
+> **When** je vais sur `/profil`, section « Vie privée »  
+> **Then** un interrupteur reflète mon choix et me permet de le **révoquer ou l'accorder** à tout moment (RG-69)
+
 ---
 
 ## 5. Modèle de données
@@ -1005,6 +1045,39 @@ Un foyer peut exprimer une préférence explicite pour une recette, sans jamais 
 > **Given** une recette déjà marquée « favorite »
 > **When** l'utilisateur clique sur « évitée »
 > **Then** la préférence bascule **directement** vers « évitée » (RG-63) ; un second clic sur « évitée » revient au neutre
+
+### RG-64 à RG-69 — Cadre légal, CGU et consentement cookies (US-29/US-30, #235/#236)
+
+> **Numérotation :** cette plage suit RG-58→63 (favoris/évités, #219), prochain numéro libre à la date d'écriture.
+
+- **RG-64 — Case CGU obligatoire, non pré-cochée** : l'inscription porte une case à cocher unique (CGU + politique de confidentialité combinées), **non cochée par défaut**. Tant qu'elle n'est pas cochée, la soumission est bloquée **côté client** avant tout appel réseau — aucune tentative de création de compte.
+- **RG-65 — Horodatage de l'acceptation** : au signup réussi, `profiles.cgu_version` (une seule version existe à ce jour) et `profiles.cgu_acceptees_le` sont posés. Pas de comparateur de version ni de garde de re-consentement dans cette PR (YAGNI — une seule version existe) ; les comptes **antérieurs** à cette mécanique ont été rétroactivement marqués à la version 1, à la date de la migration.
+- **RG-66 — Pages légales toujours accessibles** : `/legal/cgu`, `/legal/confidentialite`, `/legal/mentions-legales` sont **publiques** (hors `protectedRoutes`) **et** exemptées de la garde d'onboarding du proxy — un compte non onboardé (tunnel `/bienvenue`) doit pouvoir les consulter sans en être détourné.
+- **RG-67 — Bandeau non bloquant, choix à prominence égale** : le bandeau cookies reste visible tant qu'aucun choix n'est fait, sur toutes les pages (publiques et app). Les boutons **Accepter**/**Refuser** ont un poids visuel égal — pas de simple croix de fermeture qui vaudrait acceptation implicite. Le choix est mémorisé (localStorage, associé au profil si connecté) et ne redemande plus tant qu'il n'est pas révoqué.
+- **RG-68 — Do Not Track prioritaire** : si le navigateur signale Do Not Track, le consentement est réglé sur **refus** automatiquement et le bandeau **ne s'affiche jamais** — pas de re-sollicitation d'un choix déjà exprimé au niveau navigateur.
+- **RG-69 — Révocation depuis `/profil`** : la section « Vie privée » de `/profil` porte un interrupteur (composant partagé, RG existante #204) qui reflète et modifie le consentement à tout moment, indépendamment du bandeau (qui ne réapparaît pas une fois un choix fait).
+
+**Comportement (BDD) :**
+
+> **Given** l'écran d'inscription  
+> **When** je ne coche pas la case CGU et je soumets le formulaire  
+> **Then** rien n'est envoyé au serveur, un message m'indique l'obligation d'accepter (RG-64)
+
+> **Given** je viens d'accepter les CGU au signup  
+> **When** je consulte mon profil en base  
+> **Then** `cgu_version` et `cgu_acceptees_le` sont renseignés (RG-65)
+
+> **Given** je ne suis pas connecté, ou en cours d'onboarding  
+> **When** j'ouvre une page `/legal/*`  
+> **Then** elle s'affiche sans redirection (RG-66)
+
+> **Given** aucun choix de consentement n'a encore été fait  
+> **When** une page se charge  
+> **Then** le bandeau s'affiche, sauf si mon navigateur envoie Do Not Track (RG-67/RG-68)
+
+> **Given** j'ai accepté ou refusé le suivi  
+> **When** je me rends sur `/profil`  
+> **Then** l'interrupteur « Vie privée » reflète mon choix et me permet de le changer (RG-69)
 
 ### RG-22 — Repas en « restes » (US-12)
 

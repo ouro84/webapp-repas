@@ -79,9 +79,17 @@ export async function proxy(request: NextRequest) {
   // faux, l'utilisateur connecté est renvoyé vers le tunnel /bienvenue ; une
   // fois terminé, il ne peut plus y revenir (ni rester sur les routes d'auth).
   // Une requête par navigation connectée — choix assumé (usage perso, cf. plan
-  // #22). On EXEMPTE /api/* et /auth/* (déconnexion, reset mot de passe) : ni
-  // redirection ni requête, pour ne pas casser ces flux ni les ralentir.
-  if (user && !pathname.startsWith("/api") && !pathname.startsWith("/auth")) {
+  // #22). On EXEMPTE /api/*, /auth/* (déconnexion, reset mot de passe) et
+  // /legal/* (#235 — CGU/confidentialité/mentions légales doivent rester
+  // lisibles PENDANT le tunnel d'onboarding, où le lien de la case CGU du
+  // signup peut être rouvert) : ni redirection ni requête, pour ne pas casser
+  // ces flux ni les ralentir.
+  if (
+    user &&
+    !pathname.startsWith("/api") &&
+    !pathname.startsWith("/auth") &&
+    !pathname.startsWith("/legal")
+  ) {
     // Fail-open sur erreur (profil illisible/transitoire OU Supabase
     // indisponible, #169) : on considère l'utilisateur onboardé pour ne jamais
     // le piéger dans une boucle ni crasher le proxy.
