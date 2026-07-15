@@ -9,6 +9,8 @@ import {
   reposNonSaison,
   slotsVegeNonHonores,
   type HistoriqueVariete,
+  type PreferencesRecettes,
+  type RecettePreference,
 } from "@/lib/generateur"
 import {
   decalageEntre,
@@ -222,13 +224,35 @@ export async function POST(request: Request) {
     }
   }
 
+  // RG-58/60/61 — Favoris/évités (#219) : préférences du FOYER (mon_foyer(),
+  // pas de scope user comme recette_masquee) appliquées comme poids
+  // multiplicatif, composé avec la mémoire de variété. Best-effort : en cas
+  // d'erreur de lecture, on génère sans biais de préférence (jamais de
+  // blocage) et on journalise — jamais de catch muet.
+  const { data: preferencesDb, error: preferencesError } = await supabase
+    .from("recette_preference")
+    .select("recette_id, preference")
+  if (preferencesError) {
+    console.error(
+      "Lecture des préférences favoris/évités échouée (préférence ignorée).",
+      preferencesError
+    )
+  }
+  const preferences: PreferencesRecettes = new Map(
+    (preferencesDb ?? []).map((p) => [
+      (p as { recette_id: string }).recette_id,
+      (p as { preference: RecettePreference }).preference,
+    ])
+  )
+
   try {
     const planning = genererPlanning(
       recettesDomain,
       semaine,
       reglages,
       undefined,
-      historiqueVariete
+      historiqueVariete,
+      preferences
     )
     // RG-26 — préférence végé souple : on signale le NOMBRE de repas qui n'ont
     // pas pu être végétariens (vivier insuffisant) sans bloquer la génération.

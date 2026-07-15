@@ -159,6 +159,21 @@ export async function nettoyerMasquagesDistants(
 }
 
 /**
+ * Supprime toutes les préférences favoris/évités du foyer de test (#219) via
+ * DELETE REST. Le compte étant partagé, une préférence résiduelle biaiserait
+ * le tirage pondéré des specs de génération suivantes. À appeler en beforeEach
+ * ET afterAll de recettes.spec (même esprit que nettoyerMasquagesDistants).
+ */
+export async function nettoyerPreferencesDistantes(
+  request: APIRequestContext
+): Promise<void> {
+  const { url, headers } = await jetonTest(request);
+  await request.delete(`${url}/rest/v1/recette_preference?foyer_id=not.is.null`, {
+    headers,
+  });
+}
+
+/**
  * Marque un compte comme ayant terminé l'onboarding (#22 PR2) via PATCH REST.
  * Indispensable depuis que le proxy redirige tout compte `onboarding_complete`
  * faux vers le tunnel `/bienvenue` : sans ça, le login d'un compte fraîchement

@@ -13,7 +13,7 @@
 // « Modifier » reste pour l'instant réservé aux recettes perso (#105 PR2 le
 // rendra uniforme via duplication + masquage).
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
@@ -29,14 +29,21 @@ import {
   type SaisieRecette,
 } from "@/lib/recettes";
 import { filtrerRecettes } from "@/lib/recherche";
-import { analyserVivier, remplacerRecetteDansPlanning } from "@/lib/generateur";
+import {
+  analyserVivier,
+  remplacerRecetteDansPlanning,
+  type PreferencesRecettes,
+  type RecettePreference,
+} from "@/lib/generateur";
 import { chargerReglages } from "@/lib/reglages-data";
 import { REGLAGES_DEFAUT } from "@/lib/reglages";
 import { storePlanning, sauvegarderRemplacementSlot } from "@/lib/stockage";
+import { chargerPreferences, definirPreference } from "@/lib/preferences";
 import { BadgeTemps } from "@/components/planning/badge-temps";
 import { BadgeVegetarien } from "@/components/ui/badge-vegetarien";
 import { BadgeAccompagnement } from "@/components/ui/badge-accompagnement";
 import { BadgeSaison } from "@/components/ui/badge-saison";
+import { TogglePreferenceRecette } from "@/components/ui/toggle-preference-recette";
 import { estDeSaison, LIBELLE_SAISON, SAISONS } from "@/lib/saisons";
 import { FormulaireRecette } from "@/components/recettes/formulaire-recette";
 import type { Planning, Recette, Saison, ReglagesGeneration } from "@/types";
@@ -82,6 +89,15 @@ function ContenuRecettes() {
   // Filtre saison (#23) : "toutes" = pas de filtre ; sinon recettes de saison
   // pour la saison choisie (les recettes toute-saison restent affichées).
   const [saisonFiltre, setSaisonFiltre] = useState<Saison | "toutes">("toutes");
+  // Favoris/évités du foyer (#219) : chargées EN LOT (une requête pour toute la
+  // liste, pas une par recette). Map vide tant que non chargée = aucun toggle
+  // actif (comportement neutre, jamais bloquant).
+  const [preferences, setPreferences] = useState<PreferencesRecettes>(new Map());
+  // Ids modifiés par l'utilisateur AVANT que le chargement en lot ne réponde
+  // (garde anti-course, même bug qu'en fiche recette #219) : sans elle, un
+  // clic sur le toggle juste après le montage peut être écrasé par la réponse
+  // tardive de chargerPreferences().
+  const idsPreferencesModifiesRef = useRef<Set<string>>(new Set());
 
   function recharger(): void {
     chargerRecettesGerees()
@@ -118,10 +134,46 @@ function ContenuRecettes() {
       .catch(() => {
         /* défauts conservés */
       });
+    // Favoris/évités (#219) : best-effort (Map vide en cas d'échec, jamais
+    // bloquant). Fusion avec les ids déjà modifiés par l'utilisateur (garde
+    // anti-course) : on ne réécrase pas un toggle survenu avant la réponse.
+    chargerPreferences()
+      .then((p) => {
+        if (!actif) return;
+        setPreferences((prev) => {
+          const fusion = new Map(p);
+          for (const id of idsPreferencesModifiesRef.current) {
+            if (prev.has(id)) fusion.set(id, prev.get(id)!);
+            else fusion.delete(id);
+          }
+          return fusion;
+        });
+      })
+      .catch((erreur) => {
+        console.error("Chargement des préférences échoué.", erreur);
+      });
     return () => {
       actif = false;
     };
   }, [idEdition]);
+
+  // Bascule favori/évité (RG-63) : optimiste, avec repli en cas d'échec réseau.
+  function surChangementPreference(
+    recetteId: string,
+    nouvelle: RecettePreference | null
+  ): void {
+    idsPreferencesModifiesRef.current.add(recetteId);
+    const precedentes = preferences;
+    const copie = new Map(preferences);
+    if (nouvelle === null) copie.delete(recetteId);
+    else copie.set(recetteId, nouvelle);
+    setPreferences(copie);
+    definirPreference(recetteId, nouvelle).catch((erreur) => {
+      console.error("Mise à jour de la préférence échouée.", erreur);
+      setPreferences(precedentes);
+      toast.error("Impossible de mettre à jour la préférence. Réessaie.");
+    });
+  }
 
   // Recherche par nom (réutilise le filtrage du sélecteur, #14).
   const visibles = useMemo(() => {
@@ -376,6 +428,10 @@ function ContenuRecettes() {
                     {recette.saisons && recette.saisons.length > 0 && (
                       <BadgeSaison saisons={recette.saisons} />
                     )}
+                    <TogglePreferenceRecette
+                      preference={preferences.get(recette.id) ?? null}
+                      onChange={(p) => surChangementPreference(recette.id, p)}
+                    />
                     {/* Duplication possible sur toutes les recettes (catalogue
                         compris : moyen de personnaliser une recette par défaut) */}
                     <button

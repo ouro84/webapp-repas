@@ -979,6 +979,33 @@ Un foyer qui ne cuisine pas tous les repas (cantine, restaurant le midi…) peut
 > **When** l'utilisateur revient sur le planning (sans régénérer)
 > **Then** le slot d'origine (recette, éventuel marquage « restes ») réapparaît tel quel — rien n'a été perdu, seul l'affichage était filtré
 
+### RG-58 à RG-63 — Favoris/évités de recette (US-49, #219)
+
+> **Numérotation** : cette plage suit RG-49→52 (variété, #218) plutôt que RG-53 (déjà pris par le Cycle de courses, #257) — collision évitée en repartant du prochain numéro libre.
+
+Un foyer peut exprimer une préférence explicite pour une recette, sans jamais l'exclure de la génération.
+
+- **RG-58 — État à 3 valeurs, neutre par défaut** : chaque recette porte une préférence ∈ { `favorite`, `évitée`, neutre } **pour le foyer** (absence de ligne = neutre, même schéma que le masquage `recette_masquee`, #105).
+- **RG-59 — Biais souple, jamais un filtre dur** : « évitée » **≠** masquée/supprimée (#105) — la recette reste dans le catalogue, sélectionnable manuellement (RG-03), et demeure comptée dans le vivier de faisabilité (`analyserVivier` **inchangé**).
+- **RG-60 — Portée FOYER** : contrairement au masquage (`recette_masquee`, dette de scope utilisateur documentée séparément), la préférence est **partagée par tous les membres du foyer** (`mon_foyer()`) — cohérent avec le modèle post-#56, pas de nouvelle dette de scope.
+- **RG-61 — Poids multiplicatif, composé avec la variété** : la préférence pondère le tirage aléatoire (favorite > 1, évitée ∈ (0,1) strictement positif — jamais 0, jamais bloquant —, neutre = 1), **composée par multiplication** avec le poids de variété (#218, RG-49→52) : ce sont deux biais indépendants combinés, pas une histoire de priorité entre eux.
+- **RG-62 — Appliquée à la génération complète ET au remplacement unitaire** : contrairement à la mémoire de variété (RG-52, génération seule), la préférence s'applique aussi à « ↺ changer » (`remplacerSlot`) — mais **pas** à la sélection manuelle (RG-03, l'utilisateur arbitre).
+- **RG-63 — Bascule à 3 états** : cliquer sur l'état déjà actif **revient au neutre** (toggle off) ; cliquer sur l'autre état **bascule directement** (favorite → évitée en un clic, pas besoin de repasser par neutre).
+
+**Comportement (BDD) :**
+
+> **Given** une recette neutre (aucune préférence)
+> **When** l'utilisateur la marque « favorite » depuis la fiche recette ou « Mes recettes »
+> **Then** elle est davantage tirée dans les générations suivantes, sans jamais être garantie ni obligatoire
+
+> **Given** une recette marquée « évitée »
+> **When** une génération ou un « ↺ changer » a lieu
+> **Then** elle est rarement tirée mais **reste sélectionnable** (jamais exclue) — et la sélection manuelle (US-06) n'est pas affectée
+
+> **Given** une recette déjà marquée « favorite »
+> **When** l'utilisateur clique sur « évitée »
+> **Then** la préférence bascule **directement** vers « évitée » (RG-63) ; un second clic sur « évitée » revient au neutre
+
 ### RG-22 — Repas en « restes » (US-12)
 
 Un slot peut être marqué **« restes »** (flag par slot, `restes.dejeuner` / `restes.diner`, cf. 5.5) : l'utilisateur mangera ce qu'il a au frigo, sans cuisiner. Règles :

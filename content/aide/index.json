@@ -101,6 +101,18 @@
     "majLe": "2026-07-14T11:48:00.000Z"
   },
   {
+    "titre": "Marquer une recette favorite ou évitée",
+    "slug": "favoris-evites",
+    "section": "Recettes",
+    "ordre": 40,
+    "resume": "Indiquer tes recettes préférées ou celles à éviter : la génération en tient compte, sans jamais les exclure.",
+    "motsCles": [
+      "recettes",
+      "planning"
+    ],
+    "majLe": "2026-07-15T18:39:00.000Z"
+  },
+  {
     "titre": "Ma liste suit mon cycle de courses",
     "slug": "cycle-courses",
     "section": "Courses",

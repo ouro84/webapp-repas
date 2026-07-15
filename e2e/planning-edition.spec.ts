@@ -6,12 +6,24 @@
 // imports. Session authentifiée via le projet "setup" (storageState).
 
 import { test, expect } from "./fixtures";
-import type { Page } from "@playwright/test";
+import { request as apiRequest, type Page } from "@playwright/test";
 import { recetteFixture } from "../tests/fixtures/recettes";
-import { nettoyerEtatDistant } from "./helpers";
+import { nettoyerEtatDistant, nettoyerPreferencesDistantes } from "./helpers";
 import { semaineParDefaut } from "../lib/semaines";
 import { ancreParDefaut } from "../lib/cycles";
 import type { Planning } from "../types";
+
+// Nettoyage des préférences favoris/évités (#219) : le compte de test étant
+// partagé, une préférence résiduelle sur une recette du catalogue biaiserait
+// le tirage pondéré des générations des specs suivantes du même job.
+test.afterAll(async () => {
+  const contexte = await apiRequest.newContext();
+  try {
+    await nettoyerPreferencesDistantes(contexte);
+  } finally {
+    await contexte.dispose();
+  }
+});
 
 // Ancre du cycle par défaut (jour de courses = lundi) — celle que hydraterCycle
 // calcule au montage de /courses (#257). `ancreParDefaut` inclut le décalage
@@ -340,6 +352,60 @@ test("la fiche d'une recette par défaut propose « Modifier » et mène au form
   await modifier.click();
   await expect(
     page.getByRole("heading", { name: "Modifier la recette" })
+  ).toBeVisible();
+});
+
+test("la fiche permet de marquer une recette favorite/évitée, avec bascule directe et persistance (#219, RG-58/61/63)", async ({
+  page,
+}) => {
+  // Génération RÉELLE (catalogue seedé) → CI-only : le toggle écrit dans
+  // recette_preference, table à clé étrangère vers `recette` — une fixture
+  // hors-base (id slug) ferait échouer l'insertion (FK), cf. #257.
+  await page.getByRole("button", { name: "Générer mon planning" }).click();
+  await expect(page.getByText("Planning généré")).toBeVisible();
+
+  const carteLundi = page.locator("main ul > li").first();
+  await carteLundi.getByRole("button", { name: /^Voir la recette/ }).first().click();
+  const fiche = page.getByRole("dialog");
+  await expect(fiche).toBeVisible();
+
+  // Neutre par défaut : aucun des deux toggles actif.
+  await expect(
+    fiche.getByRole("button", { name: "Marquer comme favorite" })
+  ).toBeVisible();
+  await expect(
+    fiche.getByRole("button", { name: "Marquer comme évitée" })
+  ).toBeVisible();
+
+  // Favori (RG-58/61).
+  await fiche.getByRole("button", { name: "Marquer comme favorite" }).click();
+  await expect(
+    fiche.getByRole("button", { name: "Retirer des favoris" })
+  ).toBeVisible();
+
+  // RG-63 : cliquer sur l'AUTRE bascule directement (favorite → évitée en un
+  // clic, pas besoin de repasser par neutre).
+  await fiche.getByRole("button", { name: "Marquer comme évitée" }).click();
+  await expect(
+    fiche.getByRole("button", { name: "Ne plus éviter" })
+  ).toBeVisible();
+  await expect(
+    fiche.getByRole("button", { name: "Marquer comme favorite" })
+  ).toBeVisible();
+
+  // Persistance (RG-60, foyer) : ferme et rouvre la fiche.
+  await page.keyboard.press("Escape");
+  await expect(fiche).not.toBeVisible();
+  await carteLundi.getByRole("button", { name: /^Voir la recette/ }).first().click();
+  const ficheRouverte = page.getByRole("dialog");
+  await expect(
+    ficheRouverte.getByRole("button", { name: "Ne plus éviter" })
+  ).toBeVisible();
+
+  // Toggle off (RG-63) : cliquer sur l'état déjà actif revient au neutre.
+  await ficheRouverte.getByRole("button", { name: "Ne plus éviter" }).click();
+  await expect(
+    ficheRouverte.getByRole("button", { name: "Marquer comme évitée" })
   ).toBeVisible();
 });
 

@@ -28,6 +28,7 @@ import {
   remplacerSlotManuel,
   reposNonSaison,
   retirerCreneauxDesactives,
+  type PreferencesRecettes,
 } from "@/lib/generateur";
 import {
   storePlanning,
@@ -45,6 +46,7 @@ import {
 import { estRestes, marquerRestes } from "@/lib/restes";
 import { naviguerVers, useSemaineAffichee, useSync } from "@/lib/sync";
 import { chargerRecettesGerees, type RecetteGeree } from "@/lib/recettes";
+import { chargerPreferences } from "@/lib/preferences";
 import { chargerReglages } from "@/lib/reglages-data";
 import { REGLAGES_DEFAUT } from "@/lib/reglages";
 import { messagesAvertissementGeneration } from "@/lib/avertissements-generation";
@@ -307,6 +309,10 @@ export default function PagePlanning() {
   // unitaire « ↺ changer » (la génération complète les lit côté serveur).
   // Défaut tant que non chargés = comportement antérieur.
   const [reglages, setReglages] = useState(REGLAGES_DEFAUT);
+  // Favoris/évités du foyer (#219) : pilotent le biais du remplacement unitaire
+  // « ↺ changer » (RG-62 ; la génération complète les lit côté serveur, RG-61).
+  // Défaut Map vide tant que non chargées = comportement antérieur (uniforme).
+  const [preferences, setPreferences] = useState<PreferencesRecettes>(new Map());
   // Confirmation avant de régénérer/modifier une semaine PASSÉE (US-14, RG-24).
   // Contient l'action à rejouer (avec `force`) une fois l'utilisateur d'accord.
   const [confirmation, setConfirmation] = useState<{
@@ -364,6 +370,15 @@ export default function PagePlanning() {
       })
       .catch((erreur) => {
         console.error("Chargement des réglages échoué (défauts appliqués).", erreur);
+      });
+    // Favoris/évités (#219) : indépendants des recettes/réglages, Map vide
+    // (comportement uniforme) si échec — jamais de blocage du remplacement.
+    chargerPreferences()
+      .then((p) => {
+        if (actif) setPreferences(p);
+      })
+      .catch((erreur) => {
+        console.error("Chargement des préférences échoué (biais ignoré).", erreur);
       });
     return () => {
       actif = false;
@@ -522,7 +537,15 @@ export default function PagePlanning() {
     if (!force && confirmerSiPassee(() => changerSlot(jour, typeRepas, true))) {
       return;
     }
-    const nouveau = remplacerSlot(planning, jour, typeRepas, recettes, reglages);
+    const nouveau = remplacerSlot(
+      planning,
+      jour,
+      typeRepas,
+      recettes,
+      reglages,
+      undefined,
+      preferences
+    );
     if (nouveau === null) {
       // Toast en complément du message inline du slot (RG-04)
       setSlotIndisponible(cleSlot(jour, typeRepas));
