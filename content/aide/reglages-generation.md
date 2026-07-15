@@ -8,7 +8,9 @@ Section **« Temps de préparation maximum »** : pour chacun des quatre crénea
 
 > ⚠️ Ce n'est **pas une durée en minutes**, mais un **plafond**. « Normal » autorise les recettes Rapide **et** Normal ; « Long » autorise tout ; « Rapide » n'autorise que les recettes Rapide. Un aperçu **« N recettes éligibles »** t'indique combien de recettes passent le filtre.
 
-Par défaut : déjeuner de semaine **Normal**, dîner de semaine **Rapide**, week-end **Long**.
+> 🆕 Un cinquième choix, **« — »**, désactive complètement le créneau : aucun repas n'est généré pour lui, son emplacement affiche « Pas de repas prévu », et il n'ajoute rien à la liste de courses. Pratique si tu ne cuisines jamais ce repas (cantine, restaurant le midi…). Le changement s'applique **immédiatement** après enregistrement, même sans régénérer — et remettre un plafond restaure le repas d'origine, s'il y en avait un. Il faut garder **au moins un créneau actif**.
+
+Par défaut : déjeuner de semaine **Normal**, dîner de semaine **Rapide**, week-end **Long** (tous actifs).
 
 ## Privilégier les repas végétariens
 
