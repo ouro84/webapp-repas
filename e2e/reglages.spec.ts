@@ -156,6 +156,13 @@ test("désactiver un créneau masque immédiatement le repas, sans régénérer 
   await page.goto("/planning");
   await page.getByRole("button", { name: "Générer mon planning" }).click();
   await expect(page.locator("main ul > li")).toHaveCount(7);
+  // Attendre la persistance AVANT de naviguer (page.goto = rechargement complet
+  // → l'addInitScript du beforeEach repurge planning_courant à chaque fois) :
+  // sans cette attente, un push encore en vol (debounce 800 ms) se ferait
+  // couper par la navigation et le planning généré serait perdu au retour.
+  await expect
+    .poll(async () => page.evaluate(() => localStorage.getItem("planning_dirty")))
+    .toBeNull();
 
   await page.goto("/reglages");
   const dinerSemaine = page.getByRole("radiogroup", { name: "Dîner en semaine" });
