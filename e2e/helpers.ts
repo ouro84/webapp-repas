@@ -59,6 +59,27 @@ export async function nettoyerEtatDistant(
     `${url}/rest/v1/etat_courses_article?foyer_id=not.is.null`,
     { headers }
   );
+  // Articles manuels (#216) : résiduels d'un test précédent fausseraient l'état
+  // vide/le compte d'articles attendu par les specs suivantes.
+  await request.delete(
+    `${url}/rest/v1/article_manuel?foyer_id=not.is.null`,
+    { headers }
+  );
+}
+
+/**
+ * Supprime les articles manuels du compte de test (#216) via DELETE REST. À
+ * appeler en beforeEach ET afterAll de toute spec qui en crée, en plus de
+ * nettoyerEtatDistant si celui-ci n'est pas déjà appelé dans le même test.
+ */
+export async function nettoyerArticlesManuelsDistants(
+  request: APIRequestContext
+): Promise<void> {
+  const { url, headers } = await jetonTest(request);
+  await request.delete(
+    `${url}/rest/v1/article_manuel?foyer_id=not.is.null`,
+    { headers }
+  );
 }
 
 /**

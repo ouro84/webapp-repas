@@ -130,6 +130,34 @@ test("une coche posée sur un appareil apparaît en temps réel sur l'autre (US-
   await deviceB.context().close();
 });
 
+test("un article manuel ajouté par un appareil apparaît en temps réel sur l'autre (#216)", async ({
+  browser,
+}) => {
+  const planning = planningDeterministe();
+  const deviceA = await ouvrirCourses(browser, planning);
+  const deviceB = await ouvrirCourses(browser, planning);
+  await deviceB.waitForTimeout(2000);
+
+  await deviceA.getByRole("button", { name: "Ajouter un article" }).click();
+  await deviceA.getByLabel("Article", { exact: true }).fill("Sacs poubelle");
+  await deviceA.getByRole("button", { name: "Enregistrer" }).click();
+  await expect(deviceA.getByRole("checkbox", { name: /Sacs poubelle/ })).toBeVisible();
+
+  // B le voit apparaître SANS rechargement (temps réel article_manuel).
+  await expect(deviceB.getByRole("checkbox", { name: /Sacs poubelle/ })).toBeVisible({
+    timeout: 15_000,
+  });
+
+  // A supprime → B le voit disparaître, toujours en temps réel.
+  await deviceA.getByRole("button", { name: "Supprimer « Sacs poubelle »" }).click();
+  await expect(deviceB.getByRole("checkbox", { name: /Sacs poubelle/ })).toHaveCount(0, {
+    timeout: 15_000,
+  });
+
+  await deviceA.context().close();
+  await deviceB.context().close();
+});
+
 test("deux appareils cochent des articles différents sans s'écraser (anti-clobber, RG-32)", async ({
   browser,
 }) => {

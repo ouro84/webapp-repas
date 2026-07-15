@@ -19,7 +19,9 @@ import { estRestes } from "@/lib/restes"
 
 // Ordre d'affichage des catégories dans la liste de courses (RG-05, étape 5).
 // Suit le parcours type d'un magasin : frais d'abord, surgelés en dernier.
-const ORDRE_CATEGORIES: CategorieIngredient[] = [
+// Exportée : réutilisée par lib/articles-manuels.ts (#216) pour insérer une
+// catégorie d'article manuel absente de la liste dérivée, au bon rang.
+export const ORDRE_CATEGORIES: CategorieIngredient[] = [
   "viandes-poissons",
   "legumes-fruits",
   "produits-frais",

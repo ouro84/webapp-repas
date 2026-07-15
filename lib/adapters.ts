@@ -7,6 +7,8 @@
 // Ces fonctions font le pont entre les deux.
 
 import type {
+  ArticleManuel,
+  DbArticleManuel,
   DbRecette,
   DbPlanningSlot,
   Recette,
@@ -97,6 +99,21 @@ export function dbSlotToJourPlanning(
   if (restes.diner || restes.dejeuner) jp.restes = restes
 
   return jp
+}
+
+// Article manuel (#216) : conversion directe, sans logique — categorie/unite
+// sont typées `text` côté DB (pas d'enum Postgres) mais correspondent aux
+// unions du domaine par convention de saisie côté client (formulaire).
+export function dbArticleManuelToDomain(db: DbArticleManuel): ArticleManuel {
+  return {
+    id: db.id,
+    libelle: db.libelle,
+    quantite: db.quantite,
+    unite: db.unite,
+    categorie: db.categorie,
+    fondDePlacard: db.fond_de_placard,
+    coche: db.coche,
+  }
 }
 
 // Reconstruit un planning domaine complet depuis sa semaine et ses slots DB.
