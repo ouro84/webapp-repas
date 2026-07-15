@@ -93,6 +93,9 @@ test("un nouvel inscrit invité rejoint le foyer via le lien (US-24)", async ({
   await y.goto(`/signup?code=${code}`);
   await y.getByLabel("Email").fill(emailY);
   await y.getByLabel("Mot de passe", { exact: true }).fill(E2E_PASSWORD);
+  // Case CGU obligatoire depuis #235 — sans elle, la soumission est bloquée
+  // côté client (aucune navigation, timeout du test).
+  await y.getByLabel(/J'accepte les/).check();
   await y.getByRole("button", { name: "Créer mon compte" }).click();
 
   // Nouvel inscrit → tunnel d'onboarding (pas /planning).
