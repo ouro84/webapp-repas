@@ -5,7 +5,11 @@
 
 import { test, expect } from "./fixtures";
 import { request as apiRequest, type Page } from "@playwright/test";
-import { nettoyerRecettesDistantes, nettoyerMasquagesDistants } from "./helpers";
+import {
+  nettoyerRecettesDistantes,
+  nettoyerMasquagesDistants,
+  nettoyerPreferencesDistantes,
+} from "./helpers";
 
 // Suffixe unique au run (Date.now est autorisé dans les tests Playwright).
 const SUFFIXE = `${Date.now()}`;
@@ -24,6 +28,7 @@ test.beforeEach(async () => {
   const contexte = await apiRequest.newContext();
   try {
     await nettoyerMasquagesDistants(contexte);
+    await nettoyerPreferencesDistantes(contexte);
   } finally {
     await contexte.dispose();
   }
@@ -37,6 +42,7 @@ test.afterAll(async () => {
   try {
     await nettoyerRecettesDistantes(contexte, SUFFIXE);
     await nettoyerMasquagesDistants(contexte);
+    await nettoyerPreferencesDistantes(contexte);
   } finally {
     await contexte.dispose();
   }
@@ -195,6 +201,48 @@ test("une recette végétarienne porte le badge et passe le filtre (#86)", async
   // Le filtre « Végétariennes seulement » la conserve.
   await page.getByLabel("Végétariennes seulement").check();
   await expect(page.locator("li", { hasText: nom })).toBeVisible();
+});
+
+test("« Mes recettes » permet de marquer favorite/évitée, avec bascule directe et persistance au reload (#219, RG-58/61/63)", async ({
+  page,
+}) => {
+  const nom = `E2E Pref ${SUFFIXE}`;
+  await creer(page, nom);
+  const ligne = page.locator("li", { hasText: nom });
+
+  // Neutre par défaut.
+  await expect(
+    ligne.getByRole("button", { name: "Marquer comme favorite" })
+  ).toBeVisible();
+  await expect(
+    ligne.getByRole("button", { name: "Marquer comme évitée" })
+  ).toBeVisible();
+
+  // Favori (RG-58/61).
+  await ligne.getByRole("button", { name: "Marquer comme favorite" }).click();
+  await expect(
+    ligne.getByRole("button", { name: "Retirer des favoris" })
+  ).toBeVisible();
+
+  // RG-63 : bascule DIRECTE vers évitée (pas besoin de repasser par neutre).
+  await ligne.getByRole("button", { name: "Marquer comme évitée" }).click();
+  await expect(ligne.getByRole("button", { name: "Ne plus éviter" })).toBeVisible();
+  await expect(
+    ligne.getByRole("button", { name: "Marquer comme favorite" })
+  ).toBeVisible();
+
+  // Persistance après reload (RG-60, foyer).
+  await page.reload();
+  const ligneApresReload = page.locator("li", { hasText: nom });
+  await expect(
+    ligneApresReload.getByRole("button", { name: "Ne plus éviter" })
+  ).toBeVisible();
+
+  // Toggle off (RG-63) : cliquer sur l'état actif revient au neutre.
+  await ligneApresReload.getByRole("button", { name: "Ne plus éviter" }).click();
+  await expect(
+    ligneApresReload.getByRole("button", { name: "Marquer comme évitée" })
+  ).toBeVisible();
 });
 
 test("la recherche filtre la liste des recettes", async ({ page }) => {

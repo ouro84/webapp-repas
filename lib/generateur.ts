@@ -289,6 +289,38 @@ function choisirPondere<T>(
   return elements[elements.length - 1]!
 }
 
+/**
+ * Préférence explicite d'un foyer pour une recette (#219, RG-58). Biais SOUPLE
+ * (jamais un filtre dur, RG-59) : une recette « évitée » reste dans le
+ * catalogue et sélectionnable manuellement, seul le tirage aléatoire en tient
+ * compte.
+ */
+export type RecettePreference = "favorite" | "evitee"
+
+/**
+ * Préférences d'un foyer : id de recette → préférence non-neutre. Absence de
+ * la recette = neutre (même schéma que `recette_masquee`, présence de ligne =
+ * état non par défaut). Portée FOYER, pas utilisateur (RG-60).
+ */
+export type PreferencesRecettes = Map<string, RecettePreference>
+
+/**
+ * Poids multiplicatif favoris/évités (#219, RG-58/59/61). Neutre (absente de
+ * la map) = poids plein (1). Favorite = poids > 1 (davantage tirée). Évitée =
+ * poids ∈ (0,1), STRICTEMENT positif : jamais 0, donc jamais bloquant (RG-59,
+ * même invariant que `poidsVariete`) — une recette évitée reste sélectionnable
+ * en dernier recours, la faisabilité (Hall) est inchangée.
+ */
+export function poidsPreference(
+  recette: Recette,
+  preferences: PreferencesRecettes
+): number {
+  const pref = preferences.get(recette.id)
+  if (pref === "favorite") return 3
+  if (pref === "evitee") return 0.1
+  return 1
+}
+
 // Clé unique d'un slot, utilisée pour mémoriser les attributions.
 function cleSlot(jour: Jour, typeRepas: TypeRepas): string {
   return `${jour}-${typeRepas}`
@@ -327,6 +359,8 @@ function cleSlot(jour: Jour, typeRepas: TypeRepas): string {
  * @param historiqueVariete mémoire de variété (#218, RG-49/50) : id de recette →
  *               ancienneté en semaines de sa dernière apparition. Défaut Map vide
  *               = aucune pénalité (comportement prod inchangé). Lu côté serveur.
+ * @param preferences favoris/évités du foyer (#219, RG-58/61). Défaut Map vide
+ *               = aucune préférence (comportement prod inchangé).
  * @throws {Error} si le vivier de recettes éligibles est insuffisant pour remplir
  *                 les 14 slots sans répétition.
  */
@@ -335,7 +369,8 @@ export function genererPlanning(
   semaine: string = semaineISO(),
   reglages: ReglagesGeneration = REGLAGES_DEFAUT,
   random: Aleatoire = Math.random,
-  historiqueVariete: HistoriqueVariete = new Map()
+  historiqueVariete: HistoriqueVariete = new Map(),
+  preferences: PreferencesRecettes = new Map()
 ): Planning {
   // RG-44/46 (#217) : un créneau « Aucun » n'est même pas tenté — ni compté
   // dans le vivier requis (cf. analyserVivier), ni généré.
@@ -392,13 +427,15 @@ export function genererPlanning(
       attributions,
       reglages
     )
-    // RG-49/50/51 — mémoire de variété (#218) : tirage PONDÉRÉ dans le même
-    // ensemble de candidats (filtres durs déjà appliqués), pénalisant de façon
-    // dégressive les recettes vues récemment. Historique vide → poids tous égaux
-    // → équivaut exactement à choisirAleatoire (comportement prod inchangé).
+    // RG-49/50/51 — mémoire de variété (#218) composée avec RG-58/61 — favoris/
+    // évités (#219) : tirage PONDÉRÉ dans le même ensemble de candidats (filtres
+    // durs déjà appliqués). Les deux poids sont deux biais souples indépendants,
+    // combinés par multiplication (pas une histoire de priorité). Historique et
+    // préférences vides → poids tous égaux → équivaut exactement à
+    // choisirAleatoire (comportement prod inchangé).
     const choisie = choisirPondere(
       candidats,
-      (r) => poidsVariete(r, historiqueVariete),
+      (r) => poidsVariete(r, historiqueVariete) * poidsPreference(r, preferences),
       random
     )
     utilisees.add(choisie.id)
@@ -445,6 +482,10 @@ function poidsContrainte(slot: Slot, reglages: ReglagesGeneration): number {
  *
  * @param random source d'aléa (RG-03), injectable pour des tests déterministes
  *               (#157) ; défaut `Math.random` (comportement prod inchangé).
+ * @param preferences favoris/évités du foyer (#219, RG-62) — contrairement à la
+ *               mémoire de variété (RG-52), qui exclut ce remplacement unitaire,
+ *               la préférence s'y applique. Défaut Map vide = comportement prod
+ *               inchangé (tirage uniforme).
  * @returns le nouveau planning, ou `null` si aucune recette de remplacement n'est
  *          disponible — ou si le slot ciblé n'existe pas (planning antérieur
  *          à 14 repas, sans déjeuner ce jour-là). L'UI affiche alors
@@ -456,7 +497,8 @@ export function remplacerSlot(
   typeRepas: TypeRepas,
   recettes: Recette[],
   reglages: ReglagesGeneration = REGLAGES_DEFAUT,
-  random: Aleatoire = Math.random
+  random: Aleatoire = Math.random,
+  preferences: PreferencesRecettes = new Map()
 ): Planning | null {
   const jourPlanning = planning.jours.find((jp) => jp.jour === jour)
   if (!jourPlanning) return null // jour absent du planning
@@ -506,7 +548,15 @@ export function remplacerSlot(
     const legumes = candidats.filter((r) => r.accompagnement === "legumes")
     if (legumes.length > 0) candidats = legumes
   }
-  const choisie = choisirAleatoire(candidats, random)
+  // RG-62 (#219) : préférence favoris/évités appliquée ici (contrairement à la
+  // variété, RG-52, qui n'agit que sur la génération complète). Préférences
+  // vides → poids tous égaux → équivaut à choisirAleatoire (comportement prod
+  // inchangé).
+  const choisie = choisirPondere(
+    candidats,
+    (r) => poidsPreference(r, preferences),
+    random
+  )
 
   // Reconstruction immuable : seul le jour ciblé est recréé. Remplacer la
   // recette efface un éventuel marquage « restes » sur ce slot (RG-22 : on

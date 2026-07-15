@@ -18,6 +18,7 @@ import {
   FENETRE_VARIETE,
   genererPlanning,
   joursSansLegume,
+  poidsPreference,
   poidsVariete,
   prefereVegeSlot,
   reposNonSaison,
@@ -28,6 +29,7 @@ import {
   retirerCreneauxDesactives,
   slotsVegeNonHonores,
   type HistoriqueVariete,
+  type PreferencesRecettes,
 } from "@/lib/generateur";
 import { RECETTES_FIXTURES } from "@/tests/fixtures/recettes";
 import { REGLAGES_DEFAUT } from "@/lib/reglages";
@@ -1121,5 +1123,138 @@ describe("analyserVivier — réglages personnalisés (#45)", () => {
     // Insuffisant par défaut (0 rapide/normal), suffisant si tout plafonne "long".
     expect(analyserVivier(longues).suffisant).toBe(false);
     expect(analyserVivier(longues, toutLong).suffisant).toBe(true);
+  });
+});
+
+describe("poidsPreference — favoris/évités (#219, RG-58/59/61)", () => {
+  const r = (id: string): Recette => ({
+    id,
+    nom: id,
+    tempsPreparation: "rapide",
+    ingredients: [],
+  });
+
+  test("neutre (absente de la map) : poids 1", () => {
+    expect(poidsPreference(r("x"), new Map())).toBe(1);
+  });
+
+  test("favorite : poids > 1 (RG-61, favorisée)", () => {
+    const prefs: PreferencesRecettes = new Map([["x", "favorite"]]);
+    expect(poidsPreference(r("x"), prefs)).toBeGreaterThan(1);
+  });
+
+  test("évitée : poids ∈ (0,1) — jamais 0, jamais bloquant (RG-59)", () => {
+    const prefs: PreferencesRecettes = new Map([["x", "evitee"]]);
+    const poids = poidsPreference(r("x"), prefs);
+    expect(poids).toBeGreaterThan(0);
+    expect(poids).toBeLessThan(1);
+  });
+});
+
+describe("genererPlanning — préférence favoris/évités composée avec la variété (#219, RG-61)", () => {
+  // 30 recettes rapides (éligibles partout) : 10 favorites, 10 évitées, 10 neutres.
+  const VIVIER_PREF = synth("rapide", 30, "p");
+  const FAVORITES = new Set(VIVIER_PREF.slice(0, 10).map((r) => r.id));
+  const EVITEES = new Set(VIVIER_PREF.slice(10, 20).map((r) => r.id));
+  const PREFS: PreferencesRecettes = new Map([
+    ...[...FAVORITES].map((id): [string, "favorite"] => [id, "favorite"]),
+    ...[...EVITEES].map((id): [string, "evitee"] => [id, "evitee"]),
+  ]);
+
+  test("historique/préférences vides (défaut) : comportement inchangé, 14 repas", () => {
+    const planning = genererPlanning(VIVIER_PREF, "2026-W30");
+    expect(tousLesRepas(planning)).toHaveLength(14);
+  });
+
+  test("favorise nettement les favorites, défavorise nettement les évitées", () => {
+    const rng = rngSeed(219);
+    let favori = 0;
+    let evitee = 0;
+    let total = 0;
+    for (let i = 0; i < 60; i++) {
+      const planning = genererPlanning(
+        VIVIER_PREF,
+        "2026-W30",
+        undefined,
+        rng,
+        new Map(),
+        PREFS
+      );
+      for (const repas of tousLesRepas(planning)) {
+        total++;
+        if (FAVORITES.has(repas.id)) favori++;
+        if (EVITEES.has(repas.id)) evitee++;
+      }
+    }
+    // Référence non biaisée par tiers = 1/3 ≈ 0,333.
+    expect(favori / total).toBeGreaterThan(0.4);
+    expect(evitee / total).toBeLessThan(0.2);
+  });
+
+  test("une recette évitée reste sélectionnable (jamais 0 %, RG-59)", () => {
+    // Vivier réduit aux seules évitées : la génération doit quand même aboutir.
+    const toutesEvitees = synth("rapide", 14, "e");
+    const prefsToutesEvitees: PreferencesRecettes = new Map(
+      toutesEvitees.map((r) => [r.id, "evitee"])
+    );
+    const planning = genererPlanning(
+      toutesEvitees,
+      "2026-W30",
+      undefined,
+      Math.random,
+      new Map(),
+      prefsToutesEvitees
+    );
+    expect(tousLesRepas(planning)).toHaveLength(14);
+  });
+});
+
+describe("remplacerSlot — préférence favoris/évités, sans variété (#219, RG-62)", () => {
+  test("le remplacement biaise vers les favorites (pas de mémoire de variété appliquée ici)", () => {
+    // Vivier de candidats de remplacement (40, aucun servi ailleurs dans la
+    // semaine) : 5 favorites, le reste neutre. Le planning est FORGÉ (pas
+    // généré) avec des recettes DISTINCTES du vivier pour les 13 autres slots,
+    // afin qu'aucune favorite ne soit accidentellement « déjà utilisée » par un
+    // tirage initial non pondéré — seule `actuelle` (recette du slot ciblé,
+    // neutre) est exclue des candidats.
+    const vivier = synth("rapide", 40, "rp");
+    const favorites = new Set(vivier.slice(0, 5).map((r) => r.id));
+    const actuelle = vivier[39]!; // neutre, hors des 5 favorites
+    const prefs: PreferencesRecettes = new Map(
+      [...favorites].map((id) => [id, "favorite"])
+    );
+    const autresSlots = synth("rapide", 13, "autre"); // ids disjoints du vivier
+    let curseur = 0;
+    const planning: Planning = {
+      semaine: "2026-W30",
+      jours: ORDRE_JOURS.map((jour) => ({
+        jour,
+        dejeuner: autresSlots[curseur++]!,
+        diner: jour === "lundi" ? actuelle : autresSlots[curseur++]!,
+        personnes: { dejeuner: 2, diner: 2 },
+      })),
+    };
+    const rng = rngSeed(219);
+    let favori = 0;
+    let total = 0;
+    for (let i = 0; i < 200; i++) {
+      const resultat = remplacerSlot(
+        planning,
+        "lundi",
+        "diner",
+        vivier,
+        undefined,
+        rng,
+        prefs
+      );
+      expect(resultat).not.toBeNull();
+      total++;
+      const nouveau = resultat!.jours.find((jp) => jp.jour === "lundi")!.diner!;
+      if (favorites.has(nouveau.id)) favori++;
+    }
+    // Candidats = 39 (vivier - actuelle), dont 5 favorites → ≈ 12,8 % non biaisé
+    // (poids 1 partout). Avec poids 3 pour les favorites, on exige une nette
+    // sur-représentation.
+    expect(favori / total).toBeGreaterThan(0.2);
   });
 });

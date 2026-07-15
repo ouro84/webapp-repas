@@ -14,15 +14,19 @@
 // Les ingrédients sont scindés « à acheter » / « fond de placard » (RG-14)
 // pour répondre au besoin « puis-je la faire sans rien acheter ».
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { toast } from "sonner";
 import { BadgeTemps } from "@/components/planning/badge-temps";
 import { BadgeVegetarien } from "@/components/ui/badge-vegetarien";
 import { BadgeAccompagnement } from "@/components/ui/badge-accompagnement";
 import { BadgeSaison } from "@/components/ui/badge-saison";
+import { TogglePreferenceRecette } from "@/components/ui/toggle-preference-recette";
 import { arrondirQuantite, facteurEchelle } from "@/lib/personnes";
 import { accorderNom } from "@/lib/pluriels";
 import { formaterQuantite } from "@/lib/unites";
+import { chargerPreference, definirPreference } from "@/lib/preferences";
+import type { RecettePreference } from "@/lib/generateur";
 import type { Ingredient, Recette } from "@/types";
 
 export function FicheRecette({
@@ -44,6 +48,42 @@ export function FicheRecette({
   onFermer: () => void;
 }) {
   const refDialog = useRef<HTMLDialogElement>(null);
+
+  // Favoris/évités du foyer (#219, RG-58/63) : chargés pour CETTE recette
+  // (consultation isolée) au montage — `null` tant que non chargé/neutre, les
+  // deux cas rendent le toggle inactif de façon identique (RG-59, jamais
+  // bloquant, pas d'état de chargement visible nécessaire ici).
+  const [preference, setPreference] = useState<RecettePreference | null>(null);
+  // Garde anti-course : si l'utilisateur clique AVANT que le chargement initial
+  // ne réponde, la réponse tardive ne doit pas écraser son choix optimiste (bug
+  // constaté en e2e — la fiche s'ouvre, un clic immédiat sur le toggle pouvait
+  // être effacé par le `setPreference(p)` du chargement, arrivé après coup).
+  const modifieRef = useRef(false);
+  useEffect(() => {
+    modifieRef.current = false;
+    let actif = true;
+    chargerPreference(recette.id)
+      .then((p) => {
+        if (actif && !modifieRef.current) setPreference(p);
+      })
+      .catch((erreur) => {
+        console.error("Chargement de la préférence échoué.", erreur);
+      });
+    return () => {
+      actif = false;
+    };
+  }, [recette.id]);
+
+  function surChangementPreference(nouvelle: RecettePreference | null): void {
+    modifieRef.current = true;
+    const precedente = preference;
+    setPreference(nouvelle); // optimiste
+    definirPreference(recette.id, nouvelle).catch((erreur) => {
+      console.error("Mise à jour de la préférence échouée.", erreur);
+      setPreference(precedente); // repli
+      toast.error("Impossible de mettre à jour la préférence. Réessaie.");
+    });
+  }
 
   // Ingrédients mis à l'échelle du slot puis scindés (RG-20). Même calcul que
   // la liste de courses : ×N/2 (facteurEchelle) puis arrondi par type d'unité.
@@ -99,6 +139,10 @@ export function FicheRecette({
             </span>
           </div>
         </div>
+        <TogglePreferenceRecette
+          preference={preference}
+          onChange={surChangementPreference}
+        />
         <button
           type="button"
           onClick={() => refDialog.current?.close()}
