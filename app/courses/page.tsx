@@ -24,7 +24,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { flushSync } from "react-dom";
 import { toast } from "sonner";
-import { ChevronLeft, ChevronRight, Sparkles, Users } from "lucide-react";
+import { ChevronLeft, ChevronRight, Pencil, Plus, Sparkles, Trash2, Users } from "lucide-react";
 import { genererListeCourses } from "@/lib/courses";
 import { retirerCreneauxDesactives } from "@/lib/generateur";
 import { chargerReglages } from "@/lib/reglages-data";
@@ -41,12 +41,19 @@ import {
   trierAvecCoches,
   trierCategoriesAvecCoches,
 } from "@/lib/coches";
+import { aQuantiteRenseignee, fusionnerArticlesManuels } from "@/lib/articles-manuels";
 import { storeCoches } from "@/lib/stockage";
 import {
   useSyncCourses,
   usePresenceCourses,
   useCycleAffiche,
   useCyclePlanning,
+  useArticlesManuels,
+  ajouterArticleManuel,
+  modifierArticleManuel,
+  supprimerArticleManuel,
+  basculerCocheArticleManuel,
+  viderCochesArticlesManuels,
   naviguerCycle,
   etirerCycle,
   appliquerGenerationCycle,
@@ -55,7 +62,10 @@ import {
 import { libelleCycle, LONGUEUR_MAX } from "@/lib/cycles";
 import { accorderNom } from "@/lib/pluriels";
 import { formaterQuantite } from "@/lib/unites";
+import { FormulaireArticleManuel } from "@/components/courses/formulaire-article-manuel";
+import type { SaisieArticleManuel } from "@/lib/persistance";
 import type {
+  ArticleManuel,
   CategorieIngredient,
   Ingredient,
   JourPlanning,
@@ -101,7 +111,14 @@ const LIBELLES_CATEGORIES: Record<CategorieIngredient, string> = {
 // caractères hors [a-z0-9] remplacés). Unicité garantie par l'agrégation
 // RG-05 : une seule ligne par nom|unité dans toute la liste.
 function nomTransition(ingredient: Ingredient): string {
-  const slug = `${ingredient.nom}-${ingredient.unite}`
+  // Un article manuel (#216) porte un id STABLE et UNIQUE (contrairement à la
+  // clé nom|unité, qui peut se répéter entre deux articles manuels de même
+  // libellé, doublons autorisés RG-42) — la base du slug doit l'utiliser pour
+  // que view-transition-name reste unique par élément rendu.
+  const base = ingredient.source === "manuel" && ingredient.id
+    ? ingredient.id
+    : `${ingredient.nom}-${ingredient.unite}`;
+  const slug = base
     .toLocaleLowerCase("fr")
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "") // diacritiques décomposés par NFD
@@ -207,9 +224,18 @@ export default function PageCourses() {
   // stores dédiés (#257), distincts de storePlanning (semaine unique).
   const cycle = useCycleAffiche();
   const planningCycle = useCyclePlanning();
+  // Articles manuels du cycle affiché (#216, US-47) — chargés/synchronisés par
+  // useSyncCourses (même ancre que les coches), indépendants du planning.
+  const articlesManuels = useArticlesManuels();
   // Présence anonyme « en magasin » (#56 PR4, RG-31) : vrai si un autre membre
   // du foyer est aussi sur la liste de courses en ce moment.
   const autresPresents = usePresenceCourses();
+
+  // Bottom sheet d'ajout/édition d'un article manuel (RG-43/43 bis) : `null` =
+  // fermé, sinon le mode + (pour l'édition) l'article visé.
+  const [dialogueArticle, setDialogueArticle] = useState<
+    { mode: "ajout" } | { mode: "edition"; article: ArticleManuel } | null
+  >(null);
 
   // Catégories repliées (US-05) — état volontairement non persisté :
   // réinitialisé à chaque chargement de page. "fond-de-placard" est une
@@ -283,24 +309,36 @@ export default function PageCourses() {
 
   // Agrégation (RG-05) recalculée uniquement quand le planning projeté du
   // cycle change. Un cycle sans aucun repas planifié (aucune semaine chargée
-  // ne couvre ses jours) produit une liste sans lignes : traité comme l'état
-  // vide, au même titre qu'aucun cycle hydraté (planningCycle === null).
-  const liste = useMemo<ListeCourses | null>(() => {
+  // ne couvre ses jours) produit une liste sans lignes — mais des articles
+  // manuels (#216) peuvent exister indépendamment de tout repas planifié :
+  // seule l'absence des DEUX vaut état vide (cf. plus bas).
+  const listeRecettes = useMemo<ListeCourses | null>(() => {
     if (planningCycle === null) return null;
     // Filtre live (#217, RG-46) avant agrégation : un créneau désactivé ne
     // produit aucun ingrédient, même si le planning projeté en contient encore
     // un (slot persisté avant la désactivation) — cf. app/planning/page.tsx.
-    const resultat = genererListeCourses(
-      retirerCreneauxDesactives(planningCycle, reglages)
-    );
-    const vide = resultat.normal.length === 0 && resultat.fondDePlacard.length === 0;
-    return vide ? null : resultat;
+    return genererListeCourses(retirerCreneauxDesactives(planningCycle, reglages));
   }, [planningCycle, reglages]);
+
+  // Fusion des articles manuels (#216) dans la liste agrégée, AVANT tri —
+  // cf. lib/articles-manuels.ts (pas de duplication de trierCategoriesAvecCoches).
+  const liste = useMemo<ListeCourses | null>(() => {
+    const base = listeRecettes ?? { normal: [], fondDePlacard: [] };
+    const fusionnee = fusionnerArticlesManuels(base, articlesManuels);
+    const vide = fusionnee.normal.length === 0 && fusionnee.fondDePlacard.length === 0;
+    return vide ? null : fusionnee;
+  }, [listeRecettes, articlesManuels]);
 
   // Coches valides ou non : parserCoches tolère l'absence et la corruption.
   const coches = useMemo(() => parserCoches(brutCoches), [brutCoches]);
 
   function basculer(ingredient: Ingredient): void {
+    // Un article manuel porte son état coché en base (colonne dédiée, RG-41) —
+    // pas dans le blob localStorage des ingrédients dérivés (RG-12).
+    if (ingredient.source === "manuel") {
+      avecTransition(() => void basculerCocheArticleManuel(ingredient.id!));
+      return;
+    }
     avecTransition(() => {
       storeCoches.ecrire(JSON.stringify(basculerCoche(coches, ingredient)));
     });
@@ -309,6 +347,26 @@ export default function PageCourses() {
   function toutDecocher(): void {
     avecTransition(() => {
       storeCoches.effacer();
+      void viderCochesArticlesManuels();
+    });
+  }
+
+  function enregistrerArticleManuel(saisie: SaisieArticleManuel): void {
+    const promesse =
+      dialogueArticle?.mode === "edition"
+        ? modifierArticleManuel(dialogueArticle.article.id, saisie)
+        : ajouterArticleManuel(saisie);
+    promesse.catch((erreur) => {
+      console.error("Enregistrement de l'article manuel échoué.", erreur);
+      toast.error("Impossible d'enregistrer cet article. Réessaie.");
+    });
+  }
+
+  function supprimer(ingredient: Ingredient): void {
+    if (!ingredient.id) return;
+    supprimerArticleManuel(ingredient.id).catch((erreur) => {
+      console.error("Suppression de l'article manuel échouée.", erreur);
+      toast.error("Impossible de supprimer cet article. Réessaie.");
     });
   }
 
@@ -365,12 +423,40 @@ export default function PageCourses() {
           <Sparkles aria-hidden="true" className="size-5" />
           {enGeneration ? "Génération…" : "Générer mon cycle"}
         </button>
+        {/* Article manuel (#216) : une liste de courses ad hoc n'a pas besoin
+            d'un repas planifié — on peut démarrer directement ici. */}
+        <button
+          type="button"
+          onClick={() => setDialogueArticle({ mode: "ajout" })}
+          className="relative inline-flex items-center gap-1.5 rounded-full border border-brand-200 px-4 py-2 text-sm font-medium text-brand-700 transition after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100"
+        >
+          <Plus aria-hidden="true" className="size-4" />
+          Ajouter un article
+        </button>
         <Link
           href="/planning"
           className="relative text-sm font-medium text-brand-700 underline-offset-4 transition after:absolute after:-inset-2 after:content-[''] hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
         >
           Aller au planning
         </Link>
+        {dialogueArticle && (
+          <FormulaireArticleManuel
+            titre={dialogueArticle.mode === "edition" ? "Modifier l'article" : "Ajouter un article"}
+            initial={
+              dialogueArticle.mode === "edition"
+                ? {
+                    libelle: dialogueArticle.article.libelle,
+                    quantite: dialogueArticle.article.quantite,
+                    unite: dialogueArticle.article.unite,
+                    categorie: dialogueArticle.article.categorie,
+                    fondDePlacard: dialogueArticle.article.fondDePlacard,
+                  }
+                : undefined
+            }
+            onEnregistrer={enregistrerArticleManuel}
+            onFermer={() => setDialogueArticle(null)}
+          />
+        )}
       </main>
     );
   }
@@ -438,6 +524,15 @@ export default function PageCourses() {
               Tout décocher
             </button>
           )}
+          {/* Article manuel (#216) : ajouter un article hors planning. */}
+          <button
+            type="button"
+            onClick={() => setDialogueArticle({ mode: "ajout" })}
+            className="relative inline-flex items-center gap-1.5 rounded-full border border-brand-200 px-4 py-2 text-sm font-medium text-brand-700 transition after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100"
+          >
+            <Plus aria-hidden="true" className="size-4" />
+            Ajouter un article
+          </button>
           <Link
             href="/planning"
             className="relative rounded-full border border-brand-200 px-4 py-2 text-sm font-medium text-brand-700 transition after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100"
@@ -479,10 +574,21 @@ export default function PageCourses() {
                 <ul className="divide-y divide-brand-100 rounded-lg border border-brand-100 bg-surface">
                   {trierAvecCoches(ligne.ingredients, coches).map((ingredient) => (
                     <ArticleCochable
-                      key={`${ingredient.nom}-${ingredient.unite}`}
+                      key={ingredient.id ?? `${ingredient.nom}-${ingredient.unite}`}
                       ingredient={ingredient}
                       coche={estCoche(coches, ingredient)}
                       onBasculer={() => basculer(ingredient)}
+                      onModifier={
+                        ingredient.source === "manuel"
+                          ? () => {
+                              const article = articlesManuels.find((a) => a.id === ingredient.id);
+                              if (article) setDialogueArticle({ mode: "edition", article });
+                            }
+                          : undefined
+                      }
+                      onSupprimer={
+                        ingredient.source === "manuel" ? () => supprimer(ingredient) : undefined
+                      }
                     />
                   ))}
                 </ul>
@@ -520,10 +626,21 @@ export default function PageCourses() {
                 <ul className="divide-y divide-accent-100">
                   {trierAvecCoches(liste.fondDePlacard, coches).map((ingredient) => (
                     <ArticleCochable
-                      key={`${ingredient.nom}-${ingredient.unite}`}
+                      key={ingredient.id ?? `${ingredient.nom}-${ingredient.unite}`}
                       ingredient={ingredient}
                       coche={estCoche(coches, ingredient)}
                       onBasculer={() => basculer(ingredient)}
+                      onModifier={
+                        ingredient.source === "manuel"
+                          ? () => {
+                              const article = articlesManuels.find((a) => a.id === ingredient.id);
+                              if (article) setDialogueArticle({ mode: "edition", article });
+                            }
+                          : undefined
+                      }
+                      onSupprimer={
+                        ingredient.source === "manuel" ? () => supprimer(ingredient) : undefined
+                      }
                       placard
                     />
                   ))}
@@ -533,6 +650,25 @@ export default function PageCourses() {
           </section>
         )}
       </div>
+
+      {dialogueArticle && (
+        <FormulaireArticleManuel
+          titre={dialogueArticle.mode === "edition" ? "Modifier l'article" : "Ajouter un article"}
+          initial={
+            dialogueArticle.mode === "edition"
+              ? {
+                  libelle: dialogueArticle.article.libelle,
+                  quantite: dialogueArticle.article.quantite,
+                  unite: dialogueArticle.article.unite,
+                  categorie: dialogueArticle.article.categorie,
+                  fondDePlacard: dialogueArticle.article.fondDePlacard,
+                }
+              : undefined
+          }
+          onEnregistrer={enregistrerArticleManuel}
+          onFermer={() => setDialogueArticle(null)}
+        />
+      )}
     </main>
   );
 }
@@ -544,11 +680,17 @@ function ArticleCochable({
   ingredient,
   coche,
   onBasculer,
+  onModifier,
+  onSupprimer,
   placard = false,
 }: {
   ingredient: Ingredient;
   coche: boolean;
   onBasculer: () => void;
+  /** Article manuel uniquement (#216, RG-43 bis) : ouvre l'édition en place. */
+  onModifier?: () => void;
+  /** Article manuel uniquement (#216, RG-42) : suppression par icône corbeille. */
+  onSupprimer?: () => void;
   placard?: boolean;
 }) {
   const couleurNom = placard ? "text-accent-800" : "text-brand-900";
@@ -556,9 +698,12 @@ function ArticleCochable({
     ? "text-accent-700"
     : "text-brand-700/85";
   return (
-    <li style={{ viewTransitionName: nomTransition(ingredient) }}>
+    <li
+      style={{ viewTransitionName: nomTransition(ingredient) }}
+      className="flex items-center"
+    >
       <label
-        className={`flex min-h-11 cursor-pointer items-center gap-3 py-2.5 transition-colors ${
+        className={`flex min-h-11 flex-1 cursor-pointer items-center gap-3 py-2.5 transition-colors ${
           placard ? "" : "px-4 hover:bg-brand-50/60"
         }`}
       >
@@ -575,14 +720,42 @@ function ArticleCochable({
         >
           {accorderNom(ingredient)}
         </span>
-        <span
-          className={`shrink-0 text-sm font-medium ${
-            coche ? `line-through ${couleurQuantite} opacity-40` : couleurQuantite
+        {aQuantiteRenseignee(ingredient) && (
+          <span
+            className={`shrink-0 text-sm font-medium ${
+              coche ? `line-through ${couleurQuantite} opacity-40` : couleurQuantite
+            }`}
+          >
+            {formaterQuantite(ingredient)}
+          </span>
+        )}
+      </label>
+      {/* Article manuel (#216) : édition en place + suppression, HORS du
+          <label> (pas d'imbrication d'interactifs). */}
+      {onModifier && (
+        <button
+          type="button"
+          onClick={onModifier}
+          aria-label={`Modifier « ${ingredient.nom} »`}
+          className={`relative flex size-8 shrink-0 items-center justify-center rounded-full text-brand-700/70 transition-colors after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 hover:text-brand-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 ${
+            placard ? "mr-1" : "mr-2"
           }`}
         >
-          {formaterQuantite(ingredient)}
-        </span>
-      </label>
+          <Pencil aria-hidden="true" className="size-4" />
+        </button>
+      )}
+      {onSupprimer && (
+        <button
+          type="button"
+          onClick={onSupprimer}
+          aria-label={`Supprimer « ${ingredient.nom} »`}
+          className={`relative flex size-8 shrink-0 items-center justify-center rounded-full text-brand-700/70 transition-colors after:absolute after:-inset-1 after:content-[''] hover:bg-red-50 hover:text-red-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 ${
+            placard ? "mr-2" : "mr-3"
+          }`}
+        >
+          <Trash2 aria-hidden="true" className="size-4" />
+        </button>
+      )}
     </li>
   );
 }

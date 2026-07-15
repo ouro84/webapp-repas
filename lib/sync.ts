@@ -14,18 +14,25 @@ import { useEffect } from "react";
 import { useSyncExternalStore } from "react";
 import { storeCoches, storePlanning } from "@/lib/stockage";
 import {
+  basculerCocheArticleManuelDistant,
+  chargerArticlesManuelsDistants,
   chargerCochesDistantes,
   chargerFoyerId,
   chargerLongueurCycle,
   chargerPlanningDistant,
   cocherArticleDistant,
+  creerArticleManuelDistant,
   decocherArticleDistant,
   definirLongueurCycle,
+  modifierArticleManuelDistant,
   purgerCyclesAvant,
   purgerSemainesAvant,
   sauvegarderPlanningDistant,
   sauvegarderSlotsDistant,
+  supprimerArticleManuelDistant,
+  viderCochesArticlesManuelsDistantes,
   viderCochesDistantes,
+  type SaisieArticleManuel,
 } from "@/lib/persistance";
 import { parserCoches, type Coches } from "@/lib/coches";
 import {
@@ -44,7 +51,7 @@ import {
   semainesDuCycle,
 } from "@/lib/cycles";
 import { chargerJourCoursesFoyer } from "@/lib/foyer";
-import type { Planning } from "@/types";
+import type { ArticleManuel, Planning } from "@/types";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 
 // Horodatage de la dernière écriture locale (last-write-wins) et drapeau
@@ -252,6 +259,208 @@ export function useCyclePlanning(): Planning | null {
     storeCyclePlanning.lire,
     storeCyclePlanning.lireServeur
   );
+}
+
+// ---------------------------------------------------------------------------
+// Articles manuels du cycle (#216, US-47) — store en mémoire (PAS localStorage :
+// contrairement aux coches, un article manuel vit en base dès sa création, pas
+// de file offline à rejouer). Chargé/rechargé avec le cycle affiché (même ancre
+// que les coches, cf. ancreActive) ; les mutations (créer/modifier/supprimer/
+// cocher) écrivent en base PUIS mettent à jour le store localement (pas besoin
+// d'attendre l'écho temps réel, qui reste idempotent pour les autres membres).
+// ---------------------------------------------------------------------------
+// Référence STABLE (pas un littéral `[]` recréé à chaque appel) : un
+// getServerSnapshot qui renvoie une nouvelle référence à chaque appel fait
+// boucler useSyncExternalStore (React #185, cf. piège CLAUDE.md #257).
+const TABLEAU_ARTICLES_MANUELS_VIDE: ArticleManuel[] = [];
+let articlesManuels: ArticleManuel[] = TABLEAU_ARTICLES_MANUELS_VIDE;
+const abonnesArticlesManuels = new Set<() => void>();
+
+function definirArticlesManuels(liste: ArticleManuel[]): void {
+  articlesManuels = liste;
+  for (const rappel of abonnesArticlesManuels) rappel();
+}
+
+const storeArticlesManuels = {
+  sAbonner(rappel: () => void): () => void {
+    abonnesArticlesManuels.add(rappel);
+    return () => abonnesArticlesManuels.delete(rappel);
+  },
+  lire: (): ArticleManuel[] => articlesManuels,
+  lireServeur: (): ArticleManuel[] => TABLEAU_ARTICLES_MANUELS_VIDE,
+};
+
+/** Articles manuels du cycle affiché (#216), triés par ordre de création. */
+export function useArticlesManuels(): ArticleManuel[] {
+  return useSyncExternalStore(
+    storeArticlesManuels.sAbonner,
+    storeArticlesManuels.lire,
+    storeArticlesManuels.lireServeur
+  );
+}
+
+// Ancre pour laquelle le chargement en cours a été lancé — un chargement
+// résolu pour une ancre quittée entre-temps (navigation rapide) est ignoré.
+let ancreArticlesManuelsChargee: string | null = null;
+
+async function chargerArticlesManuelsDansCache(ancre: string): Promise<void> {
+  ancreArticlesManuelsChargee = ancre;
+  try {
+    const liste = await chargerArticlesManuelsDistants(ancre);
+    if (ancreArticlesManuelsChargee === ancre) definirArticlesManuels(liste);
+  } catch (erreur) {
+    console.error("Chargement des articles manuels échoué.", erreur);
+  }
+}
+
+/** Ajoute un article manuel sur l'ancre affichée (RG-43). No-op hors cycle. */
+export async function ajouterArticleManuel(saisie: SaisieArticleManuel): Promise<void> {
+  const ancre = ancreActive();
+  if (ancre === null) return;
+  const cree = await creerArticleManuelDistant(ancre, saisie);
+  definirArticlesManuels([...articlesManuels, cree]);
+}
+
+/** Modifie un article manuel EN PLACE (RG-43 bis) : conserve id et coché. */
+export async function modifierArticleManuel(
+  id: string,
+  saisie: SaisieArticleManuel
+): Promise<void> {
+  await modifierArticleManuelDistant(id, saisie);
+  definirArticlesManuels(
+    articlesManuels.map((a) =>
+      a.id === id
+        ? {
+            ...a,
+            libelle: saisie.libelle,
+            quantite: saisie.quantite,
+            unite: saisie.unite,
+            categorie: saisie.categorie,
+            fondDePlacard: saisie.fondDePlacard,
+          }
+        : a
+    )
+  );
+}
+
+/** Bascule l'état coché d'un article manuel (colonne dédiée, indépendante du
+ *  blob de coches RG-12). Optimiste : revert local si l'écriture échoue. */
+export async function basculerCocheArticleManuel(id: string): Promise<void> {
+  const article = articlesManuels.find((a) => a.id === id);
+  if (!article) return;
+  const coche = !article.coche;
+  definirArticlesManuels(articlesManuels.map((a) => (a.id === id ? { ...a, coche } : a)));
+  try {
+    await basculerCocheArticleManuelDistant(id, coche);
+  } catch (erreur) {
+    definirArticlesManuels(articlesManuels.map((a) => (a.id === id ? { ...a, coche: !coche } : a)));
+    throw erreur;
+  }
+}
+
+/** Supprime un article manuel (RG-42). */
+export async function supprimerArticleManuel(id: string): Promise<void> {
+  await supprimerArticleManuelDistant(id);
+  definirArticlesManuels(articlesManuels.filter((a) => a.id !== id));
+}
+
+/** Décoche tous les articles manuels du cycle affiché SANS les supprimer
+ *  (RG-41, « Tout décocher »). No-op hors cycle. */
+export async function viderCochesArticlesManuels(): Promise<void> {
+  const ancre = ancreActive();
+  if (ancre === null) return;
+  await viderCochesArticlesManuelsDistantes(ancre);
+  definirArticlesManuels(articlesManuels.map((a) => ({ ...a, coche: false })));
+}
+
+// Applique un event Realtime article_manuel au store (INSERT/UPDATE = upsert
+// par id, DELETE = retrait). Idempotent vis-à-vis de nos propres écritures
+// (déjà appliquées localement par les fonctions ci-dessus) : ré-appliquer le
+// même contenu ne change rien d'observable.
+function surEventArticleManuel(
+  foyer: string,
+  ancre: string,
+  payload: {
+    eventType: "INSERT" | "UPDATE" | "DELETE";
+    new: Partial<{ id: string; foyer_id: string; ancre: string }> & Record<string, unknown>;
+    old: Partial<{ id: string; foyer_id: string; ancre: string }>;
+  }
+): void {
+  if (payload.eventType === "DELETE") {
+    const old = payload.old;
+    if (old.foyer_id && old.foyer_id !== foyer) return;
+    if (old.ancre && old.ancre !== ancre) return;
+    if (!old.id) return;
+    definirArticlesManuels(articlesManuels.filter((a) => a.id !== old.id));
+    return;
+  }
+  const ligne = payload.new;
+  if (ligne.foyer_id && ligne.foyer_id !== foyer) return;
+  if (ligne.ancre && ligne.ancre !== ancre) return;
+  if (!ligne.id) return;
+  const article: ArticleManuel = {
+    id: String(ligne.id),
+    libelle: String(ligne.libelle ?? ""),
+    quantite: (ligne.quantite as number | null) ?? null,
+    unite: (ligne.unite as ArticleManuel["unite"]) ?? null,
+    categorie: (ligne.categorie as ArticleManuel["categorie"]) ?? "autre",
+    fondDePlacard: Boolean(ligne.fond_de_placard),
+    coche: Boolean(ligne.coche),
+  };
+  const existe = articlesManuels.some((a) => a.id === article.id);
+  definirArticlesManuels(
+    existe
+      ? articlesManuels.map((a) => (a.id === article.id ? article : a))
+      : [...articlesManuels, article]
+  );
+}
+
+let canalArticlesManuels: RealtimeChannel | null = null;
+let ancreArticlesManuelsAbonnee: string | null = null;
+let chaineArticlesManuels: Promise<void> = Promise.resolve();
+
+function synchroniserAbonnementArticlesManuels(ancre: string | null): Promise<void> {
+  chaineArticlesManuels = chaineArticlesManuels
+    .then(() => majAbonnementArticlesManuels(ancre))
+    .catch((e) => console.error("Abonnement temps réel des articles manuels échoué.", e));
+  return chaineArticlesManuels;
+}
+
+async function majAbonnementArticlesManuels(ancre: string | null): Promise<void> {
+  if (ancre === ancreArticlesManuelsAbonnee && (ancre === null || canalArticlesManuels)) return;
+  ancreArticlesManuelsAbonnee = ancre;
+  if (canalArticlesManuels) {
+    await client().removeChannel(canalArticlesManuels);
+    canalArticlesManuels = null;
+  }
+  if (ancre === null) return;
+  const foyer = await assurerFoyerId();
+  if (foyer === null || ancreArticlesManuelsAbonnee !== ancre) return;
+  await assurerAuthRealtime();
+  if (ancreArticlesManuelsAbonnee !== ancre) return;
+  const topic = `articles-manuels:${foyer}:${ancre}`;
+  await retirerCanalTopic(topic);
+  canalArticlesManuels = client()
+    .channel(topic)
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "article_manuel", filter: `ancre=eq.${ancre}` },
+      (payload) => surEventArticleManuel(foyer, ancre, payload)
+    )
+    .subscribe();
+}
+
+function couperArticlesManuels(): Promise<void> {
+  chaineArticlesManuels = chaineArticlesManuels
+    .then(async () => {
+      if (canalArticlesManuels) {
+        await client().removeChannel(canalArticlesManuels);
+        canalArticlesManuels = null;
+      }
+      ancreArticlesManuelsAbonnee = null;
+    })
+    .catch((e) => console.error("Arrêt temps réel des articles manuels échoué.", e));
+  return chaineArticlesManuels;
 }
 
 // ---------------------------------------------------------------------------
@@ -659,9 +868,12 @@ function couperTempsReel(): Promise<void> {
       semainePlanningAbonnee = null;
     })
     .catch((e) => console.error("Arrêt temps réel du planning échoué.", e));
-  return Promise.all([chaineCoches, chainePlanning, couperPlanningCycle()]).then(
-    () => undefined
-  );
+  return Promise.all([
+    chaineCoches,
+    chainePlanning,
+    couperPlanningCycle(),
+    couperArticlesManuels(),
+  ]).then(() => undefined);
 }
 
 // ---------------------------------------------------------------------------
@@ -1176,6 +1388,9 @@ async function chargerCycleDansCache(
     } else {
       appliquerBlobDistant(await chargerCochesDistantes(ancre));
     }
+    // Articles manuels (#216) : scopés par la même ancre, pas de dirty-first
+    // (aucune file offline — chaque mutation écrit en base immédiatement).
+    await chargerArticlesManuelsDansCache(ancre);
     definirEtat("synchronise");
   } catch (erreur) {
     console.error("Chargement du cycle échoué.", erreur);
@@ -1183,9 +1398,11 @@ async function chargerCycleDansCache(
     hydratationCochesEnCours = false;
   }
   // (Ré)abonne le temps réel des coches à l'ancre désormais affichée + le
-  // temps réel du PLANNING sur les 1-2 semaines du cycle (alerte US-21, #259).
+  // temps réel du PLANNING sur les 1-2 semaines du cycle (alerte US-21, #259)
+  // + le temps réel des articles manuels (#216).
   void synchroniserAbonnementCoches(ancre);
   void synchroniserAbonnementPlanningCycle(ancre, longueur);
+  void synchroniserAbonnementArticlesManuels(ancre);
 }
 
 /**
@@ -1350,6 +1567,7 @@ function demarrerSyncCoches(): () => void {
   const cycle = lireCycleAffiche();
   void synchroniserAbonnementCoches(cycle?.ancre ?? null);
   void synchroniserAbonnementPlanningCycle(cycle?.ancre ?? null, cycle?.longueur ?? LONGUEUR_DEFAUT);
+  void synchroniserAbonnementArticlesManuels(cycle?.ancre ?? null);
   return () => {
     desabonnerCoches();
     window.removeEventListener("online", surRetourEnLigne);

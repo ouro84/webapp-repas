@@ -385,3 +385,133 @@ test("les libellés s'accordent en nombre selon la quantité (US-08)", async ({
   await expect(page.getByText("tomates", { exact: true })).toBeVisible();
   await expect(page.getByText("beurre", { exact: true })).toBeVisible();
 });
+
+// ---------------------------------------------------------------------------
+// US-47 — article manuel de la liste de courses (#216, RG-40 à RG-43)
+// ---------------------------------------------------------------------------
+
+test("ajoute un article manuel, visible dans sa catégorie et cochable (RG-42/43)", async ({
+  page,
+}) => {
+  await injecterCyclePlanning(page, planningDeterministe());
+  await page.goto("/courses");
+
+  await page.getByRole("button", { name: "Ajouter un article" }).click();
+  await page.getByLabel("Article", { exact: true }).fill("Sacs poubelle");
+  // Catégorie laissée au défaut ("Autre") : pas de section « Autre » dans le
+  // planning déterministe → une nouvelle section doit apparaître.
+  await page.getByRole("button", { name: "Enregistrer" }).click();
+
+  await expect(page.getByRole("heading", { name: "Autre" })).toBeVisible();
+  const checkbox = page.getByRole("checkbox", { name: /Sacs poubelle/ });
+  await expect(checkbox).toBeVisible();
+  await expect(checkbox).not.toBeChecked();
+
+  await checkbox.click();
+  await expect(checkbox).toBeChecked();
+});
+
+test("modifie un article manuel en place, conserve l'état coché (RG-43 bis)", async ({
+  page,
+}) => {
+  await injecterCyclePlanning(page, planningDeterministe());
+  await page.goto("/courses");
+
+  await page.getByRole("button", { name: "Ajouter un article" }).click();
+  await page.getByLabel("Article", { exact: true }).fill("Sacs poubelle");
+  await page.getByRole("button", { name: "Enregistrer" }).click();
+
+  const checkbox = page.getByRole("checkbox", { name: /Sacs poubelle/ });
+  await checkbox.click();
+  await expect(checkbox).toBeChecked();
+
+  await page.getByRole("button", { name: "Modifier « Sacs poubelle »" }).click();
+  const champLibelle = page.getByLabel("Article", { exact: true });
+  await expect(champLibelle).toHaveValue("Sacs poubelle");
+  await champLibelle.fill("Sacs poubelle 50L");
+  await page.getByRole("button", { name: "Enregistrer" }).click();
+
+  // Même ligne : nouveau libellé, coche conservée (pas de suppression/recréation).
+  // Nom EXACT (pas /Sacs poubelle/, substring que « Sacs poubelle 50L » matcherait aussi).
+  await expect(page.getByRole("checkbox", { name: "Sacs poubelle", exact: true })).toHaveCount(0);
+  const modifie = page.getByRole("checkbox", { name: /Sacs poubelle 50L/ });
+  await expect(modifie).toBeVisible();
+  await expect(modifie).toBeChecked();
+});
+
+test("supprime un article manuel (RG-42)", async ({ page }) => {
+  await injecterCyclePlanning(page, planningDeterministe());
+  await page.goto("/courses");
+
+  await page.getByRole("button", { name: "Ajouter un article" }).click();
+  await page.getByLabel("Article", { exact: true }).fill("Piles AA");
+  await page.getByRole("button", { name: "Enregistrer" }).click();
+  await expect(page.getByRole("checkbox", { name: /Piles AA/ })).toBeVisible();
+
+  await page.getByRole("button", { name: "Supprimer « Piles AA »" }).click();
+  await expect(page.getByRole("checkbox", { name: /Piles AA/ })).toHaveCount(0);
+});
+
+test("un article manuel survit à la régénération du planning, contrairement aux coches de recette (RG-41)", async ({
+  page,
+}) => {
+  // Même montage que « régénérer réinitialise les coches » (RG-13) : planning
+  // injecté à la fois pour /planning (planning_courant) et /courses (cycle_planning).
+  await page.addInitScript(
+    (contenu) => localStorage.setItem("planning_courant", contenu),
+    JSON.stringify({ ...planningDeterministe(), semaine: semaineParDefaut() })
+  );
+  await injecterCyclePlanning(page, planningDeterministe());
+  await page.goto("/courses");
+
+  await page.getByRole("button", { name: "Ajouter un article" }).click();
+  await page.getByLabel("Article", { exact: true }).fill("Sacs poubelle");
+  await page.getByRole("button", { name: "Enregistrer" }).click();
+  const articleManuel = page.getByRole("checkbox", { name: /Sacs poubelle/ });
+  await articleManuel.click();
+  await expect(articleManuel).toBeChecked();
+
+  await page.getByRole("checkbox", { name: /lardons/ }).click();
+  // Le compteur RG-14 inclut l'article manuel dans le total (8 = 7 ingrédients
+  // + 1 article manuel, ni l'un ni l'autre au fond de placard) : 2 cochés
+  // (manuel + lardons).
+  await expect(page.getByText(/^2 cochés sur 8/)).toBeVisible();
+
+  await page.goto("/planning");
+  await page.getByRole("button", { name: "Régénérer" }).click();
+  await expect(page.locator("main ul > li")).toHaveCount(7);
+  await expect
+    .poll(async () => page.evaluate(() => localStorage.getItem("planning_dirty")))
+    .toBeNull();
+
+  await page.goto("/courses");
+  // RG-13 : les coches d'ingrédients dérivés sont réinitialisées. Le total
+  // n'est plus déterministe (« Régénérer » pioche dans le vrai catalogue, pas
+  // les 3 fixtures) — seul le compte de cochés (1, l'article manuel survivant)
+  // est prévisible, comme le total dans « régénère (RG-13) » ci-dessus.
+  await expect(page.getByText(/^1 coché sur [1-9]\d*/)).toBeVisible();
+  // L'article manuel, LUI, n'est jamais touché par la régénération (RG-41) :
+  // présent ET toujours coché.
+  const articleApresRegeneration = page.getByRole("checkbox", { name: /Sacs poubelle/ });
+  await expect(articleApresRegeneration).toBeVisible();
+  await expect(articleApresRegeneration).toBeChecked();
+});
+
+test("« Tout décocher » décoche l'article manuel SANS le supprimer (RG-41)", async ({
+  page,
+}) => {
+  await injecterCyclePlanning(page, planningDeterministe());
+  await page.goto("/courses");
+
+  await page.getByRole("button", { name: "Ajouter un article" }).click();
+  await page.getByLabel("Article", { exact: true }).fill("Sacs poubelle");
+  await page.getByRole("button", { name: "Enregistrer" }).click();
+  const articleManuel = page.getByRole("checkbox", { name: /Sacs poubelle/ });
+  await articleManuel.click();
+  await page.getByRole("checkbox", { name: /lardons/ }).click();
+
+  await page.getByRole("button", { name: "Tout décocher" }).click();
+
+  await expect(articleManuel).toBeVisible(); // toujours là…
+  await expect(articleManuel).not.toBeChecked(); // …mais décoché.
+});

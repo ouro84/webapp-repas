@@ -41,8 +41,17 @@ export function parserCoches(brut: string | null): Coches {
   }
 }
 
-/** Une coche n'est valide que si la quantité n'a pas changé (RG-12). */
+/**
+ * Une coche n'est valide que si la quantité n'a pas changé (RG-12).
+ *
+ * Un article MANUEL (#216, discriminant `source: "manuel"`) porte son état
+ * coché directement sur la ligne (table `article_manuel` dédiée) plutôt que
+ * dans le blob `coches` par clé nom|unité — il est exempt de l'invalidation
+ * RG-12 (pas de notion de quantité recalculée) et de toute collision de clé
+ * avec un ingrédient dérivé de recette portant le même nom/unité.
+ */
 export function estCoche(coches: Coches, ingredient: Ingredient): boolean {
+  if (ingredient.source === "manuel") return ingredient.coche === true
   return coches[cleAgregation(ingredient)] === ingredient.quantite
 }
 

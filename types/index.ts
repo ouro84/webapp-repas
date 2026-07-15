@@ -79,6 +79,14 @@ export type Ingredient = {
   unite: Unite;
   categorie: CategorieIngredient;
   fondDePlacard: boolean;
+  // Discriminant d'un article manuel de la liste de courses (#216, US-47).
+  // Optionnel : absent = ingrédient dérivé d'une recette (comportement
+  // antérieur inchangé). Un article manuel porte son état coché DIRECTEMENT
+  // (table article_manuel dédiée, RG-40/41) plutôt que via le blob de coches
+  // par clé nom|unité (RG-12) — cf. lib/coches.ts, estCoche().
+  source?: "manuel";
+  id?: string;
+  coche?: boolean;
 };
 
 export type Recette = {
@@ -189,6 +197,39 @@ export type DbRecetteMasquee = {
   foyer_id: string;
   recette_id: string;
   masquee_le: string;
+};
+
+// Article manuel de la liste de courses (#216, US-47, RG-40→43). Scopé
+// foyer + ANCRE de cycle (pas semaine, cf. #257 : etat_courses_article a été
+// re-clée par ancre AVANT l'écriture de cette feature) — ne survit pas à un
+// changement de cycle (pas de récurrence automatique en V1). Quantité/unité
+// optionnelles (RG-43) : saisie structurée mais non obligatoire. État coché
+// porté DIRECTEMENT par la ligne (colonne dédiée), à la différence des
+// ingrédients dérivés de recette dont la coche vit dans le blob localStorage
+// `courses_cochees` / la table etat_courses_article — exempte donc l'article
+// manuel de l'invalidation à la régénération (RG-41).
+export type ArticleManuel = {
+  id: string;
+  libelle: string;
+  quantite: number | null;
+  unite: Unite | null;
+  categorie: CategorieIngredient;
+  fondDePlacard: boolean;
+  coche: boolean;
+};
+
+// Forme DB (snake_case) de la table `article_manuel`.
+export type DbArticleManuel = {
+  id: string;
+  foyer_id: string;
+  ancre: string; // date ISO "AAAA-MM-JJ" du cycle de courses (#257)
+  libelle: string;
+  quantite: number | null;
+  unite: Unite | null;
+  categorie: CategorieIngredient;
+  fond_de_placard: boolean;
+  coche: boolean;
+  cree_le: string;
 };
 
 export type LignesCourses = {

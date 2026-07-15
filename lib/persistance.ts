@@ -9,9 +9,9 @@
 // semaines est câblée en PR2.
 
 import { createClient } from "@/lib/supabase/client"
-import { dbPlanningToDomain } from "@/lib/adapters"
+import { dbArticleManuelToDomain, dbPlanningToDomain } from "@/lib/adapters"
 import { LONGUEUR_DEFAUT } from "@/lib/cycles"
-import type { DbPlanningSlot, Planning } from "@/types"
+import type { ArticleManuel, DbArticleManuel, DbPlanningSlot, Planning } from "@/types"
 
 // Sélection imbriquée : le planning, ses slots (avec personnes/restes) et la
 // recette complète de chaque slot (avec ingrédients) — nécessaire pour
@@ -122,6 +122,8 @@ export async function purgerCyclesAvant(cutoffAncre: string): Promise<void> {
   if (error) throw new Error(`Purge coches impossible : ${error.message}`)
   // cycle_courses : purge des longueurs obsolètes.
   await supabase.from("cycle_courses").delete().lt("ancre", cutoffAncre)
+  // article_manuel (#216) : même rétention que les coches par-article.
+  await supabase.from("article_manuel").delete().lt("ancre", cutoffAncre)
 }
 
 /** Foyer de l'utilisateur courant (pour scoper les canaux temps réel par foyer,
@@ -330,4 +332,116 @@ export async function definirLongueurCycle(ancre: string, longueur: number): Pro
   const { error } = await supabase
     .from("cycle_courses").upsert({ ancre, longueur }, { onConflict: "foyer_id,ancre" })
   if (error) throw new Error(`Réglage cycle impossible : ${error.message}`)
+}
+
+// ---------------------------------------------------------------------------
+// Articles manuels de la liste de courses (#216, US-47) — écritures DIRECTES
+// sous RLS « foyer » (même pattern que etat_courses_article, #56 PR4) :
+// chaque opération porte sur une seule ligne, donc atomique. foyer_id posé
+// par le default mon_foyer(). Scopés par ancre de cycle (RG-40).
+// ---------------------------------------------------------------------------
+
+const SELECT_ARTICLE_MANUEL =
+  "id, libelle, quantite, unite, categorie, fond_de_placard, coche" as const
+
+/** Articles manuels d'une ancre de cycle, dans leur ordre de création. */
+export async function chargerArticlesManuelsDistants(ancre: string): Promise<ArticleManuel[]> {
+  const supabase = createClient()
+  const { data, error } = await supabase
+    .from("article_manuel")
+    .select(SELECT_ARTICLE_MANUEL)
+    .eq("ancre", ancre)
+    .order("cree_le", { ascending: true })
+  if (error) {
+    throw new Error(`Chargement des articles manuels impossible : ${error.message}`)
+  }
+  return (data ?? []).map((row) => dbArticleManuelToDomain(row as unknown as DbArticleManuel))
+}
+
+/** Saisie d'un article manuel (formulaire d'ajout/édition, RG-43). */
+export type SaisieArticleManuel = {
+  libelle: string
+  quantite: number | null
+  unite: ArticleManuel["unite"]
+  categorie: ArticleManuel["categorie"]
+  fondDePlacard: boolean
+}
+
+/** Crée un article manuel sur l'ancre affichée. Renvoie la ligne créée. */
+export async function creerArticleManuelDistant(
+  ancre: string,
+  saisie: SaisieArticleManuel
+): Promise<ArticleManuel> {
+  const supabase = createClient()
+  const { data, error } = await supabase
+    .from("article_manuel")
+    .insert({
+      ancre,
+      libelle: saisie.libelle,
+      quantite: saisie.quantite,
+      unite: saisie.unite,
+      categorie: saisie.categorie,
+      fond_de_placard: saisie.fondDePlacard,
+    })
+    .select(SELECT_ARTICLE_MANUEL)
+    .single()
+  if (error || !data) {
+    throw new Error(`Création de l'article manuel impossible : ${error?.message ?? "réponse vide"}`)
+  }
+  return dbArticleManuelToDomain(data as unknown as DbArticleManuel)
+}
+
+/** Modifie un article manuel EN PLACE (RG-43 bis) : conserve id et état coché. */
+export async function modifierArticleManuelDistant(
+  id: string,
+  saisie: SaisieArticleManuel
+): Promise<void> {
+  const supabase = createClient()
+  const { error } = await supabase
+    .from("article_manuel")
+    .update({
+      libelle: saisie.libelle,
+      quantite: saisie.quantite,
+      unite: saisie.unite,
+      categorie: saisie.categorie,
+      fond_de_placard: saisie.fondDePlacard,
+    })
+    .eq("id", id)
+  if (error) {
+    throw new Error(`Modification de l'article manuel impossible : ${error.message}`)
+  }
+}
+
+/** Bascule l'état coché d'un article manuel (colonne dédiée, pas le blob RG-12). */
+export async function basculerCocheArticleManuelDistant(
+  id: string,
+  coche: boolean
+): Promise<void> {
+  const supabase = createClient()
+  const { error } = await supabase.from("article_manuel").update({ coche }).eq("id", id)
+  if (error) {
+    throw new Error(`Cochage de l'article manuel impossible : ${error.message}`)
+  }
+}
+
+/** Supprime un article manuel (RG-42, icône corbeille). */
+export async function supprimerArticleManuelDistant(id: string): Promise<void> {
+  const supabase = createClient()
+  const { error } = await supabase.from("article_manuel").delete().eq("id", id)
+  if (error) {
+    throw new Error(`Suppression de l'article manuel impossible : ${error.message}`)
+  }
+}
+
+/** Décoche tous les articles manuels d'une ancre (« Tout décocher », RG-41 :
+ *  décoche SANS supprimer, contrairement aux ingrédients dérivés). */
+export async function viderCochesArticlesManuelsDistantes(ancre: string): Promise<void> {
+  const supabase = createClient()
+  const { error } = await supabase
+    .from("article_manuel")
+    .update({ coche: false })
+    .eq("ancre", ancre)
+  if (error) {
+    throw new Error(`Décochage des articles manuels impossible : ${error.message}`)
+  }
 }
