@@ -955,6 +955,30 @@ La génération évite de reproposer les plats des semaines récentes, sans jama
 - **RG-51 — Pénalité dégressive** : plus une recette est **récente** dans la fenêtre, plus elle est défavorisée (vue il y a 1 semaine ≫ vue il y a 4 semaines). Une recette servie plusieurs semaines ne compte que par son apparition **la plus récente** (pénalité maximale).
 - **RG-52 — Lecture serveur, génération seule** : l'historique est lu **côté serveur** au moment de la génération (`POST /api/planning/generer`, sous RLS foyer). La **sélection manuelle** et le remplacement « ↺ changer » (`remplacerSlot`) **ne sont pas concernés** (cohérent avec RG-03 #23 : l'utilisateur arbitre).
 
+### RG-44 à RG-48 — Créneau désactivable, « Aucun » (US-48, #217)
+
+Un foyer qui ne cuisine pas tous les repas (cantine, restaurant le midi…) peut désactiver un créneau plutôt que de subir un planning et une liste de courses parasites.
+
+- **RG-44 — Valeur de plafond dédiée** : chaque créneau (`dejeunerSemaine`/`dinerSemaine`/`dejeunerWeekend`/`dinerWeekend`) accepte, en plus des plafonds de temps `rapide`/`normal`/`long`, une valeur **« Aucun »**. « Aucun » n'est pas un plafond plus restrictif que « rapide » : le créneau n'est **pas généré du tout**.
+- **RG-45 — Distinct de « Restes »** : « Restes » (RG-22) est un repas **planifié** mais non cuisiné (la recette est conservée) ; « Aucun » est l'**absence totale** de repas sur ce créneau (aucune recette, slot absent).
+- **RG-46 — Exclu du décompte et des courses** : un créneau « Aucun » ne compte pas dans les 14 repas de la semaine, et ne produit aucun ingrédient dans la liste de courses.
+- **RG-47 — Au moins un créneau actif** : la configuration ne peut pas désactiver les 4 créneaux à la fois — la génération d'un planning entièrement vide est interdite (garde de faisabilité au save des réglages, en plus d'une contrainte de base de données).
+- **RG-48 — Défaut inchangé** : tous les créneaux restent actifs par défaut (rétro-compatibilité) ; désactiver un créneau est un choix explicite.
+
+**Comportement (BDD) :**
+
+> **Given** l'utilisateur est sur la page Réglages de génération
+> **When** il règle un créneau sur « Aucun »
+> **Then** ce réglage s'applique **immédiatement** à l'affichage du planning et de la liste de courses (pas seulement à la prochaine génération) — le slot correspondant n'est ni affiché, ni compté dans les courses, mais son emplacement reste visible sous une forme d'état vide (« Pas de repas prévu »)
+
+> **Given** un créneau réglé sur « Aucun »
+> **When** l'utilisateur (re)génère un planning
+> **Then** aucun repas n'est tiré pour ce créneau, et la faisabilité du vivier (RG-01 et suivants) ne le compte pas comme une contrainte
+
+> **Given** un créneau désactivé puis réactivé sur un planning déjà généré
+> **When** l'utilisateur revient sur le planning (sans régénérer)
+> **Then** le slot d'origine (recette, éventuel marquage « restes ») réapparaît tel quel — rien n'a été perdu, seul l'affichage était filtré
+
 ### RG-22 — Repas en « restes » (US-12)
 
 Un slot peut être marqué **« restes »** (flag par slot, `restes.dejeuner` / `restes.diner`, cf. 5.5) : l'utilisateur mangera ce qu'il a au frigo, sans cuisiner. Règles :

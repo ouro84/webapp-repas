@@ -21,11 +21,14 @@
 // repli sans animation sinon, et si `prefers-reduced-motion` est actif.
 
 import Link from "next/link";
-import { useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { flushSync } from "react-dom";
 import { toast } from "sonner";
 import { ChevronLeft, ChevronRight, Sparkles, Users } from "lucide-react";
 import { genererListeCourses } from "@/lib/courses";
+import { retirerCreneauxDesactives } from "@/lib/generateur";
+import { chargerReglages } from "@/lib/reglages-data";
+import { REGLAGES_DEFAUT } from "@/lib/reglages";
 import { parseApiError } from "@/lib/errors";
 import { messagesAvertissementGeneration } from "@/lib/avertissements-generation";
 import {
@@ -57,6 +60,7 @@ import type {
   Ingredient,
   JourPlanning,
   ListeCourses,
+  ReglagesGeneration,
 } from "@/types";
 
 // Vrai uniquement après hydratation côté navigateur — permet d'afficher
@@ -212,6 +216,24 @@ export default function PageCourses() {
   // pseudo-catégorie pour la section dédiée.
   const [replies, setReplies] = useState<ReadonlySet<string>>(new Set());
 
+  // Réglages de génération (#217) : un créneau désactivé (« Aucun ») retire
+  // immédiatement ses ingrédients de la liste, même sans régénérer — même
+  // filtre live que /planning (RG-46). Défaut tant que non chargés = tout actif.
+  const [reglages, setReglages] = useState<ReglagesGeneration>(REGLAGES_DEFAUT);
+  useEffect(() => {
+    let actif = true;
+    chargerReglages()
+      .then((r) => {
+        if (actif) setReglages(r);
+      })
+      .catch((erreur) => {
+        console.error("Chargement des réglages échoué (défauts appliqués).", erreur);
+      });
+    return () => {
+      actif = false;
+    };
+  }, []);
+
   // Génération fenêtrée « Générer mon cycle » (#259) : remplit d'un coup les
   // repas du cycle affiché (1-2 semaines ISO), sans quitter /courses.
   const [enGeneration, setEnGeneration] = useState(false);
@@ -265,10 +287,15 @@ export default function PageCourses() {
   // vide, au même titre qu'aucun cycle hydraté (planningCycle === null).
   const liste = useMemo<ListeCourses | null>(() => {
     if (planningCycle === null) return null;
-    const resultat = genererListeCourses(planningCycle);
+    // Filtre live (#217, RG-46) avant agrégation : un créneau désactivé ne
+    // produit aucun ingrédient, même si le planning projeté en contient encore
+    // un (slot persisté avant la désactivation) — cf. app/planning/page.tsx.
+    const resultat = genererListeCourses(
+      retirerCreneauxDesactives(planningCycle, reglages)
+    );
     const vide = resultat.normal.length === 0 && resultat.fondDePlacard.length === 0;
     return vide ? null : resultat;
-  }, [planningCycle]);
+  }, [planningCycle, reglages]);
 
   // Coches valides ou non : parserCoches tolère l'absence et la corruption.
   const coches = useMemo(() => parserCoches(brutCoches), [brutCoches]);

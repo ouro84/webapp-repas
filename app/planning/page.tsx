@@ -27,6 +27,7 @@ import {
   remplacerSlot,
   remplacerSlotManuel,
   reposNonSaison,
+  retirerCreneauxDesactives,
 } from "@/lib/generateur";
 import {
   storePlanning,
@@ -228,16 +229,16 @@ function BasculeVue({
 }
 
 // Slots d'un jour dans l'ordre d'affichage : déjeuner (week-end) puis dîner.
+// `recette` est absente soit pour un planning antérieur à 14 repas (#3), soit
+// pour un créneau désactivé (« Aucun », #217, RG-44) — les deux cas affichent
+// un emplacement conservé à l'état vide (SlotRepas), jamais une case masquée.
 function slotsDuJour(
   jp: JourPlanning
-): { typeRepas: TypeRepas; libelle: string; recette: Recette }[] {
-  const slots: { typeRepas: TypeRepas; libelle: string; recette: Recette }[] =
-    [];
-  if (jp.dejeuner) {
-    slots.push({ typeRepas: "dejeuner", libelle: "Déjeuner", recette: jp.dejeuner });
-  }
-  slots.push({ typeRepas: "diner", libelle: "Dîner", recette: jp.diner });
-  return slots;
+): { typeRepas: TypeRepas; libelle: string; recette: Recette | undefined }[] {
+  return [
+    { typeRepas: "dejeuner" as const, libelle: "Déjeuner", recette: jp.dejeuner },
+    { typeRepas: "diner" as const, libelle: "Dîner", recette: jp.diner },
+  ];
 }
 
 // ============================================================================
@@ -734,6 +735,13 @@ export default function PagePlanning() {
   }
 
   // --- État chargé : planning affiché ---
+  // Filtre d'affichage (#217, RG-46) : un créneau désactivé masque son slot
+  // immédiatement (grille + courses), même sans régénérer — le planning
+  // PERSISTÉ (variable `planning`, ci-dessus) n'est lui jamais modifié, d'où
+  // la réversibilité gratuite en réactivant le créneau. `recettesUtilisees`
+  // (badge « déjà au planning » du sélecteur, RG-02) continue de lire le
+  // planning brut : une recette d'un slot masqué reste bloquée ailleurs.
+  const planningAffiche = retirerCreneauxDesactives(planning, reglages);
   return (
     <main id="contenu" className="flex-1 p-4 md:p-8">
       {/*
@@ -815,7 +823,7 @@ export default function PagePlanning() {
           La grille 7 colonnes ne s'active qu'à ≥ 1024px, où chaque cellule
           reste lisible (à md=768 elle tombait à ~120px, badges compressés). */}
       <ul key={`grille-mobile-${genNonce}`} className="space-y-4 lg:hidden">
-        {planning.jours.map((jp, i) => (
+        {planningAffiche.jours.map((jp, i) => (
           <li
             key={jp.jour}
             // Stagger d'apparition (#69) : 40 ms/carte. `backwards` (cf. token)
@@ -850,6 +858,7 @@ export default function PagePlanning() {
                     changerPersonnes(jp.jour, slot.typeRepas, n)
                   }
                   onVoir={() =>
+                    slot.recette &&
                     setFicheOuverte({
                       recette: slot.recette,
                       personnes: personnesDuSlot(jp, slot.typeRepas),
@@ -871,7 +880,7 @@ export default function PagePlanning() {
         key={`grille-desktop-${genNonce}`}
         className="hidden lg:grid lg:grid-cols-7 lg:gap-3"
       >
-        {planning.jours.map((jp, i) => (
+        {planningAffiche.jours.map((jp, i) => (
           <section
             key={jp.jour}
             style={{ animationDelay: `${i * 40}ms` }}
@@ -898,6 +907,7 @@ export default function PagePlanning() {
                   changerPersonnes(jp.jour, slot.typeRepas, n)
                 }
                 onVoir={() =>
+                  slot.recette &&
                   setFicheOuverte({
                     recette: slot.recette,
                     personnes: personnesDuSlot(jp, slot.typeRepas),
@@ -975,7 +985,7 @@ function SlotRepas({
 }: {
   libelle: string;
   jourLabel: string;
-  recette: Recette;
+  recette: Recette | undefined;
   indisponible: boolean;
   personnes: number;
   onChanger: () => void;
@@ -997,6 +1007,21 @@ function SlotRepas({
   // en reduced-motion.
   const styleAction =
     "relative inline-flex items-center gap-1 rounded-full px-2.5 py-1.5 text-sm font-medium text-brand-700 transition after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 hover:text-brand-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100";
+
+  // Créneau désactivé (« Aucun », #217, RG-44/46) : emplacement CONSERVÉ (pas de
+  // grille qui se resserre), état vide sobre — 3ᵉ état UI minimum. Aucune action :
+  // le seul levier est /reglages. Prioritaire sur le rendu « restes » (un slot
+  // sans recette n'a rien à cuisiner/sélectionner).
+  if (!recette) {
+    return (
+      <div className="rounded-lg border border-dashed border-brand-100 bg-brand-50/30 p-3 text-center shadow-sm">
+        <p className="text-xs font-medium uppercase tracking-wide text-brand-700/85">
+          {libelle}
+        </p>
+        <p className="mt-2 text-sm text-brand-700/70">Pas de repas prévu</p>
+      </div>
+    );
+  }
 
   // Slot marqué « restes » (US-12, RG-22) : pas de cuisine → ni badge de temps,
   // ni stepper, ni fiche. On revient au repas planifié (« Cuisiner ») ou on en

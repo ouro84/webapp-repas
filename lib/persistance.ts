@@ -158,13 +158,15 @@ function construireSlots(planning: Planning): Array<{
         restes: jp.restes?.dejeuner ?? false,
       })
     }
-    slots.push({
-      recette_id: jp.diner.id,
-      jour: jp.jour,
-      type_repas: "diner" as const,
-      personnes: jp.personnes?.diner ?? 2,
-      restes: jp.restes?.diner ?? false,
-    })
+    if (jp.diner) {
+      slots.push({
+        recette_id: jp.diner.id,
+        jour: jp.jour,
+        type_repas: "diner" as const,
+        personnes: jp.personnes?.diner ?? 2,
+        restes: jp.restes?.diner ?? false,
+      })
+    }
   }
   return slots
 }

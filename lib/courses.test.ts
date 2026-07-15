@@ -234,6 +234,24 @@ describe("genererListeCourses — RG-22 slots en restes (US-12)", () => {
 });
 
 // ---------------------------------------------------------------------------
+// RG-46 (#217) — un slot absent (créneau désactivé) ne produit aucun
+// ingrédient, sans faire planter l'agrégation.
+// ---------------------------------------------------------------------------
+describe("genererListeCourses — RG-46 créneau désactivé (#217)", () => {
+  test("un jour sans dîner (créneau « Aucun ») n'ajoute aucun ingrédient de dîner", () => {
+    const tagliatelles = recetteFixture("tagliatelles-au-parmesan");
+    const planning: Planning = {
+      semaine: "2026-W23",
+      jours: [
+        { jour: "lundi", dejeuner: tagliatelles }, // diner absent
+      ],
+    };
+    const lignes = toutesLesLignes(planning);
+    expect(lignes.some((i) => i.nom.toLowerCase() === "tagliatelles")).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // RG-17 — mise à l'échelle selon le nombre de personnes (US-07).
 // L'échelle s'applique par slot AVANT agrégation, l'arrondi APRÈS.
 // ---------------------------------------------------------------------------

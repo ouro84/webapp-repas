@@ -148,6 +148,57 @@ test("désactiver et enregistrer la saisonnalité la persiste (#23 PR2)", async 
   ).toHaveAttribute("aria-checked", "false");
 });
 
+test("désactiver un créneau masque immédiatement le repas, sans régénérer (#217)", async ({
+  page,
+}) => {
+  // Planning généré AVANT toute désactivation — le masquage doit s'appliquer
+  // au planning déjà persisté, sans nouvelle génération (RG-46).
+  await page.goto("/planning");
+  await page.getByRole("button", { name: "Générer mon planning" }).click();
+  await expect(page.locator("main ul > li")).toHaveCount(7);
+
+  await page.goto("/reglages");
+  const dinerSemaine = page.getByRole("radiogroup", { name: "Dîner en semaine" });
+  await dinerSemaine.getByRole("radio", { name: "Aucun (je ne cuisine pas ce repas)" }).click();
+  await page.getByRole("button", { name: "Enregistrer" }).click();
+  await expect(page.getByText("Réglages enregistrés")).toBeVisible();
+
+  // Retour sur /planning SANS régénérer : les dîners de semaine affichent
+  // l'état vide, les déjeuners restent inchangés.
+  await page.goto("/planning");
+  const lundi = page.locator("main ul > li").first();
+  await expect(lundi.getByText("Pas de repas prévu")).toBeVisible();
+  await expect(lundi.getByRole("button", { name: /^Voir la recette/ })).toHaveCount(1); // le déjeuner reste
+
+  // La liste de courses applique le même filtre live, sans planter (RG-46).
+  await page.goto("/courses");
+  await expect(page.getByText("Chargement…")).toHaveCount(0);
+  await expect(page.locator("main")).toBeVisible();
+});
+
+test("RG-47 : impossible d'enregistrer une config aux 4 créneaux désactivés", async ({
+  page,
+}) => {
+  await page.goto("/reglages");
+
+  for (const libelle of [
+    "Déjeuner en semaine",
+    "Dîner en semaine",
+    "Déjeuner le week-end",
+    "Dîner le week-end",
+  ]) {
+    await page
+      .getByRole("radiogroup", { name: libelle })
+      .getByRole("radio", { name: "Aucun (je ne cuisine pas ce repas)" })
+      .click();
+  }
+
+  await expect(
+    page.getByText("Au moins un repas doit rester actif")
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Enregistrer" })).toBeDisabled();
+});
+
 test("la génération applique le nombre de personnes par défaut (US-15)", async ({
   page,
 }) => {

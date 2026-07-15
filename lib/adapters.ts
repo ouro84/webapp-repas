@@ -74,28 +74,25 @@ export function dbSlotToJourPlanning(
   const diner = slotsJour.find((s) => s.type_repas === "diner")
   const dejeuner = slotsJour.find((s) => s.type_repas === "dejeuner")
 
-  if (!diner) {
-    throw new Error(`Slot dîner manquant pour le jour : ${jour}`)
-  }
-
-  const jp: JourPlanning = {
-    jour,
-    diner: dbRecetteToDomain(diner.recette),
-  }
+  // Un slot absent (dîner OU déjeuner) signifie que son créneau est désactivé
+  // (#217, RG-44/46) — ce n'est plus une anomalie à rejeter, comme c'était
+  // déjà le cas pour le déjeuner (plannings antérieurs à 14 repas, #3).
+  const jp: JourPlanning = { jour }
+  if (diner) jp.diner = dbRecetteToDomain(diner.recette)
   if (dejeuner) jp.dejeuner = dbRecetteToDomain(dejeuner.recette)
 
   // personnes / restes : on n'attache que les valeurs non-défaut, pour produire
   // un objet domaine minimal identique à la sortie du générateur (défaut 2 /
   // false géré côté lecture, US-07/US-12).
   const personnes: { dejeuner?: number; diner?: number } = {}
-  if (diner.personnes !== 2) personnes.diner = diner.personnes
+  if (diner && diner.personnes !== 2) personnes.diner = diner.personnes
   if (dejeuner && dejeuner.personnes !== 2) personnes.dejeuner = dejeuner.personnes
   if (personnes.diner !== undefined || personnes.dejeuner !== undefined) {
     jp.personnes = personnes
   }
 
   const restes: { dejeuner?: boolean; diner?: boolean } = {}
-  if (diner.restes) restes.diner = true
+  if (diner?.restes) restes.diner = true
   if (dejeuner?.restes) restes.dejeuner = true
   if (restes.diner || restes.dejeuner) jp.restes = restes
 
@@ -103,13 +100,14 @@ export function dbSlotToJourPlanning(
 }
 
 // Reconstruit un planning domaine complet depuis sa semaine et ses slots DB.
-// Ne garde que les jours pourvus d'un dîner (slot obligatoire, section 5.5).
+// Garde tout jour pourvu d'AU MOINS un slot (déjeuner OU dîner) — un créneau
+// peut être désactivé (#217, RG-44/46) sans que l'autre le soit.
 export function dbPlanningToDomain(
   semaine: string,
   slots: DbPlanningSlot[]
 ): Planning {
   const jours: JourPlanning[] = ORDRE_JOURS.filter((jour) =>
-    slots.some((s) => s.jour === jour && s.type_repas === "diner")
+    slots.some((s) => s.jour === jour)
   ).map((jour) => dbSlotToJourPlanning(slots, jour))
   return { semaine, jours }
 }

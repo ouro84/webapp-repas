@@ -31,11 +31,11 @@ describe("marquerRestes (RG-22)", () => {
     const marque = marquerRestes(p, "lundi", "diner", true)!;
     expect(estRestes(marque.jours[0]!, "diner")).toBe(true);
     // La recette sous-jacente est conservée.
-    expect(marque.jours[0]!.diner.id).toBe("ln");
+    expect(marque.jours[0]!.diner!.id).toBe("ln");
 
     const cuisine = marquerRestes(marque, "lundi", "diner", false)!;
     expect(estRestes(cuisine.jours[0]!, "diner")).toBe(false);
-    expect(cuisine.jours[0]!.diner.id).toBe("ln");
+    expect(cuisine.jours[0]!.diner!.id).toBe("ln");
   });
 
   it("ne touche pas l'autre repas du même jour", () => {

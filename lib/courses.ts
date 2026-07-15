@@ -73,7 +73,8 @@ export function genererListeCourses(planning: Planning): ListeCourses {
   const ingredients: Ingredient[] = []
   for (const jp of planning.jours) {
     // Un slot marqué « restes » n'est pas cuisiné → exclu de la collecte (RG-22).
-    if (!estRestes(jp, "diner")) {
+    // Un slot absent (créneau désactivé, #217) l'est aussi (RG-46).
+    if (jp.diner && !estRestes(jp, "diner")) {
       const facteurDiner = facteurEchelle(personnesDuSlot(jp, "diner"))
       for (const ing of jp.diner.ingredients) {
         ingredients.push({ ...ing, quantite: ing.quantite * facteurDiner })

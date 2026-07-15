@@ -9,6 +9,7 @@ import {
   validerReglages,
   dbReglagesToDomain,
   reglagesToDb,
+  auMoinsUnCreneauActif,
 } from "@/lib/reglages";
 import type { DbReglages, ReglagesGeneration } from "@/types";
 
@@ -30,6 +31,36 @@ describe("tempsAuPlafond — éligibilité ≤ plafond", () => {
   });
   test("long autorise tout", () => {
     expect(tempsAuPlafond("long")).toEqual(["rapide", "normal", "long"]);
+  });
+});
+
+describe("tempsAuPlafond — « Aucun » (#217, RG-44)", () => {
+  test("aucun n'autorise aucun temps (créneau non généré)", () => {
+    expect(tempsAuPlafond("aucun")).toEqual([]);
+  });
+});
+
+describe("auMoinsUnCreneauActif (#217, RG-47)", () => {
+  test("vrai si au moins un créneau a un plafond de temps", () => {
+    expect(
+      auMoinsUnCreneauActif({
+        dejeunerSemaine: "aucun",
+        dinerSemaine: "aucun",
+        dejeunerWeekend: "aucun",
+        dinerWeekend: "rapide",
+      })
+    ).toBe(true);
+  });
+
+  test("faux si les 4 créneaux sont à « Aucun »", () => {
+    expect(
+      auMoinsUnCreneauActif({
+        dejeunerSemaine: "aucun",
+        dinerSemaine: "aucun",
+        dejeunerWeekend: "aucun",
+        dinerWeekend: "aucun",
+      })
+    ).toBe(false);
   });
 });
 
@@ -102,6 +133,32 @@ describe("validerReglages", () => {
       validerReglages({
         ...valide,
         plafonds: { ...valide.plafonds, dinerSemaine: "express" },
+      })
+    ).toBeNull();
+  });
+
+  test("accepte « aucun » comme plafond (#217, RG-44)", () => {
+    expect(
+      validerReglages({
+        ...valide,
+        plafonds: { ...valide.plafonds, dinerSemaine: "aucun" },
+      })
+    ).toEqual({
+      ...valide,
+      plafonds: { ...valide.plafonds, dinerSemaine: "aucun" },
+    });
+  });
+
+  test("refuse une config où les 4 créneaux sont « aucun » (#217, RG-47)", () => {
+    expect(
+      validerReglages({
+        ...valide,
+        plafonds: {
+          dejeunerSemaine: "aucun",
+          dinerSemaine: "aucun",
+          dejeunerWeekend: "aucun",
+          dinerWeekend: "aucun",
+        },
       })
     ).toBeNull();
   });
