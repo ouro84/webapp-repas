@@ -16,7 +16,7 @@ test("affiche le prochain repas après génération, ou l'état vide sinon", asy
   await page.getByRole("button", { name: "Générer mon planning" }).click();
   await expect(page.locator("main li").first()).toBeVisible({ timeout: 20_000 });
 
-  await page.getByRole("link", { name: "Ce soir" }).click();
+  await page.getByRole("link", { name: /Ce midi|Ce soir/ }).click();
   // Selon l'heure réelle d'exécution CI, le créneau visé peut avoir une
   // recette (fiche montée, <dialog> visible) ou non (état vide) — les deux
   // sont des succès légitimes, on n'en impose pas un des deux exclusivement.
@@ -33,6 +33,6 @@ test.describe("déconnecté", () => {
 
   test("le lien « Ce soir » n'apparaît pas dans la nav déconnectée", async ({ page }) => {
     await page.goto("/login");
-    await expect(page.getByRole("link", { name: "Ce soir" })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: /Ce midi|Ce soir/ })).toHaveCount(0);
   });
 });
