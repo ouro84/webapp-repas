@@ -25,7 +25,14 @@ test("affiche le prochain repas après génération, ou l'état vide sinon", asy
   await expect(ficheOuverte.or(etatVide)).toBeVisible({ timeout: 10_000 });
 });
 
-test("le lien « Ce soir » n'apparaît pas dans la nav déconnectée", async ({ page }) => {
-  await page.goto("/login");
-  await expect(page.getByRole("link", { name: "Ce soir" })).toHaveCount(0);
+test.describe("déconnecté", () => {
+  // Neutralise le storageState hérité du projet (connecté) — sinon le proxy
+  // redirige un utilisateur déjà authentifié hors de /login (vers /planning),
+  // où le lien « Ce soir » est légitimement présent (cf. e2e/auth.spec.ts).
+  test.use({ storageState: { cookies: [], origins: [] } });
+
+  test("le lien « Ce soir » n'apparaît pas dans la nav déconnectée", async ({ page }) => {
+    await page.goto("/login");
+    await expect(page.getByRole("link", { name: "Ce soir" })).toHaveCount(0);
+  });
 });
