@@ -81,37 +81,54 @@ consomment ce même hook.
 génération réussie, la vue recharge sa projection (`chargerCycle(ancre)`, déjà existant) pour
 refléter le nouveau contenu — pas de nouvelle mécanique de rafraîchissement à inventer.
 
-### 3.b Store cycle unifié (D3)
+### 3.b Store cycle unifié (D3) — révisé après vérification de `hydraterCycle`
 
-`VuePlanningCycle` cesse de maintenir `ancre`/`longueur` en `useState` local. Elle consomme le
-store `cycle_affiche` de `lib/sync.ts` via le hook déjà exporté `useCycleAffiche()` (utilisé par
-`/courses`). Vérifié en code : `lib/sync.ts` n'exporte aujourd'hui que `useCycleAffiche()`,
-`useCyclePlanning()`, `hydraterCycle()` et `naviguerCycle(offset)` (navigation **relative**,
-`cycleDecale` en interne) — `definirCycleAffiche`/`chargerCycleDansCache` sont **privées** au
-module. Pour la navigation par chevrons (± 1 cycle) de `VuePlanningCycle`, `naviguerCycle(offset)`
-suffit tel quel (mêmes chevrons que `/courses`). Le montage initial appelle `hydraterCycle()` si
-`cycle_affiche` n'est pas encore hydraté (même garde que `/courses`).
+**Correction post-brainstorm** : `hydraterCycle()` (`lib/sync.ts`, appelée à chaque montage de
+`/courses` via `useSyncCourses()`) **recalcule inconditionnellement** l'ancre par défaut du jour
+(`ancreParDefaut(new Date(), jour)`), sans jamais consulter `cycle_affiche` au préalable. Un
+simple partage de store serait donc **écrasé silencieusement** dès l'arrivée sur `/courses` — le
+mécanisme initialement décrit ici (« `/courses` lit désormais le même store ») ne suffit pas.
+Toucher à `hydraterCycle` pour la faire respecter un pointeur déjà posé romprait par ailleurs la
+convention existante « retour au défaut sur rechargement complet », partagée avec la vue Semaine
+(cf. CLAUDE.md, navigation entre semaines #5) — modification écartée, trop risquée pour ce gain.
 
-Conséquence directe : naviguer le cycle depuis `/planning` (vue Cycle) ou depuis `/courses`
-déplace le **même pointeur** — revenir sur l'une ou l'autre page affiche toujours la même
-fenêtre.
+**Mécanisme retenu : relais one-shot par query param**, appliqué APRÈS l'hydratation par défaut :
+- `VuePlanningCycle` garde son `ancre`/`longueur` en `useState` local (comme aujourd'hui) — mais
+  répercute chaque changement (montage + chevrons) dans `cycle_affiche` via `definirCycleAffiche`
+  (déjà présente dans `lib/sync.ts`, à **exporter** — c'est une écriture localStorage pure, sans
+  effet de bord coches/réaltime). Nécessaire pour que #279 D2 (génération) cible le bon cycle,
+  cf. §3.a.
+- `/courses` lit un paramètre d'URL `?ancre=` au montage et, une fois `hydraterCycle()` terminé
+  (signal : `etatSync` passe à `"synchronise"` pour la première fois), applique une **nouvelle
+  fonction exportée `allerAuCycle(ancre: string): Promise<void>`** (`lib/sync.ts`, miroir de
+  `naviguerCycle(offset)` mais en ancre absolue) qui écrase le défaut par l'ancre demandée, puis
+  nettoie le paramètre de l'URL (`history.replaceState`, même motif que `capterCodeDepuisURL`).
+- Les deux liens « Liste de courses → » (vue Semaine ET vue Cycle) portent désormais `?ancre=…`
+  (calcul détaillé en §3.c). Le lien de la vue Cycle passe simplement **sa propre ancre affichée**
+  (déjà en state local) — aucune dérivation nécessaire pour lui.
+
+**Limitation documentée** : si l'utilisateur navigue `/courses` directement (nav bar, sans passer
+par un lien contextuel), puis va sur la vue Cycle de `/planning`, celle-ci écrase `cycle_affiche`
+avec SON propre défaut du jour au montage (même règle que la vue Semaine) — la position qu'il
+avait sur `/courses` n'est pas préservée dans ce cas précis. Seuls les 2 parcours remontés par les
+utilisateurs (via les liens contextuels « Liste de courses → ») sont garantis cohérents ; on
+n'implémente pas d'arbitrage temporel plus fin (hors scope, cf. discussion complète en revue de
+plan).
 
 ### 3.c Dérivation auto Semaine → Courses (D4)
 
 Le lien « Liste de courses → » de la vue **Semaine** (`app/planning/page.tsx:707-712` et
-`:820-825`) ne pointe plus vers `/courses` en dur : avant navigation, on calcule l'ancre du
-cycle qui contient `semaineAffichee` :
+`:820-825`) ne pointe plus vers `/courses` en dur : avant rendu, on calcule l'ancre du cycle qui
+contient `semaineAffichee` (nouvelle fonction pure `ancreDeSemaine(semaine, jourCourses)` dans
+`lib/cycles.ts`, réutilise `lundiDeSemaine` de `lib/semaines.ts` à exporter) :
 
 ```
-refDate = jeudi de semaineAffichee (cohérent avec semaineISO, cf. lib/semaines.ts)
+refDate = jeudi de semaineAffichee (lundiDeSemaine(semaine) + 3 jours, cf. saisonDeSemaine)
 ancreCible = ancreCourante(refDate, jourCoursesFoyer)
 ```
 
-et on appelle une nouvelle fonction exportée `allerAuCycle(ancreCible: string): Promise<void>`
-(`lib/sync.ts`, miroir de `naviguerCycle(offset)` mais en ancre **absolue** — même corps que
-`naviguerCycle` sans le `cycleDecale` relatif : flush des écritures en attente, lecture de la
-longueur via `chargerLongueurCycle`, puis `chargerCycleDansCache`) avant de naviguer vers
-`/courses` — pas de query param d'URL nécessaire puisque `/courses` lit désormais le même store.
+et le lien devient `href={\`/courses?ancre=${ancreCible}\`}` — `/courses` applique l'override
+one-shot décrit en §3.b.
 
 **Limitation acceptée** : `ancreCourante` calcule l'ancre de la **grille hebdomadaire standard**
 (espacement fixe 7 j, cf. `lib/cycles.ts` — la cadence est toujours hebdomadaire, cf. design
@@ -121,9 +138,8 @@ l'ancre standard avec sa propre longueur mémorisée (`chargerLongueurCycle`, d�
 forcément la longueur du cycle étiré voisin. Cas rare (nécessite une navigation par semaine
 combinée à un étirement manuel), non traité en V1.
 
-La vue **Cycle** de `/planning`, elle, n'a plus besoin de dériver quoi que ce soit pour son
-propre lien vers `/courses` : le store étant unifié (§3.b), le lien devient un simple
-`<Link href="/courses">` sans calcul, la fenêtre affichée est déjà la même des deux côtés.
+La vue **Cycle** de `/planning`, elle, n'a rien à dériver pour son propre lien vers `/courses` :
+elle passe directement sa propre ancre affichée (déjà en state local, cf. §3.b) en query param.
 
 ### 3.d Persistance du choix de vue (D5)
 
@@ -147,12 +163,13 @@ de layout perceptible.
 
 | Fichier | Changement |
 |---|---|
-| `lib/sync.ts` | Nouvelle fonction exportée `allerAuCycle(ancre)` (ancre absolue, miroir de `naviguerCycle`) ; nouveau hook `useGenerationCycle` (ou co-localisation). |
+| `lib/sync.ts` | Exporte `definirCycleAffiche` (déjà existante, pure) ; nouvelle fonction exportée `allerAuCycle(ancre)` (ancre absolue, miroir de `naviguerCycle`) ; nouveau hook `useGenerationCycle`. |
 | `lib/stockage.ts` | Nouveau store `vue_planning` (pattern primitif, cf. `storeSemaine`). |
-| `app/courses/page.tsx` | Consomme le hook de génération partagé au lieu de sa fonction locale `genererMonCycle`. |
-| `components/planning/vue-cycle.tsx` | Consomme `cycle_affiche` (au lieu d'un state local) ; ajoute le bouton « Générer mon cycle » ; retire son propre calcul d'ancre par défaut si le store est déjà hydraté. |
-| `app/planning/page.tsx` | Lien Semaine→Courses dérive l'ancre cible avant navigation ; `vue` vient du nouveau store persistant ; harmonisation visuelle de l'en-tête des deux branches. |
-| `lib/cycles.ts` | Pas de changement de logique (réutilisation de `ancreCourante` existant). |
+| `lib/semaines.ts` | Exporte `lundiDeSemaine` (déjà existante, pure). |
+| `lib/cycles.ts` | Nouvelle fonction pure `ancreDeSemaine(semaine, jourCourses)`. |
+| `app/courses/page.tsx` | Consomme le hook de génération partagé au lieu de sa fonction locale `genererMonCycle` ; lit `?ancre=` au montage et applique l'override one-shot via `allerAuCycle` une fois `etatSync === "synchronise"`. |
+| `components/planning/vue-cycle.tsx` | Répercute son `ancre`/`longueur` local dans `cycle_affiche` (montage + chevrons) ; ajoute le bouton « Générer mon cycle » ; ajoute son propre lien « Liste de courses → » avec `?ancre=`. |
+| `app/planning/page.tsx` | Lien Semaine→Courses dérive l'ancre cible via `ancreDeSemaine` avant rendu (charge `chargerJourCoursesFoyer` au montage) ; retire le lien dupliqué de la branche vue Cycle (déplacé dans `vue-cycle.tsx`) ; `vue` vient du nouveau store persistant ; harmonisation visuelle de l'en-tête des deux branches. |
 
 ---
 
@@ -160,6 +177,9 @@ de layout perceptible.
 
 - Le chevauchement cycle étiré / ancre dérivée (§3.c) n'est pas résolu — limitation documentée,
   pas un bug bloquant.
+- Arriver sur la vue Cycle de `/planning` sans passer par un lien contextuel (ex. après avoir
+  navigué `/courses` directement) réinitialise `cycle_affiche` au défaut du jour (§3.b) — la
+  cohérence n'est garantie que sur les 2 parcours remontés par les retours utilisateurs.
 - Aucun changement du modèle de données, aucune migration Supabase.
 - Le format d'affichage de la période (vocabulaire Semaine vs Cycle) reste volontairement
   distinct (D6) — ne pas réinterpréter cette limitation comme un oubli lors de l'implémentation.
