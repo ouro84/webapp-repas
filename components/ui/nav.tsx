@@ -15,12 +15,12 @@ import { Logo } from "@/components/ui/logo";
 import { Avatar } from "@/components/ui/avatar";
 import { useProfil } from "@/lib/profil";
 import { useEstConnecte } from "@/lib/session";
+import { libelleMomentActuel } from "@/lib/prochain-repas";
 
 const LIENS = [
   { href: "/planning", label: "Planning" },
   { href: "/courses", label: "Courses" },
   { href: "/recettes", label: "Recettes" },
-  { href: "/ce-soir", label: "Ce soir" },
 ];
 
 // Routes protégées (cf. proxy.ts) : le proxy y garantit une session → on peut
@@ -43,6 +43,10 @@ export function NavBar() {
   const accueil = estActif(pathname, "/");
   const profil = useProfil();
   const estConnecte = useEstConnecte();
+  // Libellé dynamique (#suite #279/#280) : la page /ce-soir affiche le
+  // prochain repas ACTIF, qui peut être le déjeuner — un lien figé sur
+  // « Ce soir » serait faux le midi. Même seuil que lib/prochain-repas.ts.
+  const libelleCeSoir = libelleMomentActuel(new Date());
 
   // Tunnel d'onboarding (#22 PR2) : parcours focalisé, sans nav (on ne propose
   // aucune échappatoire tant que l'onboarding n'est pas terminé).
@@ -108,6 +112,21 @@ export function NavBar() {
                     </Link>
                   );
                 })}
+                {/* Lien « Ce soir »/« Ce midi » (#suite #279/#280) : sorti de la
+                    boucle générique ci-dessus car son libellé est calculé
+                    (heure réelle), pas un texte statique — même style/logique
+                    active que les liens de section. */}
+                <Link
+                  href="/ce-soir"
+                  aria-current={estActif(pathname, "/ce-soir") ? "page" : undefined}
+                  className={`relative rounded-full px-4 py-1.5 text-sm font-medium transition-colors after:absolute after:inset-x-0 after:-inset-y-2 after:content-[''] ${
+                    estActif(pathname, "/ce-soir")
+                      ? "bg-primary text-white"
+                      : "text-brand-700 hover:bg-brand-50"
+                  }`}
+                >
+                  {libelleCeSoir}
+                </Link>
                 {/* Raccourci aide (audit critique, #97) : distinct de l'avatar —
                     déconnecté, la nav garde un vrai lien texte « Aide » (cf.
                     branche ci-dessous), mais il disparaissait entièrement une
