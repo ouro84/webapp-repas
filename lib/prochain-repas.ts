@@ -35,6 +35,13 @@ function depuisISO(dateISO: string): Date {
 /** Seuil horaire (#280, D2) : avant, le déjeuner du jour est visé ; après, le dîner. */
 const SEUIL_HEURE_DINER = 15
 
+/** Libellé générique du moment actuel (#suite #279/#280) — même seuil que
+ *  prochainRepasActif, réutilisé partout où on n'a pas de date de repas
+ *  précise (nav, état vide de /ce-soir). */
+export function libelleMomentActuel(maintenant: Date): "Ce midi" | "Ce soir" {
+  return maintenant.getHours() < SEUIL_HEURE_DINER ? "Ce midi" : "Ce soir"
+}
+
 export type ProchainRepas = {
   dateISO: string
   jour: Jour
