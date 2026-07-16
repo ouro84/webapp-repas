@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { prochainRepasActif, libelleContexteRepas } from "@/lib/prochain-repas"
+import { prochainRepasActif, libelleContexteRepas, libelleMomentActuel } from "@/lib/prochain-repas"
 import { REGLAGES_DEFAUT } from "@/lib/reglages"
 import type { Planning, ReglagesGeneration } from "@/types"
 
@@ -118,5 +118,14 @@ describe("libelleContexteRepas", () => {
     expect(libelleContexteRepas("2026-07-20", "diner", maintenant)).toBe(
       "Dîner du lundi 20 juillet"
     )
+  })
+})
+
+describe("libelleMomentActuel", () => {
+  it("avant le seuil (~15h) → « Ce midi »", () => {
+    expect(libelleMomentActuel(new Date("2026-07-16T10:00:00"))).toBe("Ce midi")
+  })
+  it("après le seuil → « Ce soir »", () => {
+    expect(libelleMomentActuel(new Date("2026-07-16T18:00:00"))).toBe("Ce soir")
   })
 })

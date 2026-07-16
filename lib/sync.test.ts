@@ -9,7 +9,7 @@
 // (vi.resetModules) pour réinitialiser l'état singleton (dejaHydrate, dirty…).
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Planning } from "@/types";
+import type { JourPlanning, Planning } from "@/types";
 
 // Mocks des accès distants — objet hoisté stable, réinitialisé à chaque test.
 const persistance = vi.hoisted(() => ({
@@ -24,6 +24,7 @@ const persistance = vi.hoisted(() => ({
   chargerLongueurCycle: vi.fn(),
   chargerArticlesManuelsDistants: vi.fn(),
   purgerCyclesAvant: vi.fn(),
+  sauvegarderSlotsDistant: vi.fn(),
 }));
 vi.mock("@/lib/persistance", () => persistance);
 
@@ -74,6 +75,7 @@ beforeEach(() => {
   persistance.chargerLongueurCycle.mockResolvedValue(7);
   persistance.chargerArticlesManuelsDistants.mockResolvedValue([]);
   persistance.purgerCyclesAvant.mockResolvedValue(undefined);
+  persistance.sauvegarderSlotsDistant.mockResolvedValue("2026-07-16T12:00:00.000Z");
 });
 
 describe("hydrater — last-write-wins / dirty-first (RG-23)", () => {
@@ -231,6 +233,52 @@ describe("allerAuCycle — relais one-shot par query param (#279)", () => {
     await allerAuCycle("2026-07-13");
 
     expect(persistance.sauvegarderPlanningDistant).toHaveBeenCalled(); // flush d'abord
+  });
+});
+
+function jourPlanningSimple(
+  jour: "lundi" | "mardi",
+  diner: { id: string; nom: string }
+): JourPlanning {
+  return {
+    jour,
+    diner: { ...diner, tempsPreparation: "rapide", ingredients: [] },
+  } as JourPlanning;
+}
+
+describe("modifierSlotDistant — édition ponctuelle découplée de storePlanning (suite #279)", () => {
+  it("persiste UNIQUEMENT le jour fourni, sans toucher storePlanning si semaine ≠ affichée", async () => {
+    localStorage.setItem("semaine_affichee", "2026-W10"); // autre semaine que celle éditée
+    const { modifierSlotDistant } = await chargerSync();
+
+    await modifierSlotDistant("2026-W12", jourPlanningSimple("lundi", { id: "r1", nom: "R1" }));
+
+    expect(persistance.sauvegarderSlotsDistant).toHaveBeenCalledWith(
+      "2026-W12",
+      [jourPlanningSimple("lundi", { id: "r1", nom: "R1" })]
+    );
+    expect(localStorage.getItem("planning_courant")).toBeNull(); // storePlanning intact
+  });
+
+  it("met à jour storePlanning ET planning_courant_maj si la semaine éditée EST l'affichée", async () => {
+    localStorage.setItem("semaine_affichee", "2026-W12");
+    localStorage.setItem(
+      "planning_courant",
+      JSON.stringify({
+        semaine: "2026-W12",
+        jours: [
+          { jour: "lundi", diner: { id: "vieux", nom: "Vieux", tempsPreparation: "rapide", ingredients: [] } },
+        ],
+      })
+    );
+    persistance.sauvegarderSlotsDistant.mockResolvedValue("2026-07-16T15:00:00.000Z");
+    const { modifierSlotDistant } = await chargerSync();
+
+    await modifierSlotDistant("2026-W12", jourPlanningSimple("lundi", { id: "nouveau", nom: "Nouveau" }));
+
+    const local = JSON.parse(localStorage.getItem("planning_courant")!);
+    expect(local.jours[0].diner.id).toBe("nouveau");
+    expect(localStorage.getItem("planning_courant_maj")).toBe("2026-07-16T15:00:00.000Z");
   });
 });
 

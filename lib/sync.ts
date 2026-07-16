@@ -1508,6 +1508,41 @@ export async function allerAuCycle(ancre: string): Promise<void> {
 }
 
 /**
+ * Édition ponctuelle d'UN slot depuis la vue Cycle (#279 suite, retour
+ * utilisateur post-merge #281) — écrit directement en base pour la semaine ISO
+ * du jour édité, SANS jamais toucher `storePlanning` (mono-semaine). Réutilise
+ * `sauvegarderSlotsDistant` (RPC `sauvegarder_slots`, #259) qui n'upserte que
+ * les `(jour, type_repas)` présents sur `jourPlanning` — passer un seul repas
+ * renseigné ne touche pas l'autre repas du même jour.
+ *
+ * Met à jour les DEUX bookkeeping anti-écho existants, sinon on déclenche une
+ * fausse alerte intrusive sur sa propre édition :
+ * - `majPlanningCycle` (temps réel de /courses, #259) : toujours, quelle que
+ *   soit la semaine — /courses peut avoir sa propre vue cycle ouverte ailleurs.
+ * - `planning_courant_maj` + cache `storePlanning` (alerte de /planning, #56
+ *   PR5) : UNIQUEMENT si la semaine éditée est la semaine actuellement
+ *   affichée — sinon ce cache ne représente pas cette semaine, rien à patcher.
+ */
+export async function modifierSlotDistant(
+  semaine: string,
+  jourPlanning: JourPlanning
+): Promise<void> {
+  const maj = await sauvegarderSlotsDistant(semaine, [jourPlanning]);
+  majPlanningCycle.set(semaine, Date.parse(maj));
+
+  if (semaine === localStorage.getItem(CLE_SEMAINE)) {
+    localStorage.setItem(CLE_MAJ, maj);
+    const local = planningLocal();
+    if (local && local.semaine === semaine) {
+      const jours = local.jours.map((jp) =>
+        jp.jour === jourPlanning.jour ? jourPlanning : jp
+      );
+      storePlanning.ecrire(JSON.stringify({ semaine, jours }));
+    }
+  }
+}
+
+/**
  * Étire (ou raccourcit) le cycle affiché : persiste la nouvelle longueur puis
  * recharge le cycle (le planning projeté et les jours touchés changent).
  */
