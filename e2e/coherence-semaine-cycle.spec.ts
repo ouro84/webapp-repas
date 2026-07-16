@@ -35,11 +35,15 @@ test("le lien « Liste de courses → » depuis la vue Cycle conserve la même f
   const libelleCycle = await page.getByText(/Courses du/).textContent();
 
   await page.getByRole("link", { name: "Liste de courses →" }).click();
-  await expect(page).toHaveURL(/\/courses\?ancre=/);
-  // Même fenêtre affichée des deux côtés (pas de saut vers le défaut du jour).
+  await page.waitForURL(/\/courses/);
+  // Même fenêtre affichée des deux côtés (pas de saut vers le défaut du jour) —
+  // preuve que l'ancre a été appliquée. On ne teste PAS la présence de `?ancre=`
+  // dans l'URL : l'app le nettoie quasi immédiatement après application (relais
+  // one-shot, cf. app/courses/page.tsx), une assertion dessus serait racy par
+  // construction (déjà vécu : le paramètre disparaît souvent avant que
+  // `toHaveURL` n'ait eu la moindre chance de l'observer).
   await expect(page.getByText(libelleCycle!)).toBeVisible();
-  // Le paramètre est nettoyé après application (pas de re-déclenchement au reload).
-  await page.reload();
+  // Le paramètre est bien nettoyé une fois appliqué (comportement one-shot).
   await expect(page).toHaveURL(/\/courses$/);
 });
 
