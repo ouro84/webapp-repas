@@ -15,7 +15,7 @@ import { chargerReglages } from "@/lib/reglages-data";
 import { REGLAGES_DEFAUT } from "@/lib/reglages";
 import { chargerPlanningDistant } from "@/lib/persistance";
 import { chargerRecettesGerees, type RecetteGeree } from "@/lib/recettes";
-import { prochainRepasActif, libelleContexteRepas, type ProchainRepas } from "@/lib/prochain-repas";
+import { prochainRepasActif, libelleContexteRepas, libelleMomentActuel, type ProchainRepas } from "@/lib/prochain-repas";
 import { semaineISO, semaineDecalee } from "@/lib/semaines";
 import { FicheRecette } from "@/components/planning/fiche-recette";
 import type { Planning, ReglagesGeneration } from "@/types";
@@ -81,10 +81,23 @@ export default function PageCeSoir() {
     );
   }
 
-  if (prochain === null || !prochain.recette) {
+  if (prochain === null) {
     return (
       <main id="contenu" className="flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center">
-        <h1 className="font-display text-2xl font-semibold text-brand-900">Ce soir</h1>
+        <h1 className="font-display text-2xl font-semibold text-brand-900">
+          {libelleMomentActuel(new Date())}
+        </h1>
+        <p className="text-brand-700/85">Rien de prévu pour ce repas.</p>
+      </main>
+    );
+  }
+
+  if (!prochain.recette) {
+    return (
+      <main id="contenu" className="flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center">
+        <h1 className="font-display text-2xl font-semibold text-brand-900">
+          {libelleContexteRepas(prochain.dateISO, prochain.typeRepas, new Date())}
+        </h1>
         <p className="text-brand-700/85">Rien de prévu pour ce repas.</p>
       </main>
     );
