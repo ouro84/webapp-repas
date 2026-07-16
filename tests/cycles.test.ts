@@ -1,11 +1,12 @@
 import { describe, it, expect } from "vitest"
 import {
-  ancreCourante, ancreParDefaut, cycleDecale, joursDuCycle, semainesDuCycle,
+  ancreCourante, ancreDeSemaine, ancreParDefaut, cycleDecale, joursDuCycle, semainesDuCycle,
   dateVersSemaineJour, libelleCycle, cyclesSelectionnables, LONGUEUR_DEFAUT,
   planningDuCycle, planningGenereParSemaine,
 } from "@/lib/cycles"
 import type { Planning } from "@/types"
 import { genererListeCourses } from "@/lib/courses"
+import { semaineISO } from "@/lib/semaines"
 
 describe("ancreCourante", () => {
   it("renvoie aujourd'hui si on EST le jour de courses (jeudi=4)", () => {
@@ -172,5 +173,28 @@ describe("planningGenereParSemaine (#259)", () => {
     const m = planningGenereParSemaine(genere, "2026-07-06", 7)
     const jours = m.get("2026-W28")!.map((j) => j.jour)
     expect(new Set(jours).size).toBe(jours.length)
+  })
+})
+
+describe("ancreDeSemaine", () => {
+  it("trouve l'ancre du cycle qui contient la semaine (jour de courses AVANT jeudi)", () => {
+    // Semaine 2026-W28 = lundi 6 juillet → dimanche 12 juillet. Jour de courses
+    // lundi (1) : l'ancre de cette semaine est son propre lundi.
+    expect(ancreDeSemaine("2026-W28", 1)).toBe("2026-07-06")
+  })
+  it("trouve l'ancre du cycle qui contient la semaine (jour de courses APRÈS jeudi)", () => {
+    // Jour de courses vendredi (5) : le jeudi de 2026-W28 (9 juillet) est APRÈS
+    // le dernier vendredi (3 juillet, semaine précédente) → l'ancre est ce
+    // vendredi-là, pas un vendredi de cette semaine.
+    expect(ancreDeSemaine("2026-W28", 5)).toBe("2026-07-03")
+  })
+  it("cohérent avec ancreCourante sur le jeudi de la semaine (référence commune)", () => {
+    // Le jeudi est LA référence de la fonction (cf. commentaire d'implémentation) :
+    // une semaine dont le jourCourses tombe pile un jeudi n'est pas ambiguë —
+    // contrairement à un autre jour de la semaine, qui pourrait tomber dans le
+    // cycle précédent OU suivant selon jourCourses (cf. les 2 tests ci-dessus).
+    const jeudi = new Date("2026-07-09T10:00:00") // jeudi 2026-W28
+    const semaine = semaineISO(jeudi)
+    expect(ancreDeSemaine(semaine, 4)).toBe(ancreCourante(jeudi, 4))
   })
 })

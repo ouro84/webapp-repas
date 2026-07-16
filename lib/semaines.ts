@@ -102,7 +102,7 @@ export function decalageEntre(a: string, b: string): number {
 // Le résultat est le jour calendaire local visé — aucune conversion UTC en jeu,
 // donc indépendant du fuseau. Ne PAS « UTC-ifier » sans adapter semaineISO en
 // miroir : on casserait le round-trip (faux positif d'audit écarté).
-function lundiDeSemaine(semaine: string): Date {
+export function lundiDeSemaine(semaine: string): Date {
   const m = /^(\d{4})-W(\d{2})$/.exec(semaine)
   if (!m) return new Date()
   const annee = Number(m[1])
