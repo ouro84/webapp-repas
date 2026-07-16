@@ -19,7 +19,17 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
-import { CookingPot, RefreshCw, Search, SlidersHorizontal } from "lucide-react";
+import {
+  Carrot,
+  CookingPot,
+  Leaf,
+  MoreHorizontal,
+  RefreshCw,
+  Search,
+  SlidersHorizontal,
+  Sun,
+  Wheat,
+} from "lucide-react";
 import {
   joursSansLegume,
   prefereVegeSlot,
@@ -846,6 +856,30 @@ export default function PagePlanning() {
         </div>
       </header>
 
+      {/* Légende des pictogrammes (#210, audit critique — reconnaissance
+          plutôt que rappel) : les badges compacts des cartes (Leaf/Wheat/
+          Carrot) n'avaient de sens explicité que dans /aide, jamais ici où
+          ils apparaissent réellement. Une ligne, une fois pour toute la
+          page — pas répétée par carte. */}
+      <p className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-brand-700/85">
+        <span className="inline-flex items-center gap-1">
+          <Leaf aria-hidden="true" className="size-3.5 text-brand-600" />
+          Végétarien
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <Wheat aria-hidden="true" className="size-3.5 text-accent-600" />
+          Féculents
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <Carrot aria-hidden="true" className="size-3.5 text-brand-600" />
+          Légumes
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <Sun aria-hidden="true" className="size-3.5 text-brand-600" />
+          De saison
+        </span>
+      </p>
+
       {/* Navigateur de semaines (#5) : change la semaine affichée ; la
           génération/régénération vise la semaine affichée. */}
       {navPret && (
@@ -1042,6 +1076,13 @@ function SlotRepas({
   // Spin one-shot de l'icône « changer » (#69, P17) : incrémenté au clic →
   // re-monte l'icône (key) pour rejouer la rotation. 0 au montage = pas de spin.
   const [spin, setSpin] = useState(0);
+  // Densité (#210 distill, audit critique) : les 3 actions (Changer/
+  // Sélectionner/Restes) étaient TOUJOURS visibles sur les 14 cartes de la
+  // semaine — repliées par défaut derrière un disclosure « Plus d'actions »,
+  // révélées au clic. Replié = comportement par défaut à chaque montage (pas
+  // de persistance voulue : la densité doit revenir au minimum à chaque
+  // ouverture de /planning).
+  const [actionsOuvertes, setActionsOuvertes] = useState(false);
   // Style unifié des actions de slot (#210, audit #51) : chip discret (icône +
   // libellé) au lieu de liens-texte hétérogènes — toutes les actions ont le même
   // traitement et un fond au survol qui les fait lire comme des contrôles. Zone
@@ -1139,44 +1180,61 @@ function SlotRepas({
           indiscernables au lecteur d'écran) ; icônes décoratives ; le libellé
           visible est contenu dans le nom accessible (WCAG 2.5.3). */}
       <div className="mt-2 flex flex-wrap items-center gap-1 border-t border-brand-100/70 pt-2">
+        {/* Disclosure (#210 distill) : réplié par défaut, révèle les 3 actions
+            au clic — remplace l'exposition permanente des 3 boutons sur
+            chacune des 14 cartes de la semaine. */}
         <button
           type="button"
-          onClick={() => {
-            setSpin((s) => s + 1);
-            onChanger();
-          }}
-          aria-label={`Changer le ${slotNom}`}
+          onClick={() => setActionsOuvertes((v) => !v)}
+          aria-expanded={actionsOuvertes}
+          aria-label={`Plus d'actions pour le ${slotNom}`}
           className={styleAction}
         >
-          {/* key={spin} : chaque clic re-monte l'icône → rejoue la rotation
-              360°. spin>0 garde le tout premier rendu sans rotation. (#69) */}
-          <RefreshCw
-            key={spin}
-            aria-hidden="true"
-            className={`size-3.5 ${spin > 0 ? "motion-safe:animate-spin-once" : ""}`}
-          />
-          Changer
+          <MoreHorizontal aria-hidden="true" className="size-3.5" />
+          Actions
         </button>
-        {/* Sélection manuelle (US-06) : ouvre le sélecteur de recettes */}
-        <button
-          type="button"
-          onClick={onSelectionner}
-          aria-label={`Sélectionner le ${slotNom}`}
-          className={styleAction}
-        >
-          <Search aria-hidden="true" className="size-3.5" />
-          Sélectionner
-        </button>
-        {/* Marquer en « restes » (US-12) : pas de cuisine ce repas-là */}
-        <button
-          type="button"
-          onClick={() => onChangerRestes(true)}
-          aria-label={`Marquer le ${slotNom} en restes`}
-          className={styleAction}
-        >
-          <IconeRestes />
-          Restes
-        </button>
+        {actionsOuvertes && (
+          <>
+            <button
+              type="button"
+              onClick={() => {
+                setSpin((s) => s + 1);
+                onChanger();
+              }}
+              aria-label={`Changer le ${slotNom}`}
+              className={styleAction}
+            >
+              {/* key={spin} : chaque clic re-monte l'icône → rejoue la rotation
+                  360°. spin>0 garde le tout premier rendu sans rotation. (#69) */}
+              <RefreshCw
+                key={spin}
+                aria-hidden="true"
+                className={`size-3.5 ${spin > 0 ? "motion-safe:animate-spin-once" : ""}`}
+              />
+              Changer
+            </button>
+            {/* Sélection manuelle (US-06) : ouvre le sélecteur de recettes */}
+            <button
+              type="button"
+              onClick={onSelectionner}
+              aria-label={`Sélectionner le ${slotNom}`}
+              className={styleAction}
+            >
+              <Search aria-hidden="true" className="size-3.5" />
+              Sélectionner
+            </button>
+            {/* Marquer en « restes » (US-12) : pas de cuisine ce repas-là */}
+            <button
+              type="button"
+              onClick={() => onChangerRestes(true)}
+              aria-label={`Marquer le ${slotNom} en restes`}
+              className={styleAction}
+            >
+              <IconeRestes />
+              Restes
+            </button>
+          </>
+        )}
       </div>
       {/* Nombre de personnes (US-07) : la liste de courses se met à l'échelle */}
       <StepperPersonnes

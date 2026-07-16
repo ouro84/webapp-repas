@@ -8,14 +8,18 @@
 // - `compact` : icônes seules (card du planning), chacune avec un aria-label.
 // - défaut : pastille outline icônes + libellés (« Automne · Hiver »).
 
-import { Flower2, Leaf, Snowflake, Sun } from "lucide-react";
+import { Flower2, Snowflake, Sun, TreeDeciduous } from "lucide-react";
 import type { Saison } from "@/types";
 import { LIBELLE_SAISON, SAISONS } from "@/lib/saisons";
 
+// Automne = TreeDeciduous, PAS Leaf (audit critique, #23/#86) : Leaf est déjà
+// l'icône compacte de BadgeVegetarien (même taille, même couleur brand-600) —
+// une recette végétarienne ET de saison automnale affichait deux pastilles
+// visuellement identiques côte à côte, indiscernables sans lire l'aria-label.
 const ICONE: Record<Saison, typeof Sun> = {
   printemps: Flower2,
   ete: Sun,
-  automne: Leaf,
+  automne: TreeDeciduous,
   hiver: Snowflake,
 };
 
