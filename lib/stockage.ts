@@ -83,6 +83,9 @@ export const storePlanning = creerStoreLocal("planning_courant")
 /** Coches de la liste de courses (US-05, RG-12, clé `courses_cochees`). */
 export const storeCoches = creerStoreLocal("courses_cochees")
 
+/** Choix de vue Semaine/Cycle sur /planning (#279, D5), clé `vue_planning`. */
+export const storeVuePlanning = creerStoreLocal("vue_planning")
+
 // ============================================================================
 // Écritures métier — le cycle de vie des coches (RG-13) est centralisé ici
 // pour ne pas disperser la règle dans les pages.

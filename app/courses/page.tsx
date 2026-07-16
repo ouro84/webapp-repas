@@ -21,7 +21,8 @@
 // repli sans animation sinon, et si `prefers-reduced-motion` est actif.
 
 import Link from "next/link";
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { Suspense, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useSearchParams } from "next/navigation";
 import { flushSync } from "react-dom";
 import { toast } from "sonner";
 import { ChevronLeft, ChevronRight, Pencil, Plus, Sparkles, Trash2, Users } from "lucide-react";
@@ -29,7 +30,6 @@ import { genererListeCourses } from "@/lib/courses";
 import { retirerCreneauxDesactives } from "@/lib/generateur";
 import { chargerReglages } from "@/lib/reglages-data";
 import { REGLAGES_DEFAUT } from "@/lib/reglages";
-import { parseApiError } from "@/lib/errors";
 import { messagesAvertissementGeneration } from "@/lib/avertissements-generation";
 import {
   aDesCoches,
@@ -49,6 +49,7 @@ import {
   useCycleAffiche,
   useCyclePlanning,
   useArticlesManuels,
+  useGenerationCycle,
   ajouterArticleManuel,
   modifierArticleManuel,
   supprimerArticleManuel,
@@ -56,7 +57,6 @@ import {
   viderCochesArticlesManuels,
   naviguerCycle,
   etirerCycle,
-  appliquerGenerationCycle,
   type CycleAffiche,
 } from "@/lib/sync";
 import { libelleCycle, LONGUEUR_MAX } from "@/lib/cycles";
@@ -68,7 +68,6 @@ import type {
   ArticleManuel,
   CategorieIngredient,
   Ingredient,
-  JourPlanning,
   ListeCourses,
   ReglagesGeneration,
 } from "@/types";
@@ -209,8 +208,12 @@ function NavigateurCycle({ cycle }: { cycle: CycleAffiche }) {
 // Composant page
 // ============================================================================
 
-export default function PageCourses() {
+function ContenuCourses() {
   const hydrate = useHydratation();
+  // Relais one-shot depuis /planning (#279) : ancre demandée via `?ancre=` sur
+  // le lien « Liste de courses → ». Lue une seule fois (mount), cf. useSyncCourses.
+  const searchParams = useSearchParams();
+  const ancreForcee = searchParams.get("ancre");
   const brutCoches = useSyncExternalStore(
     storeCoches.sAbonner,
     storeCoches.lire,
@@ -219,7 +222,18 @@ export default function PageCourses() {
   // Synchro par cycle (#257) : hydrate le CYCLE (planning projeté, en mémoire)
   // et les coches (par ancre) au montage — pas de push planning, pas de temps
   // réel planning (/courses n'écrit jamais le planning, cf. lib/sync.ts).
-  useSyncCourses();
+  useSyncCourses(ancreForcee);
+
+  // Nettoie le paramètre d'URL après lecture (#279) — même motif que
+  // capterCodeDepuisURL (lib/invitation.ts) : éviter qu'un rechargement ou un
+  // retour arrière ne re-déclenche le relais.
+  useEffect(() => {
+    if (!ancreForcee) return;
+    const url = new URL(window.location.href);
+    url.searchParams.delete("ancre");
+    window.history.replaceState({}, "", url);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- une seule fois au montage
+  }, []);
   // Cycle actuellement affiché ({ ancre, longueur }) et son planning projeté —
   // stores dédiés (#257), distincts de storePlanning (semaine unique).
   const cycle = useCycleAffiche();
@@ -260,37 +274,15 @@ export default function PageCourses() {
     };
   }, []);
 
-  // Génération fenêtrée « Générer mon cycle » (#259) : remplit d'un coup les
-  // repas du cycle affiché (1-2 semaines ISO), sans quitter /courses.
-  const [enGeneration, setEnGeneration] = useState(false);
+  // Génération fenêtrée « Générer mon cycle » (#259, hook partagé #279) :
+  // remplit d'un coup les repas du cycle affiché (1-2 semaines ISO), sans
+  // quitter /courses.
+  const { enGeneration, genererCycle } = useGenerationCycle(cycle);
 
   async function genererMonCycle(): Promise<void> {
-    if (!cycle || enGeneration) return;
-    setEnGeneration(true);
+    if (enGeneration) return;
     try {
-      const reponse = await fetch("/api/planning/generer", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ancre: cycle.ancre, longueur: cycle.longueur }),
-      });
-      if (!reponse.ok) {
-        toast.error(await parseApiError(reponse));
-        return;
-      }
-      const {
-        semaines,
-        vegeNonHonore = 0,
-        mixNonHonore = 0,
-        saisonNonHonore = 0,
-      } = (await reponse.json()) as {
-        semaines: Array<{ semaine: string; jours: JourPlanning[] }>;
-        vegeNonHonore?: number;
-        mixNonHonore?: number;
-        saisonNonHonore?: number;
-      };
-      // Persiste chaque semaine touchée (sauvegarder_slots), invalide les coches
-      // du cycle (RG-13) et re-projette depuis la base (cf. lib/sync.ts).
-      await appliquerGenerationCycle(semaines);
+      const { vegeNonHonore, mixNonHonore, saisonNonHonore } = await genererCycle();
       toast.success("Cycle généré");
       for (const message of messagesAvertissementGeneration({
         vegeNonHonore,
@@ -301,9 +293,11 @@ export default function PageCourses() {
       }
     } catch (erreur) {
       console.error("Génération du cycle échouée.", erreur);
-      toast.error("Impossible de générer le cycle. Vérifie ta connexion et réessaie.");
-    } finally {
-      setEnGeneration(false);
+      toast.error(
+        erreur instanceof Error
+          ? erreur.message
+          : "Impossible de générer le cycle. Vérifie ta connexion et réessaie."
+      );
     }
   }
 
@@ -670,6 +664,23 @@ export default function PageCourses() {
         />
       )}
     </main>
+  );
+}
+
+export default function PageCourses() {
+  // Frontière Suspense exigée par useSearchParams (Next 16, cf. app/recettes/page.tsx).
+  return (
+    <Suspense
+      fallback={
+        <main id="contenu" className="flex flex-1 flex-col items-center justify-center p-8">
+          <p role="status" className="animate-pulse text-lg text-brand-700/85">
+            Chargement…
+          </p>
+        </main>
+      }
+    >
+      <ContenuCourses />
+    </Suspense>
   );
 }
 

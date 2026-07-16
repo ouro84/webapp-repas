@@ -65,7 +65,18 @@
     "motsCles": [
       "planning"
     ],
-    "majLe": "2026-07-04T14:15:00.000Z"
+    "majLe": "2026-07-16T10:20:00.000Z"
+  },
+  {
+    "titre": "Ce soir : cuisiner sans avoir planifié",
+    "slug": "prochain-repas",
+    "section": "Planning",
+    "ordre": 50,
+    "resume": "La vue Ce soir affiche uniquement le prochain repas à préparer, en lecture seule, pour qui n'a pas suivi la planification.",
+    "motsCles": [
+      "planning"
+    ],
+    "majLe": "2026-07-16T10:20:00.000Z"
   },
   {
     "titre": "Le catalogue et mes recettes",

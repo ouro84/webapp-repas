@@ -32,6 +32,7 @@ import {
 } from "@/lib/generateur";
 import {
   storePlanning,
+  storeVuePlanning,
   sauvegarderPlanningComplet,
   sauvegarderRemplacementSlot,
   capturerSnapshotAnnulation,
@@ -57,6 +58,8 @@ import {
   semaineDecalee,
   semaineISO,
 } from "@/lib/semaines";
+import { ancreDeSemaine } from "@/lib/cycles";
+import { chargerJourCoursesFoyer } from "@/lib/foyer";
 import { parseApiError } from "@/lib/errors";
 
 // Plage de navigation de l'historique (#5) : 12 semaines passées → +6 futures.
@@ -313,15 +316,27 @@ export default function PagePlanning() {
   // « ↺ changer » (RG-62 ; la génération complète les lit côté serveur, RG-61).
   // Défaut Map vide tant que non chargées = comportement antérieur (uniforme).
   const [preferences, setPreferences] = useState<PreferencesRecettes>(new Map());
+  // Jour de courses du foyer (#279) : nécessaire pour dériver l'ancre du cycle
+  // qui contient la semaine affichée (lien « Liste de courses → »). Fail-open
+  // lundi (1), même repli que VuePlanningCycle/hydraterCycle.
+  const [jourCourses, setJourCourses] = useState(1);
   // Confirmation avant de régénérer/modifier une semaine PASSÉE (US-14, RG-24).
   // Contient l'action à rejouer (avec `force`) une fois l'utilisateur d'accord.
   const [confirmation, setConfirmation] = useState<{
     executer: () => void;
   } | null>(null);
   // Vue affichée (#260, PR3) : « semaine » (calendaire, driver quotidien, défaut)
-  // ou « cycle » (fenêtre de courses, lecture seule). Défaut semaine = comportement
-  // inchangé ; état éphémère (non persisté).
-  const [vue, setVue] = useState<"semaine" | "cycle">("semaine");
+  // ou « cycle » (fenêtre de courses, lecture seule). Persistée (#279, D5) via
+  // storeVuePlanning — un choix explicite pour la vue Cycle survit au reload.
+  const vueBrute = useSyncExternalStore(
+    storeVuePlanning.sAbonner,
+    storeVuePlanning.lire,
+    storeVuePlanning.lireServeur
+  );
+  const vue: "semaine" | "cycle" = vueBrute === "cycle" ? "cycle" : "semaine";
+  function setVue(v: "semaine" | "cycle"): void {
+    storeVuePlanning.ecrire(v);
+  }
 
   // Liste plate des recettes (sélecteur, remplacement aléatoire) + ensemble des
   // ids MODIFIABLES depuis la fiche (#137) — dérivés des recettes gérées.
@@ -379,6 +394,13 @@ export default function PagePlanning() {
       })
       .catch((erreur) => {
         console.error("Chargement des préférences échoué (biais ignoré).", erreur);
+      });
+    chargerJourCoursesFoyer()
+      .then((j) => {
+        if (actif) setJourCourses(j);
+      })
+      .catch((erreur) => {
+        console.error("Chargement du jour de courses échoué (défaut lundi).", erreur);
       });
     return () => {
       actif = false;
@@ -690,6 +712,10 @@ export default function PagePlanning() {
     );
   }
 
+  // Ancre du cycle qui contient la semaine affichée (#279, D4) — utilisée par
+  // les liens « Liste de courses → » de la vue Semaine (vide et chargée).
+  const ancreCourses = semaineAffichee ? ancreDeSemaine(semaineAffichee, jourCourses) : null;
+
   // --- Vue CYCLE (#260, PR3) : lecture seule, calée sur la fenêtre de courses.
   // Court-circuite les états semaine (vide/chargé) : le cycle peut avoir des
   // repas même si la semaine affichée est vide, et inversement. ---
@@ -704,12 +730,6 @@ export default function PagePlanning() {
           </div>
           <div className="flex items-center gap-2">
             <BasculeVue vue={vue} onChange={setVue} />
-            <Link
-              href="/courses"
-              className="relative rounded-full bg-primary px-4 py-2 text-center text-sm font-medium text-white transition-colors after:absolute after:-inset-1 after:content-[''] hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
-            >
-              Liste de courses →
-            </Link>
           </div>
         </header>
         <VuePlanningCycle idsModifiables={idsModifiables} />
@@ -818,7 +838,7 @@ export default function PagePlanning() {
             {enGeneration ? "Génération…" : "Régénérer"}
           </button>
           <Link
-            href="/courses"
+            href={ancreCourses ? `/courses?ancre=${ancreCourses}` : "/courses"}
             className="relative flex-1 rounded-full bg-primary px-4 py-2 text-center text-sm font-medium text-white transition-colors after:absolute after:-inset-1 after:content-[''] hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 sm:flex-none"
           >
             Liste de courses →

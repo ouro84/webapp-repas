@@ -10,7 +10,7 @@
 // Pas de setState React ici : l'hydratation écrit via storePlanning.ecrire,
 // dont useSyncExternalStore propage le changement aux pages.
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useSyncExternalStore } from "react";
 import { storeCoches, storePlanning } from "@/lib/stockage";
 import {
@@ -51,7 +51,8 @@ import {
   semainesDuCycle,
 } from "@/lib/cycles";
 import { chargerJourCoursesFoyer } from "@/lib/foyer";
-import type { ArticleManuel, Planning } from "@/types";
+import { parseApiError } from "@/lib/errors";
+import type { ArticleManuel, JourPlanning, Planning } from "@/types";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 
 // Horodatage de la dernière écriture locale (last-write-wins) et drapeau
@@ -219,7 +220,7 @@ export type CycleAffiche = { ancre: string; longueur: number };
 
 const storeCycle = creerStoreJSON<CycleAffiche>(CLE_CYCLE);
 
-function definirCycleAffiche(ancre: string, longueur: number): void {
+export function definirCycleAffiche(ancre: string, longueur: number): void {
   storeCycle.ecrire({ ancre, longueur });
 }
 
@@ -1157,6 +1158,60 @@ export async function appliquerGenerationCycle(
   }
 }
 
+export type ResultatGenerationCycle = {
+  vegeNonHonore: number;
+  mixNonHonore: number;
+  saisonNonHonore: number;
+};
+
+/**
+ * Génération fenêtrée partagée entre `/courses` (bouton historique, #259) et
+ * la vue Cycle de `/planning` (#279) — extrait de l'ancien `genererMonCycle`
+ * local à `app/courses/page.tsx`, comportement identique. `genererCycle` lève
+ * en cas d'échec (réseau ou réponse non-ok, message déjà formaté via
+ * `parseApiError`) — pas de toast ici : cette fonction vit dans `lib/`, le
+ * feedback UI reste la responsabilité de la page (cf. CLAUDE.md règle 2,
+ * « app/ pour l'UI, lib/ pour la logique »).
+ */
+export function useGenerationCycle(cycle: CycleAffiche | null): {
+  enGeneration: boolean;
+  genererCycle: () => Promise<ResultatGenerationCycle>;
+} {
+  const [enGeneration, setEnGeneration] = useState(false);
+
+  async function genererCycle(): Promise<ResultatGenerationCycle> {
+    if (!cycle) throw new Error("Aucun cycle affiché.");
+    setEnGeneration(true);
+    try {
+      const reponse = await fetch("/api/planning/generer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ancre: cycle.ancre, longueur: cycle.longueur }),
+      });
+      if (!reponse.ok) {
+        throw new Error(await parseApiError(reponse));
+      }
+      const {
+        semaines,
+        vegeNonHonore = 0,
+        mixNonHonore = 0,
+        saisonNonHonore = 0,
+      } = (await reponse.json()) as {
+        semaines: Array<{ semaine: string; jours: JourPlanning[] }>;
+        vegeNonHonore?: number;
+        mixNonHonore?: number;
+        saisonNonHonore?: number;
+      };
+      await appliquerGenerationCycle(semaines);
+      return { vegeNonHonore, mixNonHonore, saisonNonHonore };
+    } finally {
+      setEnGeneration(false);
+    }
+  }
+
+  return { enGeneration, genererCycle };
+}
+
 /** Invalide les coches du cycle affiché (RG-13) et re-projette le planning depuis
  *  la base (après une génération fenêtrée). */
 async function rafraichirCycleGenere(): Promise<void> {
@@ -1439,6 +1494,20 @@ export async function naviguerCycle(offset: number): Promise<void> {
 }
 
 /**
+ * Navigue vers une ancre ABSOLUE (#279, relais one-shot `?ancre=` depuis
+ * `/planning`) — miroir de `naviguerCycle`, mais sans décalage relatif : pas
+ * besoin d'un cycle déjà affiché (contrairement à `naviguerCycle`, qui lit
+ * `lireCycleAffiche()` pour calculer le décalage). Flush les écritures en
+ * attente PUIS charge l'ancre cible. Appelée par `useSyncCourses` quand une
+ * ancre est imposée au montage.
+ */
+export async function allerAuCycle(ancre: string): Promise<void> {
+  if (!(await attendreSync())) return; // hors-ligne : ne pas perdre les écritures
+  const longueur = await chargerLongueurCycle(ancre);
+  await chargerCycleDansCache(ancre, longueur);
+}
+
+/**
  * Étire (ou raccourcit) le cycle affiché : persiste la nouvelle longueur puis
  * recharge le cycle (le planning projeté et les jours touchés changent).
  */
@@ -1579,8 +1648,16 @@ function demarrerSyncCoches(): () => void {
  * Hook de page /courses (#257) : démarre la synchro des coches et hydrate le
  * CYCLE courant au montage (au lieu de la semaine). Renvoie l'état de synchro.
  * Ne wire ni le push planning ni le temps réel planning (cf. demarrerSyncCoches).
+ *
+ * `ancreForcee` (#279) : si fournie (relais one-shot depuis `/planning`, via
+ * `?ancre=` sur le lien « Liste de courses → »), bascule DIRECTEMENT sur cette
+ * ancre au montage, sans passer par le défaut du jour de `hydraterCycle` —
+ * sinon ce défaut écraserait silencieusement l'ancre demandée (`hydraterCycle`
+ * ne consulte jamais le cycle déjà affiché). Lue une seule fois au montage
+ * (deps `[]`) : un changement de query param en cours de vie du composant
+ * n'est pas un cas d'usage ici (l'appelant nettoie l'URL après coup).
  */
-export function useSyncCourses(): EtatSync {
+export function useSyncCourses(ancreForcee?: string | null): EtatSync {
   const etatCourant = useSyncExternalStore(
     storeEtatSync.sAbonner,
     storeEtatSync.lire,
@@ -1588,8 +1665,13 @@ export function useSyncCourses(): EtatSync {
   );
   useEffect(() => {
     const arreter = demarrerSyncCoches();
-    void hydraterCycle();
+    if (ancreForcee) {
+      void allerAuCycle(ancreForcee);
+    } else {
+      void hydraterCycle();
+    }
     return arreter;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- ancreForcee lue une seule fois au montage, volontairement
   }, []);
   return etatCourant;
 }

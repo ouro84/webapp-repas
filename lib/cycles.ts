@@ -6,7 +6,7 @@
 // calendaire en heure LOCALE (cohérent avec lib/semaines.ts, cf. #171) :
 // semaineISO() reconstruit l'identifiant depuis les getters locaux.
 
-import { semaineISO } from "@/lib/semaines"
+import { lundiDeSemaine, semaineISO } from "@/lib/semaines"
 import type { Jour, Planning, JourPlanning } from "@/types"
 
 export const LONGUEUR_DEFAUT = 7
@@ -171,4 +171,18 @@ export function planningDuCycle(
     if (jp) jours.push(jp)
   }
   return { semaine: ancre, jours }
+}
+
+/**
+ * Ancre du cycle qui CONTIENT la semaine ISO donnée (#279, dérivation
+ * Semaine → Courses). Référence = jeudi de la semaine (même ancrage que
+ * `saisonDeSemaine` de lib/semaines.ts) : le jeudi porte déjà l'année ISO, et
+ * comme les ancres sont espacées de 7 j (cadence hebdomadaire fixe, cf. #257
+ * D8), il n'existe qu'une seule ancre ≤ jeudi qui couvre effectivement cette
+ * semaine — peu importe où tombe jourCourses dans la semaine.
+ */
+export function ancreDeSemaine(semaine: string, jourCourses: number): string {
+  const jeudi = lundiDeSemaine(semaine)
+  jeudi.setDate(jeudi.getDate() + 3)
+  return ancreCourante(jeudi, jourCourses)
 }

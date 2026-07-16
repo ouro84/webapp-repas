@@ -4,23 +4,30 @@
 //
 // Bonus « lecture d'abord » (design §8) : visualiser « ce que j'ai prévu jusqu'à
 // quand », aligné sur la fenêtre de la liste de courses (même ancre + longueur).
-// La vue est en LECTURE SEULE — l'ÉDITION reste dans la vue Semaine, qui est le
-// driver quotidien (« on mange quoi ce soir ? », décision produit D5). Raisons :
+// La vue reste en LECTURE SEULE côté ÉDITION DE SLOT (changer/personnes/restes) —
+// l'édition reste dans la vue Semaine, qui est le driver quotidien (« on mange
+// quoi ce soir ? », décision produit D5). Raisons :
 //  (1) un cycle non calendaire chevauche 1-2 semaines ISO → éditer un slot d'une
 //      semaine qui n'est pas l'« affichée » sortirait du modèle mono-semaine de
 //      storePlanning/useSync (persistance + undo + temps réel), pour un bonus ;
 //  (2) une éditabilité PARTIELLE (seuls les jours de la semaine affichée) serait
-//      un modèle mental incohérent. On garde donc : Semaine = piloter, Cycle =
-//      visualiser + aller aux courses. La fiche recette (consultation) reste
-//      accessible, et « Générer mon cycle » vit sur /courses (#259).
+//      un modèle mental incohérent.
+// La GÉNÉRATION, elle, est accessible directement ici depuis #279 : le
+// mécanisme (#259, RPC sauvegarder_slots) est déjà indépendant du store
+// mono-semaine — l'ajouter ici ne contredit donc pas la contrainte ci-dessus,
+// qui ne portait que sur l'édition de slot. Le lien « Liste de courses → »
+// vit aussi ici (passe l'ancre affichée en query param, #279).
 //
 // Projection : on lit les plannings des 1-2 semaines ISO que le cycle touche
 // (chargerPlanningDistant, base = source de vérité) et on rend chaque JOUR du
 // cycle (date concrète) via lib/cycles (fonctions pures). Aucun store planning
-// n'est touché (pas de push) : cette vue ne fait que lire.
+// n'est touché (pas de push) : cette vue ne fait que lire le contenu affiché ;
+// seule la génération (déclenchée par un clic explicite) écrit en base.
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Sparkles } from "lucide-react";
+import { toast } from "sonner";
 import {
   ancreParDefaut,
   cycleDecale,
@@ -36,6 +43,8 @@ import { chargerLongueurCycle, chargerPlanningDistant } from "@/lib/persistance"
 import { creneauActif } from "@/lib/generateur";
 import { chargerReglages } from "@/lib/reglages-data";
 import { REGLAGES_DEFAUT } from "@/lib/reglages";
+import { definirCycleAffiche, useGenerationCycle } from "@/lib/sync";
+import { messagesAvertissementGeneration } from "@/lib/avertissements-generation";
 import { BadgeTemps } from "@/components/planning/badge-temps";
 import { BadgeVegetarien } from "@/components/ui/badge-vegetarien";
 import { BadgeAccompagnement } from "@/components/ui/badge-accompagnement";
@@ -116,6 +125,39 @@ export function VuePlanningCycle({
     };
   }, []);
 
+  // Génération partagée (#279, D2) : accessible directement depuis cette vue,
+  // sans passer par /courses. Le mécanisme (#259) persiste par RPC
+  // sauvegarder_slots, indépendamment de storePlanning/useSync (mono-semaine)
+  // — ne contredit donc pas la lecture seule de l'ÉDITION de slot (cf.
+  // en-tête de ce fichier).
+  const { enGeneration, genererCycle } = useGenerationCycle(
+    ancre !== null ? { ancre, longueur } : null
+  );
+
+  async function genererMonCycle(): Promise<void> {
+    if (enGeneration) return;
+    try {
+      const { vegeNonHonore, mixNonHonore, saisonNonHonore } = await genererCycle();
+      toast.success("Cycle généré");
+      for (const message of messagesAvertissementGeneration({
+        vegeNonHonore,
+        mixNonHonore,
+        saisonNonHonore,
+      })) {
+        toast.warning(message);
+      }
+      // Recharge la projection affichée pour refléter le nouveau contenu.
+      if (ancre !== null) void chargerCycle(ancre);
+    } catch (erreur) {
+      console.error("Génération du cycle échouée.", erreur);
+      toast.error(
+        erreur instanceof Error
+          ? erreur.message
+          : "Impossible de générer le cycle. Vérifie ta connexion et réessaie."
+      );
+    }
+  }
+
   // Charge (ou recharge) le cycle d'ancre donnée : lit les 1-2 semaines touchées.
   const chargerCycle = useCallback(async (ancreCible: string) => {
     setChargement(true);
@@ -137,6 +179,11 @@ export function VuePlanningCycle({
       setLongueur(long);
       setParSemaine(map);
       setAncre(ancreCible);
+      // Répercute dans le store partagé (#279) : nécessaire pour que la
+      // génération (ci-dessous) et le lien « Liste de courses → » ciblent le
+      // MÊME cycle que celui affiché ici. Écriture localStorage pure, sans
+      // effet de bord coches/réaltime (cf. definirCycleAffiche).
+      definirCycleAffiche(ancreCible, long);
     } finally {
       setChargement(false);
     }
@@ -175,8 +222,9 @@ export function VuePlanningCycle({
 
   return (
     <div>
-      {/* Navigateur de cycle (miroir de /courses) + libellé de la fenêtre. */}
-      <div className="mb-6 flex items-center gap-2">
+      {/* Navigateur de cycle (miroir de /courses) + libellé de la fenêtre +
+          actions (#279 : génération + accès courses, directement ici). */}
+      <div className="mb-6 flex flex-wrap items-center gap-2">
         <button
           type="button"
           aria-label="Cycle précédent"
@@ -199,6 +247,21 @@ export function VuePlanningCycle({
         >
           <ChevronRight aria-hidden="true" className="size-4" />
         </button>
+        <button
+          type="button"
+          onClick={() => void genererMonCycle()}
+          disabled={enGeneration}
+          className="relative inline-flex items-center gap-1.5 rounded-full border border-brand-200 px-4 py-2 text-sm font-medium text-brand-700 transition after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          <Sparkles aria-hidden="true" className="size-4" />
+          {enGeneration ? "Génération…" : "Générer mon cycle"}
+        </button>
+        <Link
+          href={`/courses?ancre=${ancre}`}
+          className="relative rounded-full bg-primary px-4 py-2 text-center text-sm font-medium text-white transition-colors after:absolute after:-inset-1 after:content-[''] hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
+        >
+          Liste de courses →
+        </Link>
       </div>
 
       {!aDesRepas ? (

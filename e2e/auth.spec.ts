@@ -63,6 +63,7 @@ test("déconnecté, la nav applicative est masquée (#207)", async ({ page }) =>
   await expect(page.getByRole("link", { name: "Courses" })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Recettes" })).toHaveCount(0);
   await expect(page.getByRole("link", { name: /Profil/ })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Ce soir" })).toHaveCount(0);
   // Nav minimale : le logo (accueil) et l'aide restent accessibles.
   await expect(page.getByRole("link", { name: "Aide" })).toBeVisible();
 });
