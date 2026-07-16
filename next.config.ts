@@ -39,13 +39,19 @@ const ENTETES_SECURITE = [
 // deux onglets, QR d'invitation, toasts, /aide, dark mode — AVANT de passer en
 // enforcement (renommer la clé en `Content-Security-Policy`). Toute nouvelle
 // origine externe devra être ajoutée ici (cf. ADR-10).
+// Dev-only allowance pour le picker /impeccable live (localhost:8400).
+// Gardé par NODE_ENV : n'apparaît jamais en dehors du dev, retirable en
+// revertant ce fichier.
+const __impeccableLiveDev =
+  process.env.NODE_ENV === "development" ? " http://localhost:8400" : "";
+
 const CSP = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline' https://va.vercel-scripts.com",
+  `script-src 'self' 'unsafe-inline' https://va.vercel-scripts.com${__impeccableLiveDev}`,
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob:",
   "font-src 'self'",
-  "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.sentry.io https://*.ingest.sentry.io https://*.vercel-insights.com https://va.vercel-scripts.com",
+  `connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.sentry.io https://*.ingest.sentry.io https://*.vercel-insights.com https://va.vercel-scripts.com${__impeccableLiveDev}`,
   "frame-ancestors 'none'",
   "object-src 'none'",
   "base-uri 'self'",

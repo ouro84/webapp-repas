@@ -1,0 +1,134 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-16T00:00:00.000Z",
+  "title": "Design System: On mange quoi ?",
+  "extensions": {
+    "colorMeta": {
+      "herbe-fraiche-600": {
+        "role": "primary",
+        "displayName": "Herbe fraîche",
+        "canonical": "#3d7a44",
+        "tonalRamp": ["#1a3820", "#2e5e34", "#3d7a44", "#4a9454", "#6bab74", "#aad9ae", "#d4ecd6", "#edf7ee"]
+      },
+      "terracotta-600": {
+        "role": "secondary",
+        "displayName": "Terracotta épicée",
+        "canonical": "#b85530",
+        "tonalRamp": ["#5f2c15", "#8a3f20", "#b85530", "#d4683a", "#dc8563", "#fdddd3", "#fef0ec", "#fff8f5"]
+      },
+      "creme": {
+        "role": "neutral",
+        "displayName": "Crème",
+        "canonical": "#fafaf5",
+        "tonalRamp": ["#1a3820", "#2e5e34", "#8fae90", "#c7dbc8", "#e4efe0", "#f2f5ee", "#fafaf5", "#ffffff"]
+      },
+      "danger": {
+        "role": "danger",
+        "displayName": "Rouge alerte",
+        "canonical": "#dc2626",
+        "tonalRamp": ["#7f1d1d", "#991b1b", "#b91c1c", "#dc2626", "#ef4444", "#f87171", "#fecaca", "#fef2f2"]
+      }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display (Fredoka)", "purpose": "Marque + h1 de page uniquement, jamais les h2 de section." },
+      "body": { "displayName": "Body (Nunito)", "purpose": "Tout le reste : texte courant, h2, labels, formulaires." },
+      "mono": { "displayName": "Mono (Geist Mono)", "purpose": "Digest d'erreur technique uniquement (app/error.tsx)." }
+    },
+    "shadows": [
+      { "name": "discrete", "value": "0 1px 2px rgba(26, 56, 32, 0.06)", "purpose": "Soutien léger sous les cartes de contenu au repos (shadow-sm)." },
+      { "name": "flottante", "value": "0 20px 25px -5px rgba(26, 56, 32, 0.15), 0 8px 10px -6px rgba(26, 56, 32, 0.1)", "purpose": "Dialogs / bottom sheets natifs (shadow-xl) — le seul vrai plan surélevé." }
+    ],
+    "motion": [
+      { "name": "apparition", "value": "300ms ease-out backwards, translateY(8px)→none + opacity 0→1", "purpose": "Entrée en stagger des cartes de planning après régénération." },
+      { "name": "crossfade", "value": "220ms ease-out, translateY(2px)→none + opacity 0→1", "purpose": "Transition douce entre deux états d'un même contenu." },
+      { "name": "active-scale", "value": "transition (couleur + transform), active:scale-[0.97]", "purpose": "Feedback tactile sur les boutons/CTA — pas les switches (déjà animés par le knob)." }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "640px" },
+      { "name": "md", "value": "768px" },
+      { "name": "lg", "value": "1024px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Bouton principal",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "CTA principal — pilule pleine, vert herbe fraîche.",
+      "html": "<button class=\"ds-btn-primary\">Régénérer</button>",
+      "css": ".ds-btn-primary { background: #3d7a44; color: #ffffff; padding: 10px 20px; border-radius: 9999px; border: none; font-family: Nunito, Arial, sans-serif; font-weight: 600; font-size: 0.875rem; transition: background-color 0.2s, transform 0.15s; cursor: pointer; } .ds-btn-primary:hover { background: #2e5e34; } .ds-btn-primary:focus-visible { outline: 2px solid #3d7a44; outline-offset: 2px; } .ds-btn-primary:active { transform: scale(0.97); }"
+    },
+    {
+      "name": "Bouton secondaire",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Action secondaire — contour vert clair, fond surface.",
+      "html": "<button class=\"ds-btn-secondary\">Annuler</button>",
+      "css": ".ds-btn-secondary { background: #ffffff; color: #2e5e34; padding: 10px 20px; border-radius: 9999px; border: 1px solid #aad9ae; font-family: Nunito, Arial, sans-serif; font-weight: 500; font-size: 0.875rem; transition: background-color 0.2s, transform 0.15s; cursor: pointer; } .ds-btn-secondary:hover { background: #edf7ee; } .ds-btn-secondary:focus-visible { outline: 2px solid #3d7a44; outline-offset: 2px; } .ds-btn-secondary:active { transform: scale(0.97); }"
+    },
+    {
+      "name": "Badge temps de préparation (long)",
+      "kind": "chip",
+      "refersTo": "badge-temps-long",
+      "description": "Pastille terracotta avec icônes horloge graduées — le libellé texte porte toujours le sens.",
+      "html": "<span class=\"ds-badge-temps\"><svg class=\"ds-icon-clock\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"M12 7v5l3 2\"/></svg><svg class=\"ds-icon-clock\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"M12 7v5l3 2\"/></svg>Long</span>",
+      "css": ".ds-badge-temps { display: inline-flex; align-items: center; gap: 4px; background: #fdddd3; color: #8a3f20; border-radius: 9999px; padding: 2px 8px; font-family: Nunito, Arial, sans-serif; font-size: 0.75rem; font-weight: 500; } .ds-icon-clock { width: 12px; height: 12px; }"
+    },
+    {
+      "name": "Interrupteur (switch)",
+      "kind": "custom",
+      "refersTo": "switch",
+      "description": "Switch on/off partagé — piste + curseur, jamais de positionnement absolu bespoke.",
+      "html": "<button class=\"ds-switch ds-switch-on\" role=\"switch\" aria-checked=\"true\"><span class=\"ds-switch-knob\"></span></button>",
+      "css": ".ds-switch { position: relative; display: inline-flex; align-items: center; height: 24px; width: 44px; border-radius: 9999px; border: none; background: #aad9ae; transition: background-color 0.2s; cursor: pointer; padding: 0; } .ds-switch-on { background: #3d7a44; } .ds-switch-knob { display: inline-block; height: 20px; width: 20px; border-radius: 9999px; background: #ffffff; box-shadow: 0 1px 2px rgba(26,56,32,0.15); transform: translateX(2px); transition: transform 0.2s; } .ds-switch-on .ds-switch-knob { transform: translateX(22px); } .ds-switch:focus-visible { outline: 2px solid #3d7a44; outline-offset: 2px; }"
+    },
+    {
+      "name": "Carte de contenu",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Carte plate structurée par la bordure — pas de profondeur marquée.",
+      "html": "<div class=\"ds-card\"><p class=\"ds-card-title\">Poulet rôti, pommes de terre</p><p class=\"ds-card-meta\">Normal · Végétarien non</p></div>",
+      "css": ".ds-card { background: #ffffff; border: 1px solid #d4ecd6; border-radius: 8px; padding: 16px; box-shadow: 0 1px 2px rgba(26,56,32,0.06); font-family: Nunito, Arial, sans-serif; } .ds-card-title { color: #1a3820; font-weight: 600; margin: 0 0 4px; } .ds-card-meta { color: #2e5e34; opacity: 0.85; font-size: 0.8rem; margin: 0; }"
+    },
+    {
+      "name": "Lien de navigation",
+      "kind": "nav",
+      "refersTo": "nav-link",
+      "description": "Lien de nav en pilule — actif = fond vert plein, texte blanc.",
+      "html": "<nav class=\"ds-nav\"><a href=\"#\" class=\"ds-nav-link ds-nav-link-active\">Planning</a><a href=\"#\" class=\"ds-nav-link\">Courses</a></nav>",
+      "css": ".ds-nav { display: flex; gap: 4px; background: rgba(255,255,255,0.9); backdrop-filter: blur(4px); padding: 8px; border-bottom: 1px solid #d4ecd6; } .ds-nav-link { border-radius: 9999px; padding: 6px 16px; font-family: Nunito, Arial, sans-serif; font-size: 0.875rem; font-weight: 500; color: #2e5e34; text-decoration: none; transition: background-color 0.2s, color 0.2s; } .ds-nav-link:hover { background: #edf7ee; } .ds-nav-link-active { background: #3d7a44; color: #ffffff; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "Le compagnon de frigo",
+    "overview": "« On mange quoi ? » n'est pas un outil de productivité qu'on ouvre en pensant à un tableau de bord — c'est le pote qui a déjà réfléchi au repas à ta place et qui te le glisse sans en faire un événement. L'interface se pense pour des mains occupées (en cuisine, dans les rayons du magasin), pas pour un écran de bureau : gestes courts, feedback immédiat, jamais de blocage. La rondeur du pairing Fredoka/Nunito, la palette vert herbe fraîche + terracotta épicée, et le refus systématique du jargon technique visible portent cette complicité décontractée plutôt qu'une froideur d'outil.\n\nCe système rejette explicitement l'esthétique SaaS/corporate : pas de bleu-gris générique, pas de grilles de cartes identiques façon dashboard B2B, pas de glassmorphism ni de texte en dégradé, pas d'eyebrow ou de numérotation décorative de section. Ce n'est pas une landing page qui vend — c'est un objet du quotidien qu'on ouvre trois fois par semaine, en 30 secondes, sans réfléchir à l'UI elle-même.",
+    "keyCharacteristics": [
+      "Rondeur partout où c'est tactile (boutons, switches, badges en pilule), jamais anguleux",
+      "Couleur porteuse de sens (vert = interactif, terracotta = épice/placard, amber = prudence), jamais décorative",
+      "Plat structuré par la bordure + une ombre discrète, pas de profondeur marquée",
+      "Aucune contrainte de génération n'est jamais bloquante — l'UI reflète ce filet de sécurité par des avertissements doux, jamais des erreurs dures"
+    ],
+    "rules": [
+      { "name": "La règle du vert unique", "body": "Le vert est la seule couleur interactive de l'app (hovers, liens, boutons, focus). Ne jamais teinter un hover générique en terracotta.", "section": "colors" },
+      { "name": "La règle de la couleur qui ne suffit jamais seule", "body": "Aucune information n'est portée par la couleur seule — icône + libellé texte systématiques.", "section": "colors" },
+      { "name": "La règle de la marque, pas du contenu", "body": "Fredoka s'applique à la marque + h1 de page, jamais aux h2 fonctionnels de section/dialog.", "section": "typography" },
+      { "name": "La règle du plat-par-défaut", "body": "Au repos, toute surface est plate. L'ombre n'apparaît que pour un élément qui flotte réellement (dialog).", "section": "elevation" }
+    ],
+    "dos": [
+      "Do garder le vert (#3d7a44 / bg-primary) comme unique couleur interactive.",
+      "Do utiliser rounded-full sur tout élément tactile.",
+      "Do faire porter le sens par icône + libellé texte ensemble.",
+      "Do utiliser les tokens sémantiques (bg-surface, bg-primary, bg-danger) plutôt que les valeurs brutes.",
+      "Do réserver le terracotta aux touches précises de marque."
+    ],
+    "donts": [
+      "Don't utiliser de bleu/gris générique façon SaaS corporate.",
+      "Don't faire des grilles de cartes identiques façon dashboard B2B.",
+      "Don't utiliser de gradient text, de glassmorphism décoratif, ou d'eyebrow/numérotation de section.",
+      "Don't utiliser d'emoji ou de glyphe Unicode comme icône.",
+      "Don't ajouter une ombre marquée à une carte statique au repos.",
+      "Don't appliquer font-display à un h2 de section ou de dialog.",
+      "Don't repeindre les encadrés amber-*/red-* en terracotta."
+    ]
+  }
+}
