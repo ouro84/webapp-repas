@@ -19,13 +19,14 @@ const LIENS = [
   { href: "/planning", label: "Planning" },
   { href: "/courses", label: "Courses" },
   { href: "/recettes", label: "Recettes" },
+  { href: "/ce-soir", label: "Ce soir" },
 ];
 
 // Routes protégées (cf. proxy.ts) : le proxy y garantit une session → on peut
 // afficher la nav complète sans attendre le signal d'auth client (pas de
 // scintillement sur le chemin chaud). Les pages publiques (/, /aide, /login…)
 // attendent, elles, le vrai signal `useEstConnecte`.
-const ROUTES_PROTEGEES = ["/planning", "/courses", "/recettes", "/reglages", "/profil"];
+const ROUTES_PROTEGEES = ["/planning", "/courses", "/recettes", "/reglages", "/profil", "/ce-soir"];
 
 // État actif d'un lien de nav (#73, P20). Piège central : `startsWith("/")`
 // matcherait TOUTES les routes → l'accueil se teste en égalité STRICTE. Les

@@ -65,7 +65,7 @@ export async function proxy(request: NextRequest) {
 
   // Pages protégées : redirige vers /login si non connecté. /bienvenue (tunnel
   // d'onboarding #22 PR2) en fait partie — on ne s'onboarde pas déconnecté.
-  const protectedRoutes = ["/planning", "/courses", "/recettes", "/reglages", "/profil", "/bienvenue"]
+  const protectedRoutes = ["/planning", "/courses", "/recettes", "/reglages", "/profil", "/bienvenue", "/ce-soir"]
   const isProtectedRoute = protectedRoutes.some(route => pathname.startsWith(route))
 
   if (isProtectedRoute && !user) {
