@@ -67,9 +67,17 @@ Algorithme :
 3. S'arrête au premier créneau actif rencontré, **qu'il soit vide, en restes, ou pourvu d'une
    recette** — ces trois états sont affichés tels quels (D4), on ne saute PAS un créneau juste
    parce qu'il n'a pas de recette ou qu'il est en restes (seul « désactivé » fait sauter).
-4. Limite de recherche : semaine courante + semaine suivante (mêmes 1-2 semaines que
-   `VuePlanningCycle` charge typiquement) — si rien de planifié dans cette fenêtre, retour `null`
-   → état vide « Rien de prévu ».
+4. Limite de recherche `maxJours` (défaut 14, deux semaines) — filet de sécurité théorique : RG-47
+   garantit qu'au moins un créneau du motif hebdomadaire (jour × type de repas) est actif, donc en
+   pratique la fonction s'arrête toujours dans les 7 premiers jours. `null` (fenêtre épuisée) reste
+   possible en théorie mais n'est pas le chemin principal.
+
+**Précision post-brainstorm** : la fonction renvoie le premier créneau ACTIF rencontré que ce
+créneau ait une recette ou non (point 3) — elle ne fait PAS de distinction entre « planning existant
+mais ce jour jamais rempli » et « aucun planning du tout sur la fenêtre » : dans les deux cas,
+`recette` vaut `undefined` et l'affichage est identique (« Rien de prévu pour ce repas », cf.
+§3.c). Le design initial listait ces deux cas comme deux états vides séparés — inutile en
+pratique, simplifié ici en un seul.
 
 `app/ce-soir/page.tsx` charge les plannings des 1-2 semaines nécessaires via
 `chargerPlanningDistant` (déjà utilisé par `VuePlanningCycle`, même pattern) et les réglages via
@@ -84,11 +92,13 @@ Algorithme :
 - Créneau actif marqué restes → pas de `FicheRecette` (pas d'ingrédients à cuisiner) : message
   sobre « Restes de [nom de la recette du slot] » (la recette reste portée par le slot même en
   restes, cf. `lib/restes.ts` — `marquerRestes` ne touche jamais `jp.diner`/`jp.dejeuner`).
-- Créneau actif sans recette (planning existant mais slot jamais rempli) → état vide « Rien de
-  prévu pour ce repas ».
-- Aucun créneau actif trouvé dans la fenêtre de recherche → état vide « Rien de prévu » global,
-  **sans CTA génération** (cohérent avec la lecture seule de la vue Cycle, #260 §8 — cette page
-  est un point de consultation, pas d'action ; générer reste le rôle de `/planning`/`/courses`).
+- Créneau actif sans recette (planning jamais généré pour ce jour, ou jamais généré du tout sur
+  la fenêtre de recherche — les deux cas sont indiscernables et rendus IDENTIQUEMENT, cf. §3.b) →
+  état vide sobre « Rien de prévu pour ce repas », **sans CTA génération** (cohérent avec la
+  lecture seule de la vue Cycle, #260 §8 — cette page est un point de consultation, pas d'action ;
+  générer reste le rôle de `/planning`/`/courses`).
+- Fenêtre de recherche entièrement épuisée (tous les créneaux désactivés sur `maxJours`, cas
+  théorique cf. §3.b) → même état vide sobre, sans date/contexte affiché.
 
 ### 3.d Lecture seule (D5)
 
