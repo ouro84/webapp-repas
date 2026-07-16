@@ -219,7 +219,7 @@ export type CycleAffiche = { ancre: string; longueur: number };
 
 const storeCycle = creerStoreJSON<CycleAffiche>(CLE_CYCLE);
 
-function definirCycleAffiche(ancre: string, longueur: number): void {
+export function definirCycleAffiche(ancre: string, longueur: number): void {
   storeCycle.ecrire({ ancre, longueur });
 }
 
@@ -1439,6 +1439,20 @@ export async function naviguerCycle(offset: number): Promise<void> {
 }
 
 /**
+ * Navigue vers une ancre ABSOLUE (#279, relais one-shot `?ancre=` depuis
+ * `/planning`) — miroir de `naviguerCycle`, mais sans décalage relatif : pas
+ * besoin d'un cycle déjà affiché (contrairement à `naviguerCycle`, qui lit
+ * `lireCycleAffiche()` pour calculer le décalage). Flush les écritures en
+ * attente PUIS charge l'ancre cible. Appelée par `useSyncCourses` quand une
+ * ancre est imposée au montage.
+ */
+export async function allerAuCycle(ancre: string): Promise<void> {
+  if (!(await attendreSync())) return; // hors-ligne : ne pas perdre les écritures
+  const longueur = await chargerLongueurCycle(ancre);
+  await chargerCycleDansCache(ancre, longueur);
+}
+
+/**
  * Étire (ou raccourcit) le cycle affiché : persiste la nouvelle longueur puis
  * recharge le cycle (le planning projeté et les jours touchés changent).
  */
@@ -1579,8 +1593,16 @@ function demarrerSyncCoches(): () => void {
  * Hook de page /courses (#257) : démarre la synchro des coches et hydrate le
  * CYCLE courant au montage (au lieu de la semaine). Renvoie l'état de synchro.
  * Ne wire ni le push planning ni le temps réel planning (cf. demarrerSyncCoches).
+ *
+ * `ancreForcee` (#279) : si fournie (relais one-shot depuis `/planning`, via
+ * `?ancre=` sur le lien « Liste de courses → »), bascule DIRECTEMENT sur cette
+ * ancre au montage, sans passer par le défaut du jour de `hydraterCycle` —
+ * sinon ce défaut écraserait silencieusement l'ancre demandée (`hydraterCycle`
+ * ne consulte jamais le cycle déjà affiché). Lue une seule fois au montage
+ * (deps `[]`) : un changement de query param en cours de vie du composant
+ * n'est pas un cas d'usage ici (l'appelant nettoie l'URL après coup).
  */
-export function useSyncCourses(): EtatSync {
+export function useSyncCourses(ancreForcee?: string | null): EtatSync {
   const etatCourant = useSyncExternalStore(
     storeEtatSync.sAbonner,
     storeEtatSync.lire,
@@ -1588,8 +1610,13 @@ export function useSyncCourses(): EtatSync {
   );
   useEffect(() => {
     const arreter = demarrerSyncCoches();
-    void hydraterCycle();
+    if (ancreForcee) {
+      void allerAuCycle(ancreForcee);
+    } else {
+      void hydraterCycle();
+    }
     return arreter;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- ancreForcee lue une seule fois au montage, volontairement
   }, []);
   return etatCourant;
 }

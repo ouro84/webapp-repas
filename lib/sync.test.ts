@@ -21,6 +21,9 @@ const persistance = vi.hoisted(() => ({
   cocherArticleDistant: vi.fn(),
   decocherArticleDistant: vi.fn(),
   viderCochesDistantes: vi.fn(),
+  chargerLongueurCycle: vi.fn(),
+  chargerArticlesManuelsDistants: vi.fn(),
+  purgerCyclesAvant: vi.fn(),
 }));
 vi.mock("@/lib/persistance", () => persistance);
 
@@ -68,6 +71,9 @@ beforeEach(() => {
   persistance.viderCochesDistantes.mockResolvedValue(undefined);
   persistance.cocherArticleDistant.mockResolvedValue(undefined);
   persistance.decocherArticleDistant.mockResolvedValue(undefined);
+  persistance.chargerLongueurCycle.mockResolvedValue(7);
+  persistance.chargerArticlesManuelsDistants.mockResolvedValue([]);
+  persistance.purgerCyclesAvant.mockResolvedValue(undefined);
 });
 
 describe("hydrater — last-write-wins / dirty-first (RG-23)", () => {
@@ -195,6 +201,63 @@ describe("naviguerVers — flush avant navigation (RG-24)", () => {
     expect(JSON.parse(localStorage.getItem("planning_courant")!).semaine).toBe("2026-W10");
     expect(localStorage.getItem("planning_dirty")).toBe("1");
   }, 10000);
+});
+
+describe("allerAuCycle — relais one-shot par query param (#279)", () => {
+  it("flushe les écritures en attente PUIS charge l'ancre cible, écrase le cycle affiché", async () => {
+    localStorage.setItem(
+      "cycle_affiche",
+      JSON.stringify({ ancre: "2026-06-29", longueur: 7 })
+    );
+    persistance.chargerLongueurCycle.mockResolvedValue(9);
+    persistance.chargerPlanningDistant.mockResolvedValue(null);
+    const { allerAuCycle } = await chargerSync();
+
+    await allerAuCycle("2026-07-13");
+
+    expect(persistance.chargerLongueurCycle).toHaveBeenCalledWith("2026-07-13");
+    expect(JSON.parse(localStorage.getItem("cycle_affiche")!)).toEqual({
+      ancre: "2026-07-13",
+      longueur: 9,
+    });
+  });
+
+  it("flushe le planning dirty avant de basculer d'ancre", async () => {
+    localStorage.setItem("planning_courant", JSON.stringify(planning("2026-W10")));
+    localStorage.setItem("planning_dirty", "1");
+    persistance.chargerLongueurCycle.mockResolvedValue(7);
+    const { allerAuCycle } = await chargerSync();
+
+    await allerAuCycle("2026-07-13");
+
+    expect(persistance.sauvegarderPlanningDistant).toHaveBeenCalled(); // flush d'abord
+  });
+});
+
+describe("useSyncCourses — ancre forcée court-circuite le défaut du jour (#279)", () => {
+  it("sans ancre forcée : hydrate le défaut du jour (comportement inchangé)", async () => {
+    persistance.chargerFoyerId.mockResolvedValue("foyer-1");
+    persistance.chargerPlanningDistant.mockResolvedValue(null);
+    const { useSyncCourses } = await chargerSync();
+    const { renderHook } = await import("@testing-library/react");
+
+    renderHook(() => useSyncCourses());
+    await new Promise((r) => setTimeout(r, 0)); // laisse l'effet async se dérouler
+
+    expect(localStorage.getItem("cycle_affiche")).not.toBeNull();
+  });
+
+  it("avec ancre forcée : bascule directement sur cette ancre, sans passer par le défaut du jour", async () => {
+    persistance.chargerLongueurCycle.mockResolvedValue(7);
+    persistance.chargerPlanningDistant.mockResolvedValue(null);
+    const { useSyncCourses } = await chargerSync();
+    const { renderHook } = await import("@testing-library/react");
+
+    renderHook(() => useSyncCourses("2026-07-13"));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(JSON.parse(localStorage.getItem("cycle_affiche")!).ancre).toBe("2026-07-13");
+  });
 });
 
 describe("purge de rétention (RG-24)", () => {
