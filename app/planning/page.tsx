@@ -32,6 +32,7 @@ import {
 } from "@/lib/generateur";
 import {
   storePlanning,
+  storeVuePlanning,
   sauvegarderPlanningComplet,
   sauvegarderRemplacementSlot,
   capturerSnapshotAnnulation,
@@ -325,9 +326,17 @@ export default function PagePlanning() {
     executer: () => void;
   } | null>(null);
   // Vue affichée (#260, PR3) : « semaine » (calendaire, driver quotidien, défaut)
-  // ou « cycle » (fenêtre de courses, lecture seule). Défaut semaine = comportement
-  // inchangé ; état éphémère (non persisté).
-  const [vue, setVue] = useState<"semaine" | "cycle">("semaine");
+  // ou « cycle » (fenêtre de courses, lecture seule). Persistée (#279, D5) via
+  // storeVuePlanning — un choix explicite pour la vue Cycle survit au reload.
+  const vueBrute = useSyncExternalStore(
+    storeVuePlanning.sAbonner,
+    storeVuePlanning.lire,
+    storeVuePlanning.lireServeur
+  );
+  const vue: "semaine" | "cycle" = vueBrute === "cycle" ? "cycle" : "semaine";
+  function setVue(v: "semaine" | "cycle"): void {
+    storeVuePlanning.ecrire(v);
+  }
 
   // Liste plate des recettes (sélecteur, remplacement aléatoire) + ensemble des
   // ids MODIFIABLES depuis la fiche (#137) — dérivés des recettes gérées.
