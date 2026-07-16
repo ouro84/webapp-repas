@@ -89,6 +89,11 @@ function ContenuRecettes() {
   // Filtre saison (#23) : "toutes" = pas de filtre ; sinon recettes de saison
   // pour la saison choisie (les recettes toute-saison restent affichées).
   const [saisonFiltre, setSaisonFiltre] = useState<Saison | "toutes">("toutes");
+  // Portée (audit critique, #105) : la liste plate (~150 recettes) ne
+  // distinguait pas visuellement le catalogue par défaut des recettes du
+  // foyer — segmentation légère par onglet, sans dupliquer la recherche déjà
+  // présente. "toutes" = comportement historique inchangé.
+  const [portee, setPortee] = useState<"toutes" | "mes" | "catalogue">("toutes");
   // Favoris/évités du foyer (#219) : chargées EN LOT (une requête pour toute la
   // liste, pas une par recette). Map vide tant que non chargée = aucun toggle
   // actif (comportement neutre, jamais bloquant).
@@ -189,8 +194,13 @@ function ContenuRecettes() {
       .filter(
         (r) => saisonFiltre === "toutes" || estDeSaison(r.recette, saisonFiltre)
       )
+      .filter((r) => {
+        if (portee === "mes") return r.editable;
+        if (portee === "catalogue") return !r.editable;
+        return true;
+      })
       .sort((a, b) => a.recette.nom.localeCompare(b.recette.nom, "fr"));
-  }, [recettes, requete, vegeSeulement, saisonFiltre]);
+  }, [recettes, requete, vegeSeulement, saisonFiltre, portee]);
 
   async function enregistrerCreation(saisie: SaisieRecette): Promise<void> {
     await creerRecette(saisie);
@@ -372,6 +382,38 @@ function ContenuRecettes() {
             className="mb-3 w-full rounded-full border border-brand-200 bg-surface px-4 py-2.5 text-sm text-brand-900 placeholder:text-brand-700/50 focus:outline-2 focus:outline-offset-1 focus:outline-brand-600"
           />
 
+          {/* Portée (audit critique, #105) : segmenté, même patron que le
+              sélecteur de thème (role="radiogroup"). */}
+          <div
+            role="radiogroup"
+            aria-label="Portée de la liste"
+            className="mb-3 inline-flex rounded-full border border-brand-200 bg-surface p-0.5"
+          >
+            {(
+              [
+                { valeur: "toutes" as const, libelle: "Toutes" },
+                { valeur: "mes" as const, libelle: "Mes recettes" },
+                { valeur: "catalogue" as const, libelle: "Catalogue" },
+              ]
+            ).map(({ valeur, libelle }) => {
+              const actif = portee === valeur;
+              return (
+                <button
+                  key={valeur}
+                  type="button"
+                  role="radio"
+                  aria-checked={actif}
+                  onClick={() => setPortee(valeur)}
+                  className={`rounded-full px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 ${
+                    actif ? "bg-primary text-white" : "text-brand-700 hover:bg-brand-50"
+                  }`}
+                >
+                  {libelle}
+                </button>
+              );
+            })}
+          </div>
+
           {/* Filtres (#86 végé, #23 saison) */}
           <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2">
             <label className="flex w-fit items-center gap-2 text-sm text-brand-700">
@@ -404,9 +446,13 @@ function ContenuRecettes() {
 
           {visibles.length === 0 ? (
             <p className="py-8 text-center text-sm text-brand-700/85">
-              {requete.trim() === ""
-                ? "Aucune recette pour l'instant."
-                : `Aucune recette ne correspond à « ${requete.trim()} »`}
+              {requete.trim() !== ""
+                ? `Aucune recette ne correspond à « ${requete.trim()} »`
+                : portee === "mes"
+                  ? "Tu n'as pas encore créé de recette perso — bascule sur « Catalogue » pour voir celles déjà disponibles."
+                  : portee === "catalogue"
+                    ? "Aucune recette de catalogue ne correspond à ces filtres."
+                    : "Aucune recette pour l'instant."}
             </p>
           ) : (
             <ul className="divide-y divide-brand-100 rounded-lg border border-brand-100 bg-surface">

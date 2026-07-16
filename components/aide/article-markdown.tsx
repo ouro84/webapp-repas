@@ -26,9 +26,12 @@ const composants: Components = {
   ol: ({ children }) => (
     <ol className="my-3 list-decimal space-y-1 pl-5 text-brand-900/90">{children}</ol>
   ),
-  // Callouts Notion → blockquote : encadré terracotta (touche d'accent de marque).
+  // Callouts Notion → blockquote (audit critique) : bordure pleine, pas de
+  // side-stripe (tell AI-slop banni) ; vert brand, pas l'accent terracotta —
+  // réservé à une liste fermée d'usages (badges temps, féculents, placard),
+  // un callout de doc n'en fait pas partie.
   blockquote: ({ children }) => (
-    <blockquote className="my-4 rounded-lg border-l-4 border-accent-500 bg-accent-50 px-4 py-3 text-brand-900/90 [&>p]:my-0">
+    <blockquote className="my-4 rounded-lg border border-brand-200 bg-brand-50 px-4 py-3 text-brand-900/90 [&>p]:my-0">
       {children}
     </blockquote>
   ),

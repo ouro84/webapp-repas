@@ -6,9 +6,10 @@
 // modale. Le mot "SUPPRIMER" est une confirmation UX — le contrôle de
 // sécurité réel est la ré-authentification (RG design D6).
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { reinitialiserCacheFoyer } from "@/lib/sync";
+import { chargerFoyer } from "@/lib/foyer";
 
 const MOT_CONFIRMATION = "SUPPRIMER";
 
@@ -18,6 +19,23 @@ export function SupprimerCompte() {
   const [confirmation, setConfirmation] = useState("");
   const [erreur, setErreur] = useState<string | null>(null);
   const [suppression, setSuppression] = useState(false);
+  // Réassurance contextuelle (audit critique) : même esprit que « Quitter le
+  // foyer » (panneau-foyer.tsx) — dire précisément ce qui disparaît plutôt
+  // qu'un « irréversible » générique. null = pas encore su (défaut prudent :
+  // le message solo, qui décrit le pire cas).
+  const [partage, setPartage] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let actif = true;
+    chargerFoyer()
+      .then((e) => actif && setPartage(e.membres > 1))
+      .catch(() => {
+        /* best-effort : le message solo (par défaut) reste affiché */
+      });
+    return () => {
+      actif = false;
+    };
+  }, []);
 
   const confirmationValide = confirmation === MOT_CONFIRMATION;
 
@@ -69,7 +87,9 @@ export function SupprimerCompte() {
       </h2>
       <form onSubmit={soumettre} className="flex max-w-sm flex-col gap-4" noValidate>
         <p className="text-sm text-brand-700/85">
-          Cette action supprime définitivement ton compte et tes données. Elle est irréversible.
+          {partage
+            ? "Cette action supprime ton compte et ton profil. Tes recettes restent dans le foyer (les autres membres les conservent), mais ne te seront plus attribuées. Ton planning et ta liste de courses personnels disparaissent. Irréversible."
+            : "Cette action supprime définitivement ton compte, ton foyer, tes recettes, ton planning et ta liste de courses. Irréversible."}
         </p>
 
         <div className="flex flex-col gap-1">

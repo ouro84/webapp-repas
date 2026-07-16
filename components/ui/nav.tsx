@@ -10,6 +10,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { HelpCircle } from "lucide-react";
 import { Logo } from "@/components/ui/logo";
 import { Avatar } from "@/components/ui/avatar";
 import { useProfil } from "@/lib/profil";
@@ -107,6 +108,20 @@ export function NavBar() {
                     </Link>
                   );
                 })}
+                {/* Raccourci aide (audit critique, #97) : distinct de l'avatar —
+                    déconnecté, la nav garde un vrai lien texte « Aide » (cf.
+                    branche ci-dessous), mais il disparaissait entièrement une
+                    fois connecté, reporté à un lien texte enfoui en bas de
+                    /profil. Icône seule (place limitée à côté des 4 sections +
+                    l'avatar), même style tactile que les liens de section. */}
+                <Link
+                  href="/aide"
+                  aria-label="Aide"
+                  title="Aide"
+                  className="relative flex size-8 shrink-0 items-center justify-center rounded-full text-brand-700 transition-colors after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 hover:text-brand-900"
+                >
+                  <HelpCircle className="size-5" aria-hidden="true" />
+                </Link>
                 {/* Profil (#22 PR1) : l'avatar remplace l'ex-engrenage de réglages
                     (#45). Point d'entrée « mon compte » (prénom, foyer, sécurité,
                     réglages de génération, thème, déconnexion). Anneau actif sur
