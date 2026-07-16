@@ -10,7 +10,7 @@
 // Pas de setState React ici : l'hydratation écrit via storePlanning.ecrire,
 // dont useSyncExternalStore propage le changement aux pages.
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useSyncExternalStore } from "react";
 import { storeCoches, storePlanning } from "@/lib/stockage";
 import {
@@ -51,7 +51,8 @@ import {
   semainesDuCycle,
 } from "@/lib/cycles";
 import { chargerJourCoursesFoyer } from "@/lib/foyer";
-import type { ArticleManuel, Planning } from "@/types";
+import { parseApiError } from "@/lib/errors";
+import type { ArticleManuel, JourPlanning, Planning } from "@/types";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 
 // Horodatage de la dernière écriture locale (last-write-wins) et drapeau
@@ -1155,6 +1156,60 @@ export async function appliquerGenerationCycle(
   } finally {
     suppressionAlerteCycle = false;
   }
+}
+
+export type ResultatGenerationCycle = {
+  vegeNonHonore: number;
+  mixNonHonore: number;
+  saisonNonHonore: number;
+};
+
+/**
+ * Génération fenêtrée partagée entre `/courses` (bouton historique, #259) et
+ * la vue Cycle de `/planning` (#279) — extrait de l'ancien `genererMonCycle`
+ * local à `app/courses/page.tsx`, comportement identique. `genererCycle` lève
+ * en cas d'échec (réseau ou réponse non-ok, message déjà formaté via
+ * `parseApiError`) — pas de toast ici : cette fonction vit dans `lib/`, le
+ * feedback UI reste la responsabilité de la page (cf. CLAUDE.md règle 2,
+ * « app/ pour l'UI, lib/ pour la logique »).
+ */
+export function useGenerationCycle(cycle: CycleAffiche | null): {
+  enGeneration: boolean;
+  genererCycle: () => Promise<ResultatGenerationCycle>;
+} {
+  const [enGeneration, setEnGeneration] = useState(false);
+
+  async function genererCycle(): Promise<ResultatGenerationCycle> {
+    if (!cycle) throw new Error("Aucun cycle affiché.");
+    setEnGeneration(true);
+    try {
+      const reponse = await fetch("/api/planning/generer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ancre: cycle.ancre, longueur: cycle.longueur }),
+      });
+      if (!reponse.ok) {
+        throw new Error(await parseApiError(reponse));
+      }
+      const {
+        semaines,
+        vegeNonHonore = 0,
+        mixNonHonore = 0,
+        saisonNonHonore = 0,
+      } = (await reponse.json()) as {
+        semaines: Array<{ semaine: string; jours: JourPlanning[] }>;
+        vegeNonHonore?: number;
+        mixNonHonore?: number;
+        saisonNonHonore?: number;
+      };
+      await appliquerGenerationCycle(semaines);
+      return { vegeNonHonore, mixNonHonore, saisonNonHonore };
+    } finally {
+      setEnGeneration(false);
+    }
+  }
+
+  return { enGeneration, genererCycle };
 }
 
 /** Invalide les coches du cycle affiché (RG-13) et re-projette le planning depuis
