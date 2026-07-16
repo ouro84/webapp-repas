@@ -1106,13 +1106,123 @@ Si aucun ajustement n'était nécessaire (Step 2 suffisant), ne pas créer de co
 
 ---
 
-### Task 10: Vérification e2e avant PR
+### Task 10: Nouvelle couverture e2e (comportements #279)
+
+**Files:**
+- Create: `e2e/coherence-semaine-cycle.spec.ts`
+
+**Interfaces:** aucune — spec e2e, patron `e2e/cycle-courses.spec.ts` (import `nettoyerEtatDistant`, `reinitialiserJourCoursesDistant` de `./helpers`).
+
+- [ ] **Step 1: Écrire la spec**
+
+```ts
+// e2e/coherence-semaine-cycle.spec.ts
+// Couverture des retours utilisateurs #279 : génération depuis la vue Cycle,
+// cohérence de fenêtre entre /planning (vue Cycle) et /courses, persistance
+// du choix de vue.
+
+import { test, expect } from "./fixtures";
+import { nettoyerEtatDistant, reinitialiserJourCoursesDistant } from "./helpers";
+
+test.beforeEach(async ({ request }) => {
+  await nettoyerEtatDistant(request);
+  await reinitialiserJourCoursesDistant(request);
+});
+
+test.afterAll(async ({ request }) => {
+  await reinitialiserJourCoursesDistant(request);
+});
+
+test("« Générer mon cycle » est accessible et fonctionne depuis la vue Cycle de /planning", async ({
+  page,
+}) => {
+  await page.goto("/planning");
+  await page.getByRole("button", { name: "Cycle" }).click();
+  await expect(page.getByRole("button", { name: "Générer mon cycle" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Générer mon cycle" }).click();
+  // Une recette apparaît dans la projection (génération réelle, catalogue seedé CI-only).
+  await expect(page.locator("main li").first()).toBeVisible({ timeout: 20_000 });
+});
+
+test("le lien « Liste de courses → » depuis la vue Cycle conserve la même fenêtre", async ({
+  page,
+}) => {
+  await page.goto("/planning");
+  await page.getByRole("button", { name: "Cycle" }).click();
+  const libelleCycle = await page.getByText(/Courses du/).textContent();
+
+  await page.getByRole("link", { name: "Liste de courses →" }).click();
+  await expect(page).toHaveURL(/\/courses\?ancre=/);
+  // Même fenêtre affichée des deux côtés (pas de saut vers le défaut du jour).
+  await expect(page.getByText(libelleCycle!)).toBeVisible();
+  // Le paramètre est nettoyé après application (pas de re-déclenchement au reload).
+  await page.reload();
+  await expect(page).toHaveURL(/\/courses$/);
+});
+
+test("le choix de vue Cycle survit au reload", async ({ page }) => {
+  await page.goto("/planning");
+  await page.getByRole("button", { name: "Cycle" }).click();
+  await expect(page.getByRole("button", { name: "Cycle", pressed: true })).toBeVisible();
+
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Cycle", pressed: true })).toBeVisible();
+});
+```
+
+- [ ] **Step 2: Lancer contre staging**
+
+Run: `npm run test:e2e:staging -- coherence-semaine-cycle.spec --retries=2`
+Expected: tous verts (génération réelle → CI-only fiable, cf. contrainte projet).
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add e2e/coherence-semaine-cycle.spec.ts
+git commit -m "test: e2e génération vue Cycle + cohérence fenêtre + persistance vue (#279)"
+```
+
+---
+
+### Task 11: Documentation utilisateur (Notion)
+
+**Files:** aucun fichier du repo modifié directement — la source de vérité est la base Notion
+« Guide OMQ » (cf. CLAUDE.md, doc `/aide`). Après l'édition Notion : `content/aide/*` régénéré par
+`npm run pull:aide`.
+
+- [ ] **Step 1: Identifier l'article existant à amender**
+
+Chercher dans la base Notion (section « Planning ») un article existant qui documente la vue
+Cycle. S'il existe, y ajouter un paragraphe mentionnant que « Générer mon cycle » est désormais
+accessible directement depuis cette vue (avant : uniquement sur la page Courses).
+
+- [ ] **Step 2: Ajouter un article si aucun n'existe déjà sur le sujet**
+
+Section « Planning », statut « Publié », contenu bref (2-3 paragraphes) : ce qu'est la vue Cycle,
+comment y générer, comment elle reste synchronisée avec la liste de courses.
+
+- [ ] **Step 3: Régénérer le contenu committé**
+
+Run: `npm run pull:aide`
+Expected: `content/aide/<slug>.md` mis à jour ou créé, `content/aide/index.json` à jour.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add content/aide public/aide
+git commit -m "docs: doc utilisateur — génération depuis la vue Cycle (#279)"
+```
+
+---
+
+### Task 12: Vérification e2e avant PR
 
 **Files:** aucun changement de code — étape de validation.
 
 - [ ] **Step 1: Lancer les e2e concernés contre staging**
 
-Run: `npm run test:e2e:staging -- planning.spec planning-edition.spec courses.spec cycle-courses.spec alerte-planning.spec --retries=2`
+Run: `npm run test:e2e:staging -- planning.spec planning-edition.spec courses.spec cycle-courses.spec alerte-planning.spec coherence-semaine-cycle.spec --retries=2`
 
 Expected: tous verts. Ce chantier touche la navigation cycle (`cycle-courses.spec`), la génération (`planning.spec`, `cycle-courses.spec`), les en-têtes de `/planning` (`planning.spec`, `planning-edition.spec`), et indirectement l'alerte temps réel du planning (`alerte-planning.spec`, car elle dépend de `cycle_affiche`/`useSyncCourses`).
 

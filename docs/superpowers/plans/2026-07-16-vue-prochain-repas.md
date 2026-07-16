@@ -541,31 +541,106 @@ git commit -m "feat: page /ce-soir — prochain repas actif en lecture seule (#2
 
 ---
 
-### Task 4: Vérification e2e avant PR
+### Task 4: Nouvelle couverture e2e
 
-**Files:** aucun changement de code — étape de validation.
+**Files:**
+- Create: `e2e/prochain-repas.spec.ts`
+- Modify: `e2e/auth.spec.ts` (une ligne, test existant de nav déconnectée)
 
-- [ ] **Step 1: Écrire un spec e2e minimal (CI-only, génération réelle)**
+**Interfaces:** aucune — spec e2e, patron `e2e/cycle-courses.spec.ts` (import `nettoyerEtatDistant`
+de `./helpers` ; le compte de test est partagé, cf. contrainte projet — génération réelle CI-only).
 
-Créer `e2e/prochain-repas.spec.ts` en suivant le patron des specs existants (cf.
-`e2e/planning.spec.ts` pour le setup d'auth partagé et `e2e/helpers.ts` pour le nettoyage d'état).
-Contenu attendu (à adapter aux helpers réels du dossier `e2e/`, à consulter avant d'écrire ce
-fichier — ce plan n'a pas exploré `e2e/helpers.ts` en détail) :
-- Génère un planning réel (catalogue seedé, CI-only, cf. contrainte projet « Les e2e de génération
-  ne valident qu'en CI »).
-- Navigue vers `/ce-soir` (lien de nav).
-- Vérifie que le nom d'une recette apparaît (la fiche est montée) OU que « Rien de prévu »
-  s'affiche si le créneau visé n'a pas de recette selon l'heure du run (accepter les deux issues
-  plutôt que de figer l'heure du test — l'heure réelle d'exécution CI n'est pas contrôlée).
-- Vérifie que le lien « Ce soir » n'apparaît PAS dans la nav d'un utilisateur déconnecté (mêmes
-  assertions que les autres liens applicatifs, cf. `nav.tsx`).
+- [ ] **Step 1: Étendre l'assertion de nav déconnectée existante**
 
-- [ ] **Step 2: Lancer les e2e concernés contre staging**
+Dans `e2e/auth.spec.ts`, le test `"déconnecté, la nav applicative est masquée (#207)"` contient :
+```ts
+  await expect(page.getByRole("link", { name: /Profil/ })).toHaveCount(0);
+```
+Ajouter juste après :
+```ts
+  await expect(page.getByRole("link", { name: "Ce soir" })).toHaveCount(0);
+```
 
-Run: `npm run test:e2e:staging -- prochain-repas.spec planning.spec --retries=2`
+- [ ] **Step 2: Écrire le nouveau spec**
+
+```ts
+// e2e/prochain-repas.spec.ts
+// Vue « Prochain repas » (#280) — génération réelle, CI-only (catalogue
+// global seedé sur staging, cf. contrainte projet).
+
+import { test, expect } from "./fixtures";
+import { nettoyerEtatDistant } from "./helpers";
+
+test.beforeEach(async ({ request }) => {
+  await nettoyerEtatDistant(request);
+});
+
+test("affiche le prochain repas après génération, ou l'état vide sinon", async ({ page }) => {
+  // Génère un planning réel pour la semaine courante (fenêtre couverte par
+  // /ce-soir : semaine courante + suivante).
+  await page.goto("/planning");
+  await page.getByRole("button", { name: "Générer mon planning" }).click();
+  await expect(page.locator("main li").first()).toBeVisible({ timeout: 20_000 });
+
+  await page.getByRole("link", { name: "Ce soir" }).click();
+  // Selon l'heure réelle d'exécution CI, le créneau visé peut avoir une
+  // recette (fiche montée, <dialog> visible) ou non (état vide) — les deux
+  // sont des succès légitimes, on n'en impose qu'un des deux exclusivement.
+  const ficheOuOuverte = page.getByRole("dialog");
+  const etatVide = page.getByText("Rien de prévu pour ce repas.");
+  await expect(ficheOuOuverte.or(etatVide)).toBeVisible({ timeout: 10_000 });
+});
+
+test("le lien « Ce soir » n'apparaît pas dans la nav déconnectée", async ({ page }) => {
+  await page.goto("/login");
+  await expect(page.getByRole("link", { name: "Ce soir" })).toHaveCount(0);
+});
+```
+
+- [ ] **Step 3: Lancer les e2e concernés contre staging**
+
+Run: `npm run test:e2e:staging -- prochain-repas.spec auth.spec planning.spec --retries=2`
 Expected: tous verts.
 
-- [ ] **Step 3: Ouvrir la PR**
+- [ ] **Step 4: Commit**
+
+```bash
+git add e2e/prochain-repas.spec.ts e2e/auth.spec.ts
+git commit -m "test: e2e vue Prochain repas + nav déconnectée (#280)"
+```
+
+---
+
+### Task 5: Documentation utilisateur (Notion)
+
+**Files:** aucun fichier du repo modifié directement — la source de vérité est la base Notion
+« Guide OMQ » (cf. CLAUDE.md, doc `/aide`). Après l'édition Notion : `content/aide/*` régénéré par
+`npm run pull:aide`.
+
+- [ ] **Step 1: Ajouter un article**
+
+Nouvel article Notion, section « Planning » (ou une section dédiée si `/ce-soir` justifie sa
+propre entrée dans `ORDRE_SECTIONS`), statut « Publié ». Contenu bref (2-3 paragraphes) : à qui
+s'adresse cette vue (qui cuisine sans avoir planifié), ce qu'elle affiche (un seul repas, en
+lecture seule), ce qui se passe si rien n'est prévu.
+
+- [ ] **Step 2: Régénérer le contenu committé**
+
+Run: `npm run pull:aide`
+Expected: nouveau `content/aide/<slug>.md`, `content/aide/index.json` mis à jour.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add content/aide public/aide
+git commit -m "docs: doc utilisateur — vue Prochain repas (#280)"
+```
+
+---
+
+### Task 6: Ouvrir la PR
+
+- [ ] **Step 1**
 
 Titre court, résumé des décisions D1-D5, lien vers la spec et vers l'issue #280.
 
