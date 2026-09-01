@@ -366,12 +366,27 @@ export async function supprimerArticleManuel(id: string): Promise<void> {
 }
 
 /** Décoche tous les articles manuels du cycle affiché SANS les supprimer
- *  (RG-41, « Tout décocher »). No-op hors cycle. */
+ *  (RG-41, « Tout décocher »). No-op hors cycle.
+ *
+ *  OPTIMISTE, comme basculerCocheArticleManuel ci-dessus — et pour une raison
+ *  qui dépasse la latence perçue : `/courses` appelle cette fonction depuis
+ *  `avecTransition()`, dont le `flushSync` n'entoure QUE la portion synchrone
+ *  du callback. Une mise à jour du store placée APRÈS le premier `await` est
+ *  appliquée une fois l'état d'arrivée déjà capturé → les articles manuels
+ *  sautaient hors transition, un aller-retour réseau après les coches
+ *  localStorage. Règle générale : toute mutation appelée depuis
+ *  `avecTransition` applique sa partie locale AVANT son premier `await`. */
 export async function viderCochesArticlesManuels(): Promise<void> {
   const ancre = ancreActive();
   if (ancre === null) return;
-  await viderCochesArticlesManuelsDistantes(ancre);
+  const avant = articlesManuels;
   definirArticlesManuels(articlesManuels.map((a) => ({ ...a, coche: false })));
+  try {
+    await viderCochesArticlesManuelsDistantes(ancre);
+  } catch (erreur) {
+    definirArticlesManuels(avant);
+    throw erreur;
+  }
 }
 
 // Applique un event Realtime article_manuel au store (INSERT/UPDATE = upsert

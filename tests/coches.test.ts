@@ -7,10 +7,18 @@
 import { describe, expect, it } from "vitest";
 import {
   categorieTerminee,
+  cibleAtterrissage,
+  compterCategoriesTerminees,
+  libelleCategoriesTerminees,
   trierCategoriesAvecCoches,
   type Coches,
 } from "@/lib/coches";
-import type { CategorieIngredient, Ingredient, LignesCourses } from "@/types";
+import type {
+  CategorieIngredient,
+  Ingredient,
+  LignesCourses,
+  ListeCourses,
+} from "@/types";
 
 // Fabrique un ingrédient minimal — nom/quantité/unité/catégorie suffisent ici.
 function ing(
@@ -126,5 +134,136 @@ describe("trierCategoriesAvecCoches (RG-39)", () => {
     const copie = [...entree];
     trierCategoriesAvecCoches(entree, cocher(viandes.ingredients[0]));
     expect(entree).toEqual(copie);
+  });
+});
+
+// ============================================================================
+// Lisibilité du déplacement (RG-11 / RG-39) — les premiers utilisateurs
+// croyaient qu'un article coché avait DISPARU.
+// ============================================================================
+
+// Construit une ListeCourses depuis des lignes (fond de placard vide sauf
+// mention contraire).
+function liste(
+  lignes: LignesCourses[],
+  fondDePlacard: Ingredient[] = []
+): ListeCourses {
+  return { normal: lignes, fondDePlacard };
+}
+
+describe("compterCategoriesTerminees (RG-39)", () => {
+  const a = ing("Carottes", 200, "legumes-fruits");
+  const b = ing("Tomates", 300, "legumes-fruits");
+  const c = ing("Riz", 500, "epicerie");
+
+  it("compte 0 quand rien n'est coché", () => {
+    const l = liste([ligne("legumes-fruits", [a, b]), ligne("epicerie", [c])]);
+    expect(compterCategoriesTerminees(l, {})).toBe(0);
+  });
+
+  it("compte une catégorie dont tous les articles sont cochés", () => {
+    const l = liste([ligne("legumes-fruits", [a, b]), ligne("epicerie", [c])]);
+    expect(compterCategoriesTerminees(l, cocher(a, b))).toBe(1);
+  });
+
+  it("compte plusieurs catégories terminées", () => {
+    const l = liste([ligne("legumes-fruits", [a, b]), ligne("epicerie", [c])]);
+    expect(compterCategoriesTerminees(l, cocher(a, b, c))).toBe(2);
+  });
+
+  it("ne compte pas une catégorie partiellement cochée", () => {
+    const l = liste([ligne("legumes-fruits", [a, b])]);
+    expect(compterCategoriesTerminees(l, cocher(a))).toBe(0);
+  });
+
+  it("ne compte pas une catégorie vide (cohérent avec categorieTerminee)", () => {
+    const l = liste([ligne("legumes-fruits", [])]);
+    expect(compterCategoriesTerminees(l, {})).toBe(0);
+  });
+
+  it("décompte une catégorie dont une coche est invalidée (RG-12)", () => {
+    const l = liste([ligne("legumes-fruits", [a, b])]);
+    // La quantité de `b` a changé : sa coche mémorise l'ancienne valeur.
+    const coches = { ...cocher(a, b), "tomates|g": 999 };
+    expect(compterCategoriesTerminees(l, coches)).toBe(0);
+  });
+
+  it("ignore le fond de placard, qui ne se réordonne jamais (RG-14)", () => {
+    const placard = ing("Sel", 1, "epicerie");
+    const l = liste([ligne("legumes-fruits", [a, b])], [placard]);
+    expect(compterCategoriesTerminees(l, cocher(a, b, placard))).toBe(1);
+  });
+});
+
+describe("libelleCategoriesTerminees (RG-39)", () => {
+  it("est vide quand aucune catégorie n'est terminée", () => {
+    expect(libelleCategoriesTerminees(0)).toBe("");
+    expect(libelleCategoriesTerminees(-1)).toBe("");
+  });
+
+  it("accorde au singulier", () => {
+    expect(libelleCategoriesTerminees(1)).toBe(
+      "1 catégorie terminée, descendue en bas de la liste"
+    );
+  });
+
+  it("accorde au pluriel", () => {
+    expect(libelleCategoriesTerminees(3)).toBe(
+      "3 catégories terminées, descendues en bas de la liste"
+    );
+  });
+});
+
+describe("cibleAtterrissage (RG-11 / RG-39)", () => {
+  const a = ing("Carottes", 200, "legumes-fruits");
+  const b = ing("Tomates", 300, "legumes-fruits");
+  const c = ing("Riz", 500, "epicerie");
+
+  it("vise la LIGNE quand la coche ne termine pas la catégorie", () => {
+    const l = liste([ligne("legumes-fruits", [a, b])]);
+    expect(cibleAtterrissage(l, {}, a)).toBe("article-carottes-g");
+  });
+
+  it("vise la CATÉGORIE quand la coche la termine", () => {
+    const l = liste([ligne("legumes-fruits", [a, b])]);
+    // `a` est déjà coché : cocher `b` termine la catégorie.
+    expect(cibleAtterrissage(l, cocher(a), b)).toBe("categorie-legumes-fruits");
+  });
+
+  it("vise la CATÉGORIE quand elle ne contient qu'un article", () => {
+    const l = liste([ligne("epicerie", [c])]);
+    expect(cibleAtterrissage(l, {}, c)).toBe("categorie-epicerie");
+  });
+
+  it("ne vise RIEN sur une décoche (l'article remonte vers le haut)", () => {
+    const l = liste([ligne("legumes-fruits", [a, b])]);
+    expect(cibleAtterrissage(l, cocher(a), a)).toBeNull();
+    expect(cibleAtterrissage(l, cocher(a, b), b)).toBeNull();
+  });
+
+  it("vise la LIGNE pour un article du fond de placard (section figée, RG-14)", () => {
+    const placard = ing("Sel", 1, "epicerie");
+    const l = liste([ligne("legumes-fruits", [a])], [placard]);
+    expect(cibleAtterrissage(l, {}, placard)).toBe("article-sel-g");
+  });
+
+  it("identifie un article manuel par son id, pas par son libellé (RG-42)", () => {
+    const manuel1: Ingredient = {
+      nom: "Piles",
+      quantite: 0,
+      unite: "piece",
+      categorie: "epicerie",
+      fondDePlacard: false,
+      source: "manuel",
+      id: "aaa",
+      coche: false,
+    };
+    // Même libellé, id différent : cocher l'un ne termine pas la catégorie.
+    const manuel2: Ingredient = { ...manuel1, id: "bbb" };
+    const l = liste([ligne("epicerie", [manuel1, manuel2])]);
+    expect(cibleAtterrissage(l, {}, manuel1)).toBe("article-aaa");
+
+    const l2 = liste([ligne("epicerie", [manuel1, { ...manuel2, coche: true }])]);
+    expect(cibleAtterrissage(l2, {}, manuel1)).toBe("categorie-epicerie");
   });
 });

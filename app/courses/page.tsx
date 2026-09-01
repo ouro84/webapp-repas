@@ -21,11 +21,28 @@
 // repli sans animation sinon, et si `prefers-reduced-motion` est actif.
 
 import Link from "next/link";
-import { Suspense, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { useSearchParams } from "next/navigation";
 import { flushSync } from "react-dom";
 import { toast } from "sonner";
-import { ChevronLeft, ChevronRight, Pencil, Plus, Sparkles, Trash2, Users } from "lucide-react";
+import {
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Pencil,
+  Plus,
+  Sparkles,
+  Trash2,
+  Users,
+} from "lucide-react";
 import { genererListeCourses } from "@/lib/courses";
 import { retirerCreneauxDesactives } from "@/lib/generateur";
 import { chargerReglages } from "@/lib/reglages-data";
@@ -35,12 +52,20 @@ import {
   aDesCoches,
   basculerCoche,
   categorieTerminee,
+  cibleAtterrissage,
+  compterCategoriesTerminees,
   compterProgression,
   estCoche,
+  libelleCategoriesTerminees,
   parserCoches,
   trierAvecCoches,
   trierCategoriesAvecCoches,
 } from "@/lib/coches";
+import {
+  NOM_TRANSITION_FOND_DE_PLACARD,
+  nomTransition,
+  nomTransitionCategorie,
+} from "@/lib/transitions-courses";
 import { aQuantiteRenseignee, fusionnerArticlesManuels } from "@/lib/articles-manuels";
 import { storeCoches } from "@/lib/stockage";
 import {
@@ -103,50 +128,62 @@ const LIBELLES_CATEGORIES: Record<CategorieIngredient, string> = {
 
 // ============================================================================
 // Animation de réordonnancement (View Transitions)
+//
+// Les noms de transition eux-mêmes vivent dans lib/transitions-courses.ts
+// (purs, testables, importés aussi par cibleAtterrissage) ; le vocabulaire
+// d'animation (durée, courbe, classes `.vt-*`) dans app/globals.css.
 // ============================================================================
-
-// `view-transition-name` exige un identifiant CSS valide et unique : on
-// dérive un slug ASCII de la clé d'agrégation (accents décomposés puis
-// caractères hors [a-z0-9] remplacés). Unicité garantie par l'agrégation
-// RG-05 : une seule ligne par nom|unité dans toute la liste.
-function nomTransition(ingredient: Ingredient): string {
-  // Un article manuel (#216) porte un id STABLE et UNIQUE (contrairement à la
-  // clé nom|unité, qui peut se répéter entre deux articles manuels de même
-  // libellé, doublons autorisés RG-42) — la base du slug doit l'utiliser pour
-  // que view-transition-name reste unique par élément rendu.
-  const base = ingredient.source === "manuel" && ingredient.id
-    ? ingredient.id
-    : `${ingredient.nom}-${ingredient.unite}`;
-  const slug = base
-    .toLocaleLowerCase("fr")
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "") // diacritiques décomposés par NFD
-    .replace(/[^a-z0-9]+/g, "-");
-  return `article-${slug}`;
-}
-
-// Nom de transition d'une section de catégorie (#111) : permet d'animer le
-// glissement d'une catégorie terminée vers le bas via View Transitions, comme
-// les articles cochés (RG-11). La clé de catégorie est déjà un slug ASCII.
-function nomTransitionCategorie(cle: string): string {
-  return `categorie-${cle}`;
-}
 
 // Applique une mise à jour d'état dans une View Transition quand c'est
 // possible — sinon directement (navigateur sans support, reduced motion).
-function avecTransition(majEtat: () => void): void {
+// Renvoie la transition pour permettre d'enchaîner sur sa fin (pulsation
+// d'atterrissage), `null` quand aucune transition n'a été démarrée.
+//
+// ⚠️ CONTRAT `flushSync` : le callback ne capture que sa portion SYNCHRONE.
+// Toute mutation appelée ici doit appliquer sa partie locale AVANT son
+// premier `await`, sinon elle saute hors transition (cf. lib/sync.ts,
+// viderCochesArticlesManuels).
+function avecTransition(majEtat: () => void): ViewTransition | null {
   const reduireAnimations = window.matchMedia(
     "(prefers-reduced-motion: reduce)"
   ).matches;
   if (!document.startViewTransition || reduireAnimations) {
     majEtat();
-    return;
+    return null;
   }
   // flushSync : la View Transition capture l'état AVANT/APRÈS — le rendu
   // React doit être synchrone à l'intérieur du callback.
-  document.startViewTransition(() => {
+  return document.startViewTransition(() => {
     flushSync(majEtat);
   });
+}
+
+// Pulsation d'atterrissage (RG-11 / RG-39) — « il est ICI maintenant ».
+//
+// Les premiers utilisateurs croyaient qu'un article coché avait DISPARU : en
+// magasin on regarde son doigt, pas le trajet. Le moment focal n'est donc pas
+// le départ mais l'ARRIVÉE. Trois contraintes ont dicté ce composant :
+//   - un calque de couleur STATIQUE dont on anime l'opacité, jamais un
+//     `background-color` animé (contrat transform/opacity-only, globals.css) ;
+//   - un <div>, JAMAIS un <span> : e2e/courses.spec.ts cible
+//     `li.last().locator("span").first()` pour vérifier le rayé ;
+//   - la couleur passe par le token sémantique `--color-atterrissage`, qui a
+//     sa propre valeur en sombre (brand-50 y serait quasi invisible sur
+//     surface) — le projet n'a aucune utilitaire `dark:`, qui serait branchée
+//     sur prefers-color-scheme donc fausse face au sélecteur de thème manuel.
+// Pas de `motion-safe:` : sous reduced motion aucune transition n'est
+// démarrée, donc pas de `finished`, donc ce composant n'est jamais monté. Un
+// `motion-safe:` en ferait au contraire un bandeau vert PERMANENT.
+// Le parent doit être `relative`, et le contenu en flux qui suit aussi (un
+// enfant absolute peint au-dessus du contenu resté dans le flux).
+function PulsationAtterrissage({ onFin }: { onFin: () => void }) {
+  return (
+    <div
+      aria-hidden="true"
+      onAnimationEnd={onFin}
+      className="pointer-events-none absolute inset-0 rounded-lg bg-atterrissage animate-atterrissage"
+    />
+  );
 }
 
 // ============================================================================
@@ -326,22 +363,89 @@ function ContenuCourses() {
   // Coches valides ou non : parserCoches tolère l'absence et la corruption.
   const coches = useMemo(() => parserCoches(brutCoches), [brutCoches]);
 
+  // Élément qui vient d'atterrir après un réordonnancement (RG-11 / RG-39) :
+  // `cle` = son nom de transition, `nonce` = compteur monotone. Le nonce sert
+  // DEUX fois : comme `key` (remonter l'overlay pour rejouer l'animation quand
+  // la MÊME ligne atterrit deux fois de suite — même piège que le `genNonce`
+  // du stagger de /planning), et comme garde de fraîcheur (une bascule plus
+  // récente ne doit pas se faire effacer par la fin de l'ancienne).
+  const [atterrissage, setAtterrissage] = useState<{
+    cle: string;
+    nonce: number;
+  } | null>(null);
+  const demandeAtterrissage = useRef(0);
+
+  const finAtterrissage = useCallback((nonce: number) => {
+    setAtterrissage((courant) =>
+      courant && courant.nonce === nonce ? null : courant
+    );
+  }, []);
+
+  // Programme la pulsation pour la FIN de la transition : pendant celle-ci le
+  // DOM réel est masqué sous l'overlay de snapshots, une animation posée sur
+  // l'élément réel n'y serait pas visible. No-op sans transition (pas de
+  // support / reduced motion) ou sans cible (décoche : l'article remonte vers
+  // le haut, là où l'œil est déjà).
+  function signalerAtterrissage(
+    transition: ViewTransition | null,
+    cle: string | null
+  ): void {
+    if (transition === null || cle === null) return;
+    demandeAtterrissage.current += 1;
+    const demande = demandeAtterrissage.current;
+    // `ready` REJETTE (AbortError) si un tap suivant saute cette transition —
+    // à catcher, sinon rejet non géré. Le tri se fait ensuite sur `demande`.
+    transition.ready.catch(() => {});
+    transition.finished
+      .then(() => {
+        // Une bascule plus récente a pris la main : c'est le dernier geste
+        // qui pulse, pas celui-ci.
+        if (demande !== demandeAtterrissage.current) return;
+        setAtterrissage({ cle, nonce: demande });
+      })
+      .catch(() => {
+        /* transition avortée : rien à signaler */
+      });
+  }
+
   function basculer(ingredient: Ingredient): void {
+    // Calculée AVANT la mutation : cibleAtterrissage lit l'état d'AVANT pour
+    // savoir si cette coche termine la catégorie (RG-39) — auquel cas c'est
+    // la section, qui part le plus loin, qu'il faut savoir retrouver.
+    const cible = liste ? cibleAtterrissage(liste, coches, ingredient) : null;
+
     // Un article manuel porte son état coché en base (colonne dédiée, RG-41) —
     // pas dans le blob localStorage des ingrédients dérivés (RG-12).
     if (ingredient.source === "manuel") {
-      avecTransition(() => void basculerCocheArticleManuel(ingredient.id!));
+      const transition = avecTransition(() => {
+        // La mise à jour optimiste du store est synchrone (avant le premier
+        // await de basculerCocheArticleManuel) : elle est bien captée par le
+        // flushSync. Seul l'aller-retour réseau est différé — et il RETHROW
+        // après revert, d'où le catch (motif de supprimer(), plus bas).
+        void basculerCocheArticleManuel(ingredient.id!).catch((erreur) => {
+          console.error("Bascule de coche (article manuel) échouée.", erreur);
+          toast.error("Impossible d'enregistrer cette coche. Réessaie.");
+        });
+      });
+      signalerAtterrissage(transition, cible);
       return;
     }
-    avecTransition(() => {
+
+    const transition = avecTransition(() => {
       storeCoches.ecrire(JSON.stringify(basculerCoche(coches, ingredient)));
     });
+    signalerAtterrissage(transition, cible);
   }
 
   function toutDecocher(): void {
+    // Pas de pulsation ici : tout remonte d'un coup, il n'y a pas UN élément
+    // à retrouver.
     avecTransition(() => {
       storeCoches.effacer();
-      void viderCochesArticlesManuels();
+      void viderCochesArticlesManuels().catch((erreur) => {
+        console.error("Décochage des articles manuels échoué.", erreur);
+        toast.error("Impossible de tout décocher. Réessaie.");
+      });
     });
   }
 
@@ -458,6 +562,9 @@ function ContenuCourses() {
   // --- État chargé : liste agrégée par catégorie (écran 3) ---
   // Progression "n/N" : articles à acheter uniquement (RG-14).
   const progression = compterProgression(liste, coches);
+  // Repère persistant du glissement de catégorie (RG-39) : le fond de placard
+  // est exclu, il ne se réordonne jamais (RG-14).
+  const nbCategoriesTerminees = compterCategoriesTerminees(liste, coches);
 
   return (
     <main id="contenu" className="mx-auto flex-1 w-full max-w-2xl p-4 md:p-8">
@@ -484,6 +591,22 @@ function ContenuCourses() {
                 {liste.fondDePlacard.length} à vérifier dans tes placards
               </span>
             )}
+          </p>
+          {/* Repère du glissement de catégorie (RG-39). Sur mobile une
+              catégorie terminée descend souvent HORS ÉCRAN : aucune animation
+              ne peut la montrer à l'arrivée, d'où ce repère PERSISTANT (pas un
+              toast fugace) qui explique le mécanisme et compte — « rien n'a
+              disparu, tout est en bas ». TOUJOURS monté, même vide : une région
+              aria-live insérée en même temps que son contenu n'est pas annoncée
+              par la plupart des lecteurs d'écran, et réserver la ligne évite un
+              saut de hauteur de l'en-tête AU MOMENT MÊME de la transition. */}
+          <p
+            aria-live="polite"
+            className={`mt-1 text-xs text-brand-700/85 transition-opacity ${
+              nbCategoriesTerminees > 0 ? "opacity-100" : "opacity-0"
+            }`}
+          >
+            {libelleCategoriesTerminees(nbCategoriesTerminees)}
           </p>
           {/* Présence anonyme « en magasin » (#56 PR4, RG-31) : discret, sans
               nom. aria-live pour annoncer l'arrivée/le départ d'un membre. */}
@@ -544,23 +667,47 @@ function ContenuCourses() {
         {trierCategoriesAvecCoches(liste.normal, coches).map((ligne) => {
           const repliee = replies.has(ligne.categorie);
           const terminee = categorieTerminee(ligne, coches);
+          const pulsation =
+            atterrissage &&
+            atterrissage.cle === nomTransitionCategorie(ligne.categorie)
+              ? atterrissage.nonce
+              : null;
           return (
             <section
               key={ligne.categorie}
+              className="vt-bloc-categorie"
               style={{ viewTransitionName: nomTransitionCategorie(ligne.categorie) }}
             >
-              <h2 className="mb-2">
+              <h2 className="relative mb-2">
+                {/* HORS du <button> : e2e/courses.spec.ts lit
+                    `main section h2 button` en toHaveText. */}
+                {pulsation !== null && (
+                  <PulsationAtterrissage
+                    key={pulsation}
+                    onFin={() => finAtterrissage(pulsation)}
+                  />
+                )}
                 <button
                   type="button"
                   onClick={() => basculerSection(ligne.categorie)}
                   aria-expanded={!repliee}
-                  className={`flex min-h-11 w-full cursor-pointer items-center justify-between gap-2 text-sm font-semibold uppercase tracking-wide transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 ${
+                  className={`relative flex min-h-11 w-full cursor-pointer items-center justify-between gap-2 text-sm font-semibold uppercase tracking-wide transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 ${
                     terminee
                       ? "text-brand-700/85 line-through opacity-40 hover:text-brand-900"
                       : "text-brand-700/85 hover:text-brand-900"
                   }`}
                 >
-                  {LIBELLES_CATEGORIES[ligne.categorie]}
+                  {/* ✓ = marqueur « terminé » (RG-39). Icône lucide sans nœud
+                      texte : le nom accessible du bouton et le toHaveText des
+                      e2e restent inchangés. Grâce à
+                      `::view-transition-new(.bloc-categorie)` (globals.css), il
+                      est lisible dès la PREMIÈRE frame du glissement. */}
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    {terminee && (
+                      <Check aria-hidden="true" className="size-3.5 shrink-0" />
+                    )}
+                    {LIBELLES_CATEGORIES[ligne.categorie]}
+                  </span>
                   <Chevron repliee={repliee} />
                 </button>
               </h2>
@@ -572,6 +719,12 @@ function ContenuCourses() {
                       ingredient={ingredient}
                       coche={estCoche(coches, ingredient)}
                       onBasculer={() => basculer(ingredient)}
+                      nonceAtterrissage={
+                        atterrissage && atterrissage.cle === nomTransition(ingredient)
+                          ? atterrissage.nonce
+                          : null
+                      }
+                      onFinAtterrissage={finAtterrissage}
                       onModifier={
                         ingredient.source === "manuel"
                           ? () => {
@@ -594,7 +747,14 @@ function ContenuCourses() {
         {/* Section fond de placard (F-09) : cochable aussi, mais hors
             compteur de progression (RG-14). */}
         {liste.fondDePlacard.length > 0 && (
-          <section className="rounded-lg bg-accent-50 p-4">
+          // Nommée bien qu'elle ne se réordonne JAMAIS : ses <li> sont nommés,
+          // donc EXTRAITS du snapshot racine. Sans groupe propre, son chrome
+          // (fond, titre) sauterait d'un coup avec la racine pendant que ses
+          // lignes glissent — cf. « règle du groupe uniforme », globals.css.
+          <section
+            className="vt-bloc-categorie rounded-lg bg-accent-50 p-4"
+            style={{ viewTransitionName: NOM_TRANSITION_FOND_DE_PLACARD }}
+          >
             <h2>
               <button
                 type="button"
@@ -624,6 +784,12 @@ function ContenuCourses() {
                       ingredient={ingredient}
                       coche={estCoche(coches, ingredient)}
                       onBasculer={() => basculer(ingredient)}
+                      nonceAtterrissage={
+                        atterrissage && atterrissage.cle === nomTransition(ingredient)
+                          ? atterrissage.nonce
+                          : null
+                      }
+                      onFinAtterrissage={finAtterrissage}
                       onModifier={
                         ingredient.source === "manuel"
                           ? () => {
@@ -691,6 +857,8 @@ function ArticleCochable({
   ingredient,
   coche,
   onBasculer,
+  nonceAtterrissage = null,
+  onFinAtterrissage,
   onModifier,
   onSupprimer,
   placard = false,
@@ -698,6 +866,9 @@ function ArticleCochable({
   ingredient: Ingredient;
   coche: boolean;
   onBasculer: () => void;
+  /** Non-null = cette ligne vient d'atterrir (RG-11) : joue la pulsation. */
+  nonceAtterrissage?: number | null;
+  onFinAtterrissage?: (nonce: number) => void;
   /** Article manuel uniquement (#216, RG-43 bis) : ouvre l'édition en place. */
   onModifier?: () => void;
   /** Article manuel uniquement (#216, RG-42) : suppression par icône corbeille. */
@@ -711,10 +882,18 @@ function ArticleCochable({
   return (
     <li
       style={{ viewTransitionName: nomTransition(ingredient) }}
-      className="flex items-center"
+      className="vt-ligne-courses relative flex items-center"
     >
+      {/* <div> et non <span> : e2e/courses.spec.ts cible
+          `li.last().locator("span").first()` pour vérifier le rayé. */}
+      {nonceAtterrissage !== null && (
+        <PulsationAtterrissage
+          key={nonceAtterrissage}
+          onFin={() => onFinAtterrissage?.(nonceAtterrissage)}
+        />
+      )}
       <label
-        className={`flex min-h-11 flex-1 cursor-pointer items-center gap-3 py-2.5 transition-colors ${
+        className={`relative flex min-h-11 flex-1 cursor-pointer items-center gap-3 py-2.5 transition-colors ${
           placard ? "" : "px-4 hover:bg-brand-50/60"
         }`}
       >

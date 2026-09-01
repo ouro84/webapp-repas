@@ -19,6 +19,7 @@ colors:
   surface: "#ffffff"
   danger: "#dc2626"
   danger-hover: "#b91c1c"
+  atterrissage: "#d4ecd6"
 typography:
   display:
     fontFamily: "Fredoka, ui-rounded, sans-serif"
@@ -182,7 +183,28 @@ Composant partagé unique (`components/ui/interrupteur.tsx`) pour tous les switc
 ### Toast (annulation, avertissement)
 Via `sonner` — feedback léger et non bloquant pour les avertissements de génération (« récent non honoré », etc.) et l'annulation transitoire (undo). Cohérent avec le principe « ça ne bloque jamais » : jamais une modale pour un avertissement, toujours un toast.
 
-## 6. Do's and Don'ts
+## 6. Motion
+
+Le motion sert le sens, jamais la décoration : il explique un état, une relation ou une continuité, et **ne retarde jamais le geste suivant** — l'app est faite pour des mains occupées, en magasin, à cocher quinze articles d'affilée.
+
+### Motion Vocabulary
+- **Apparition** (`--animate-apparition`, 300 ms ease-out `backwards`) : entrée en stagger des cartes de planning après régénération (40 ms/carte), rejouée via une `key` de conteneur.
+- **Crossfade** (`--animate-crossfade`, 220 ms ease-out) : transition douce entre deux états d'un même contenu (nom de recette remplacé dans un slot).
+- **Spin-once** (`--animate-spin-once`, 450 ms ease-out) : rotation unique de l'icône « changer ».
+- **Active-scale** (`transition` + `active:scale-[0.97]`, `0.92` sur les boutons icône ronds) : feedback tactile des CTA, steppers, modales, submit — **pas** les switches (déjà animés par leur curseur), **pas** les liens de nav, **pas** les lignes de liste.
+- **Glissement** (`--duree-glissement` 320 ms, `--courbe-glissement` `cubic-bezier(0.2, 0, 0, 1)`) : réordonnancement de la liste de courses via View Transitions — un article coché descend en fin de catégorie, une catégorie terminée descend en bas de liste. Départ franc, arrivée molle : « ça a été posé là », pas « ça a filé ».
+- **Atterrissage** (`--animate-atterrissage`, 620 ms ease-out) : lavis vert bref (`--color-atterrissage`) sur l'élément **à sa nouvelle place**, joué après la fin du glissement. Calque de couleur statique à opacité animée — jamais un `background-color` animé.
+
+### Named Rules
+**Le moment focal est l'arrivée, pas le départ.** Quand un élément change de place, l'utilisateur regarde son doigt, pas le trajet : il faut marquer **où ça atterrit**, pas seulement rendre le déplacement plus long. Corollaire : quand la destination sort de l'écran, le motion ne suffit pas — il faut un repère textuel persistant (et annoncé), pas un toast fugace.
+
+**Une animation ne bloque jamais le geste suivant.** Le DOM est final dès le premier frame ; l'overlay de transition laisse passer les taps (`::view-transition { pointer-events: none }`) ; un nouveau geste interrompt l'animation en cours au lieu de la faire attendre. Budget bloquant : 0 ms.
+
+**Transform et opacity uniquement.** Aucune animation ne touche `width`, `height`, `top`, `left` ou les marges — pas de reflow. Pour un lavis de couleur, on pose un calque de couleur statique dont on anime l'opacité.
+
+**`prefers-reduced-motion` est respecté partout — non négociable.** Reset global (`animation-duration: 0.01ms`), plus une garde JS pour les View Transitions (le sélecteur universel n'atteint pas leur arbre de pseudo-éléments), plus les variantes `motion-safe:`/`motion-reduce:` par composant.
+
+## 7. Do's and Don'ts
 
 ### Do:
 - **Do** garder le vert (#3d7a44 / `bg-primary`) comme unique couleur interactive — hovers, liens, boutons, focus.
@@ -198,4 +220,6 @@ Via `sonner` — feedback léger et non bloquant pour les avertissements de gén
 - **Don't** utiliser d'emoji ou de glyphe Unicode comme icône — SVG inline ou `lucide-react` uniquement.
 - **Don't** ajouter une ombre marquée à une carte statique au repos — l'élévation réelle (`shadow-xl`) est réservée aux éléments qui flottent (dialogs).
 - **Don't** appliquer `font-display` à un `h2` de section ou de dialog — réservé à la marque et aux `h1` de page.
+- **Don't** scroller automatiquement vers un élément qui vient de se déplacer, ni replier une section toute seule — du contenu qui bouge sous le doigt en magasin est pire que le problème qu'on croit résoudre.
+- **Don't** annoncer un simple réordonnancement par un toast — un repère persistant dans la page vaut mieux qu'une notification fugace répétée sept fois par virée de courses.
 - **Don't** repeindre les encadrés `amber-*` (prudence) ou `red-*` (erreur) en terracotta — ce sont des rôles sémantiques distincts de l'accent de marque.
