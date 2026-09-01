@@ -48,6 +48,16 @@
   --color-primary-hover: #2e5e34;  /* = brand-700 en clair */
   --color-danger: #dc2626;         /* = red-600 */
   --color-danger-hover: #b91c1c;   /* = red-700 */
+  /* Lavis de la pulsation d'atterrissage (RG-11 / RG-39). Token SÉMANTIQUE
+     plutôt que `brand-50` : en sombre, brand-50 (#232f27) sur surface
+     (#1d2520) serait quasi invisible — or ce repère doit se voir dans les DEUX
+     modes. Même motif que surface/primary : une valeur par thème, jamais un
+     flip de la rampe (cf. :root[data-theme="dark"] plus bas).
+     Valeur = brand-100 et non brand-50 : le lavis doit être lisible sur les
+     DEUX fonds qu'il recouvre — la carte (surface, blanc) pour une ligne, mais
+     aussi le CANVAS crème (#fafaf5) pour un en-tête de catégorie, où brand-50
+     (#edf7ee) était quasi invisible (mesuré à l'écran). */
+  --color-atterrissage: #d4ecd6;   /* = brand-100 en clair */
 
   /* ---- Typographie (#66, P14) ----
      Pairing rond et chaleureux. Nunito porte le corps (--font-sans, appliqué
@@ -61,11 +71,22 @@
   /* ---- Animations — micro-interactions (#69, P17) ----
      Tokens d'animation exposés en utilitaires `animate-*` par Tailwind v4.
      Transform/opacity uniquement (pas de width/height) → pas de reflow.
+     Corollaire : pour un LAVIS DE COULEUR, on n'anime pas `background-color`
+     — on pose un calque de couleur STATIQUE dont on anime l'opacité (motif
+     canonique, cf. `atterrissage` ci-dessous et PulsationAtterrissage dans
+     app/courses/page.tsx).
      `backwards` sur l'apparition : la carte reste invisible PENDANT son délai
      de stagger (sinon elle clignote visible avant son tour). */
   --animate-apparition: apparition 300ms ease-out backwards;
   --animate-crossfade: crossfade 220ms ease-out;
   --animate-spin-once: spin-once 450ms ease-out;
+  /* Pulsation d'atterrissage de la liste de courses (RG-11 / RG-39) : jouée
+     APRÈS `transition.finished`, quand le DOM réel redevient visible sous
+     l'overlay de snapshots. Le moment focal d'un réordonnancement est
+     l'ARRIVÉE, pas le départ — en magasin l'utilisateur regarde son doigt,
+     pas le trajet. Fondu d'entrée court, palier lisible, sortie longue :
+     « je suis là » puis dissolution, jamais un flash. */
+  --animate-atterrissage: atterrissage 620ms ease-out forwards;
 }
 
 @keyframes apparition {
@@ -96,6 +117,21 @@
   }
   to {
     transform: rotate(360deg);
+  }
+}
+
+@keyframes atterrissage {
+  0% {
+    opacity: 0;
+  }
+  12% {
+    opacity: 0.9;
+  }
+  40% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
   }
 }
 
@@ -150,6 +186,9 @@ body {
   /* États — encadrés sombres, texte clair ; bouton destructif via --color-danger */
   --color-danger: #e5484d;
   --color-danger-hover: #f1666a;
+  /* Nettement au-dessus de surface (#1d2520) : le lavis doit rester lisible
+     sous le texte rayé à 40 % d'opacité de la ligne cochée. */
+  --color-atterrissage: #33463a;
   --color-red-50:  #3a1d1d;
   --color-red-200: #5e2b2b;
   --color-red-600: #f87171; /* texte erreur */
@@ -161,21 +200,112 @@ body {
   --color-amber-800: #fde68a;
 }
 
-/* View Transitions (réordonnancement de la liste de courses, US-05) :
-   par défaut l'overlay de transition intercepte les pointer events pendant
-   ~250 ms — en magasin, cocher plusieurs articles à la suite perdrait des
-   taps. On laisse passer les interactions vers le DOM réel. */
+/* ============================================================================
+   View Transitions — réordonnancement de la liste de courses (US-05,
+   RG-11 / RG-39). Seul usage de l'API dans le projet (app/courses/page.tsx).
+
+   Contrat, à ne pas casser :
+
+   1. RÈGLE DU GROUPE UNIFORME — tous les ::view-transition-group() partagent
+      exactement la même durée, la même courbe et AUCUN délai. Un <li> nommé
+      est EXTRAIT du snapshot de sa <section> nommée : le bitmap de la section
+      contient le titre, la carte et ses filets, avec des rectangles
+      TRANSPARENTS à l'emplacement de chaque ligne. Si les groupes n'avancent
+      pas au même rythme, les lignes dérivent hors de leurs trous →
+      déchirement visible. La durée est posée aussi sur -old/-new, où vit le
+      crossfade par défaut (sinon des images finissent leur fondu à 250 ms
+      pendant que la géométrie glisse encore).
+   2. Toute différenciation se fait sur ::view-transition-old/-new, INTERNES
+      au groupe : jouer sur leur opacité ne déplace aucune géométrie.
+   3. `pointer-events: none` sur l'overlay : en magasin on coche 15 articles
+      d'affilée, l'overlay ne doit jamais avaler un tap (bug vécu).
+
+   Support : `view-transition-class` et l'argument universel `(*)` demandent
+   Chrome 125+ / Safari 18.2+ / Firefox 144+. En deçà, tout ce bloc est
+   ignoré et on retombe sur les défauts UA — soit exactement le comportement
+   d'avant cette PR. Dégradation gracieuse, aucun @supports nécessaire.
+   ============================================================================ */
+
+:root {
+  --duree-glissement: 320ms;
+  /* Départ franc, arrivée molle : « ça a été posé là », pas « ça a filé ». */
+  --courbe-glissement: cubic-bezier(0.2, 0, 0, 1);
+}
+
 ::view-transition {
   pointer-events: none;
+}
+
+/* `view-transition-name` est posé INLINE depuis le TSX (dynamique, dérivé du
+   contenu) → impossible à cibler par nom en CSS. On attache donc à chaque
+   élément animé une CLASSE DE TRANSITION, seule accroche CSS possible. */
+.vt-ligne-courses {
+  view-transition-class: ligne-courses;
+}
+
+.vt-bloc-categorie {
+  view-transition-class: bloc-categorie;
+}
+
+/* (1) Rythme uniforme — groupes ET images. */
+::view-transition-group(*),
+::view-transition-old(*),
+::view-transition-new(*) {
+  animation-duration: var(--duree-glissement);
+  animation-timing-function: var(--courbe-glissement);
+  animation-delay: 0s;
+}
+
+/* (2a) Le chrome d'une section (titre + carte + filets) est visuellement
+   IDENTIQUE avant/après : le crossfade ne ferait que doubler les trous
+   laissés par les <li> extraits dès qu'un libellé long casse la régularité
+   des hauteurs. On affiche directement l'image d'arrivée — bonus : le
+   marqueur « terminé » du titre est lisible dès la PREMIÈRE frame du
+   glissement, sans retarder le geste d'une seule milliseconde. */
+::view-transition-old(.bloc-categorie) {
+  animation: none;
+  opacity: 0;
+}
+
+::view-transition-new(.bloc-categorie) {
+  animation: none;
+  opacity: 1;
+}
+
+/* (2b) Même raisonnement un cran au-dessus : la racine (en-tête, compteurs,
+   fonds) n'a aucune raison de fondre à chaque coche — le compteur doit
+   changer INSTANTANÉMENT (c'est du feedback), et le double-fond de l'en-tête
+   pendant l'apparition de « Tout décocher » est du bruit. Seuls les éléments
+   NOMMÉS glissent. */
+::view-transition-old(root) {
+  animation: none;
+  opacity: 0;
+}
+
+::view-transition-new(root) {
+  animation: none;
+  opacity: 1;
 }
 
 /* Reduced-motion (#69, P17) : filet de sécurité global. Quiconque a activé
    « réduire les animations » au niveau OS voit les transitions/animations
    réduites à l'instantané — couvre le stagger, le crossfade, le spin de
-   l'icône « changer », mais aussi les animations préexistantes (animate-pulse,
-   spinner d'auth) et les View Transitions. Les variantes `motion-safe:` /
-   `motion-reduce:` dans les composants complètent ce filet. */
+   l'icône « changer », la pulsation d'atterrissage, et les animations
+   préexistantes (animate-pulse, spinner d'auth). Les variantes
+   `motion-safe:` / `motion-reduce:` dans les composants complètent ce filet.
+
+   ⚠️ Le sélecteur universel `*` N'ATTEINT PAS l'arbre ::view-transition-* :
+   c'est un arbre de pseudo-éléments SÉPARÉ, enraciné sur :root. D'où le
+   second bloc ci-dessous. La garde JS de `avecTransition()`
+   (app/courses/page.tsx) reste la protection principale — elle ne démarre
+   simplement aucune transition ; ce bloc couvre le reste : bascule de la
+   préférence OS EN COURS de transition, et toute future @view-transition
+   cross-document qui n'aurait pas de garde JS. */
 @media (prefers-reduced-motion: reduce) {
+  :root {
+    --duree-glissement: 0.01ms;
+  }
+
   *,
   *::before,
   *::after {
@@ -183,5 +313,15 @@ body {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+
+  /* 0.01ms et non `animation: none` : `none` laisserait -old et -new empilés
+     à pleine opacité, soit une image doublée figée. */
+  ::view-transition-group(*),
+  ::view-transition-image-pair(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0s !important;
   }
 }

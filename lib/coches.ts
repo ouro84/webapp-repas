@@ -10,6 +10,7 @@
 // revérifier cet article, le reste de son chariot est préservé.
 
 import { cleAgregation } from "@/lib/courses"
+import { nomTransition, nomTransitionCategorie } from "@/lib/transitions-courses"
 import type { Ingredient, LignesCourses, ListeCourses } from "@/types"
 
 // Clé d'agrégation → quantité au moment du cochage (RG-12).
@@ -142,4 +143,86 @@ export function aDesCoches(liste: ListeCourses, coches: Coches): boolean {
     liste.normal.some((l) => l.ingredients.some((i) => estCoche(coches, i))) ||
     liste.fondDePlacard.some((i) => estCoche(coches, i))
   )
+}
+
+// ============================================================================
+// Lisibilité du déplacement (RG-11 / RG-39) — les premiers utilisateurs
+// croyaient qu'un article coché avait DISPARU. Les trois helpers ci-dessous
+// alimentent les repères qui disent « c'est descendu, pas disparu » :
+// un compteur annoncé dans l'en-tête, et une pulsation posée à l'arrivée.
+// ============================================================================
+
+/**
+ * Deux références décrivent-elles le MÊME article de la liste ?
+ * Un article manuel (#216) s'identifie par son id (deux articles manuels
+ * peuvent partager un libellé, RG-42) ; un ingrédient de recette par sa clé
+ * d'agrégation nom|unité (RG-05, unique dans toute la liste).
+ */
+function memeArticle(a: Ingredient, b: Ingredient): boolean {
+  if (a.source === "manuel" || b.source === "manuel") {
+    return a.source === "manuel" && b.source === "manuel" && a.id === b.id
+  }
+  return cleAgregation(a) === cleAgregation(b)
+}
+
+/**
+ * Nombre de catégories terminées (RG-39) parmi les articles à acheter.
+ * Le fond de placard est exclu : il ne se réordonne jamais (RG-14).
+ */
+export function compterCategoriesTerminees(
+  liste: ListeCourses,
+  coches: Coches
+): number {
+  return liste.normal.filter((l) => categorieTerminee(l, coches)).length
+}
+
+/**
+ * Libellé du repère persistant de l'en-tête. Explique le mécanisme la
+ * première fois qu'on le rencontre, et compte — donc « rien n'a disparu ».
+ * Chaîne vide si aucune catégorie n'est terminée (la ligne reste montée,
+ * cf. app/courses/page.tsx : une région aria-live insérée en même temps
+ * que son contenu n'est pas annoncée par la plupart des lecteurs d'écran).
+ */
+export function libelleCategoriesTerminees(nombre: number): string {
+  if (nombre <= 0) return ""
+  return nombre === 1
+    ? "1 catégorie terminée, descendue en bas de la liste"
+    : `${nombre} catégories terminées, descendues en bas de la liste`
+}
+
+/**
+ * Où poser la pulsation d'atterrissage après avoir basculé `ingredient` ?
+ *
+ * - la bascule TERMINE sa catégorie (RG-39) → la SECTION, car c'est elle qui
+ *   parcourt le plus de distance : c'est elle qu'il faut savoir retrouver ;
+ * - sinon → la ligne elle-même (RG-11) ;
+ * - la bascule DÉCOCHE → `null` : l'article remonte vers le haut, là où l'œil
+ *   est déjà. Rien à signaler.
+ *
+ * Un article du fond de placard vise toujours sa propre ligne : sa section ne
+ * se réordonne pas (RG-14).
+ *
+ * S'appelle AVANT la mutation : `coches` est l'état d'avant, `ingredient`
+ * l'article qu'on s'apprête à basculer.
+ */
+export function cibleAtterrissage(
+  liste: ListeCourses,
+  coches: Coches,
+  ingredient: Ingredient
+): string | null {
+  if (estCoche(coches, ingredient)) return null
+
+  const ligne = liste.normal.find((l) =>
+    l.ingredients.some((i) => memeArticle(i, ingredient))
+  )
+  // Article du fond de placard, ou introuvable (liste désynchronisée) :
+  // on retombe sur la ligne, jamais sur une section qui ne bouge pas.
+  if (!ligne) return nomTransition(ingredient)
+
+  const termineraLaCategorie = ligne.ingredients.every(
+    (i) => memeArticle(i, ingredient) || estCoche(coches, i)
+  )
+  return termineraLaCategorie
+    ? nomTransitionCategorie(ligne.categorie)
+    : nomTransition(ingredient)
 }

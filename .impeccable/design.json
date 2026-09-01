@@ -41,7 +41,10 @@
     "motion": [
       { "name": "apparition", "value": "300ms ease-out backwards, translateY(8px)→none + opacity 0→1", "purpose": "Entrée en stagger des cartes de planning après régénération." },
       { "name": "crossfade", "value": "220ms ease-out, translateY(2px)→none + opacity 0→1", "purpose": "Transition douce entre deux états d'un même contenu." },
-      { "name": "active-scale", "value": "transition (couleur + transform), active:scale-[0.97]", "purpose": "Feedback tactile sur les boutons/CTA — pas les switches (déjà animés par le knob)." }
+      { "name": "active-scale", "value": "transition (couleur + transform), active:scale-[0.97]", "purpose": "Feedback tactile sur les boutons/CTA — pas les switches (déjà animés par le knob)." },
+      { "name": "spin-once", "value": "450ms ease-out, rotate(0deg)→rotate(360deg)", "purpose": "Rotation unique de l'icône « changer » d'un slot de planning." },
+      { "name": "glissement", "value": "320ms cubic-bezier(0.2, 0, 0, 1) — View Transitions, durée/courbe/délai UNIFORMES sur tous les groupes", "purpose": "Réordonnancement de la liste de courses (article coché en fin de catégorie, catégorie terminée en bas de liste). Un <li> nommé est extrait du snapshot de sa <section> nommée : un rythme différent le ferait dériver hors de son trou." },
+      { "name": "atterrissage", "value": "620ms ease-out forwards — calque de couleur statique (--color-atterrissage) à opacité animée 0→0.9→0", "purpose": "Marque l'ARRIVÉE d'un élément réordonné, joué après transition.finished — pendant la transition le DOM réel est masqué sous les snapshots." }
     ],
     "breakpoints": [
       { "name": "sm", "value": "640px" },

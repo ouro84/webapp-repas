@@ -515,3 +515,102 @@ test("« Tout décocher » décoche l'article manuel SANS le supprimer (RG-41)",
   await expect(articleManuel).toBeVisible(); // toujours là…
   await expect(articleManuel).not.toBeChecked(); // …mais décoché.
 });
+
+// ============================================================================
+// Lisibilité du déplacement (RG-11 / RG-39) — les premiers utilisateurs
+// croyaient qu'un article coché avait DISPARU.
+//
+// On ne teste PAS ici la durée/courbe du glissement ni la présence de la
+// pulsation d'atterrissage : timing-dépendant donc flaky, et sans valeur de
+// régression. Ce qui est verrouillé, c'est le contrat FONCTIONNEL (ordre du
+// DOM, texte, accessibilité) — le contrat visuel se vérifie à l'œil.
+// ============================================================================
+
+test("une catégorie terminée est annoncée et comptée dans l'en-tête (RG-39)", async ({
+  page,
+}) => {
+  await injecterCyclePlanning(page, planningDeterministe());
+  await page.goto("/courses");
+
+  const repere = page.getByText(/catégories? terminées?, descendues? en bas de la liste/);
+
+  // Rien de terminé : le <p> est monté mais vide (réservation de hauteur).
+  await expect(repere).toHaveCount(0);
+
+  // « Viandes & Poissons » n'a qu'un article (lardons) : le cocher termine la
+  // catégorie, qui glisse hors de vue sur mobile → d'où ce repère persistant.
+  await page.getByRole("checkbox", { name: /lardons/ }).click();
+  await expect(
+    page.getByText("1 catégorie terminée, descendue en bas de la liste")
+  ).toBeVisible();
+
+  // Réversible (RG-39) : décocher retire le repère.
+  await page.getByRole("checkbox", { name: /lardons/ }).click();
+  await expect(repere).toHaveCount(0);
+});
+
+test("le réordonnancement fonctionne sous mouvement réduit (RG-11 / RG-39)", async ({
+  page,
+}) => {
+  // Garde de la garde JS de `avecTransition()` : sous reduced motion aucune
+  // View Transition n'est démarrée (et donc aucune pulsation). RG-11 et RG-39
+  // sont FONCTIONNELS, pas décoratifs — le réordonnancement doit rester correct
+  // et instantané. `emulateMedia` plutôt que `test.use` : la préférence est lue
+  // par matchMedia AU MOMENT du clic, pas au chargement.
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await injecterCyclePlanning(page, planningDeterministe());
+  await page.goto("/courses");
+
+  // RG-11 : l'article coché passe en fin de sa catégorie.
+  const produitsFrais = page.locator("section").filter({
+    has: page.getByRole("heading", { name: "Produits frais" }),
+  });
+  await page.getByRole("checkbox", { name: /crème fraîche/ }).click();
+  await expect(produitsFrais.locator("li").last()).toContainText("crème fraîche");
+
+  // RG-39 : la catégorie terminée glisse en bas des catégories normales.
+  await page.getByRole("checkbox", { name: /lardons/ }).click();
+  await expect(page.locator("main section h2 button")).toHaveText([
+    "Légumes & Fruits",
+    "Produits frais",
+    "Épicerie",
+    "Viandes & Poissons",
+    "Fond de placard",
+  ]);
+});
+
+test("cocher puis tout décocher un article manuel ne lève aucune erreur non gérée", async ({
+  page,
+}) => {
+  // `basculerCocheArticleManuel` et `viderCochesArticlesManuels` RETHROW après
+  // revert : sans `.catch` côté page, un échec produit un rejet non géré
+  // (bruit Sentry, coche qui revient sans explication). La fixture anti-crash
+  // de e2e/fixtures.ts ne filtre QUE les signatures React — d'où cette écoute
+  // dédiée.
+  const erreurs: string[] = [];
+  page.on("pageerror", (e) => erreurs.push(e.message));
+
+  await injecterCyclePlanning(page, planningDeterministe());
+  await page.goto("/courses");
+
+  await page.getByRole("button", { name: "Ajouter un article" }).click();
+  await page.getByLabel("Article", { exact: true }).fill("Sacs poubelle");
+  await page.getByRole("button", { name: "Enregistrer" }).click();
+
+  const articleManuel = page.getByRole("checkbox", { name: /Sacs poubelle/ });
+  await articleManuel.click();
+  await expect(articleManuel).toBeChecked();
+  await articleManuel.click();
+  await expect(articleManuel).not.toBeChecked();
+
+  // Attendre l'état AVANT de cliquer ailleurs : « Tout décocher » n'est rendu
+  // que si `aDesCoches` est vrai — cliquer pendant que la coche se pose fait
+  // remonter le bouton et Playwright perd sa cible (« element was detached »).
+  await articleManuel.click();
+  await expect(articleManuel).toBeChecked();
+
+  await page.getByRole("button", { name: "Tout décocher" }).click();
+  await expect(articleManuel).not.toBeChecked();
+
+  expect(erreurs).toEqual([]);
+});
