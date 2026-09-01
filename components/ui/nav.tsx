@@ -10,17 +10,28 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { HelpCircle } from "lucide-react";
+import {
+  BookOpen,
+  CalendarDays,
+  Clock,
+  HelpCircle,
+  ShoppingCart,
+  type LucideIcon,
+} from "lucide-react";
 import { Logo } from "@/components/ui/logo";
 import { Avatar } from "@/components/ui/avatar";
 import { useProfil } from "@/lib/profil";
 import { useEstConnecte } from "@/lib/session";
 import { libelleMomentActuel } from "@/lib/prochain-repas";
 
-const LIENS = [
-  { href: "/planning", label: "Planning" },
-  { href: "/courses", label: "Courses" },
-  { href: "/recettes", label: "Recettes" },
+// Chaque section porte une icône : sous `sm:` la nav n'affiche QUE l'icône
+// (cf. LienSection). Le libellé texte des 4 sections + le wordmark + l'aide +
+// l'avatar dépassaient la largeur d'un mobile 390 px → débordement horizontal
+// du body (la barre n'a ni wrap ni scroll interne).
+const LIENS: { href: string; label: string; Icone: LucideIcon }[] = [
+  { href: "/planning", label: "Planning", Icone: CalendarDays },
+  { href: "/courses", label: "Courses", Icone: ShoppingCart },
+  { href: "/recettes", label: "Recettes", Icone: BookOpen },
 ];
 
 // Routes protégées (cf. proxy.ts) : le proxy y garantit une session → on peut
@@ -36,6 +47,46 @@ const ROUTES_PROTEGEES = ["/planning", "/courses", "/recettes", "/reglages", "/p
 // piège ailleurs.
 function estActif(pathname: string, href: string): boolean {
   return href === "/" ? pathname === "/" : pathname.startsWith(href);
+}
+
+// Lien de section (Planning / Courses / Recettes / Ce soir).
+//
+// Mobile-first : sous `sm:` seule l'ICÔNE est rendue — les 4 libellés texte,
+// additionnés au logo, à l'aide et à l'avatar, dépassaient 390 px de large et
+// faisaient déborder le body horizontalement (la barre n'a ni `flex-wrap` ni
+// scroll interne). Le texte réapparaît dès `sm:`.
+//
+// A11y : `aria-label` est posé EN PERMANENCE, pas seulement en icône. Le span
+// de libellé est masqué par `hidden` (= `display:none`), qui le retire aussi de
+// l'arbre d'accessibilité → sans aria-label le lien serait anonyme sur mobile
+// (l'icône est `aria-hidden`). Corollaire : le nom accessible reste identique
+// aux deux paliers, donc les e2e `getByRole("link", { name })` sont inchangés.
+function LienSection({
+  href,
+  label,
+  Icone,
+  actif,
+}: {
+  href: string;
+  label: string;
+  Icone: LucideIcon;
+  actif: boolean;
+}) {
+  return (
+    <Link
+      href={href}
+      aria-label={label}
+      aria-current={actif ? "page" : undefined}
+      // after:-inset-y-2 : étend la zone tactile verticale à ≥ 44px
+      // (inset-x-0 pour ne pas chevaucher le lien voisin, gap-1)
+      className={`relative flex items-center rounded-full px-3 py-1.5 text-sm font-medium transition-colors after:absolute after:inset-x-0 after:-inset-y-2 after:content-[''] sm:px-4 ${
+        actif ? "bg-primary text-white" : "text-brand-700 hover:bg-brand-50"
+      }`}
+    >
+      <Icone className="size-5 sm:hidden" aria-hidden="true" />
+      <span className="hidden whitespace-nowrap sm:inline">{label}</span>
+    </Link>
+  );
 }
 
 export function NavBar() {
@@ -93,40 +144,25 @@ export function NavBar() {
           <div className="flex items-center gap-1">
             {afficherNavApp ? (
               <>
-                {LIENS.map(({ href, label }) => {
-                  const actif = estActif(pathname, href);
-                  return (
-                    <Link
-                      key={href}
-                      href={href}
-                      aria-current={actif ? "page" : undefined}
-                      // after:-inset-y-2 : étend la zone tactile verticale à ≥ 44px
-                      // (inset-x-0 pour ne pas chevaucher le lien voisin, gap-1)
-                      className={`relative rounded-full px-4 py-1.5 text-sm font-medium transition-colors after:absolute after:inset-x-0 after:-inset-y-2 after:content-[''] ${
-                        actif
-                          ? "bg-primary text-white"
-                          : "text-brand-700 hover:bg-brand-50"
-                      }`}
-                    >
-                      {label}
-                    </Link>
-                  );
-                })}
+                {LIENS.map(({ href, label, Icone }) => (
+                  <LienSection
+                    key={href}
+                    href={href}
+                    label={label}
+                    Icone={Icone}
+                    actif={estActif(pathname, href)}
+                  />
+                ))}
                 {/* Lien « Ce soir »/« Ce midi » (#suite #279/#280) : sorti de la
                     boucle générique ci-dessus car son libellé est calculé
                     (heure réelle), pas un texte statique — même style/logique
                     active que les liens de section. */}
-                <Link
+                <LienSection
                   href="/ce-soir"
-                  aria-current={estActif(pathname, "/ce-soir") ? "page" : undefined}
-                  className={`relative rounded-full px-4 py-1.5 text-sm font-medium transition-colors after:absolute after:inset-x-0 after:-inset-y-2 after:content-[''] ${
-                    estActif(pathname, "/ce-soir")
-                      ? "bg-primary text-white"
-                      : "text-brand-700 hover:bg-brand-50"
-                  }`}
-                >
-                  {libelleCeSoir}
-                </Link>
+                  label={libelleCeSoir}
+                  Icone={Clock}
+                  actif={estActif(pathname, "/ce-soir")}
+                />
                 {/* Raccourci aide (audit critique, #97) : distinct de l'avatar —
                     déconnecté, la nav garde un vrai lien texte « Aide » (cf.
                     branche ci-dessous), mais il disparaissait entièrement une
