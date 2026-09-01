@@ -6,8 +6,9 @@
 //
 // Ce qu'il fait :
 //  1. Lit .env.local (qui pointe la PROD) pour récupérer SUPABASE_ACCESS_TOKEN.
-//  2. Récupère la clé anon STAGING courante via l'API de management (elle change
-//     — pas de valeur en dur).
+//  2. RÉVEILLE le projet staging s'il est en pause (tier gratuit : pause après
+//     ~1 semaine sans activité), puis récupère la clé anon STAGING courante via
+//     l'API de management (elle change — pas de valeur en dur).
 //  3. Sauvegarde .env.local → .env.local.prodbak, puis écrit un .env.local
 //     STAGING (seuls NEXT_PUBLIC_SUPABASE_URL/ANON_KEY repointés ; le reste des
 //     secrets prod est conservé, nécessaire au build/monitoring).
@@ -27,6 +28,7 @@
 import { readFileSync, writeFileSync, copyFileSync, existsSync, rmSync } from "node:fs"
 import { createConnection } from "node:net"
 import { spawn } from "node:child_process"
+import { assurerProjetActif } from "./supabase-projet.mjs"
 
 const STAGING_REF = "upxoxrjumxpzumakawiv"
 const PROD_REF = "gabyhlcwahzquolwxmgd"
@@ -63,6 +65,8 @@ async function main() {
     throw new Error("Port 3000 occupé — arrête le serveur dev (sinon Playwright réutiliserait un serveur PROD).")
   }
 
+  await assurerProjetActif(STAGING_REF, token)
+
   process.stdout.write("→ Récupération des clés anon + service_role staging… ")
   const rep = await fetch(`https://api.supabase.com/v1/projects/${STAGING_REF}/api-keys`, {
     headers: { Authorization: `Bearer ${token}` },
@@ -70,7 +74,7 @@ async function main() {
   if (!rep.ok) throw new Error(`API management HTTP ${rep.status} (SUPABASE_ACCESS_TOKEN valide ?)`)
   const cles = await rep.json()
   const anon = Array.isArray(cles) ? cles.find((k) => k.name === "anon")?.api_key : null
-  if (!anon) throw new Error("Clé anon staging introuvable dans la réponse management")
+  if (!anon) throw new Error("Clé anon staging introuvable dans la réponse management (projet actif pourtant — vérifier les clés du projet)")
   // service_role (#237, suppression de compte) : sans ce repointage, la route
   // qui appelle admin.auth.admin.deleteUser() utiliserait la clé service_role
   // PROD (restée dans .env.local) contre l'URL STAGING — échec d'authentification

@@ -6,9 +6,19 @@
 # ne reçoit d'activité que lors des PR — une pause casserait les e2e de la
 # première PR suivante (symptôme déroutant, cf. CLAUDE.md).
 #
-# En cas d'échec (projet déjà en pause, clé invalide…), le job échoue
-# visiblement → notification email GitHub. Restauration : dashboard Supabase
-# → Restore project (~1-2 min).
+# ⚠️ DEADLOCK CORRIGÉ (2026-09-01) — pourquoi il y a une étape de réveil.
+# Le ping seul ne suffit pas : quand un projet EST déjà en pause, son
+# sous-domaine `<ref>.supabase.co` cesse d'être résolu par le DNS. Le curl
+# échoue alors sur « Could not resolve host », le workflow rougit… et rien ne
+# réveille jamais le projet. Vécu en vrai : staging s'est mis en pause le
+# 2026-07-20 (période creuse sans PR) et ce workflow a échoué à CHAQUE
+# exécution pendant 6 semaines sans jamais pouvoir s'en sortir — la première
+# session de dev suivante s'est cassé les dents dessus (clé anon introuvable).
+# Le job sait donc désormais se réveiller lui-même via l'API de management.
+#
+# Le réveil est GARDÉ par la présence de SUPABASE_ACCESS_TOKEN : sans le
+# secret, le comportement retombe exactement sur l'ancien (ping, échec visible,
+# restauration manuelle) — pas de régression si le secret est retiré/expiré.
 
 name: Keep-alive Supabase
 
@@ -21,6 +31,8 @@ on:
 jobs:
   ping:
     runs-on: ubuntu-latest
+    # Borne le job : le réveil attend au plus ~10 min que le projet remonte.
+    timeout-minutes: 15
     strategy:
       # Un échec sur prod ne doit pas masquer l'état de staging, et inversement
       fail-fast: false
@@ -29,23 +41,90 @@ jobs:
           - instance: prod
             url_secret: SUPABASE_URL
             key_secret: SUPABASE_ANON_KEY
+            ref: gabyhlcwahzquolwxmgd
           - instance: staging
             url_secret: STAGING_SUPABASE_URL
             key_secret: STAGING_SUPABASE_ANON_KEY
+            ref: upxoxrjumxpzumakawiv
     name: ping (${{ matrix.instance }})
     steps:
-      - name: Ping auth health
+      - name: Ping auth health (réveil automatique si le projet est en pause)
         env:
           SUPABASE_URL: ${{ secrets[matrix.url_secret] }}
           SUPABASE_ANON_KEY: ${{ secrets[matrix.key_secret] }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          PROJECT_REF: ${{ matrix.ref }}
+          INSTANCE: ${{ matrix.instance }}
         run: |
+          set -uo pipefail
+
           # /auth/v1/health : répond 200 avec la clé anon ; la racine /rest/v1/
           # renvoie 401 sur ces projets (endpoint OpenAPI verrouillé), même si
           # les requêtes de table passent. Une requête au gateway suffit comme
           # activité anti-pause.
           # --fail : code de sortie non nul sur HTTP >= 400
           # --retry 3 : tolère un hoquet réseau, pas une vraie pause
-          curl --fail --silent --show-error --retry 3 --retry-delay 5 \
-            -H "apikey: ${SUPABASE_ANON_KEY}" \
-            "${SUPABASE_URL}/auth/v1/health" > /dev/null
-          echo "Instance ${{ matrix.instance }} active."
+          ping() {
+            curl --fail --silent --show-error --retry 3 --retry-delay 5               -H "apikey: ${SUPABASE_ANON_KEY}"               "${SUPABASE_URL}/auth/v1/health" > /dev/null
+          }
+
+          # jq est préinstallé sur ubuntu-latest (pas de dépendance à ajouter).
+          # `// "INCONNU"` couvre une réponse sans champ status.
+          statut_projet() {
+            curl --fail --silent --show-error               -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}"               "https://api.supabase.com/v1/projects/${PROJECT_REF}"               | jq -r '.status // "INCONNU"'
+          }
+
+          if ping; then
+            echo "Instance ${INSTANCE} active."
+            exit 0
+          fi
+
+          echo "::warning::Ping ${INSTANCE} en échec — vérification du statut du projet."
+
+          if [ -z "${SUPABASE_ACCESS_TOKEN}" ]; then
+            echo "::error::SUPABASE_ACCESS_TOKEN absent : réveil automatique impossible. Restaurer à la main (dashboard Supabase → Restore project)."
+            exit 1
+          fi
+
+          statut="$(statut_projet)" || statut=""
+          echo "Statut du projet ${INSTANCE} (${PROJECT_REF}) : ${statut:-<indéterminable>}"
+
+          # Statut illisible : ne rien tenter à l'aveugle, et le dire clairement
+          # plutôt que de laisser croire que le projet est sain.
+          if [ -z "${statut}" ] || [ "${statut}" = "INCONNU" ]; then
+            echo "::error::Statut de ${INSTANCE} indéterminable (API de management injoignable, jeton expiré, ou ref ${PROJECT_REF} inconnue). Réveil non tenté — vérifier à la main."
+            exit 1
+          fi
+
+          # On ne déclenche un restore QUE sur une vraie pause. Un échec de ping
+          # sur un projet ACTIVE_HEALTHY est un incident réseau/clé : le restore
+          # n'y changerait rien et masquerait le vrai problème.
+          if [ "${statut}" != "INACTIVE" ]; then
+            echo "::error::Ping ${INSTANCE} en échec alors que le projet n'est pas en pause (statut=${statut}). Cause probable : clé anon invalide, incident Supabase ou changement d'URL."
+            exit 1
+          fi
+
+          echo "Projet ${INSTANCE} en pause → demande de restauration…"
+          curl --fail --silent --show-error -X POST             -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}"             -H "Content-Type: application/json"             -d '{}'             "https://api.supabase.com/v1/projects/${PROJECT_REF}/restore" > /dev/null
+
+          # Remontée observée : COMING_UP → RESTORING → ACTIVE_HEALTHY en ~2 min.
+          for i in $(seq 1 40); do
+            sleep 15
+            statut="$(statut_projet)" || statut=""
+            echo "  t+$((i * 15))s  ${statut:-<indéterminable>}"
+            if [ "${statut}" = "ACTIVE_HEALTHY" ]; then break; fi
+          done
+
+          if [ "${statut}" != "ACTIVE_HEALTHY" ]; then
+            echo "::error::Restauration de ${INSTANCE} non aboutie après 10 min (dernier statut=${statut:-<indéterminable>})."
+            exit 1
+          fi
+
+          # Le DNS du sous-domaine peut mettre quelques secondes de plus que
+          # l'API à répondre — d'où le --retry du ping, plus une seconde chance.
+          if ping || { sleep 20 && ping; }; then
+            echo "Instance ${INSTANCE} réveillée et active."
+          else
+            echo "::error::${INSTANCE} est ACTIVE_HEALTHY côté API mais le ping échoue toujours."
+            exit 1
+          fi
