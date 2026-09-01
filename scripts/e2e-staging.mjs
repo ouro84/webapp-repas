@@ -28,6 +28,7 @@
 import { readFileSync, writeFileSync, copyFileSync, existsSync, rmSync } from "node:fs"
 import { createConnection } from "node:net"
 import { spawn } from "node:child_process"
+import { assurerProjetActif } from "./supabase-projet.mjs"
 
 const STAGING_REF = "upxoxrjumxpzumakawiv"
 const PROD_REF = "gabyhlcwahzquolwxmgd"
@@ -46,55 +47,6 @@ function portOccupe(port) {
     s.on("error", () => resolve(false))
     setTimeout(() => { s.destroy(); resolve(false) }, 800)
   })
-}
-
-async function statutProjet(ref, token) {
-  const rep = await fetch(`https://api.supabase.com/v1/projects/${ref}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  })
-  if (!rep.ok) throw new Error(`API management HTTP ${rep.status} (SUPABASE_ACCESS_TOKEN valide ?)`)
-  return (await rep.json()).status ?? "INCONNU"
-}
-
-// Réveille le projet s'il dort (tier gratuit). Sans ça, le symptôme est
-// déroutant : /v1/projects/<ref>/api-keys répond 200 avec un tableau VIDE (pas
-// une erreur d'auth), donc le script échouait sur « Clé anon staging
-// introuvable » en laissant croire à un problème de token. Vécu le 2026-09-01,
-// staging dormait depuis le 2026-07-20 (cf. le deadlock du workflow keep-alive,
-// .github/workflows/supabase-keepalive.yml).
-async function assurerProjetActif(ref, token) {
-  let statut = await statutProjet(ref, token)
-  if (statut === "ACTIVE_HEALTHY") return
-
-  if (statut !== "INACTIVE") {
-    // Ni actif ni en pause : transition en cours (COMING_UP/RESTORING…) ou état
-    // inattendu. On attend sans demander de restauration (elle serait rejetée).
-    console.log(`→ Projet staging en transition (${statut}) — attente…`)
-  } else {
-    process.stdout.write("→ Projet staging EN PAUSE — demande de restauration… ")
-    const rep = await fetch(`https://api.supabase.com/v1/projects/${ref}/restore`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: "{}",
-    })
-    if (!rep.ok) throw new Error(`restauration refusée (HTTP ${rep.status})`)
-    console.log("ok")
-  }
-
-  // Remontée observée : COMING_UP → RESTORING → ACTIVE_HEALTHY en ~2 min.
-  const debut = Date.now()
-  for (let i = 0; i < 40; i++) {
-    await new Promise((r) => setTimeout(r, 15_000))
-    statut = await statutProjet(ref, token)
-    console.log(`   t+${Math.round((Date.now() - debut) / 1000)}s  ${statut}`)
-    if (statut === "ACTIVE_HEALTHY") {
-      // Le DNS du sous-domaine peut traîner quelques secondes après l'API.
-      await new Promise((r) => setTimeout(r, 10_000))
-      console.log("✓ Staging réveillé.")
-      return
-    }
-  }
-  throw new Error(`staging toujours pas ACTIVE_HEALTHY après 10 min (dernier statut : ${statut})`)
 }
 
 async function main() {

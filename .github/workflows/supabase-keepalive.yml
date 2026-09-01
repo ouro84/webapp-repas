@@ -65,16 +65,13 @@ jobs:
           # --fail : code de sortie non nul sur HTTP >= 400
           # --retry 3 : tolère un hoquet réseau, pas une vraie pause
           ping() {
-            curl --fail --silent --show-error --retry 3 --retry-delay 5 \
-              -H "apikey: ${SUPABASE_ANON_KEY}" \
-              "${SUPABASE_URL}/auth/v1/health" > /dev/null
+            curl --fail --silent --show-error --retry 3 --retry-delay 5               -H "apikey: ${SUPABASE_ANON_KEY}"               "${SUPABASE_URL}/auth/v1/health" > /dev/null
           }
 
+          # jq est préinstallé sur ubuntu-latest (pas de dépendance à ajouter).
+          # `// "INCONNU"` couvre une réponse sans champ status.
           statut_projet() {
-            curl --fail --silent --show-error \
-              -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
-              "https://api.supabase.com/v1/projects/${PROJECT_REF}" \
-              | python3 -c 'import json,sys; print(json.load(sys.stdin).get("status","INCONNU"))'
+            curl --fail --silent --show-error               -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}"               "https://api.supabase.com/v1/projects/${PROJECT_REF}"               | jq -r '.status // "INCONNU"'
           }
 
           if ping; then
@@ -89,8 +86,15 @@ jobs:
             exit 1
           fi
 
-          statut="$(statut_projet)" || statut="INCONNU"
-          echo "Statut du projet ${INSTANCE} (${PROJECT_REF}) : ${statut}"
+          statut="$(statut_projet)" || statut=""
+          echo "Statut du projet ${INSTANCE} (${PROJECT_REF}) : ${statut:-<indéterminable>}"
+
+          # Statut illisible : ne rien tenter à l'aveugle, et le dire clairement
+          # plutôt que de laisser croire que le projet est sain.
+          if [ -z "${statut}" ] || [ "${statut}" = "INCONNU" ]; then
+            echo "::error::Statut de ${INSTANCE} indéterminable (API de management injoignable, jeton expiré, ou ref ${PROJECT_REF} inconnue). Réveil non tenté — vérifier à la main."
+            exit 1
+          fi
 
           # On ne déclenche un restore QUE sur une vraie pause. Un échec de ping
           # sur un projet ACTIVE_HEALTHY est un incident réseau/clé : le restore
@@ -101,22 +105,18 @@ jobs:
           fi
 
           echo "Projet ${INSTANCE} en pause → demande de restauration…"
-          curl --fail --silent --show-error -X POST \
-            -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
-            -H "Content-Type: application/json" \
-            -d '{}' \
-            "https://api.supabase.com/v1/projects/${PROJECT_REF}/restore" > /dev/null
+          curl --fail --silent --show-error -X POST             -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}"             -H "Content-Type: application/json"             -d '{}'             "https://api.supabase.com/v1/projects/${PROJECT_REF}/restore" > /dev/null
 
           # Remontée observée : COMING_UP → RESTORING → ACTIVE_HEALTHY en ~2 min.
           for i in $(seq 1 40); do
             sleep 15
-            statut="$(statut_projet)" || statut="INCONNU"
-            echo "  t+$((i * 15))s  ${statut}"
+            statut="$(statut_projet)" || statut=""
+            echo "  t+$((i * 15))s  ${statut:-<indéterminable>}"
             if [ "${statut}" = "ACTIVE_HEALTHY" ]; then break; fi
           done
 
           if [ "${statut}" != "ACTIVE_HEALTHY" ]; then
-            echo "::error::Restauration de ${INSTANCE} non aboutie après 10 min (dernier statut=${statut})."
+            echo "::error::Restauration de ${INSTANCE} non aboutie après 10 min (dernier statut=${statut:-<indéterminable>})."
             exit 1
           fi
 
