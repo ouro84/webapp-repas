@@ -135,10 +135,26 @@ async function jetonTest(request: APIRequestContext): Promise<{
 export async function reinitialiserJourCoursesDistant(
   request: APIRequestContext
 ): Promise<void> {
+  await definirJourCoursesDistant(request, 1);
+}
+
+/**
+ * Fixe le jour de courses du foyer de test à une valeur ISO arbitraire
+ * (1=lundi…7=dimanche) — sert à faire tomber le cycle sur un jour ≠ lundi et
+ * ainsi l'étaler sur DEUX semaines ISO (#257 : ancre=vendredi → ven/sam/dim
+ * dans une semaine, lun-jeu dans la suivante), scénario qu'aucune spec ne
+ * couvre par défaut (`reinitialiserJourCoursesDistant` remet toujours à 1).
+ * Toute spec qui l'utilise DOIT restaurer via `reinitialiserJourCoursesDistant`
+ * en afterAll (même règle que le reset, cf. commentaire ci-dessus).
+ */
+export async function definirJourCoursesDistant(
+  request: APIRequestContext,
+  jour: number
+): Promise<void> {
   const { url, headers } = await jetonTest(request);
   await request.patch(`${url}/rest/v1/foyers?id=not.is.null`, {
     headers: { ...headers, "Content-Type": "application/json" },
-    data: { jour_courses: 1 },
+    data: { jour_courses: jour },
   });
 }
 

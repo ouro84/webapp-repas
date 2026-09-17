@@ -362,6 +362,18 @@ export function VuePlanningCycle({
   }
 
   // Charge (ou recharge) le cycle d'ancre donnée : lit les 1-2 semaines touchées.
+  //
+  // ⚠️ Un cycle non calendaire (jour_courses ≠ lundi, cf. #257) touche
+  // GÉNÉRALEMENT 2 semaines ISO (ex. ancre=vendredi → ven/sam/dim dans la
+  // semaine N, lun-jeu dans la semaine N+1). Si UNE des lectures parallèles
+  // échoue (réseau, réveil Supabase après pause), elle ne doit JAMAIS être
+  // traitée comme « pas de planning cette semaine-là » (RG absente) : ça
+  // viderait silencieusement le groupe de jours minoritaire (typiquement
+  // ven/sam/dim) sans le signaler, à chaque rechargement du cycle — y compris
+  // juste après une édition. On distingue donc explicitement l'échec de
+  // l'absence légitime, et on n'écrase l'affichage courant QUE si TOUTES les
+  // lectures ont réussi (sinon on garde l'état précédent + un toast, plutôt
+  // qu'une projection partielle).
   const chargerCycle = useCallback(async (ancreCible: string) => {
     setChargement(true);
     try {
@@ -371,9 +383,22 @@ export function VuePlanningCycle({
           joursDuCycle(ancreCible, long).map((d) => dateVersSemaineJour(d).semaine)
         )
       );
+      let echec = false;
       const resultats = await Promise.all(
-        semaines.map((s) => chargerPlanningDistant(s).catch(() => null))
+        semaines.map((s) =>
+          chargerPlanningDistant(s).catch((erreur) => {
+            console.error(`Chargement du planning de la semaine ${s} échoué.`, erreur);
+            echec = true;
+            return null;
+          })
+        )
       );
+      if (echec) {
+        toast.error(
+          "Certains jours du cycle n'ont pas pu être chargés. Réessaie."
+        );
+        return;
+      }
       const map = new Map<string, Planning>();
       semaines.forEach((s, i) => {
         const r = resultats[i];

@@ -4,7 +4,11 @@
 
 import type { Page } from "@playwright/test";
 import { test, expect } from "./fixtures";
-import { nettoyerEtatDistant, reinitialiserJourCoursesDistant } from "./helpers";
+import {
+  definirJourCoursesDistant,
+  nettoyerEtatDistant,
+  reinitialiserJourCoursesDistant,
+} from "./helpers";
 
 test.beforeEach(async ({ request }) => {
   await nettoyerEtatDistant(request);
@@ -83,4 +87,39 @@ test("marquer un repas en restes depuis la vue Cycle persiste au reload", async 
 
   await page.reload();
   await expect(page.getByText("Restes").first()).toBeVisible();
+});
+
+// Régression : un cycle non calendaire (jour de courses ≠ lundi) chevauche
+// TOUJOURS deux semaines ISO (ex. ancre=vendredi → vendredi/samedi/dimanche
+// dans une semaine, lundi-jeudi dans la suivante, cf. lib/cycles.ts). Éditer
+// un jour du groupe minoritaire déclenchait silencieusement la disparition de
+// TOUS ses jours si la lecture de sa semaine échouait (`.catch(() => null)`
+// confondait « pas de planning » et « lecture échouée » dans `chargerCycle`).
+// Aucune autre spec ne fait varier le jour de courses (toutes le remettent à
+// lundi), donc ce chevauchement n'était jamais exercé.
+test("cycle chevauchant deux semaines ISO — éditer vendredi/samedi/dimanche ne fait disparaître aucun jour", async ({
+  page,
+  request,
+}) => {
+  await definirJourCoursesDistant(request, 5); // vendredi
+
+  await page.goto("/planning");
+  await page.getByRole("button", { name: "Cycle" }).click();
+  await page.getByRole("button", { name: "Générer mon cycle" }).click();
+  await expect(page.locator("main li")).toHaveCount(7, { timeout: 20_000 });
+
+  const carteVendredi = page.locator("main li").filter({ hasText: /^Vendredi/ });
+  await carteVendredi.getByRole("button", { name: /^Plus d'actions/ }).first().click();
+  await carteVendredi.getByRole("button", { name: /^Changer/ }).first().click();
+  await confirmerSiModaleJourPasse(page);
+  await expect(page.getByText("Recette remplacée")).toBeVisible();
+
+  // Les 7 jours (dont samedi/dimanche, même semaine ISO que vendredi) restent
+  // tous affichés avec un repas — aucun "Rien de prévu" fantôme.
+  await expect(page.locator("main li")).toHaveCount(7);
+  await expect(page.getByText("Rien de prévu")).toHaveCount(0);
+
+  await page.reload();
+  await expect(page.locator("main li")).toHaveCount(7);
+  await expect(page.getByText("Rien de prévu")).toHaveCount(0);
 });

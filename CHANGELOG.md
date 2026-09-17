@@ -35,6 +35,7 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ### Corrigé
 
+- Vue Cycle : des jours (typiquement vendredi/samedi/dimanche si ton jour de courses n'est pas lundi) pouvaient disparaître de l'affichage juste après une édition, en cas d'incident réseau ponctuel — sans aucun message d'erreur. La page confond désormais correctement « pas de repas prévu » et « impossible à charger » (un message s'affiche dans ce second cas, et l'affichage précédent est conservé plutôt que vidé).
 - Barre de navigation qui débordait de l'écran sur mobile : depuis l'ajout du lien « Ce soir / Ce midi », les quatre libellés de section — plus le logo, l'aide et l'avatar — demandaient **480 px** de large, soit davantage qu'un écran de téléphone (390 px sur un iPhone 12). La page se laissait donc **faire défiler horizontalement** et le contenu n'était plus centré. Sur mobile, les sections s'affichent désormais **en icônes** (planning, courses, recettes, prochain repas) ; les libellés texte réapparaissent dès qu'il y a la place (tablette et ordinateur). Vérifié de 320 à 1280 px de large.
 
 - Lisibilité du texte secondaire (#214, audit #51) : les libellés et descriptions affichés en gris-vert atténué passaient sous le seuil de contraste recommandé (≈ 3,6:1 en thème clair) — ils sont désormais un cran plus opaques (**≈ 5,1:1 en clair, ≈ 7,7:1 en sombre**), donc lisibles, y compris en plein soleil (utile pour la liste de courses en magasin). Aucun changement de mise en page.
