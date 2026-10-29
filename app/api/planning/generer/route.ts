@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { apiError } from "@/lib/errors"
+import { aujourdhuiParis } from "@/lib/semaines"
 import { limiteGeneration } from "@/lib/rate-limit"
 import {
   ErreurGeneration,
@@ -63,7 +64,9 @@ export async function POST(request: Request) {
   }
 
   try {
-    const resultat = await genererPourUtilisateur(supabase, demande)
+    // Date du jour à Paris (le serveur tourne en UTC) : la semaine par défaut
+    // de l'onboarding (corps vide) suit celle du navigateur (#305).
+    const resultat = await genererPourUtilisateur(supabase, demande, { aujourdhui: aujourdhuiParis() })
     const { vegeNonHonore, mixNonHonore, saisonNonHonore } = resultat
 
     // Mode cycle : jours du cycle par semaine ISO touchée, persistés ensuite

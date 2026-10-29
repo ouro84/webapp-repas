@@ -4,6 +4,7 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  aujourdhuiParis,
   decalageEntre,
   formaterSemaine,
   libelleRelatif,
@@ -134,3 +135,20 @@ describe("semaineParDefaut (RG-21)", () => {
     expect(semaineParDefaut(DIMANCHE_7_JUIN)).toBe("2026-W24");
   });
 });
+
+describe("aujourdhuiParis (jumeau /courses : date du foyer, pas UTC du serveur)", () => {
+  it("vendredi 23h30 UTC = samedi 00h30 à Paris (heure d’hiver) → samedi", () => {
+    const d = aujourdhuiParis(new Date("2026-10-30T23:30:00Z"))
+    expect([d.getFullYear(), d.getMonth(), d.getDate(), d.getDay()]).toEqual([2026, 9, 31, 6])
+  })
+
+  it("heure d'hiver : samedi 23h30 UTC = dimanche 00h30 à Paris", () => {
+    const d = aujourdhuiParis(new Date("2026-10-31T23:30:00Z"))
+    expect([d.getMonth(), d.getDate()]).toEqual([10, 1])
+  })
+
+  it("en journée, même jour qu'à Paris", () => {
+    const d = aujourdhuiParis(new Date("2026-10-29T10:00:00Z"))
+    expect([d.getMonth(), d.getDate()]).toEqual([9, 29])
+  })
+})

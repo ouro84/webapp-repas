@@ -7,6 +7,10 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+### Corrigé
+
+- Premier planning de l'onboarding : s'il est généré le samedi entre minuit et 1 h (2 h en été), il porte bien sur la semaine suivante, comme le reste de l'app, et non plus sur la semaine en cours (le serveur calculait la date en heure UTC).
+
 ### Sécurité
 
 - Limitation du nombre de requêtes désormais active en production (#191, #305) : la génération de planning (10 par minute) et le serveur MCP des assistants IA (60 par minute) sont plafonnés par utilisateur. Un usage normal n'est jamais concerné.

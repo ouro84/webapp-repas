@@ -161,6 +161,24 @@ describe("lirePlanning (RG-73, RG-78)", () => {
   })
 })
 
+describe("lirePlanning — semaine ISO inexistante", () => {
+  it("2027-W53 et 2027-W00 n'existent pas → ErreurOutil, pas de liste vide silencieuse", async () => {
+    const { client } = mock()
+    await expect(lirePlanning(client, { semaine: "2027-W53" }, new Date(2027, 11, 20, 12))).rejects.toThrow(
+      "Semaine invalide : 2027-W53 n’existe pas. Utilise une semaine ISO existante (ex. 2026-W44)."
+    )
+    await expect(lirePlanning(client, { semaine: "2027-W00" }, new Date(2027, 0, 5, 12))).rejects.toThrow(
+      "Semaine invalide : 2027-W00 n’existe pas."
+    )
+  })
+
+  it("2026-W53 existe (année à 53 semaines)", async () => {
+    const { client } = mock()
+    const resultat = await lirePlanning(client, { semaine: "2026-W53" }, new Date(2026, 11, 20, 12))
+    expect(resultat.periode.du).toBe("2026-12-28")
+  })
+})
+
 describe("lireListeCourses (RG-78)", () => {
   it("lireListeCourses : non cochés par défaut, groupés par libellé de catégorie, manuels inclus (RG-78)", async () => {
     const { client } = mock()

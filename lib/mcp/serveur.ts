@@ -10,7 +10,7 @@ import { z } from "zod"
 import { creerClientParJeton } from "@/lib/supabase/par-jeton"
 import { ErreurOutil } from "@/lib/mcp/erreurs"
 import { lireListeCourses, lirePlanning, lireRecette } from "@/lib/mcp/lecture"
-import { aujourdhuiParis } from "@/lib/mcp/repas"
+import { aujourdhuiParis } from "@/lib/semaines"
 import type { ClientSupabase } from "@/lib/supabase/types"
 
 const ERREUR_INTERNE = "Erreur interne d'OMQ. Réessaie dans un instant."
@@ -46,7 +46,7 @@ export function enregistrerOutilsLecture(server: McpServer): void {
     {
       title: "Lire le planning des repas",
       description:
-        "Repas prévus, chacun désigné par date (AAAA-MM-JJ) et créneau (midi | soir), avec la recette et le nombre de personnes. Sans argument : le cycle de courses en cours. Avec `semaine` (AAAA-Www) : cette semaine ISO. Une liste vide signifie qu'aucun repas n'est prévu : l'utilisateur peut générer son planning depuis l'app OMQ.",
+        "Repas prévus, chacun désigné par date (AAAA-MM-JJ) et créneau (midi | soir), avec la recette et le nombre de personnes. Sans argument : le cycle de courses en cours. Avec `semaine` (AAAA-Www) : cette semaine ISO. Une liste vide signifie qu'aucun repas n'est prévu : l'utilisateur peut générer son planning depuis l'app OMQ. Un repas `restes: true` ne se cuisine pas : on finit les restes du plat indiqué.",
       inputSchema: z.object({
         semaine: z.string().optional().describe("Semaine ISO, ex. 2026-W44. Par défaut : le cycle en cours."),
       }),
@@ -72,7 +72,7 @@ export function enregistrerOutilsLecture(server: McpServer): void {
     {
       title: "Lire la recette d'un repas",
       description:
-        "Ingrédients à l'échelle du repas et étapes d'une recette prévue, désignée par date et créneau. Appelle d'abord lire_planning si tu ne connais pas la date.",
+        "Ingrédients à l'échelle du repas et étapes d'une recette prévue, désignée par date et créneau. Appelle d'abord lire_planning si tu ne connais pas la date. Si `restes: true`, il n'y a rien à cuisiner : on finit les restes de ce plat, ingrédients et étapes ne servent qu'à le rappeler.",
       inputSchema: z.object({
         date: z.string().describe("Date du repas, AAAA-MM-JJ."),
         creneau: z.enum(["midi", "soir"]).describe("Créneau du repas."),

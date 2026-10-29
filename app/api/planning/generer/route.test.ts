@@ -74,26 +74,38 @@ describe("POST /api/planning/generer", () => {
     expect(generation.genererPourUtilisateur).toHaveBeenLastCalledWith(expect.anything(), {
       ancre: "2026-10-29",
       longueur: 7,
-    })
+    }, { aujourdhui: expect.any(Date) })
 
     await POST(requete({ ancre: "2026-10-29" }))
     expect(generation.genererPourUtilisateur).toHaveBeenLastCalledWith(expect.anything(), {
       ancre: "2026-10-29",
       longueur: undefined,
-    })
+    }, { aujourdhui: expect.any(Date) })
   })
 
   it("corps semaine non textuelle ou non JSON : semaine par défaut", async () => {
     await POST(requete({ semaine: 12 }))
-    expect(generation.genererPourUtilisateur).toHaveBeenLastCalledWith(expect.anything(), {})
+    expect(generation.genererPourUtilisateur).toHaveBeenLastCalledWith(expect.anything(), {}, { aujourdhui: expect.any(Date) })
 
     await POST(requete("pas du json"))
-    expect(generation.genererPourUtilisateur).toHaveBeenLastCalledWith(expect.anything(), {})
+    expect(generation.genererPourUtilisateur).toHaveBeenLastCalledWith(expect.anything(), {}, { aujourdhui: expect.any(Date) })
 
     await POST(requete({ semaine: "2026-W45" }))
     expect(generation.genererPourUtilisateur).toHaveBeenLastCalledWith(expect.anything(), {
       semaine: "2026-W45",
-    })
+    }, { aujourdhui: expect.any(Date) })
+  })
+
+  it("date du jour à Paris, pas en UTC (onboarding le samedi à 0 h 30)", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] })
+    vi.setSystemTime(new Date("2026-10-30T23:30:00Z")) // samedi 0 h 30 à Paris (UTC+1)
+    try {
+      await POST(requete({}))
+      const { aujourdhui } = generation.genererPourUtilisateur.mock.calls.at(-1)![2] as { aujourdhui: Date }
+      expect([aujourdhui.getMonth(), aujourdhui.getDate(), aujourdhui.getDay()]).toEqual([9, 31, 6])
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it("réponse cycle inchangée", async () => {

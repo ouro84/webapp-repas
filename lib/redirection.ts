@@ -18,3 +18,8 @@ export function cheminDeRetour(brut: string | null): string {
     return "/planning"
   }
 }
+
+/** Vrai pour l'espace OAuth (`/oauth`, `/oauth/…`), faux pour `/oauthxyz`. */
+export function estCheminOAuth(pathname: string): boolean {
+  return pathname === "/oauth" || pathname.startsWith("/oauth/")
+}

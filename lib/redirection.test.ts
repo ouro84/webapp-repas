@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { cheminDeRetour } from "@/lib/redirection"
+import { cheminDeRetour, estCheminOAuth } from "@/lib/redirection"
 
 describe("cheminDeRetour (#305, anti open-redirect)", () => {
   it("accepte /oauth/consent?authorization_id=abc", () => {
@@ -20,5 +20,14 @@ describe("cheminDeRetour (#305, anti open-redirect)", () => {
 
   it("garde chemin, requête et ancre d'un chemin relatif", () => {
     expect(cheminDeRetour("/oauth/consent?authorization_id=abc#x")).toBe("/oauth/consent?authorization_id=abc#x")
+  })
+})
+
+describe("estCheminOAuth", () => {
+  it("vrai pour /oauth et /oauth/…, faux pour /oauthxyz", () => {
+    expect(estCheminOAuth("/oauth")).toBe(true)
+    expect(estCheminOAuth("/oauth/consent")).toBe(true)
+    expect(estCheminOAuth("/oauthxyz")).toBe(false)
+    expect(estCheminOAuth("/planning")).toBe(false)
   })
 })
