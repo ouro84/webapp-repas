@@ -10,6 +10,13 @@ const m = vi.hoisted(() => ({
   lireRecette: vi.fn(),
   lirePlanning: vi.fn(),
   lireListeCourses: vi.fn(),
+  limiteGeneration: vi.fn(),
+  genererCycle: vi.fn(),
+  remplacerRepas: vi.fn(),
+  changerPersonnes: vi.fn(),
+  ajouterRecette: vi.fn(),
+  ajouterArticleCourses: vi.fn(),
+  cocherArticle: vi.fn(),
   creerClientParJeton: vi.fn((jeton: string) => ({ jeton })),
 }))
 
@@ -17,7 +24,17 @@ vi.mock("@/lib/mcp/auth", () => ({
   verifierJetonMcp: m.verifierJetonMcp,
   emetteurOAuth: () => "https://ref.supabase.co/auth/v1",
 }))
-vi.mock("@/lib/rate-limit", () => ({ limiteMcp: m.limiteMcp }))
+vi.mock("@/lib/rate-limit", () => ({ limiteMcp: m.limiteMcp, limiteGeneration: m.limiteGeneration }))
+vi.mock("@/lib/mcp/ecriture-planning", () => ({
+  genererCycle: m.genererCycle,
+  remplacerRepas: m.remplacerRepas,
+  changerPersonnes: m.changerPersonnes,
+}))
+vi.mock("@/lib/mcp/ecriture-recettes", () => ({ ajouterRecette: m.ajouterRecette }))
+vi.mock("@/lib/mcp/ecriture-courses", () => ({
+  ajouterArticleCourses: m.ajouterArticleCourses,
+  cocherArticle: m.cocherArticle,
+}))
 vi.mock("@/lib/mcp/lecture", () => ({
   lireRecette: m.lireRecette,
   lirePlanning: m.lirePlanning,
@@ -72,6 +89,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   m.verifierJetonMcp.mockResolvedValue(AUTH_INFO)
   m.limiteMcp.mockResolvedValue({ autorise: true })
+  m.limiteGeneration.mockResolvedValue({ autorise: true })
 })
 
 describe("POST /api/mcp — authentification (RG-71)", () => {
@@ -93,12 +111,22 @@ describe("POST /api/mcp — authentification (RG-71)", () => {
 })
 
 describe("POST /api/mcp — outils (US-51, RG-78)", () => {
-  it("jeton valide : tools/list expose exactement lire_planning, lire_liste_courses, lire_recette", async () => {
+  it("jeton valide : tools/list expose exactement les 3 lectures et les 6 écritures (#306)", async () => {
     const reponse = await appeler("tools/list")
     expect(reponse.status).toBe(200)
     const { result } = await lire(reponse)
     const noms = (result?.tools as Array<{ name: string }>).map((t) => t.name).sort()
-    expect(noms).toEqual(["lire_liste_courses", "lire_planning", "lire_recette"])
+    expect(noms).toEqual([
+      "ajouter_article_courses",
+      "ajouter_recette",
+      "changer_personnes",
+      "cocher_article",
+      "generer_cycle",
+      "lire_liste_courses",
+      "lire_planning",
+      "lire_recette",
+      "remplacer_repas",
+    ])
   })
 
   it("tools/call lire_recette : ErreurOutil → isError true et message français", async () => {
@@ -167,5 +195,49 @@ describe("POST /api/mcp — rate-limit (RG-78)", () => {
     expect(m.limiteMcp).toHaveBeenCalledWith("user-1")
     const corps = await reponse.json()
     expect(corps.error.message).toBe("Trop de requêtes en peu de temps. Patiente une minute puis réessaie.")
+  })
+})
+
+describe("POST /api/mcp — outils d'écriture (#306, US-52)", () => {
+  it("generer_cycle au-delà du quota de génération : isError, génération non appelée", async () => {
+    m.limiteGeneration.mockResolvedValue({ autorise: false })
+    const { result } = await lire(await appeler("tools/call", { name: "generer_cycle", arguments: {} }))
+    expect(m.limiteGeneration).toHaveBeenCalledWith("user-1")
+    expect(result?.isError).toBe(true)
+    expect(result?.content).toEqual([
+      { type: "text", text: "Trop de générations en peu de temps. Patiente une minute puis réessaie." },
+    ])
+    expect(m.genererCycle).not.toHaveBeenCalled()
+  })
+
+  it("generer_cycle dans le quota : client par jeton, arguments et date de Paris transmis", async () => {
+    m.genererCycle.mockResolvedValue({ periode: {}, repas: [], avertissements: {} })
+    await appeler("tools/call", { name: "generer_cycle", arguments: { remplacer: true } })
+    expect(m.genererCycle).toHaveBeenCalledWith({ jeton: "jwt-oauth" }, { remplacer: true }, expect.any(Date))
+  })
+
+  it("ajouter_recette reçoit l'utilisateur du jeton comme auteur", async () => {
+    m.ajouterRecette.mockResolvedValue({ recette: {} })
+    const recette = {
+      nom: "Gratin",
+      temps_preparation: "normal",
+      ingredients: [{ nom: "pommes de terre", quantite: 500, unite: "g", categorie: "legumes-fruits" }],
+    }
+    const { result } = await lire(await appeler("tools/call", { name: "ajouter_recette", arguments: recette }))
+    expect(result?.isError).toBeFalsy()
+    expect(m.ajouterRecette).toHaveBeenCalledWith({ jeton: "jwt-oauth" }, "user-1", recette)
+  })
+
+  it("changer_personnes transmet date, créneau et nombre", async () => {
+    m.changerPersonnes.mockResolvedValue({ repas: {} })
+    await appeler("tools/call", {
+      name: "changer_personnes",
+      arguments: { date: "2026-10-31", creneau: "soir", personnes: 6 },
+    })
+    expect(m.changerPersonnes).toHaveBeenCalledWith(
+      { jeton: "jwt-oauth" },
+      { date: "2026-10-31", creneau: "soir", personnes: 6 },
+      expect.any(Date)
+    )
   })
 })

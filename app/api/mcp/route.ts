@@ -8,13 +8,17 @@
 
 import { createMcpHandler, withMcpAuth } from "mcp-handler"
 import { verifierJetonMcp } from "@/lib/mcp/auth"
-import { enregistrerOutilsLecture } from "@/lib/mcp/serveur"
+import { enregistrerOutilsEcriture, enregistrerOutilsLecture } from "@/lib/mcp/serveur"
 import { limiteMcp } from "@/lib/rate-limit"
 import { version } from "@/package.json"
 
-const serveur = createMcpHandler((server) => enregistrerOutilsLecture(server), {
-  serverInfo: { name: "omq", version },
-})
+const serveur = createMcpHandler(
+  (server) => {
+    enregistrerOutilsLecture(server)
+    enregistrerOutilsEcriture(server) // #306, US-52
+  },
+  { serverInfo: { name: "omq", version } }
+)
 
 async function avecQuota(req: Request): Promise<Response> {
   const userId = req.auth?.extra?.userId
