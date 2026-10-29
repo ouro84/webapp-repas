@@ -177,7 +177,7 @@ Le code doit être versionné, sauvegardé hors de la machine locale, et permett
 
 ## Structure de dossiers (à jour)
 
-> Mise à jour 2026-10-29 (#304, socle MCP) ; 2026-06-15 : l'arbre « cible » d'origine (trio MVP `lib/{generateur,courses,supabase}.ts`) a été remplacé par l'arborescence réelle, qui a beaucoup grossi (épopées #2, #22, #45, #49, #56, #86, #105…). Vue d'ensemble représentative — voir `CLAUDE.md` pour les conventions par fichier.
+> Mise à jour 2026-10-29 (#304 socle MCP, #305 OAuth + MCP lecture) ; 2026-06-15 : l'arbre « cible » d'origine (trio MVP `lib/{generateur,courses,supabase}.ts`) a été remplacé par l'arborescence réelle, qui a beaucoup grossi (épopées #2, #22, #45, #49, #56, #86, #105…). Vue d'ensemble représentative — voir `CLAUDE.md` pour les conventions par fichier.
 
 ```
 webapp-repas/
@@ -196,13 +196,16 @@ webapp-repas/
 │   ├── bienvenue/                # "/bienvenue" — tunnel d'onboarding (#22)
 │   ├── login/  signup/  mot-de-passe-oublie/
 │   ├── auth/                     # reinitialiser/ (page) + signout/ (route)
-│   └── api/                      # planning/generer (adaptateur HTTP de lib/generation.ts), compte/supprimer
+│   ├── oauth/consent/            # écran de consentement OAuth 2.1 (#305)
+│   ├── .well-known/              # oauth-protected-resource (metadata RFC 9728 du MCP, #305)
+│   └── api/                      # planning/generer (adaptateur HTTP de lib/generation.ts), compte/supprimer, mcp (serveur MCP, #305)
 │
 ├── components/
 │   ├── ui/                       # Génériques (logo, nav, badges, confirmation, avatar, thème…)
 │   ├── planning/                 # badge-temps, fiche-recette, selecteur-recette
 │   ├── recettes/                 # formulaire-recette
-│   ├── profil/                   # panneau-foyer, edition-identite, modale-doublons, changer-mot-de-passe
+│   ├── profil/                   # panneau-foyer, edition-identite, modale-doublons, changer-mot-de-passe, assistants-connectes
+│   ├── oauth/                    # ecran-consentement (#305)
 │   └── auth/                     # formulaire-auth
 │
 ├── lib/                          # Logique métier pure (sans UI) + accès données
@@ -213,6 +216,8 @@ webapp-repas/
 │   ├── generation.ts             # Génération serveur à client injecté (route + MCP, #304)
 │   ├── liste-courses.ts (pur) / liste-courses-cycle.ts (service serveur à client injecté, #304)
 │   ├── stockage.ts  sync.ts  persistance.ts  recettes.ts  reglages-data.ts  profil.ts  foyer.ts  invitation.ts  theme.ts
+│   ├── mcp/                      # Serveur MCP (#305) : auth (jeton OAuth), serveur (outils), lecture, repas, erreurs
+│   ├── redirection.ts            # cheminDeRetour (retour après login, anti open-redirect)
 │   ├── adapters.ts               # Conversion DB → domaine
 │   ├── errors.ts  messages-auth.ts
 │   └── supabase/                 # client.ts (navigateur), server.ts (cookies), admin.ts (service_role, suppression de compte),
@@ -331,7 +336,7 @@ Toute nouvelle origine externe (CDN, API tierce) devra être ajoutée à la futu
 
 ## ADR-11 — Serveur MCP et autorisation OAuth 2.1 (#302)
 
-> Statut : **proposé** (grilling 2026-10-29), à compléter des choix effectifs pendant #304→#306.
+> Statut : **accepté** (grilling 2026-10-29) ; choix effectifs de #304 et #305 ci-dessous, #306 à compléter.
 
 ### Contexte
 L'utilisateur veut piloter OMQ depuis un assistant IA (son Hermes Agent via WhatsApp/Telegram), et la fonctionnalité doit servir le plus grand nombre de clients (Claude, Cursor, OpenCode, ChatGPT…). Or les clients grand public n'acceptent pas de jeton statique par utilisateur pour un MCP distant : Claude (connecteurs custom) et ChatGPT exigent **OAuth 2.1** (PKCE S256, découverte RFC 9728, enregistrement dynamique). Côté code, la génération est inline dans une route, la persistance d'un cycle est côté client et non atomique, et toutes les lectures dépendent du client navigateur.
@@ -352,6 +357,15 @@ Un seul mécanisme d'auth couvre tous les clients visés, sans serveur d'autoris
 - `chargerListeCoursesCycle` (`lib/liste-courses-cycle.ts`) compose la liste avec `assemblerListeCourses`, l'assembleur pur de `/courses`.
 - RPC `sauvegarder_cycle` (jours du cycle sur N semaines ISO + purge des coches RG-13, une transaction), utilisée par « Générer mon cycle » dès #304 et par le MCP ensuite.
 - `creerClientParJeton(jeton)` (`lib/supabase/par-jeton.ts`) : clé anon + `Authorization: Bearer`, jamais `service_role`.
+
+### Mise en œuvre #305 (OAuth 2.1 + lecture)
+- **Supabase OAuth Server** activé par l'API de management (`scripts/configurer-oauth-supabase.mjs` : `oauth_server_enabled`, `oauth_server_allow_dynamic_registration`, `oauth_server_authorization_path = /oauth/consent`), sans dashboard. Signature déjà asymétrique (ES256) sur staging et prod. URL de consentement = `site_url` + chemin.
+- **Vérification du jeton par `auth.getClaims()`** de supabase-js (JWKS en cache), sans dépendance JWT ; exige `role = authenticated`, `sub` et **`client_id`** : un JWT de session web n'ouvre pas le MCP.
+- **`mcp-handler` 2.3** (SDK MCP v2, sans état) + `withMcpAuth` ; metadata RFC 9728 servie à `/.well-known/oauth-protected-resource` et à sa variante `/api/mcp`, `resource` = `<origine>/api/mcp`.
+- Outils `lire_planning`, `lire_liste_courses`, `lire_recette` (`lib/mcp/`), composés sur les services de `lib/` ; erreurs `ErreurOutil` actionnables.
+- Rate-limit `limiteMcp` : préfixe Upstash `rl:mcp`, 60 requêtes/min/utilisateur (NO-OP sans secrets Upstash).
+- **Révocation par `listGrants` / `revokeGrant`** (section « Assistants connectés » de `/profil`) : le repli « Déconnecter tous les assistants » est inutile. Refresh tokens invalidés immédiatement, jeton d'accès valable jusqu'à expiration (1 h).
+- **Le consentement annonce aussi l'écriture** : un grant accordé en #305 couvrira les outils de #306, Supabase ne distinguant pas de portée lecture/écriture.
 
 ### Alternatives écartées
 - **Jeton personnel (Bearer statique)** : refusé par Claude et ChatGPT ; Cursor ignore les en-têtes quand le serveur annonce une découverte OAuth. Gardé seulement comme repli si le premier login OAuth de Hermes headless (Docker sur NAS) échoue.
