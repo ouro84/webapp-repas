@@ -48,8 +48,11 @@ next-env.d.ts
 /test-results/
 /playwright-report/
 
-# outils de dev locaux (non partagés)
-.claude/
+# outils de dev locaux (non partagés) — sauf les règles agent et les réglages
+# partagés de Claude Code, versionnés (critère de merge, cf. CLAUDE.md)
+.claude/*
+!.claude/rules/
+!.claude/settings.json
 revueDesign/
 # NB : .understand-anything/ n'est volontairement PAS ignoré — le knowledge
 # graph a vocation à être commité prochainement (à versionner sciemment).
