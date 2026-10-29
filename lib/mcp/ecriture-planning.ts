@@ -22,8 +22,11 @@ import { chargerJourCoursesFoyer } from "@/lib/foyer"
 import { ErreurGeneration, genererPourUtilisateur, semaineDansPlage } from "@/lib/generation"
 import {
   creneauActif,
+  joursSansLegume,
+  prefereVegeSlot,
   remplacerSlot,
   remplacerSlotManuel,
+  reposNonSaison,
   retirerCreneauxDesactives,
 } from "@/lib/generateur"
 import {
@@ -63,11 +66,15 @@ export type CycleGenereMcp = {
  * mon cycle ». Refuse si la fenêtre porte déjà un repas affiché, sauf
  * `remplacer: true`. Écriture atomique `sauvegarder_cycle` : jours hors cycle
  * préservés (RG-56), coches du cycle réinitialisées (RG-13).
+ *
+ * `verifierQuota` (quota de génération, lève `ErreurOutil` au-delà) n'est
+ * appelé que juste avant de générer : un refus ne consomme rien.
  */
 export async function genererCycle(
   supabase: ClientSupabase,
   args: { ancre?: string; remplacer?: boolean },
-  aujourdhui: Date = new Date()
+  aujourdhui: Date = new Date(),
+  verifierQuota: () => Promise<void> = async () => {}
 ): Promise<CycleGenereMcp> {
   const jourCourses = await chargerJourCoursesFoyer(supabase)
   let ancre: string
@@ -101,6 +108,7 @@ export async function genererCycle(
     }
   }
 
+  await verifierQuota()
   let resultat
   try {
     resultat = await genererPourUtilisateur(supabase, { ancre, longueur }, { aujourdhui })
@@ -188,8 +196,28 @@ async function homonymeDuFoyer(supabase: ClientSupabase, homonymes: Recette[]): 
 }
 
 export type RemplacementMcp =
-  | { modifie: true; repas: RepasMcp }
-  | { modifie: false; candidats: string[] }
+  | { modifie: true; repas: RepasMcp; avertissements?: string[] }
+  | { modifie: false; candidats: string[]; total: number }
+
+const CANDIDATS_MAX = 10
+
+// Préférences souples non honorées par un tirage, pour ce seul repas : les
+// mêmes messages que les toasts du site après « ↺ changer » (RG-26/27/28).
+function avertissementsTirage(planning: Planning, cible: RepasCible): string[] {
+  const { jour, type, reglages } = cible
+  const remplacante = planning.jours.find((jp) => jp.jour === jour)?.[type]
+  const messages: string[] = []
+  if (prefereVegeSlot(jour, type, reglages) && remplacante?.vegetarien !== true) {
+    messages.push("Pas de recette végétarienne disponible pour ce repas.")
+  }
+  if (joursSansLegume(planning, reglages).includes(jour)) {
+    messages.push("Ce jour n’a pas de repas « légumes » (pas assez de recettes légumes).")
+  }
+  if (reposNonSaison(planning, reglages).some((s) => s.jour === jour && s.typeRepas === type)) {
+    messages.push("Ce repas est hors saison (pas assez de recettes de saison).")
+  }
+  return messages
+}
 
 /**
  * `remplacer_repas` (RG-75) : sans `recette`, tirage automatique identique au
@@ -206,17 +234,22 @@ export async function remplacerRepas(
   const cible = await repasCible(supabase, args, aujourdhui)
   const recettes = await chargerRecettes(supabase)
 
-  let planning: Planning | null
+  let planning: Planning
   if (args.recette === undefined) {
     const preferences = await chargerPreferences(supabase).catch((erreur) => {
       console.error("Lecture des préférences échouée (tirage sans préférence).", erreur)
       return new Map() as Awaited<ReturnType<typeof chargerPreferences>>
     })
-    planning = remplacerSlot(cible.planning, cible.jour, cible.type, recettes, cible.reglages, Math.random, preferences)
-    if (!planning) {
+    const tire = remplacerSlot(cible.planning, cible.jour, cible.type, recettes, cible.reglages, Math.random, preferences)
+    if (!tire) {
       throw new ErreurOutil(
         "Aucune autre recette ne convient à ce créneau. Propose une recette précise (paramètre recette) ou ajoute-en une avec ajouter_recette."
       )
+    }
+    return {
+      modifie: true,
+      repas: await ecrireCreneau(supabase, cible, tire, args),
+      avertissements: avertissementsTirage(tire, cible),
     }
   } else {
     let trouvees = rechercherRecettes(recettes, args.recette)
@@ -234,7 +267,8 @@ export async function remplacerRepas(
         candidats: trouvees
           .map((r) => r.nom)
           .sort((a, b) => a.localeCompare(b, "fr"))
-          .slice(0, 10),
+          .slice(0, CANDIDATS_MAX),
+        total: trouvees.length,
       }
     }
     planning = remplacerSlotManuel(cible.planning, cible.jour, cible.type, trouvees[0])!

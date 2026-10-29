@@ -149,6 +149,25 @@ describe("cocherArticle (RG-77, RG-10, RG-12)", () => {
     expect(appels.find((a) => a.table === "etat_courses_article")!.ops[0][1]).toMatchObject({ cle: "lait|l" })
   })
 
+  it("homonymes indiscernables (même nom, même quantité) : coche le premier non coché", async () => {
+    const pile = (id: string, coche: boolean) =>
+      ing("Piles", 0, "piece", { categorie: "autre", source: "manuel", id, coche })
+    liste([pile("a1", true), pile("a2", false)])
+    const { client, appels } = mock()
+    const resultat = await cocherArticle(client, { libelle: "piles" }, JEUDI)
+    expect(resultat).toMatchObject({ modifie: true })
+    expect(appels.find((a) => a.table === "article_manuel")!.ops).toEqual([["update", { coche: true }], ["eq", "id", "a2"]])
+  })
+
+  it("homonymes indiscernables tous déjà cochés : modifie false, rien écrit", async () => {
+    const pile = (id: string) => ing("Piles", 0, "piece", { categorie: "autre", source: "manuel", id, coche: true })
+    liste([pile("a1"), pile("a2")])
+    const { client, appels } = mock()
+    const resultat = await cocherArticle(client, { libelle: "piles" }, JEUDI)
+    expect(resultat).toMatchObject({ modifie: false, article: { nom: "Piles", coche: true } })
+    expect(appels.filter((a) => a.table === "article_manuel")).toEqual([])
+  })
+
   it("introuvable : ErreurOutil qui cite lire_liste_courses", async () => {
     liste([ing("carottes", 400, "g")])
     const { client } = mock()

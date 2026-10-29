@@ -47,7 +47,7 @@ export function datesDeSemaine(semaine: string): string[] {
 }
 
 export const HORS_PLAGE =
-  "Cette date est hors de la plage consultable (12 semaines en arrière, 6 en avant). Choisis une date plus proche."
+  "Cette date est hors de la plage autorisée (12 semaines en arrière, 6 en avant). Choisis une date plus proche."
 
 const MESSAGE_DATE_INVALIDE = "Date invalide : utilise le format AAAA-MM-JJ (ex. 2026-10-29)."
 

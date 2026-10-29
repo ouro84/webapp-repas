@@ -26,7 +26,8 @@ begin
   from jsonb_array_elements(coalesce(p_slots, '[]'::jsonb)) as s
   where not exists (
     select 1 from recette r
-    where r.id::text = s->>'recette_id'
+    -- Cast côté valeur (et non r.id::text) : la recherche passe par la clé primaire.
+    where r.id = (s->>'recette_id')::uuid
       and (r.foyer_id is null or r.foyer_id = p_foyer)
   )
   limit 1;

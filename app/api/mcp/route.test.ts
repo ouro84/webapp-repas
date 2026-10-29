@@ -199,21 +199,41 @@ describe("POST /api/mcp — rate-limit (RG-78)", () => {
 })
 
 describe("POST /api/mcp — outils d'écriture (#306, US-52)", () => {
-  it("generer_cycle au-delà du quota de génération : isError, génération non appelée", async () => {
+  it("generer_cycle : le contrôle de quota passé à l'outil refuse au-delà du quota de génération", async () => {
     m.limiteGeneration.mockResolvedValue({ autorise: false })
+    // L'outil appelle le contrôle juste avant de générer (un refus « cycle existant » ne consomme rien).
+    m.genererCycle.mockImplementation(async (_s: unknown, _a: unknown, _d: unknown, quota: () => Promise<void>) => {
+      await quota()
+      return { periode: {}, repas: [], avertissements: {} }
+    })
     const { result } = await lire(await appeler("tools/call", { name: "generer_cycle", arguments: {} }))
     expect(m.limiteGeneration).toHaveBeenCalledWith("user-1")
     expect(result?.isError).toBe(true)
     expect(result?.content).toEqual([
       { type: "text", text: "Trop de générations en peu de temps. Patiente une minute puis réessaie." },
     ])
-    expect(m.genererCycle).not.toHaveBeenCalled()
   })
 
-  it("generer_cycle dans le quota : client par jeton, arguments et date de Paris transmis", async () => {
+  it("generer_cycle : client par jeton, arguments, date de Paris et contrôle de quota transmis", async () => {
     m.genererCycle.mockResolvedValue({ periode: {}, repas: [], avertissements: {} })
     await appeler("tools/call", { name: "generer_cycle", arguments: { remplacer: true } })
-    expect(m.genererCycle).toHaveBeenCalledWith({ jeton: "jwt-oauth" }, { remplacer: true }, expect.any(Date))
+    expect(m.genererCycle).toHaveBeenCalledWith(
+      { jeton: "jwt-oauth" },
+      { remplacer: true },
+      expect.any(Date),
+      expect.any(Function)
+    )
+    expect(m.limiteGeneration).not.toHaveBeenCalled()
+  })
+
+  it("les descriptions guident l'assistant : restes, singulier des ingrédients, total des candidats", async () => {
+    const { result } = await lire(await appeler("tools/list"))
+    const description = (nom: string) =>
+      (result?.tools as Array<{ name: string; description: string }>).find((t) => t.name === nom)!.description
+    expect(description("remplacer_repas")).toContain("restes")
+    expect(description("remplacer_repas")).toContain("`total`")
+    expect(description("changer_personnes")).toContain("restes")
+    expect(description("ajouter_recette")).toContain("singulier")
   })
 
   it("ajouter_recette reçoit l'utilisateur du jeton comme auteur", async () => {

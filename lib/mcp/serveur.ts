@@ -115,13 +115,15 @@ export function enregistrerOutilsEcriture(server: McpServer): void {
       }),
     },
     async (args, ctx) =>
-      executer(ctx, async (supabase, userId) => {
-        // Même seau que la génération web (rl:generer, 10/min) : un seul quota de génération par utilisateur.
-        if (!(await limiteGeneration(userId)).autorise) {
-          throw new ErreurOutil("Trop de générations en peu de temps. Patiente une minute puis réessaie.")
-        }
-        return genererCycle(supabase, args, aujourdhuiParis())
-      })
+      executer(ctx, (supabase, userId) =>
+        // Même seau que la génération web (rl:generer, 10/min) : un seul quota de
+        // génération par utilisateur, consommé seulement si on génère vraiment.
+        genererCycle(supabase, args, aujourdhuiParis(), async () => {
+          if (!(await limiteGeneration(userId)).autorise) {
+            throw new ErreurOutil("Trop de générations en peu de temps. Patiente une minute puis réessaie.")
+          }
+        })
+      )
   )
 
   server.registerTool(
@@ -129,7 +131,7 @@ export function enregistrerOutilsEcriture(server: McpServer): void {
     {
       title: "Remplacer un repas",
       description:
-        "Remplace le repas désigné par date et créneau. Sans `recette` : tirage automatique, comme le bouton « Changer » de l'app. Avec `recette` : recherche ce nom dans le catalogue et les recettes du foyer ; un nom exact l'emporte. Si plusieurs recettes correspondent, rien n'est modifié : `modifie: false` et `candidats` ; demande à l'utilisateur laquelle choisir, puis rappelle avec le nom exact. Si aucune ne correspond, propose ajouter_recette. Le nombre de personnes du repas est conservé.",
+        "Remplace le repas désigné par date et créneau. Sans `recette` : tirage automatique, comme le bouton « Changer » de l'app. Avec `recette` : recherche ce nom dans le catalogue et les recettes du foyer ; un nom exact l'emporte. Si plusieurs recettes correspondent, rien n'est modifié : `modifie: false`, `candidats` (10 au plus) et `total` ; demande à l'utilisateur laquelle choisir (ou d'affiner si `total` dépasse la liste), puis rappelle avec le nom exact. Si aucune ne correspond, propose ajouter_recette. Le nombre de personnes du repas est conservé. Un repas marqué restes redevient un repas à cuisiner. Après un tirage automatique, `avertissements` signale les préférences (végé, légumes, saison) non honorées.",
       inputSchema: z.object({
         date: DATE,
         creneau: CRENEAU,
@@ -144,7 +146,7 @@ export function enregistrerOutilsEcriture(server: McpServer): void {
     {
       title: "Changer le nombre de personnes",
       description:
-        "Change le nombre de personnes d'un repas (entier de 1 à 12), désigné par date et créneau. Les quantités de la liste de courses suivent aussitôt.",
+        "Change le nombre de personnes d'un repas (entier de 1 à 12), désigné par date et créneau. Les quantités de la liste de courses suivent aussitôt, sauf pour un repas marqué restes, qui n'entre pas dans la liste.",
       inputSchema: z.object({
         date: DATE,
         creneau: CRENEAU,
@@ -159,7 +161,7 @@ export function enregistrerOutilsEcriture(server: McpServer): void {
     {
       title: "Ajouter une recette du foyer",
       description:
-        "Crée une recette dans les recettes du foyer, que la génération et remplacer_repas pourront ensuite utiliser. Structure toi-même la recette : nom, temps de préparation (rapide < 20 min, normal 20-45 min, long > 45 min), ingrédients pour 2 personnes avec quantité, unité et rayon, étapes. `vegetarien`, `accompagnement` et `saisons` sont déduits des ingrédients s'ils sont omis. Refuse si le foyer a déjà une recette de ce nom (casse et accents ignorés) et la décrit.",
+        "Crée une recette dans les recettes du foyer, que la génération et remplacer_repas pourront ensuite utiliser. Structure toi-même la recette : nom, temps de préparation (rapide < 20 min, normal 20-45 min, long > 45 min), ingrédients pour 2 personnes avec quantité, unité et rayon, étapes. Nomme chaque ingrédient au singulier et en minuscules (« oignon », pas « Oignons ») : la liste de courses additionne les ingrédients de même nom et de même unité. `vegetarien`, `accompagnement` et `saisons` sont déduits des ingrédients s'ils sont omis. Refuse si le foyer a déjà une recette de ce nom (casse et accents ignorés) et la décrit.",
       inputSchema: z.object({
         nom: z.string().describe("Nom de la recette."),
         temps_preparation: z.enum(["rapide", "normal", "long"]),

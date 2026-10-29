@@ -188,6 +188,25 @@ describe("genererCycle (RG-74)", () => {
     expect(rpcs).toEqual([])
   })
 
+  it("cycle existant : le quota de génération n'est pas consommé", async () => {
+    plannings["2026-W44"] = { semaine: "2026-W44", updated_at: "t", planning_slot: [slot("vendredi", "pizza")] }
+    const quota = vi.fn(async () => {})
+    const { client } = mock()
+    await expect(genererCycle(client, {}, JEUDI, quota)).rejects.toThrow("Un cycle existe déjà")
+    expect(quota).not.toHaveBeenCalled()
+  })
+
+  it("quota refusé : ErreurOutil, rien généré ni écrit", async () => {
+    const quota = vi.fn(async () => {
+      throw new ErreurOutil("Trop de générations en peu de temps. Patiente une minute puis réessaie.")
+    })
+    const { client, rpcs } = mock()
+    await expect(genererCycle(client, {}, JEUDI, quota)).rejects.toThrow("Trop de générations")
+    expect(quota).toHaveBeenCalledTimes(1)
+    expect(genererPourUtilisateur).not.toHaveBeenCalled()
+    expect(rpcs).toEqual([])
+  })
+
   it("vivier insuffisant (422) : ErreurOutil avec le message de la génération", async () => {
     vi.mocked(genererPourUtilisateur).mockRejectedValue(new ErreurGeneration("Pas assez de recettes.", 422))
     const { client, rpcs } = mock()
@@ -237,6 +256,7 @@ describe("remplacerRepas (RG-75)", () => {
     expect(resultat).toEqual({
       modifie: true,
       repas: expect.objectContaining({ date: "2026-10-29", creneau: "midi", recette: "omelette" }),
+      avertissements: [],
     })
   })
 
@@ -307,8 +327,37 @@ describe("remplacerRepas (RG-75)", () => {
       { date: "2026-10-29", creneau: "soir", recette: "blanquette" },
       JEUDI
     )
-    expect(resultat).toEqual({ modifie: false, candidats: ["Blanquette de poisson", "Blanquette de veau"] })
+    expect(resultat).toEqual({
+      modifie: false,
+      candidats: ["Blanquette de poisson", "Blanquette de veau"],
+      total: 2,
+    })
     expect(rpcs).toEqual([])
+  })
+
+  it("par nom : plus de 10 candidats → 10 renvoyés et le total annoncé", async () => {
+    const noms = Array.from({ length: 12 }, (_, i) => `Gratin ${String(i + 1).padStart(2, "0")}`)
+    const { client } = catalogue(noms)
+    const resultat = await remplacerRepas(client, { date: "2026-10-29", creneau: "soir", recette: "gratin" }, JEUDI)
+    expect(resultat).toMatchObject({ modifie: false, total: 12 })
+    expect("candidats" in resultat && resultat.candidats).toHaveLength(10)
+  })
+
+  it("auto : avertit quand la préférence végé du créneau n'est pas honorée (RG-26, comme le site)", async () => {
+    const { client } = catalogue(["salade", "gratin", "omelette"], {
+      reglages: { data: reglages({ vege_dejeuner_semaine: true }), error: null },
+    })
+    const resultat = await remplacerRepas(client, { date: "2026-10-29", creneau: "midi" }, JEUDI)
+    expect(resultat).toMatchObject({
+      modifie: true,
+      avertissements: ["Pas de recette végétarienne disponible pour ce repas."],
+    })
+  })
+
+  it("auto sans préférence non honorée : avertissements vides", async () => {
+    const { client } = catalogue(["salade", "gratin", "omelette"])
+    const resultat = await remplacerRepas(client, { date: "2026-10-29", creneau: "midi" }, JEUDI)
+    expect(resultat).toMatchObject({ modifie: true, avertissements: [] })
   })
 
   it("par nom : aucun → ErreurOutil qui cite ajouter_recette", async () => {

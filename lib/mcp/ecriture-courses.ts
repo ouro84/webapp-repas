@@ -105,11 +105,21 @@ export async function cocherArticle(
     articles = articles.filter((i) => versArticle(i, null).quantite === voulue)
   }
 
-  const trouves = trouverArticles(articles, args.libelle)
+  let trouves = trouverArticles(articles, args.libelle)
   if (trouves.length === 0) {
     throw new ErreurOutil(
       `Aucun article « ${args.libelle} » dans la liste de courses du cycle. Appelle lire_liste_courses pour voir les libellés exacts.`
     )
+  }
+  // Homonymes indiscernables (même libellé affiché, même quantité, ex. deux
+  // articles manuels « Piles », RG-42) : l'assistant ne pourrait jamais
+  // trancher. On traite le premier qui n'est pas déjà dans l'état visé.
+  const signature = (i: Ingredient) => {
+    const a = versArticle(i, null)
+    return `${normaliser(a.nom)}|${a.quantite}`
+  }
+  if (trouves.length > 1 && trouves.every((i) => signature(i) === signature(trouves[0]))) {
+    trouves = [trouves.find((i) => estCoche(coches, i) !== coche) ?? trouves[0]]
   }
   if (trouves.length > 1) {
     return { modifie: false, candidats: trouves.map((i) => versArticle(i, coches)) }
