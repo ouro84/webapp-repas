@@ -177,7 +177,7 @@ export async function lirePlanning(
   }
 }
 
-function versArticle(i: Ingredient, coches: Coches | null): ArticleMcp {
+export function versArticle(i: Ingredient, coches: Coches | null): ArticleMcp {
   return {
     nom: accorderNom(i),
     quantite: aQuantiteRenseignee(i) ? formaterQuantite(i) : "",
