@@ -73,6 +73,96 @@ test("modifier le nombre de personnes depuis la vue Cycle persiste au reload", a
   await expect(page.getByText("3 pers.").first()).toBeVisible();
 });
 
+// Génère le cycle depuis la vue Cycle et attend la grille. Jour de courses =
+// lundi (beforeEach) → le cycle coïncide avec la semaine affichée en vue
+// Semaine : une double écriture sauvegarder_slots + sauvegarder_planning y
+// serait observable.
+async function genererCycleDepuisVueCycle(page: Page): Promise<void> {
+  await page.goto("/planning");
+  await page.getByRole("button", { name: "Cycle" }).click();
+  await page.getByRole("button", { name: "Générer mon cycle" }).click();
+  await expect(page.locator("main li").first()).toBeVisible({ timeout: 20_000 });
+}
+
+async function lirePersonnes(carte: ReturnType<Page["locator"]>): Promise<number> {
+  const texte = await carte.getByText(/\d+ pers\./).first().textContent();
+  return Number(texte!.match(/(\d+) pers\./)![1]);
+}
+
+// #301 : une édition en vue Cycle remplaçait toute la grille par « Chargement… »
+// (scroll perdu, stepper non recliquable) le temps d'un aller-retour réseau.
+test("édition en vue Cycle : la grille reste affichée, une seule écriture après une rafale de clics (#301)", async ({
+  page,
+}) => {
+  await genererCycleDepuisVueCycle(page);
+
+  // Routes posées APRÈS la génération : on ne compte que les écritures de
+  // l'édition. Le délai rend la fenêtre d'attente réseau observable.
+  let appelsSlots = 0;
+  let appelsPlanning = 0;
+  await page.route("**/rest/v1/rpc/sauvegarder_slots", async (route) => {
+    appelsSlots++;
+    await new Promise((r) => setTimeout(r, 1_500));
+    await route.continue();
+  });
+  await page.route("**/rest/v1/rpc/sauvegarder_planning", async (route) => {
+    appelsPlanning++;
+    await route.continue();
+  });
+  await page.evaluate(() => {
+    const w = window as unknown as { __chargementVu: boolean };
+    w.__chargementVu = false;
+    new MutationObserver(() => {
+      if (document.body.innerText.includes("Chargement…")) w.__chargementVu = true;
+    }).observe(document.body, { subtree: true, childList: true, characterData: true });
+  });
+
+  const carte = page.locator("main li").nth(4);
+  await carte.scrollIntoViewIfNeeded();
+  const scrollAvant = await page.evaluate(() => window.scrollY);
+  expect(scrollAvant).toBeGreaterThan(0);
+  const n = await lirePersonnes(carte);
+
+  const plus = carte.getByRole("button", { name: /^Plus de personnes/ }).first();
+  await plus.click();
+  await plus.click();
+  await plus.click();
+
+  // Visible avant la fin de la RPC (1,5 s) : la mise à jour est optimiste.
+  await expect(carte.getByText(`${n + 3} pers.`).first()).toBeVisible({ timeout: 1_000 });
+  await expect.poll(() => appelsSlots, { timeout: 5_000 }).toBe(1);
+  await page.waitForTimeout(2_500); // débounce 800 ms + RPC 1,5 s + marge
+
+  expect(appelsSlots).toBe(1);
+  expect(appelsPlanning).toBe(0);
+  expect(
+    await page.evaluate(() => (window as unknown as { __chargementVu: boolean }).__chargementVu)
+  ).toBe(false);
+  const scrollApres = await page.evaluate(() => window.scrollY);
+  expect(Math.abs(scrollApres - scrollAvant)).toBeLessThanOrEqual(2);
+
+  await page.unrouteAll({ behavior: "wait" });
+  await page.reload();
+  await expect(page.locator("main li").nth(4).getByText(`${n + 3} pers.`).first()).toBeVisible({
+    timeout: 20_000,
+  });
+});
+
+test("édition en vue Cycle : échec réseau → valeur précédente restaurée + toast (#301)", async ({ page }) => {
+  await genererCycleDepuisVueCycle(page);
+  await page.route("**/rest/v1/rpc/sauvegarder_slots", (route) => route.abort());
+
+  const carte = page.locator("main li").first();
+  const n = await lirePersonnes(carte);
+  await carte.getByRole("button", { name: /^Plus de personnes/ }).first().click();
+
+  await expect(carte.getByText(`${n + 1} pers.`).first()).toBeVisible({ timeout: 1_000 });
+  await expect(page.getByText("Impossible d'enregistrer la modification. Réessaie.")).toBeVisible({
+    timeout: 5_000,
+  });
+  await expect(carte.getByText(`${n} pers.`).first()).toBeVisible();
+});
+
 test("marquer un repas en restes depuis la vue Cycle persiste au reload", async ({ page }) => {
   await page.goto("/planning");
   await page.getByRole("button", { name: "Cycle" }).click();
