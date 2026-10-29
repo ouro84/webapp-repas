@@ -88,3 +88,12 @@ Scripts de génération (`scripts/*.mjs`) :
 - **Avast intercepte le TLS.** Node a besoin de `NODE_OPTIONS=--use-system-ca` (posé en variable machine) ; c'est aussi la raison du `ignoreHTTPSErrors: true` de Playwright. Une erreur de certificat au login Supabase ou en e2e local pointe d'abord vers cette variable.
 - **Le CLI Supabase (binaire Go) est bloqué** (`CRYPT_E_NO_REVOCATION_CHECK`, message quasi vide), et `db pull`/`db dump` exigent Docker, absent. Inspecter un schéma distant via `scripts/query-supabase.mjs` ; les commandes CLI réseau (`db push`) tournent en CI.
 - **`npm install` peut laisser des paquets creux** (Avast + virtualisation OneDrive de `Documents\`). Si un binaire (`next`, `eslint`) disparaît après une install, vérifier `node_modules/<paquet>/package.json` avant de chercher un bug de code. La CI (`npm ci` sous Linux) reste le validateur fiable.
+
+## graphify
+
+Le projet a un graphe de connaissances dans `graphify-out/` (nœuds centraux, communautés, liens entre fichiers). Ce dossier est généré localement et reste hors de Git.
+
+- **Question sur le code : d'abord `graphify query "<question>"`** si `graphify-out/graph.json` existe ; `graphify path "<A>" "<B>"` pour un lien entre deux notions, `graphify explain "<notion>"` pour une notion précise. Pourquoi : ces commandes renvoient un sous-graphe ciblé, bien plus court que `GRAPH_REPORT.md` ou un `grep` brut.
+- Si `graphify-out/wiki/index.md` existe, s'en servir pour naviguer plutôt que parcourir les sources.
+- Lire `graphify-out/GRAPH_REPORT.md` seulement pour une revue d'architecture large, ou quand query/path/explain ne suffisent pas.
+- **Après une modification de code, lancer `graphify update .`** pour garder le graphe à jour (AST seul, sans coût d'API).
