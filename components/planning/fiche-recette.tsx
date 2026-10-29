@@ -22,7 +22,7 @@ import { BadgeVegetarien } from "@/components/ui/badge-vegetarien";
 import { BadgeAccompagnement } from "@/components/ui/badge-accompagnement";
 import { BadgeSaison } from "@/components/ui/badge-saison";
 import { TogglePreferenceRecette } from "@/components/ui/toggle-preference-recette";
-import { arrondirQuantite, facteurEchelle } from "@/lib/personnes";
+import { ingredientsAEchelle } from "@/lib/personnes";
 import { accorderNom } from "@/lib/pluriels";
 import { formaterQuantite } from "@/lib/unites";
 import { chargerPreference, definirPreference } from "@/lib/preferences";
@@ -86,13 +86,9 @@ export function FicheRecette({
   }
 
   // Ingrédients mis à l'échelle du slot puis scindés (RG-20). Même calcul que
-  // la liste de courses : ×N/2 (facteurEchelle) puis arrondi par type d'unité.
+  // la liste de courses : ×N/2 puis arrondi par type d'unité (ingredientsAEchelle).
   const { aAcheter, fondDePlacard } = useMemo(() => {
-    const facteur = facteurEchelle(personnes);
-    const misAEchelle: Ingredient[] = recette.ingredients.map((i) => ({
-      ...i,
-      quantite: arrondirQuantite(i.quantite * facteur, i.unite),
-    }));
+    const misAEchelle = ingredientsAEchelle(recette.ingredients, personnes);
     return {
       aAcheter: misAEchelle.filter((i) => !i.fondDePlacard),
       fondDePlacard: misAEchelle.filter((i) => i.fondDePlacard),

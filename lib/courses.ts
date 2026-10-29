@@ -31,6 +31,18 @@ export const ORDRE_CATEGORIES: CategorieIngredient[] = [
   "autre",
 ]
 
+// Libellés des catégories (titres de section) — partagés par /courses et
+// l'outil MCP `lire_liste_courses` (#305, RG-78).
+export const LIBELLES_CATEGORIES: Record<CategorieIngredient, string> = {
+  "viandes-poissons": "Viandes & Poissons",
+  "legumes-fruits": "Légumes & Fruits",
+  "produits-frais": "Produits frais",
+  epicerie: "Épicerie",
+  boulangerie: "Boulangerie",
+  surgeles: "Surgelés",
+  autre: "Autre",
+}
+
 // Clé d'agrégation d'un ingrédient : nom insensible à la casse + unité.
 // Deux occurrences ne fusionnent que si elles partagent la même unité —
 // cas limite RG-05 : "200 g" et "1 piece" du même ingrédient restent

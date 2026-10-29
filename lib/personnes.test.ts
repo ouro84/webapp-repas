@@ -4,6 +4,7 @@
 
 import { describe, test, expect } from "vitest";
 import {
+  ingredientsAEchelle,
   arrondirQuantite,
   facteurEchelle,
   modifierPersonnes,
@@ -155,3 +156,21 @@ describe("arrondirQuantite — arrondi par unité (RG-17)", () => {
     expect(arrondirQuantite(0.7, "cas")).toBe(0.5);
   });
 });
+
+describe("ingredientsAEchelle (RG-17, fiche recette et MCP)", () => {
+  const ingredients = [
+    { nom: "Pâtes", quantite: 250, unite: "g" as Unite, categorie: "epicerie" as const, fondDePlacard: false },
+    { nom: "Œufs", quantite: 1.5, unite: "piece" as Unite, categorie: "produits-frais" as const, fondDePlacard: false },
+    { nom: "Huile", quantite: 0.75, unite: "cas" as Unite, categorie: "epicerie" as const, fondDePlacard: true },
+  ]
+
+  test("ingredientsAEchelle : 4 personnes double et arrondit par unité (RG-17)", () => {
+    const resultat = ingredientsAEchelle(ingredients, 4)
+    expect(resultat.map((i) => i.quantite)).toEqual([500, 3, 1.5])
+  })
+
+  test("ne mute pas l'entrée", () => {
+    ingredientsAEchelle(ingredients, 5)
+    expect(ingredients.map((i) => i.quantite)).toEqual([250, 1.5, 0.75])
+  })
+})

@@ -5,8 +5,8 @@
 // Sépare l'IDENTITÉ (qui je suis, avec qui) de la CONFIGURATION DE GÉNÉRATION
 // (comment l'app se comporte, page /reglages). Regroupe : édition du prénom et
 // de l'avatar, foyer (PanneauFoyer, déplacé depuis /reglages), sécurité
-// (changement de mot de passe), lien vers les réglages de génération, et
-// déconnexion.
+// (changement de mot de passe), assistants IA connectés (#305), lien vers les
+// réglages de génération, et déconnexion.
 //
 // Déconnexion : on détruit la session PUIS on réinitialise le cache local
 // (planning + coches du foyer) — sinon il survivrait à la déconnexion et
@@ -20,6 +20,7 @@ import { reinitialiserCacheFoyer } from "@/lib/sync";
 import { EditionIdentite } from "@/components/profil/edition-identite";
 import { ChangerMotDePasse } from "@/components/profil/changer-mot-de-passe";
 import { PanneauFoyer } from "@/components/profil/panneau-foyer";
+import { AssistantsConnectes } from "@/components/profil/assistants-connectes";
 import { SupprimerCompte } from "@/components/profil/supprimer-compte";
 import { SelecteurTheme } from "@/components/ui/selecteur-theme";
 import { Interrupteur } from "@/components/ui/interrupteur";
@@ -58,6 +59,10 @@ export default function PageProfil() {
       <div className="mb-8 border-t border-brand-100" />
 
       <PanneauFoyer />
+      <div className="mb-8 border-t border-brand-100" />
+
+      {/* Assistants IA autorisés par OAuth (#305, RG-72) : liste + révocation. */}
+      <AssistantsConnectes />
       <div className="mb-8 border-t border-brand-100" />
 
       <ChangerMotDePasse />

@@ -47,6 +47,7 @@ Tout utilisateur a déjà un foyer ; il n'existe donc pas d'action « créer un 
 
 - **Avatar « zéro upload »** (RG-35) : `lib/avatar.ts` (`initiale`, `couleurAvatar(email)` = hash djb2 déterministe vers `PALETTE_AVATAR`, `couleurValide`). La couleur est **stockée** (`profiles.couleur_avatar`) ; l'initiale est calculée à l'affichage.
 - **Store profil** `useProfil()` (`lib/profil.ts`) : en mémoire, chargé paresseusement au premier abonnement (la nav). `sauvegarderProfil` patche le store pour une mise à jour live. Déconnecté, l'erreur de `chargerProfil` est avalée et l'avatar est neutre (« ? »).
+- **« Assistants connectés »** (`components/profil/assistants-connectes.tsx`, #305) : `auth.oauth.listGrants()` puis `revokeGrant({ clientId })` après `ConfirmationModale`. Le jeton d'accès d'un assistant révoqué reste valable jusqu'à son expiration (1 h) ; ses refresh tokens sont invalidés tout de suite. Cf. `mcp.md`.
 - **Déconnexion = `signOut({ scope: 'local' })`** suivi de `reinitialiserCacheFoyer()`. Le scope local préserve les sessions des autres appareils et membres.
 - **Changement de mot de passe** : ré-authentifier au mot de passe actuel (`signInWithPassword`) **avant** `updateUser`, car Supabase ne revérifie pas l'identité.
 - **Mot de passe oublié** : `/mot-de-passe-oublie` (`resetPasswordForEmail`, `redirectTo` `/auth/reinitialiser`) puis `/auth/reinitialiser` (`updateUser`, session de récupération via `detectSessionInUrl`). Les templates d'email se configurent dans le dashboard Supabase.

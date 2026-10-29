@@ -86,11 +86,11 @@ import {
 import { libelleCycle, LONGUEUR_MAX } from "@/lib/cycles";
 import { accorderNom } from "@/lib/pluriels";
 import { formaterQuantite } from "@/lib/unites";
+import { LIBELLES_CATEGORIES } from "@/lib/courses";
 import { FormulaireArticleManuel } from "@/components/courses/formulaire-article-manuel";
 import type { SaisieArticleManuel } from "@/lib/persistance";
 import type {
   ArticleManuel,
-  CategorieIngredient,
   Ingredient,
   ListeCourses,
   ReglagesGeneration,
@@ -110,20 +110,10 @@ function useHydratation(): boolean {
 // Libellés
 // ============================================================================
 
-// Ordre d'affichage garanti par genererListeCourses (RG-05, étape 5) —
-// ici on ne fait que traduire les identifiants en titres de section.
-const LIBELLES_CATEGORIES: Record<CategorieIngredient, string> = {
-  "viandes-poissons": "Viandes & Poissons",
-  "legumes-fruits": "Légumes & Fruits",
-  "produits-frais": "Produits frais",
-  epicerie: "Épicerie",
-  boulangerie: "Boulangerie",
-  surgeles: "Surgelés",
-  autre: "Autre",
-};
-
-// Le formatage quantité + unité (« 400 g », « 3 ») vit dans lib/unites.ts —
-// partagé avec la fiche de recette (US-10).
+// Les titres de section (LIBELLES_CATEGORIES) vivent dans lib/courses.ts —
+// partagés avec l'outil MCP lire_liste_courses (#305). Le formatage quantité +
+// unité (« 400 g », « 3 ») vit dans lib/unites.ts — partagé avec la fiche de
+// recette (US-10).
 
 // ============================================================================
 // Animation de réordonnancement (View Transitions)

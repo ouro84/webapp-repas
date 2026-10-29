@@ -17,6 +17,7 @@
 
 import { useId, useRef, useState } from "react";
 import Link from "next/link";
+import { cheminDeRetour } from "@/lib/redirection";
 
 export function FormulaireAuth({
   titre,
@@ -71,8 +72,11 @@ export function FormulaireAuth({
       refEmail.current?.focus();
       return;
     }
-    // Succès : navigation pleine page (cf. en-tête de fichier).
-    window.location.assign("/planning");
+    // Succès : navigation pleine page (cf. en-tête de fichier). Retour sur la
+    // demande OAuth en cours si le proxy a posé `?suivant=` (#305, RG-72).
+    window.location.assign(
+      cheminDeRetour(new URLSearchParams(window.location.search).get("suivant"))
+    );
   }
 
   return (
