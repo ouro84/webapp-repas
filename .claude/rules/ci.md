@@ -19,7 +19,7 @@ Les minutes facturées sont la **somme des durées de chaque job** (arrondie à 
 - `concurrency` par `github.ref`, avec `cancel-in-progress` **sauf sur `main`** (ne jamais couper un `migrate-prod`) ;
 - **tout job de test porte `if: github.event_name == 'pull_request'`** : le tree mergé a déjà passé la CI pendant la PR ;
 - e2e consolidés en 2 jobs. Le découpage en 6 jobs (5 comptes `p1…p5`, désormais dormants) a été abandonné, car le coût fixe par job (~1 min 30) brûlait les minutes. Le restaurer suppose de ré-arbitrer minutes contre horloge ;
-- `paths-ignore` sur `pull_request` : `**/*.md`, `content/aide/**`, `revueDesign/**` (une PR doc-only ne lance aucune CI). Toute nouvelle origine de doc pure peut y être ajoutée. `push: main` reste sans filtre.
+- `paths-ignore` sur `pull_request` : `**/*.md`, `content/aide/**`, `revueDesign/**`, `.claude/**`, `.gitignore` (une PR doc-only ne lance aucune CI). Toute nouvelle origine de doc pure peut y être ajoutée. `push: main` reste sans filtre.
 
 ## Cache du navigateur Playwright
 
