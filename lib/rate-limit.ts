@@ -6,8 +6,9 @@
 // ⚠️ NO-OP quand les variables d'env Upstash sont absentes : c'est le cas en CI
 // (les e2e génèrent plusieurs plannings et n'ont pas les secrets) et en dev local
 // si non configuré → la limite est alors inactive (autorise tout). En production,
-// poser UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN dans les variables
-// d'env Vercel pour l'activer.
+// l'intégration Upstash du Marketplace Vercel pose KV_REST_API_URL +
+// KV_REST_API_TOKEN ; les noms UPSTASH_REDIS_REST_URL / _TOKEN (compte Upstash
+// direct) restent acceptés et prioritaires.
 //
 // FAIL-OPEN : si Upstash est injoignable (réseau), on autorise quand même (+ log)
 // plutôt que de bloquer une action légitime — cohérent avec la philosophie du
@@ -16,8 +17,8 @@
 import { Ratelimit } from "@upstash/ratelimit"
 import { Redis } from "@upstash/redis"
 
-const url = process.env.UPSTASH_REDIS_REST_URL
-const token = process.env.UPSTASH_REDIS_REST_TOKEN
+const url = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL
+const token = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN
 
 type Fenetre = Parameters<typeof Ratelimit.slidingWindow>[1]
 

@@ -95,3 +95,14 @@ describe("limiteMcp (#305, RG-78)", () => {
     })
   })
 })
+
+describe("variables d'environnement (intégration Vercel Marketplace)", () => {
+  it("active le limiteur avec KV_REST_API_URL / KV_REST_API_TOKEN (noms posés par l'intégration Upstash de Vercel)", async () => {
+    vi.stubEnv("KV_REST_API_URL", "https://upstash.test")
+    vi.stubEnv("KV_REST_API_TOKEN", "jeton")
+    const { limiteMcp } = await charger()
+    limit.mockResolvedValue({ success: false })
+    expect(await limiteMcp("u1")).toEqual({ autorise: false })
+    expect(constructions.map((c) => c.prefix)).toEqual(["rl:generer", "rl:mcp"])
+  })
+})

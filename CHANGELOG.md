@@ -7,6 +7,10 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+### Sécurité
+
+- Limitation du nombre de requêtes désormais active en production (#191, #305) : la génération de planning (10 par minute) et le serveur MCP des assistants IA (60 par minute) sont plafonnés par utilisateur. Un usage normal n'est jamais concerné.
+
 ### Ajouté
 
 - Connecter un assistant IA à OMQ (#305) : OMQ expose désormais un **serveur MCP** à l'adresse `/api/mcp`. Ajoute cette adresse dans ton assistant (Claude, Cursor, OpenCode, Hermes…) : il t'envoie sur un écran OMQ qui te demande de te connecter, puis d'**autoriser** l'assistant nommé. Il peut alors te dire **ce qu'on mange** (par date et midi/soir), t'envoyer **ta liste de courses** (ce qu'il reste à acheter, par rayon, articles ajoutés à la main compris) et te donner **la recette d'un repas** à l'échelle du nombre de personnes, avec ses étapes. Il ne voit que les données de ton foyer. Tu retrouves les assistants autorisés dans **`/profil`, section « Assistants connectés »**, d'où tu peux les **déconnecter** à tout moment.
