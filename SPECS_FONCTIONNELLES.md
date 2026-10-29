@@ -675,6 +675,80 @@ Réduire à zéro l'effort de planification hebdomadaire des repas, du choix des
 > **When** je confirme la suppression  
 > **Then** rien n'est supprimé, un message m'indique que le mot de passe est incorrect
 
+### US-50 — Connecter un assistant IA à OMQ (#302, #305)
+
+> **En tant qu'** utilisateur d'un assistant IA (Hermes via WhatsApp/Telegram, Claude, Cursor, OpenCode…), je veux **autoriser mon assistant à accéder à mon compte OMQ**, et pouvoir lui retirer cet accès, afin de piloter mes repas sans ouvrir l'app.
+
+> **Given** j'ajoute l'URL du serveur MCP d'OMQ dans mon assistant  
+> **When** l'assistant se connecte pour la première fois  
+> **Then** je suis envoyé sur un écran OMQ qui me demande de me connecter si besoin, puis d'**autoriser** cet assistant nommé ; tant que je n'ai pas autorisé, il n'accède à rien (RG-71, RG-72)
+
+> **Given** j'ai autorisé un assistant  
+> **When** il interroge OMQ  
+> **Then** il ne voit et ne modifie **que** les données de mon foyer (RG-71)
+
+> **Given** je vais sur `/profil`, section « Assistants connectés »  
+> **When** je révoque un assistant  
+> **Then** ses appels suivants sont refusés et il doit redemander mon autorisation (RG-72)
+
+### US-51 — Consulter son planning et sa liste de courses depuis un assistant (#302, #305)
+
+> **En tant qu'** utilisateur, je veux **demander à mon assistant** ce qui est prévu au menu, ma liste de courses ou une recette, sans ouvrir OMQ.
+
+> **Given** mon assistant est connecté (US-50)  
+> **When** je lui demande « qu'est-ce qu'on mange demain soir ? »  
+> **Then** il lit le planning et me répond avec le repas du bon jour et du bon créneau (RG-73, RG-78)
+
+> **Given** mon assistant est connecté  
+> **When** je lui demande ma liste de courses  
+> **Then** il m'envoie les articles **non cochés** du cycle courant, groupés par rayon, articles manuels compris (RG-78)
+
+> **Given** mon assistant est connecté  
+> **When** je lui demande comment préparer le plat de ce soir  
+> **Then** il me donne les ingrédients à l'échelle du repas et les étapes de la recette (RG-78)
+
+### US-52 — Modifier son planning et sa liste depuis un assistant (#302, #306)
+
+> **En tant qu'** utilisateur, je veux **demander à mon assistant** de générer mon cycle, de changer un repas, le nombre de personnes, d'ajouter une recette ou un article, ou de cocher un article, comme je le ferais dans l'app.
+
+> **Given** mon cycle courant ne contient aucun repas  
+> **When** je demande « génère mon cycle »  
+> **Then** le cycle est généré avec mes réglages, comme avec « Générer mon cycle » (RG-74)
+
+> **Given** mon cycle courant contient déjà des repas  
+> **When** je demande « génère mon cycle »  
+> **Then** l'assistant m'indique qu'un cycle existe et me demande confirmation ; il ne l'écrase qu'après mon accord (RG-74)
+
+> **Given** je demande « remplace le repas de jeudi midi par une blanquette »  
+> **When** une seule recette visible correspond  
+> **Then** elle est placée sur jeudi midi ; si plusieurs correspondent, l'assistant me propose les candidats sans rien modifier ; si aucune, il me propose d'ajouter la recette (RG-75, RG-76)
+
+> **Given** je demande « on sera 6 samedi soir »  
+> **When** l'assistant applique le changement  
+> **Then** le nombre de personnes du repas est mis à jour et la liste de courses suit immédiatement (RG-77)
+
+> **Given** un membre de mon foyer a OMQ ouvert pendant qu'un assistant modifie le planning  
+> **When** la modification est enregistrée  
+> **Then** elle apparaît chez lui en temps réel, avec l'alerte habituelle s'il est en magasin (RG-79)
+
+### US-53 — Constituer son panier Chronodrive depuis OMQ (#303, conditionnée au spike #307)
+
+> **En tant qu'** utilisateur qui fait ses courses sur l'appli Chronodrive, je veux que **mon panier se remplisse tout seul** à partir de ma liste de courses et de mes produits habituels, pour n'avoir plus qu'à le relire et valider.
+
+> **Given** un exécuteur est enregistré pour mon foyer et ma liste contient des articles non cochés  
+> **When** je clique sur « Constituer mon panier Chronodrive » sur `/courses`  
+> **Then** mon exécuteur remplit mon panier Chronodrive en privilégiant mes favoris, et chaque article ajouté est coché dans OMQ (RG-81→83)
+
+> **Given** le remplissage est terminé  
+> **When** j'ouvre `/courses` ou ma messagerie  
+> **Then** je vois le compte-rendu : articles ajoutés, articles à choisir moi-même, articles introuvables (RG-84)
+
+> **Given** le panier est rempli  
+> **Then** aucune commande n'a été passée ni aucun créneau réservé : je relis et je valide moi-même dans l'appli Chronodrive (RG-82)
+
+> **Given** aucun exécuteur n'est enregistré pour mon foyer  
+> **Then** le bouton n'apparaît pas (RG-81)
+
 ---
 
 ## 5. Modèle de données
@@ -793,6 +867,12 @@ Un snapshot d'annulation (US-09) est conservé sous la clé `planning_snapshot` 
 - **Coches par article** : table `etat_courses_article (foyer_id, ancre, cle, quantite)` — **une ligne par article** (remplace l'ancien blob `etat_courses`), condition d'un temps réel sans écrasement mutuel (RG-32). Depuis #257, la clé est l'**ancre du cycle de courses** (date), plus la semaine ISO (cf. RG-53/55).
 - **Cycle de courses (#257)** : `foyers.jour_courses` (smallint ISO 1=lundi…7=dimanche, défaut 1) ancre la fenêtre de `/courses` ; table `cycle_courses (foyer_id, ancre, longueur)` ne porte une ligne que si la longueur diffère du défaut (7 j, création paresseuse). Le planning reste stocké par semaine ISO (§5.5) ; le cycle en est une **projection** (`lib/cycles.ts`), pas une entité de stockage du planning.
 - **Isolation** : chaque membre ne voit que les données de son foyer (+ le catalogue global). Les écritures partagées sensibles (planning, jonction, sortie) passent par des **fonctions serveur transactionnelles** (atomicité + dérivation du foyer côté serveur).
+
+### 5.8 Assistants IA et panier d'enseigne (#302, #303)
+
+- **Assistants (MCP)** : aucune table OMQ. Les clients OAuth, autorisations et jetons vivent dans le schéma `auth` de Supabase (Supabase OAuth Server). Un jeton d'assistant porte `auth.jwt()->>'client_id'`, ce qui permet de distinguer un appel d'assistant si besoin.
+- **`executeur_panier`** (scope foyer, RLS) : `foyer_id`, `enseigne` (`chronodrive`), `url_webhook`, `secret_hmac` (chiffré), horodatages. Au plus une ligne par foyer et par enseigne. Renseignée à la main en v1 (pas d'UI). **Ne contient aucun identifiant d'enseigne** (RG-80).
+- **`demande_panier`** (scope foyer, RLS) : `foyer_id`, `ancre` du cycle, `statut` (`en_attente` | `en_cours` | `terminee` | `echec`), `rapport` (JSON : ajoutés, à choisir, introuvables), horodatages de création, de prise en charge et de fin. Au plus une demande active (`en_attente` ou `en_cours`) par foyer (RG-83).
 
 ---
 
@@ -1107,6 +1187,28 @@ Un foyer peut exprimer une préférence explicite pour une recette, sans jamais 
 - **Partagé (2+ membres)** : le partant est retiré (suppression de sa seule ligne `profiles`) ; ses recettes créées dans le foyer **restent visibles pour les autres** (réattribuées à aucun auteur, `foyer_id` inchangé — la visibilité d'une recette ne dépend que de `foyer_id` depuis #56). Rien d'autre n'est touché : planning, coches et recettes des autres membres sont intacts.
 - **Piège d'implémentation** : `recette.user_id` référence `auth.users(id)` en **cascade** — la purge/réattribution des données doit impérativement s'exécuter **avant** la suppression du compte d'authentification, jamais après, sous peine de détruire par ricochet les recettes d'un foyer partagé.
 - **Irréversible et immédiat** : pas de délai de grâce, pas d'annulation différée.
+
+### RG-71 à RG-79 — Serveur MCP, piloter OMQ depuis un assistant IA (US-50→52, #302)
+
+- **RG-71 — MCP distant, l'assistant agit en tant que l'utilisateur** : un seul serveur MCP distant, `/api/mcp` (Streamable HTTP), sans paquet local. Toute requête exige un jeton **OAuth 2.1** émis par Supabase Auth (Supabase OAuth Server, enregistrement dynamique des clients). Le jeton est un JWT `authenticated` de l'utilisateur : la RLS `mon_foyer()` s'applique telle quelle, l'assistant ne voit et ne modifie **que** le foyer de l'utilisateur. Jamais de `service_role` sur ce chemin. Ouvert à tous les comptes (pas de gating freemium en v1).
+- **RG-72 — Consentement explicite et révocable** : l'autorisation passe par l'écran OMQ `/oauth/consent`, qui exige une session OMQ et un onboarding terminé, et affiche le nom du client et ce qu'il pourra faire. La section « Assistants connectés » de `/profil` liste les clients autorisés et permet de les révoquer (repli v1 si la liste n'est pas disponible : « Déconnecter tous les assistants »). Un client révoqué est refusé au plus tard à l'expiration de son jeton d'accès.
+- **RG-73 — Désignation d'un repas** : tout outil qui vise un repas prend `date` (ISO `AAAA-MM-JJ`) et `creneau` (`midi` | `soir`), et tout outil qui renvoie des repas renvoie ces deux clés. La plage de dates acceptée est celle de la génération (−12 / +6 semaines, RG-24). L'interprétation de « demain soir » revient à l'assistant.
+- **RG-74 — `generer_cycle`** : génère le **cycle courant** par défaut (ancre et longueur du foyer, RG-53→55), ou le cycle d'une ancre donnée, avec les mêmes règles que « Générer mon cycle » (RG-56 : jours hors cycle préservés). Si la fenêtre contient déjà au moins un repas, l'outil **refuse** et l'explique (« un cycle existe du X au Y ») ; il n'écrase qu'avec `remplacer: true`, que l'assistant n'envoie qu'après confirmation de l'utilisateur. L'écriture est atomique et réinitialise les coches du cycle (RG-13).
+- **RG-75 — `remplacer_repas`** : sans `recette`, tirage automatique identique au « ↺ changer » (RG-04, préférences RG-62). Avec `recette` (nom), recherche approchée dans les recettes **visibles du foyer** (catalogue non masqué + recettes du foyer) : un seul résultat → appliqué (sélection manuelle, RG-15) ; plusieurs → les candidats sont renvoyés **sans rien modifier** ; aucun → erreur qui suggère `ajouter_recette`.
+- **RG-76 — `ajouter_recette`** : crée une **recette du foyer** (jamais au catalogue global), avec le même schéma et la même validation serveur que le formulaire de l'UI (ingrédients, quantités, unités, catégories, temps, végétarien, étapes). OMQ n'appelle aucun LLM : c'est l'assistant qui structure la recette. Si une recette du foyer porte déjà ce nom, l'outil refuse et renvoie l'existante.
+- **RG-77 — `changer_personnes`, `ajouter_article_courses`, `cocher_article`** : mêmes règles que l'UI — bornes du nombre de personnes (RG-16), article manuel du cycle (#216), bascule de coche (RG-10). `cocher_article` désigne l'article par son libellé ; en cas d'ambiguïté, les candidats sont renvoyés sans rien cocher.
+- **RG-78 — Contrats de lecture et erreurs** : `lire_planning` (cycle courant par défaut, ou semaine ISO), `lire_liste_courses` (cycle courant, **articles non cochés par défaut**, groupés par catégorie, articles manuels inclus), `lire_recette` (ingrédients à l'échelle du repas, étapes). Noms d'outils en français `snake_case`. Erreurs en français, actionnables par l'assistant (quoi faire ensuite). Rate-limit dédié par utilisateur (F-04, ADR-10).
+- **RG-79 — Une écriture MCP est une modification ordinaire** : elle passe par les mêmes RPC que l'UI, se propage en temps réel et déclenche l'alerte « en magasin » (US-21, RG-32) comme toute modification distante. Aucun traitement particulier.
+
+### RG-80 à RG-84 — Constituer son panier Chronodrive (US-53, #303)
+
+> **Conditionnées au go du spike #307** ; les valeurs marquées « provisoire » sont fixées par ses mesures.
+
+- **RG-80 — OMQ ne touche jamais l'enseigne** : OMQ ne stocke aucun identifiant d'enseigne et n'appelle aucune API d'enseigne depuis ses serveurs (ADR-12). Tout ce qui parle à Chronodrive tourne chez l'utilisateur, sur son **exécuteur**.
+- **RG-81 — Exécuteur enregistré et déclenchement à vide** : le bouton « Constituer mon panier Chronodrive » n'apparaît sur `/courses` que si un exécuteur est enregistré pour le foyer (`executeur_panier`, §5.8). Le clic crée une demande et envoie à l'exécuteur un webhook **signé HMAC qui ne contient aucune donnée métier** ; l'exécuteur récupère ensuite la demande via le MCP OMQ (`prendre_demande_panier`), avec son propre jeton OAuth (RG-71). Un webhook forgé ne peut au pire que réveiller l'exécuteur pour rien.
+- **RG-82 — Périmètre et garde-fous** : entrées = articles **non cochés** du cycle affiché, articles manuels non cochés inclus. Pour chaque article, l'exécuteur cherche d'abord dans les **favoris** Chronodrive, puis dans la recherche, et choisit produit et quantité. Confiance haute → ajout au panier ; confiance basse ou aucun résultat → rien n'est ajouté, l'article est reporté. Pas de validation article par article. L'exécuteur ne passe **jamais** commande, ne réserve pas de créneau et ne paie pas : la validation finale reste humaine, dans l'appli Chronodrive.
+- **RG-83 — Coche à l'ajout et idempotence** : chaque article ajouté au panier est **coché dans OMQ juste après son ajout**. Une relance ne traite donc que les articles restants (l'ajout Chronodrive incrémente les quantités : sans cette règle, une relance doublerait le panier). Une seule demande active par foyer ; une demande `en_cours` au-delà d'un délai d'expiration (15 min, **provisoire**) passe en `echec` et le bouton redevient disponible.
+- **RG-84 — Compte-rendu** : en fin de run, l'exécuteur rapporte à OMQ (`rapporter_panier`) trois listes — ajoutés (produit, quantité), à choisir, introuvables — affichées sur `/courses` (dernier rapport). Le compte-rendu part aussi sur la messagerie de l'exécuteur (Telegram pour Hermes) ; une notification OMQ native est hors périmètre (#309).
 
 ### RG-22 — Repas en « restes » (US-12)
 

@@ -325,6 +325,66 @@ Toute nouvelle origine externe (CDN, API tierce) devra être ajoutée à la futu
 
 ---
 
+## ADR-11 — Serveur MCP et autorisation OAuth 2.1 (#302)
+
+> Statut : **proposé** (grilling 2026-10-29), à compléter des choix effectifs pendant #304→#306.
+
+### Contexte
+L'utilisateur veut piloter OMQ depuis un assistant IA (son Hermes Agent via WhatsApp/Telegram), et la fonctionnalité doit servir le plus grand nombre de clients (Claude, Cursor, OpenCode, ChatGPT…). Or les clients grand public n'acceptent pas de jeton statique par utilisateur pour un MCP distant : Claude (connecteurs custom) et ChatGPT exigent **OAuth 2.1** (PKCE S256, découverte RFC 9728, enregistrement dynamique). Côté code, la génération est inline dans une route, la persistance d'un cycle est côté client et non atomique, et toutes les lectures dépendent du client navigateur.
+
+### Décision
+- **Serveur MCP distant** `/api/mcp` dans l'app Next.js, via **`mcp-handler`** (Vercel, v2, Streamable HTTP) et `withMcpAuth` ; metadata **RFC 9728** servie par l'app.
+- **Serveur d'autorisation = Supabase OAuth Server** (bêta publique) avec **DCR activé**. OMQ ne code que l'**écran de consentement** `/oauth/consent`. Les jetons sont des JWT `authenticated` : la **RLS `mon_foyer()` s'applique sans code d'autorisation supplémentaire**. Le serveur MCP crée un client Supabase « par jeton » (clé anon + `Authorization: Bearer`), **jamais** `service_role`.
+- **Logique métier serveur extraite dans `lib/`** avec client Supabase injecté, partagée entre l'UI et le MCP (règle du jumeau), et **RPC atomique `sauvegarder_cycle`** (jours du cycle + purge des coches en une transaction), utilisée aussi par le web.
+- **Clients garantis v1** : Hermes, Claude (claude.ai / Desktop / Code), Cursor, OpenCode. **ChatGPT en best effort** : il exige `aud` = URL MCP (RFC 8707), que Supabase n'émet pas nativement.
+- Rate-limit MCP dédié (Upstash, ADR-10 F-04). Outils nommés en français.
+
+### Justification
+Un seul mécanisme d'auth couvre tous les clients visés, sans serveur d'autorisation maison ni stockage de jetons côté OMQ, et réutilise l'isolation RLS déjà auditée (ADR-10). L'extraction dans `lib/` solde au passage une dette (persistance de cycle non atomique côté client).
+
+### Alternatives écartées
+- **Jeton personnel (Bearer statique)** : refusé par Claude et ChatGPT ; Cursor ignore les en-têtes quand le serveur annonce une découverte OAuth. Gardé seulement comme repli si le premier login OAuth de Hermes headless (Docker sur NAS) échoue.
+- **Serveur d'autorisation maison** : surface de sécurité et maintenance disproportionnées.
+- **Serveur MCP stdio (paquet local)** : à installer par chaque utilisateur, inutilisable depuis claude.ai ou un agent hébergé.
+- **Persister le cycle depuis le serveur MCP par N appels `sauvegarder_slots`** : non atomique.
+
+### Conséquence pratique
+- Dépendance à une fonctionnalité **bêta** de Supabase : à surveiller (changelog) ; en cas d'abandon, le repli est un serveur d'autorisation tiers compatible.
+- Supabase n'annonce ni CIMD ni flux device : chaque connexion d'un client crée un enregistrement DCR, et le premier login d'un agent headless passe par un tunnel vers son port de redirection loopback (procédure documentée dans l'aide).
+- Nouvelle surface publique (`/api/mcp`, `/.well-known/*`, `/oauth/consent`) : à intégrer à la CSP et au proxy. Les dettes ADR-10 F-02/F-05 restent des prérequis d'ouverture publique, MCP compris.
+
+---
+
+## ADR-12 — Paniers d'enseigne : OMQ ne stocke ni n'appelle jamais l'enseigne (#303)
+
+> Statut : **proposé** (grilling 2026-10-29), confirmé ou ajusté par le spike #307. Étude complète : `docs/etudes/chronodrive.md`.
+
+### Contexte
+L'utilisateur veut que son panier Chronodrive se remplisse depuis la liste de courses OMQ. Chronodrive n'a **pas d'API publique** ; son API front privée est utilisable avec les identifiants du client. Contraintes relevées : **CGV art. 3** (le client s'engage à ne pas communiquer ses identifiants à un tiers), **art. 19** (pas d'extraction substantielle du catalogue), site derrière **Cloudflare** (risque de blocage des IP datacenter comme celles de Vercel), et RGPD (stocker les mots de passe de tiers ferait d'OMQ le gardien d'un secret très sensible, dans une base destinée au B2C). L'utilisateur fait ses courses à 99 % sur l'appli mobile et fait tourner Hermes Agent en Docker sur un NAS (accès local ou Tailscale).
+
+### Décision
+- **OMQ ne stocke aucun identifiant d'enseigne et n'appelle aucune API d'enseigne depuis ses serveurs.** Règle valable pour toute enseigne future.
+- L'appel à l'enseigne est fait par un **exécuteur côté utilisateur** : pour Chronodrive en v1, **Hermes sur le NAS** (IP résidentielle), avec ses identifiants dans sa propre configuration et sa propre cascade LLM pour le choix des produits.
+- **OMQ ne fait que déclencher et afficher** : table `demande_panier`, **webhook signé HMAC sans donnée métier**, exposé par **Tailscale Funnel** (un seul chemin) ; l'exécuteur récupère la demande et la liste via le **MCP OMQ** (ADR-11) et rapporte via `rapporter_panier`.
+- Le client Chronodrive est un **MCP maison** (`integrations/chronodrive-mcp/`, même repo, jamais déployé, aucun code tiers) qui n'expose **aucun outil de commande, créneau ou paiement**.
+
+### Justification
+Respecte les CGV et le RGPD par construction, évite le blocage Cloudflare, ne crée aucune dette de sécurité dans la base de prod, et réutilise le MCP (ADR-11), la cascade LLM et la messagerie déjà en place chez l'utilisateur.
+
+### Alternatives écartées
+- **Exécution serveur OMQ avec identifiants ou refresh token chiffrés** : viole l'art. 3, expose le compte en cas de fuite de la base, et risque le blocage Cloudflare depuis Vercel.
+- **Userscript / extension navigateur** : aucun identifiant stocké, mais inutilisable depuis l'appli mobile (99 % de l'usage).
+- **Navigateur anti-détection hébergé (Camoufox, Browserbase) ou Apify** : contournement anti-bot assumé, coût, fragilité ; aucun acteur Chronodrive sur l'Apify Store.
+- **MCP Chronodrive open source existants** : projets amateurs manipulant des identifiants ; lus comme documentation de l'API, jamais exécutés.
+- **Polling par cron Hermes** : gardé comme repli si Funnel échoue.
+- **Liens de recherche Chronodrive par article** : apport trop faible (usage mobile).
+
+### Conséquence pratique
+- L'intégration reste **personnelle** (exécuteur auto-hébergé). L'ouvrir à tous passe par un partenariat officiel (#310, épopée Go public).
+- L'API privée peut changer sans préavis : l'exécuteur doit échouer proprement et le rapporter.
+
+---
+
 ## Règles transversales
 
 ### Gestion des secrets
