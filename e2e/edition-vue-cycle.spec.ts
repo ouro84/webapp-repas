@@ -224,3 +224,31 @@ test("cycle chevauchant deux semaines ISO — éditer vendredi/samedi/dimanche n
   await expect(page.locator("main li")).toHaveCount(7);
   await expect(page.getByText("Rien de prévu")).toHaveCount(0);
 });
+
+// Revue #301 : une édition faite PENDANT « Générer mon cycle » armait une
+// écriture débouncée de l'ANCIEN jour, qui partait après la génération et
+// écrasait silencieusement le jour généré. Les éditions sont donc bloquées
+// tant que la génération court.
+test("édition en vue Cycle bloquée pendant « Générer mon cycle » (#301)", async ({ page }) => {
+  await genererCycleDepuisVueCycle(page);
+  await page.route("**/api/planning/generer", async (route) => {
+    await new Promise((r) => setTimeout(r, 2_000));
+    await route.continue();
+  });
+
+  const carte = page.locator("main li").first();
+  const n = await lirePersonnes(carte);
+  await page.getByRole("button", { name: "Générer mon cycle" }).click();
+  await expect(page.getByRole("button", { name: "Génération…" })).toBeVisible();
+  let appelsSlots = 0;
+  page.on("request", (req) => {
+    if (req.url().includes("/rest/v1/rpc/sauvegarder_slots")) appelsSlots++;
+  });
+  await carte.getByRole("button", { name: /^Plus de personnes/ }).first().click();
+
+  // Ni affichage optimiste ni écriture tant que la génération n'a pas répondu.
+  await page.waitForTimeout(1_000); // > débounce 800 ms, < délai de génération
+  expect(appelsSlots).toBe(0);
+  await expect(carte.getByText(`${n + 1} pers.`)).toHaveCount(0);
+  await expect(page.getByText("Cycle généré")).toBeVisible({ timeout: 20_000 });
+});

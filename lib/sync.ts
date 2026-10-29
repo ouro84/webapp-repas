@@ -1558,11 +1558,14 @@ export async function modifierSlotDistant(
       const jours = local.jours.map((jp) =>
         jp.jour === jourPlanning.jour ? jourPlanning : jp
       );
+      // Restaure la valeur précédente (et non `false`) : une relecture
+      // (chargerSemaineDansCache) peut tenir la garde pendant son `await`.
+      const gardeAvant = hydratationEnCours;
       hydratationEnCours = true;
       try {
         storePlanning.ecrire(JSON.stringify({ semaine, jours }));
       } finally {
-        hydratationEnCours = false;
+        hydratationEnCours = gardeAvant;
       }
     }
   }

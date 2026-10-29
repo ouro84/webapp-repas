@@ -303,6 +303,39 @@ describe("modifierSlotDistant — édition ponctuelle découplée de storePlanni
     await new Promise((r) => setTimeout(r, 900)); // > DELAI_DEBOUNCE_MS (800)
     expect(persistance.sauvegarderPlanningDistant).not.toHaveBeenCalled();
   });
+
+  it("ne coupe pas la garde d'une relecture en cours (garde réentrante, revue #301)", async () => {
+    const { semaineParDefaut } = await import("@/lib/semaines");
+    const semaine = semaineParDefaut();
+    // Cache propre et horodaté → hydrater relance chargerSemaineDansCache, qui
+    // pose la garde pendant toute sa lecture distante (laissée en suspens).
+    localStorage.setItem("semaine_affichee", semaine);
+    localStorage.setItem(
+      "planning_courant",
+      JSON.stringify({ semaine, jours: [jourPlanningSimple("lundi", { id: "vieux", nom: "Vieux" })] })
+    );
+    localStorage.setItem("planning_courant_maj", "2026-07-16T09:00:00.000Z");
+    let resoudreLecture!: (v: unknown) => void;
+    persistance.chargerPlanningDistant.mockReturnValue(new Promise((r) => (resoudreLecture = r)));
+    const { useSync, modifierSlotDistant } = await chargerSync();
+    const { renderHook } = await import("@testing-library/react");
+    renderHook(() => useSync());
+    await vi.waitFor(() => expect(persistance.chargerPlanningDistant).toHaveBeenCalled());
+
+    await modifierSlotDistant(semaine, jourPlanningSimple("lundi", { id: "cycle", nom: "Cycle" }));
+    resoudreLecture({
+      planning: { semaine, jours: [jourPlanningSimple("lundi", { id: "distant", nom: "Distant" })] },
+      updatedAt: "2026-07-16T16:00:00.000Z",
+    });
+    await vi.waitFor(() =>
+      expect(JSON.parse(localStorage.getItem("planning_courant")!).jours[0].diner.id).toBe("distant")
+    );
+
+    // chargerSemaineDansCache efface planning_dirty après coup, mais un push
+    // armé sans garde partirait quand même → on observe l'écriture elle-même.
+    await new Promise((r) => setTimeout(r, 900)); // > DELAI_DEBOUNCE_MS (800)
+    expect(persistance.sauvegarderPlanningDistant).not.toHaveBeenCalled();
+  });
 });
 
 describe("useSyncCourses — ancre forcée court-circuite le défaut du jour (#279)", () => {

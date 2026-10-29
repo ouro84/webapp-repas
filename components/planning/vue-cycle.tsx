@@ -40,7 +40,7 @@
 // cycle (date concrète) via lib/cycles (fonctions pures).
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -253,8 +253,18 @@ export function VuePlanningCycle({
     ancre !== null ? { ancre, longueur } : null
   );
 
+  // Verrou d'édition pendant « Générer mon cycle » (revue #301) : posé dès le
+  // clic, AVANT le vidage de la file, et levé une fois la projection relue.
+  // Sans lui, une édition faite pendant la génération armerait une écriture de
+  // l'ANCIEN jour qui écraserait silencieusement le jour généré ; il bloque
+  // aussi un double clic pendant le vidage (enGeneration n'est posé qu'après).
+  const generationVerrouillee = useRef(false);
+  const [verrouAffiche, setVerrouAffiche] = useState(false);
+
   async function genererMonCycle(): Promise<void> {
-    if (enGeneration) return;
+    if (enGeneration || generationVerrouillee.current) return;
+    generationVerrouillee.current = true;
+    setVerrouAffiche(true);
     try {
       // Une écriture débouncée tardive écraserait le cycle généré (#301).
       await file.vider();
@@ -268,7 +278,7 @@ export function VuePlanningCycle({
         toast.warning(message);
       }
       // Recharge la projection affichée pour refléter le nouveau contenu.
-      if (ancre !== null) void chargerCycle(ancre);
+      if (ancre !== null) await chargerCycle(ancre);
     } catch (erreur) {
       console.error("Génération du cycle échouée.", erreur);
       toast.error(
@@ -276,6 +286,9 @@ export function VuePlanningCycle({
           ? erreur.message
           : "Impossible de générer le cycle. Vérifie ta connexion et réessaie."
       );
+    } finally {
+      generationVerrouillee.current = false;
+      setVerrouAffiche(false);
     }
   }
 
@@ -298,6 +311,7 @@ export function VuePlanningCycle({
       action: {
         label: "Annuler",
         onClick: () => {
+          if (generationVerrouillee.current) return;
           appliquerLocal(semaine, ancienJour);
           file.planifier(semaine, ancienJour, { delaiMs: 0, precedent: nouveauJour });
         },
@@ -314,6 +328,7 @@ export function VuePlanningCycle({
     nouveauJourPlanning: JourPlanning,
     messageToast: string | null
   ): void {
+    if (generationVerrouillee.current) return;
     appliquerLocal(semaine, nouveauJourPlanning);
     file.planifier(semaine, nouveauJourPlanning, { delaiMs: 0, precedent: ancienJourPlanning });
     if (messageToast) toastAnnulable(messageToast, semaine, ancienJourPlanning, nouveauJourPlanning);
@@ -378,6 +393,7 @@ export function VuePlanningCycle({
     typeRepas: TypeRepas,
     personnes: number
   ): void {
+    if (generationVerrouillee.current) return;
     const planningSemaine = planningDeLaSemaine(semaine);
     if (!planningSemaine) return;
     const ancienJourPlanning = planningSemaine.jours.find((jp) => jp.jour === jour);
@@ -539,11 +555,11 @@ export function VuePlanningCycle({
         <button
           type="button"
           onClick={() => void genererMonCycle()}
-          disabled={enGeneration}
+          disabled={enGeneration || verrouAffiche}
           className="relative inline-flex items-center gap-1.5 rounded-full border border-brand-200 px-4 py-2 text-sm font-medium text-brand-700 transition after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100 disabled:cursor-not-allowed disabled:opacity-60"
         >
           <Sparkles aria-hidden="true" className="size-4" />
-          {enGeneration ? "Génération…" : "Générer mon cycle"}
+          {enGeneration || verrouAffiche ? "Génération…" : "Générer mon cycle"}
         </button>
         <Link
           href={`/courses?ancre=${ancre}`}
