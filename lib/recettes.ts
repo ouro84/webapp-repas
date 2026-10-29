@@ -36,9 +36,10 @@ export type SaisieRecette = {
   ingredients: Ingredient[]
 }
 
-// Sélection partagée : même forme imbriquée que la route serveur, pour que
-// l'adaptateur dbRecetteToDomain s'applique des deux côtés.
-const SELECT_RECETTE = `
+// Sélection partagée : réutilisée telle quelle par la génération serveur
+// (lib/generation.ts, #304), pour que l'adaptateur dbRecetteToDomain
+// s'applique des deux côtés.
+export const SELECT_RECETTE = `
   id,
   nom,
   temps_preparation,
