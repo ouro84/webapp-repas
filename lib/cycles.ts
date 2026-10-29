@@ -186,3 +186,24 @@ export function ancreDeSemaine(semaine: string, jourCourses: number): string {
   jeudi.setDate(jeudi.getDate() + 3)
   return ancreCourante(jeudi, jourCourses)
 }
+
+/**
+ * Mise à jour optimiste de la vue Cycle (#301, US-49/RG-57) : remplace le
+ * JourPlanning de même `jour` dans le planning de `semaine`, sans muter
+ * l'entrée (nouvelle Map, nouveau Planning pour la seule semaine touchée ; les
+ * autres semaines et jours gardent leur référence). Semaine absente ou jour
+ * absent : copie au contenu identique.
+ */
+export function remplacerJourDansSemaines(
+  parSemaine: ReadonlyMap<string, Planning>, semaine: string, jour: JourPlanning,
+): Map<string, Planning> {
+  const resultat = new Map(parSemaine)
+  const planning = parSemaine.get(semaine)
+  if (planning) {
+    resultat.set(semaine, {
+      ...planning,
+      jours: planning.jours.map((jp) => (jp.jour === jour.jour ? jour : jp)),
+    })
+  }
+  return resultat
+}
