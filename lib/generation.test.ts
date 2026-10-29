@@ -13,7 +13,7 @@ vi.mock("@/lib/supabase/client", () => ({
   }),
 }))
 
-import { genererPourUtilisateur } from "@/lib/generation"
+import { genererPourUtilisateur, semaineDansPlage } from "@/lib/generation"
 import { creerSupabaseMock, type ConfigMock } from "@/tests/fixtures/supabase-mock"
 import { RECETTES_FIXTURES_DB } from "@/tests/fixtures/recettes-db"
 
@@ -155,5 +155,14 @@ describe("genererPourUtilisateur — lectures", () => {
 
     expect(r.mode).toBe("semaine")
     expect(espion).toHaveBeenCalledTimes(4)
+  })
+})
+
+describe("semaineDansPlage (RG-24, RG-73)", () => {
+  it("semaineDansPlage : bornes −12 et +6 incluses, −13 et +7 exclues", () => {
+    expect(semaineDansPlage("2026-W44", "2026-W32")).toBe(true)
+    expect(semaineDansPlage("2026-W44", "2026-W50")).toBe(true)
+    expect(semaineDansPlage("2026-W44", "2026-W31")).toBe(false)
+    expect(semaineDansPlage("2026-W44", "2026-W51")).toBe(false)
   })
 })

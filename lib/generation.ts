@@ -83,6 +83,13 @@ export class ErreurGeneration extends Error {
  * injecté. Lève `ErreurGeneration` (400 entrée invalide ou hors plage, 500
  * recettes illisibles, 422 vivier insuffisant). `aujourdhui` sert aux tests.
  */
+/** Vrai si `semaine` est dans la plage −12 / +6 semaines autour de `semaineCourante`
+ *  (RG-24, RG-73) : plage de la génération et des lectures MCP (#305). */
+export function semaineDansPlage(semaineCourante: string, semaine: string): boolean {
+  const decalage = decalageEntre(semaineCourante, semaine)
+  return decalage >= -SEMAINES_PASSEES && decalage <= SEMAINES_FUTURES
+}
+
 export async function genererPourUtilisateur(
   supabase: ClientSupabase,
   demande: DemandeGeneration,
@@ -112,16 +119,14 @@ export async function genererPourUtilisateur(
       longueur = n
     }
     semaine = dateVersSemaineJour(ancre).semaine
-    const decalage = decalageEntre(semaineCourante, semaine)
-    if (decalage < -SEMAINES_PASSEES || decalage > SEMAINES_FUTURES) {
+    if (!semaineDansPlage(semaineCourante, semaine)) {
       throw new ErreurGeneration("Cycle hors de la plage autorisée.", 400)
     }
   } else if (demande.semaine !== undefined) {
     if (!/^\d{4}-W\d{2}$/.test(demande.semaine)) {
       throw new ErreurGeneration("Semaine invalide.", 400)
     }
-    const decalage = decalageEntre(semaineCourante, demande.semaine)
-    if (decalage < -SEMAINES_PASSEES || decalage > SEMAINES_FUTURES) {
+    if (!semaineDansPlage(semaineCourante, demande.semaine)) {
       throw new ErreurGeneration("Semaine cible hors de la plage autorisée.", 400)
     }
     semaine = demande.semaine

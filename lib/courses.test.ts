@@ -13,7 +13,7 @@
 // librement sans casser ces tests.
 
 import { describe, test, expect } from "vitest";
-import { genererListeCourses } from "@/lib/courses";
+import { genererListeCourses, LIBELLES_CATEGORIES } from "@/lib/courses";
 import { RECETTES_FIXTURES, recetteFixture } from "@/tests/fixtures/recettes";
 import type { CategorieIngredient, Jour, Planning, Recette } from "@/types";
 
@@ -307,5 +307,12 @@ describe("genererListeCourses — RG-17 mise à l'échelle (US-07)", () => {
       ],
     };
     expect(quantiteDe(planning, "oeufs")).toBe(3); // ceil(1,5 + 1,5), pas 4
+  });
+});
+
+describe("LIBELLES_CATEGORIES (partagé /courses et MCP)", () => {
+  test("un libellé par catégorie", () => {
+    expect(Object.keys(LIBELLES_CATEGORIES).sort()).toEqual([...ORDRE_CATEGORIES].sort());
+    expect(LIBELLES_CATEGORIES["legumes-fruits"]).toBe("Légumes & Fruits");
   });
 });

@@ -4,7 +4,7 @@
 // au remplacement, reset à la génération) et RG-17 (mise à l'échelle ×N/2
 // + arrondi par type d'unité). Aucune dépendance React/navigateur.
 
-import type { Jour, JourPlanning, Planning, Unite } from "@/types"
+import type { Ingredient, Jour, JourPlanning, Planning, Unite } from "@/types"
 
 type TypeRepas = "diner" | "dejeuner"
 
@@ -93,4 +93,17 @@ export function arrondirQuantite(quantite: number, unite: Unite): number {
   if (UNITES_DECIMALE.has(unite)) return Math.round(quantite * 10) / 10
   if (UNITES_DEMI.has(unite)) return Math.round(quantite * 2) / 2
   return Math.ceil(quantite) // sécurité : toute unité non classée
+}
+
+/**
+ * Ingrédients d'une recette à l'échelle d'un repas (RG-17, RG-20) : ×N/2 puis
+ * arrondi par unité, comme la liste de courses. Source unique de la fiche
+ * recette et de l'outil MCP `lire_recette` (#305, RG-78). Sans mutation.
+ */
+export function ingredientsAEchelle(ingredients: Ingredient[], personnes: number): Ingredient[] {
+  const facteur = facteurEchelle(personnes)
+  return ingredients.map((i) => ({
+    ...i,
+    quantite: arrondirQuantite(i.quantite * facteur, i.unite),
+  }))
 }
