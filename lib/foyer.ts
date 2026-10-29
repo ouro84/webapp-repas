@@ -12,6 +12,7 @@
 // RPC sont déjà en français et lisibles : on les remonte tels quels.
 
 import { createClient } from "@/lib/supabase/client"
+import type { ClientSupabase } from "@/lib/supabase/types"
 
 export type EtatFoyer = {
   // Nombre de membres rattachés au foyer (1 = solo). La RLS de `profiles` ne
@@ -55,9 +56,11 @@ export async function chargerFoyer(): Promise<EtatFoyer> {
  * en erreur — jamais bloquant, cf. `chargerReglages`/dégradation gracieuse).
  * La RLS de `foyers` (`id = mon_foyer()`) restreint déjà la lecture à la seule
  * ligne du foyer courant : pas besoin de scoper explicitement par id.
+ * Client injectable (#304) : appelable côté serveur en tant que l'utilisateur.
  */
-export async function chargerJourCoursesFoyer(): Promise<number> {
-  const supabase = createClient()
+export async function chargerJourCoursesFoyer(
+  supabase: ClientSupabase = createClient()
+): Promise<number> {
   const { data, error } = await supabase.from("foyers").select("jour_courses").maybeSingle()
   if (error || !data) return 1
   return data.jour_courses
