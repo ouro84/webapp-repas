@@ -21,6 +21,7 @@ import { changerPersonnes, genererCycle, remplacerRepas } from "@/lib/mcp/ecritu
 import {
   creerSupabaseMock,
   filtre,
+  type AppelTable,
   type ConfigMock,
   type ReponseMock,
 } from "@/tests/fixtures/supabase-mock"
@@ -279,6 +280,24 @@ describe("remplacerRepas (RG-75)", () => {
     const { client, rpcs } = catalogue(["Blanquette de veau", "Blanquette de veau à l’ancienne"])
     await remplacerRepas(client, { date: "2026-10-29", creneau: "soir", recette: "blanquette de veau" }, JEUDI)
     expect(slotsEcrits(rpcs)[0].recette_id).toBe("Blanquette de veau")
+  })
+
+  it("par nom : homonyme exact catalogue + foyer → la recette du foyer est appliquée", async () => {
+    const homonymes = [
+      { ...dbRecette("blanquette-catalogue"), nom: "Blanquette de veau" },
+      { ...dbRecette("blanquette-foyer"), nom: "Blanquette de veau" },
+    ]
+    const { client, rpcs } = mock({
+      // Recherche des recettes du foyer (foyer_id non nul) : seulement la copie du foyer.
+      recette: (appel: AppelTable): ReponseMock =>
+        appel.ops.some(([op]) => op === "not")
+          ? { data: [{ id: "blanquette-foyer" }], error: null }
+          : { data: homonymes, error: null },
+      recette_masquee: { data: [], error: null },
+      recette_preference: { data: [], error: null },
+    })
+    await remplacerRepas(client, { date: "2026-10-29", creneau: "soir", recette: "Blanquette de veau" }, JEUDI)
+    expect(slotsEcrits(rpcs)[0].recette_id).toBe("blanquette-foyer")
   })
 
   it("par nom : plusieurs → candidats, rien écrit", async () => {

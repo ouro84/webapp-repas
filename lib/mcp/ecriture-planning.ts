@@ -15,7 +15,7 @@ import {
 } from "@/lib/persistance"
 import { chargerRecettes } from "@/lib/recettes"
 import { chargerPreferences } from "@/lib/preferences"
-import { rechercherRecettes } from "@/lib/recherche"
+import { normaliser, rechercherRecettes } from "@/lib/recherche"
 import { modifierPersonnes, personnesDuSlot, PERSONNES_MAX, PERSONNES_MIN } from "@/lib/personnes"
 import { estRestes } from "@/lib/restes"
 import { chargerJourCoursesFoyer } from "@/lib/foyer"
@@ -46,7 +46,7 @@ import {
   type RepasMcp,
 } from "@/lib/mcp/lecture"
 import type { ClientSupabase } from "@/lib/supabase/types"
-import type { Jour, JourPlanning, Planning, ReglagesGeneration } from "@/types"
+import type { Jour, JourPlanning, Planning, Recette, ReglagesGeneration } from "@/types"
 
 const CYCLE_HORS_PLAGE =
   "Ce cycle est hors de la plage autorisée (12 semaines en arrière, 6 en avant). Choisis une date plus proche."
@@ -177,6 +177,16 @@ async function ecrireCreneau(
   return versRepasMcp({ date: args.date, creneau: args.creneau, jour: cible.jour, jp })
 }
 
+// Homonymes exacts (une recette du catalogue copiée dans le foyer, ou deux
+// catalogues fusionnés, RG-33) : la recette du foyer l'emporte, c'est celle que
+// l'utilisateur a ajoutée ou personnalisée. RLS : foyer_id non nul = du foyer.
+async function homonymeDuFoyer(supabase: ClientSupabase, homonymes: Recette[]): Promise<Recette> {
+  const { data, error } = await supabase.from("recette").select("id").not("foyer_id", "is", null)
+  if (error) throw new Error(`Lecture des recettes du foyer impossible : ${error.message}`)
+  const idsFoyer = new Set(((data ?? []) as Array<{ id: string }>).map((r) => r.id))
+  return homonymes.find((r) => idsFoyer.has(r.id)) ?? homonymes[0]
+}
+
 export type RemplacementMcp =
   | { modifie: true; repas: RepasMcp }
   | { modifie: false; candidats: string[] }
@@ -209,7 +219,10 @@ export async function remplacerRepas(
       )
     }
   } else {
-    const trouvees = rechercherRecettes(recettes, args.recette)
+    let trouvees = rechercherRecettes(recettes, args.recette)
+    if (trouvees.length > 1 && trouvees.every((r) => normaliser(r.nom) === normaliser(trouvees[0].nom))) {
+      trouvees = [await homonymeDuFoyer(supabase, trouvees)]
+    }
     if (trouvees.length === 0) {
       throw new ErreurOutil(
         `Aucune recette « ${args.recette} » dans le catalogue ni dans les recettes du foyer. Propose de l’ajouter avec ajouter_recette.`
