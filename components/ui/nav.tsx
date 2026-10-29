@@ -23,6 +23,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { useProfil } from "@/lib/profil";
 import { useEstConnecte } from "@/lib/session";
 import { libelleMomentActuel } from "@/lib/prochain-repas";
+import { estCheminOAuth } from "@/lib/redirection";
 
 // Chaque section porte une icône : sous `sm:` la nav n'affiche QUE l'icône
 // (cf. LienSection). Le libellé texte des 4 sections + le wordmark + l'aide +
@@ -102,7 +103,7 @@ export function NavBar() {
   // Parcours focalisés, sans nav : tunnel d'onboarding (#22 PR2, aucune
   // échappatoire tant que l'onboarding n'est pas terminé) et consentement
   // OAuth (#305, une seule décision à prendre : autoriser ou refuser).
-  if (pathname === "/bienvenue" || pathname.startsWith("/oauth")) return null;
+  if (pathname === "/bienvenue" || estCheminOAuth(pathname)) return null;
 
   // Nav applicative (liens de section + avatar) réservée aux connectés (#207).
   // Tant que le signal d'auth est indéterminé (null), on retombe sur « suis-je

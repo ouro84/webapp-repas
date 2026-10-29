@@ -55,20 +55,3 @@ export function validerDate(date: string): string | null {
   const reelle = d.getFullYear() === a && d.getMonth() === mo - 1 && d.getDate() === j
   return reelle ? null : MESSAGE_DATE_INVALIDE
 }
-
-/**
- * Date du jour du FOYER (Europe/Paris), en Date locale à midi. Le serveur
- * (Vercel) tourne en UTC : sans cette conversion, entre minuit et 1-2 h à
- * Paris, le MCP calculerait un autre jour que /courses dans le navigateur, et
- * donc un autre cycle autour du week-end (`ancreParDefaut`, règle du jumeau).
- */
-export function aujourdhuiParis(maintenant: Date = new Date()): Date {
-  const morceaux = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Europe/Paris",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(maintenant)
-  const valeur = (type: string) => Number(morceaux.find((m) => m.type === type)!.value)
-  return new Date(valeur("year"), valeur("month") - 1, valeur("day"), 12)
-}

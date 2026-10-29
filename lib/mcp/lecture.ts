@@ -21,7 +21,7 @@ import {
   libelleCycle,
   semainesDuCycle,
 } from "@/lib/cycles"
-import { semaineISO } from "@/lib/semaines"
+import { lundiDeSemaine, semaineISO } from "@/lib/semaines"
 import { LIBELLES_CATEGORIES } from "@/lib/courses"
 import { estCoche, type Coches } from "@/lib/coches"
 import { aQuantiteRenseignee } from "@/lib/articles-manuels"
@@ -126,6 +126,13 @@ export async function lirePlanning(
   if (args.semaine !== undefined) {
     if (!/^\d{4}-W\d{2}$/.test(args.semaine)) {
       throw new ErreurOutil("Semaine invalide : utilise le format AAAA-Www (ex. 2026-W44).")
+    }
+    // 2027-W53 ou 2027-W00 passent le format mais n'existent pas : sans ce
+    // contrôle, on chargerait un identifiant que la base n'a jamais (liste vide).
+    if (semaineISO(lundiDeSemaine(args.semaine)) !== args.semaine) {
+      throw new ErreurOutil(
+        `Semaine invalide : ${args.semaine} n’existe pas. Utilise une semaine ISO existante (ex. 2026-W44).`
+      )
     }
     if (!semaineDansPlage(semaineISO(aujourdhui), args.semaine)) throw new ErreurOutil(HORS_PLAGE)
     dates = datesDeSemaine(args.semaine)

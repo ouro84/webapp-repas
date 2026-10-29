@@ -5,7 +5,7 @@
 import { createServerClient } from '@supabase/ssr'
 import type { User } from '@supabase/supabase-js'
 import { NextResponse, type NextRequest } from 'next/server'
-import { cheminDeRetour } from '@/lib/redirection'
+import { cheminDeRetour, estCheminOAuth } from '@/lib/redirection'
 
 // Construit une URL de redirection en PRÉSERVANT le code d'invitation présent
 // dans l'URL entrante (#22 PR3, deep-link) : sans ça, un membre déjà connecté
@@ -21,13 +21,15 @@ function urlPreservantCode(chemin: string, request: NextRequest): URL {
 }
 
 // Routes servies SANS session à cookies (#305) : le serveur MCP s'authentifie
-// par jeton OAuth (Bearer) et la metadata RFC 9728 est publique. Ni client
+// par jeton OAuth (Bearer) et la metadata RFC 9728 est publique (ce seul
+// document : un futur fichier sous /.well-known/ reste soumis au proxy). Ni client
 // Supabase à cookies, ni garde d'onboarding : appels de serveur à serveur.
 export function sansSession(pathname: string): boolean {
   return (
     pathname === "/api/mcp" ||
     pathname.startsWith("/api/mcp/") ||
-    pathname.startsWith("/.well-known/")
+    pathname === "/.well-known/oauth-protected-resource" ||
+    pathname.startsWith("/.well-known/oauth-protected-resource/")
   )
 }
 
@@ -89,7 +91,7 @@ export async function proxy(request: NextRequest) {
     const login = urlPreservantCode("/login", request)
     // Consentement OAuth : on revient sur la demande après connexion (le
     // formulaire d'auth lit `suivant`, filtré par cheminDeRetour).
-    if (pathname.startsWith("/oauth")) {
+    if (estCheminOAuth(pathname)) {
       login.searchParams.set("suivant", pathname + request.nextUrl.search)
     }
     return NextResponse.redirect(login)

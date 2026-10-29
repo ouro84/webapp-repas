@@ -148,6 +148,16 @@ describe("POST /api/mcp — date du jour (fuseau du foyer)", () => {
   })
 })
 
+describe("POST /api/mcp — descriptions des outils", () => {
+  it("lire_planning et lire_recette expliquent restes: true (rien à cuisiner)", async () => {
+    const { result } = await lire(await appeler("tools/list"))
+    const outils = result?.tools as Array<{ name: string; description: string }>
+    for (const nom of ["lire_planning", "lire_recette"]) {
+      expect(outils.find((o) => o.name === nom)!.description).toContain("`restes: true`")
+    }
+  })
+})
+
 describe("POST /api/mcp — rate-limit (RG-78)", () => {
   it("quota dépassé → 429 JSON-RPC et Retry-After", async () => {
     m.limiteMcp.mockResolvedValue({ autorise: false })

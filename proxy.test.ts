@@ -34,6 +34,8 @@ describe("sansSession (#305)", () => {
     expect(sansSession("/api/planning/generer")).toBe(false)
     expect(sansSession("/oauth/consent")).toBe(false)
     expect(sansSession("/api/mcpx")).toBe(false)
+    expect(sansSession("/.well-known/oauth-protected-resource")).toBe(true)
+    expect(sansSession("/.well-known/security.txt")).toBe(false)
   })
 })
 
@@ -63,6 +65,12 @@ describe("proxy — consentement OAuth (RG-72)", () => {
     etat.onboarde = false
     const reponse = await proxy(new NextRequest("https://omq.test/oauth/consent?authorization_id=abc"))
     expect(new URL(reponse.headers.get("location")!).pathname).toBe("/bienvenue")
+  })
+
+  it("/oauthxyz n'est pas le consentement : pas de suivant", async () => {
+    const reponse = await proxy(new NextRequest("https://omq.test/oauthxyz"))
+    const location = reponse.headers.get("location")
+    expect(location === null || !location.includes("suivant")).toBe(true)
   })
 
   it("une route protégée hors /oauth garde la redirection /login sans suivant", async () => {
