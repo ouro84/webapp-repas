@@ -216,7 +216,9 @@ webapp-repas/
 │   ├── generation.ts             # Génération serveur à client injecté (route + MCP, #304)
 │   ├── liste-courses.ts (pur) / liste-courses-cycle.ts (service serveur à client injecté, #304)
 │   ├── stockage.ts  sync.ts  persistance.ts  recettes.ts  reglages-data.ts  profil.ts  foyer.ts  invitation.ts  theme.ts
-│   ├── mcp/                      # Serveur MCP (#305) : auth (jeton OAuth), serveur (outils), lecture, repas, erreurs
+│   ├── mcp/                      # Serveur MCP (#305, #306) : auth (jeton OAuth), serveur (outils), lecture,
+│   │                             # ecriture-planning / ecriture-recettes / ecriture-courses, repas, erreurs
+│   ├── validation-recette.ts     # Validation de recette partagée formulaire + MCP (#306)
 │   ├── redirection.ts            # cheminDeRetour (retour après login, anti open-redirect)
 │   ├── adapters.ts               # Conversion DB → domaine
 │   ├── errors.ts  messages-auth.ts
@@ -336,7 +338,7 @@ Toute nouvelle origine externe (CDN, API tierce) devra être ajoutée à la futu
 
 ## ADR-11 — Serveur MCP et autorisation OAuth 2.1 (#302)
 
-> Statut : **accepté** (grilling 2026-10-29) ; choix effectifs de #304 et #305 ci-dessous, #306 à compléter.
+> Statut : **accepté, mis en œuvre** (#304, #305, #306) ; choix effectifs de chaque PR ci-dessous.
 
 ### Contexte
 L'utilisateur veut piloter OMQ depuis un assistant IA (son Hermes Agent via WhatsApp/Telegram), et la fonctionnalité doit servir le plus grand nombre de clients (Claude, Cursor, OpenCode, ChatGPT…). Or les clients grand public n'acceptent pas de jeton statique par utilisateur pour un MCP distant : Claude (connecteurs custom) et ChatGPT exigent **OAuth 2.1** (PKCE S256, découverte RFC 9728, enregistrement dynamique). Côté code, la génération est inline dans une route, la persistance d'un cycle est côté client et non atomique, et toutes les lectures dépendent du client navigateur.
@@ -366,6 +368,14 @@ Un seul mécanisme d'auth couvre tous les clients visés, sans serveur d'autoris
 - Rate-limit `limiteMcp` : préfixe Upstash `rl:mcp`, 60 requêtes/min/utilisateur (NO-OP sans secrets Upstash).
 - **Révocation par `listGrants` / `revokeGrant`** (section « Assistants connectés » de `/profil`) : le repli « Déconnecter tous les assistants » est inutile. Refresh tokens invalidés immédiatement, jeton d'accès valable jusqu'à expiration (1 h).
 - **Le consentement annonce aussi l'écriture** : un grant accordé en #305 couvrira les outils de #306, Supabase ne distinguant pas de portée lecture/écriture.
+
+### Mise en œuvre #306 (écriture)
+- Outils `generer_cycle`, `remplacer_repas`, `changer_personnes` (`lib/mcp/ecriture-planning.ts`), `ajouter_recette` (`lib/mcp/ecriture-recettes.ts`), `ajouter_article_courses`, `cocher_article` (`lib/mcp/ecriture-courses.ts`), composés sur les fonctions de `lib/` rendues injectables (`sauvegarderSlotsDistant`, coches, articles manuels, `chargerRecettes`, `chargerPreferences`, `creerRecette`). Mêmes RPC et tables que l'UI : temps réel et alerte US-21 sans code dédié (RG-79).
+- Ambiguïté = résultat `modifie: false` + `candidats`, rien n'est écrit ; nom exact prioritaire. L'édition d'un repas n'envoie que le créneau visé à `sauvegarder_slots`.
+- Validation de recette partagée avec le formulaire (`lib/validation-recette.ts`).
+- Quota : `generer_cycle` consomme aussi `limiteGeneration` (`rl:generer`, 10/min, seau partagé avec le web) ; les autres écritures restent sous `limiteMcp`.
+- Dettes #304 soldées par migration : les RPC de planning refusent un `recette_id` hors catalogue et hors foyer (`exiger_recettes_visibles`), `sauvegarder_cycle` refuse une ancre au calendrier impossible, `anon` n'exécute plus `sauvegarder_slots` / `sauvegarder_planning`.
+- Hermes headless : le port du callback OAuth change à chaque connexion ; l'URL de retour se colle dans le terminal de Hermes (ou tunnel SSH sur le port affiché). Procédure dans l'aide `/aide/connecter-assistant-ia`.
 
 ### Alternatives écartées
 - **Jeton personnel (Bearer statique)** : refusé par Claude et ChatGPT ; Cursor ignore les en-têtes quand le serveur annonce une découverte OAuth. Gardé seulement comme repli si le premier login OAuth de Hermes headless (Docker sur NAS) échoue.
