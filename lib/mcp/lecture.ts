@@ -36,11 +36,12 @@ import {
   TYPE_REPAS,
   validerDate,
   type Creneau,
+  type RepasDate,
 } from "@/lib/mcp/repas"
 import type { ClientSupabase } from "@/lib/supabase/types"
 import type { Ingredient, Jour, Planning, ReglagesGeneration, TempsPreparation } from "@/types"
 
-const HORS_PLAGE =
+export const HORS_PLAGE =
   "Cette date est hors de la plage consultable (12 semaines en arrière, 6 en avant). Choisis une date plus proche."
 
 export type PlanningMcp = {
@@ -55,6 +56,24 @@ export type PlanningMcp = {
     vegetarien: boolean
     temps_preparation: TempsPreparation
   }>
+}
+
+export type RepasMcp = PlanningMcp["repas"][number]
+
+/** Repas désigné par date + créneau (RG-73), tel que le renvoient les outils. */
+export function versRepasMcp({ date, creneau, jour, jp }: RepasDate): RepasMcp {
+  const type = TYPE_REPAS[creneau]
+  const recette = jp[type]!
+  return {
+    date,
+    creneau,
+    jour,
+    recette: recette.nom,
+    personnes: personnesDuSlot(jp, type),
+    restes: estRestes(jp, type),
+    vegetarien: recette.vegetarien === true,
+    temps_preparation: recette.tempsPreparation,
+  }
 }
 
 export type ArticleMcp = { nom: string; quantite: string; manuel: boolean; coche?: boolean }
@@ -79,7 +98,7 @@ export type RecetteMcp = {
   etapes: string[]
 }
 
-function depuisISO(date: string): Date {
+export function depuisISO(date: string): Date {
   const [a, m, j] = date.split("-").map(Number)
   return new Date(a, m - 1, j)
 }
@@ -89,20 +108,20 @@ function moisLong(d: Date): string {
 }
 
 // « du 29 octobre au 4 novembre »
-function libellePeriode(du: string, au: string): string {
+export function libellePeriode(du: string, au: string): string {
   const [d, a] = [depuisISO(du), depuisISO(au)]
   return `du ${d.getDate()} ${moisLong(d)} au ${a.getDate()} ${moisLong(a)}`
 }
 
 // Réglages best-effort, comme /courses et /planning : illisibles → défauts.
-async function reglagesOuDefaut(supabase: ClientSupabase): Promise<ReglagesGeneration> {
+export async function reglagesOuDefaut(supabase: ClientSupabase): Promise<ReglagesGeneration> {
   return chargerReglages(supabase).catch((erreur): ReglagesGeneration => {
     console.error("Chargement des réglages échoué (défauts appliqués).", erreur)
     return REGLAGES_DEFAUT
   })
 }
 
-async function planningsAffiches(
+export async function planningsAffiches(
   supabase: ClientSupabase,
   semaines: string[],
   reglages: ReglagesGeneration
@@ -151,20 +170,7 @@ export async function lirePlanning(
 
   return {
     periode: { du, au, libelle: libellePeriode(du, au) },
-    repas: repasAuxDates(plannings, dates).map(({ date, creneau, jour, jp }) => {
-      const type = TYPE_REPAS[creneau]
-      const recette = jp[type]!
-      return {
-        date,
-        creneau,
-        jour,
-        recette: recette.nom,
-        personnes: personnesDuSlot(jp, type),
-        restes: estRestes(jp, type),
-        vegetarien: recette.vegetarien === true,
-        temps_preparation: recette.tempsPreparation,
-      }
-    }),
+    repas: repasAuxDates(plannings, dates).map(versRepasMcp),
   }
 }
 
