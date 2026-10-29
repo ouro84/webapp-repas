@@ -215,6 +215,19 @@
     "majLe": "2026-07-15T21:05:00.000Z"
   },
   {
+    "titre": "Connecter OMQ à votre assistant IA",
+    "slug": "connecter-assistant-ia",
+    "section": "Mon compte",
+    "ordre": 30,
+    "resume": "Brancher Claude, Cursor, OpenCode ou Hermes sur OMQ pour gérer ton planning et ta liste de courses depuis ton assistant.",
+    "motsCles": [
+      "courses",
+      "planning",
+      "compte"
+    ],
+    "majLe": "2026-10-29T21:15:00.000Z"
+  },
+  {
     "titre": "Questions fréquentes",
     "slug": "faq",
     "section": "Dépannage",
