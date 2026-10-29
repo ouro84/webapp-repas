@@ -11,6 +11,8 @@
 // l'alerte de vivier (PR3).
 
 import { createClient } from "@/lib/supabase/client"
+import { clientParDefaut } from "@/lib/supabase/par-defaut"
+import type { ClientSupabase } from "@/lib/supabase/types"
 import { dbRecetteToDomain } from "@/lib/adapters"
 import type {
   Accompagnement,
@@ -58,7 +60,9 @@ export const SELECT_RECETTE = `
   )
 ` as const
 
-type Client = ReturnType<typeof createClient>
+// Client injectable (#306) : navigateur par défaut, client « par jeton » côté
+// serveur MCP (RLS mon_foyer(), RG-71).
+type Client = ClientSupabase
 
 /**
  * Ids des recettes « supprimées » (masquées) par l'utilisateur courant (#105).
@@ -81,8 +85,9 @@ async function chargerIdsMasques(client: Client): Promise<Set<string>> {
  * EXCLUANT celles qu'il a supprimées (masquées, #105).
  * Lève une erreur explicite en cas d'échec réseau / Supabase.
  */
-export async function chargerRecettes(): Promise<Recette[]> {
-  const supabase = createClient()
+export async function chargerRecettes(
+  supabase: ClientSupabase = clientParDefaut()
+): Promise<Recette[]> {
   const [{ data, error }, masques] = await Promise.all([
     supabase.from("recette").select(SELECT_RECETTE),
     chargerIdsMasques(supabase),
@@ -211,13 +216,24 @@ async function lierIngredients(
 /**
  * Crée une recette personnelle (RLS : user_id = utilisateur courant).
  * Retourne la recette créée en domaine (avec son id de base).
+ *
+ * `auteurId` (#306) : fourni par le serveur MCP, dont le client « par jeton »
+ * n'a pas de session pour `auth.getUser()`. Sans lui (web), l'auteur est lu
+ * dans la session.
  */
-export async function creerRecette(saisie: SaisieRecette): Promise<Recette> {
-  const client = createClient()
-  const {
-    data: { user },
-  } = await client.auth.getUser()
-  if (!user) throw new Error("Tu dois être connecté pour enregistrer une recette.")
+export async function creerRecette(
+  saisie: SaisieRecette,
+  client: ClientSupabase = clientParDefaut(),
+  auteurId?: string
+): Promise<Recette> {
+  let userId = auteurId
+  if (!userId) {
+    const {
+      data: { user },
+    } = await client.auth.getUser()
+    if (!user) throw new Error("Tu dois être connecté pour enregistrer une recette.")
+    userId = user.id
+  }
 
   const { data: recette, error } = await client
     .from("recette")
@@ -228,7 +244,7 @@ export async function creerRecette(saisie: SaisieRecette): Promise<Recette> {
       accompagnement: saisie.accompagnement,
       saisons: saisie.saisons.length > 0 ? saisie.saisons : null,
       etapes: saisie.etapes.length > 0 ? saisie.etapes : null,
-      user_id: user.id,
+      user_id: userId,
     })
     .select("id")
     .single()
