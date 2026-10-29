@@ -17,7 +17,7 @@ vi.mock("@/lib/generation", async (importOriginal) => ({
 
 import { ErreurGeneration, genererPourUtilisateur } from "@/lib/generation"
 import { ErreurOutil } from "@/lib/mcp/erreurs"
-import { genererCycle } from "@/lib/mcp/ecriture-planning"
+import { changerPersonnes, genererCycle, remplacerRepas } from "@/lib/mcp/ecriture-planning"
 import {
   creerSupabaseMock,
   filtre,
@@ -83,6 +83,7 @@ function mock(tables: ConfigMock["tables"] = {}, rpc: ConfigMock["rpc"] = {}) {
     },
     rpc: {
       sauvegarder_cycle: { data: { "2026-W44": "t", "2026-W45": "t" }, error: null },
+      sauvegarder_slots: { data: "t", error: null },
       ...rpc,
     },
   })
@@ -193,5 +194,160 @@ describe("genererCycle (RG-74)", () => {
     await expect(promesse).rejects.toBeInstanceOf(ErreurOutil)
     await expect(promesse).rejects.toThrow("Pas assez de recettes.")
     expect(rpcs).toEqual([])
+  })
+})
+
+// Semaine W44 : jeudi midi « salade », jeudi soir « gratin » à 4 personnes.
+function semaineJeudi() {
+  plannings["2026-W44"] = {
+    semaine: "2026-W44",
+    updated_at: "t",
+    planning_slot: [slot("jeudi", "salade", "dejeuner"), slot("jeudi", "gratin", "diner", 4)],
+  }
+}
+
+function catalogue(noms: string[], tables: ConfigMock["tables"] = {}) {
+  return mock({
+    recette: { data: noms.map(dbRecette), error: null },
+    recette_masquee: { data: [], error: null },
+    recette_preference: { data: [], error: null },
+    ...tables,
+  })
+}
+
+type SlotEcrit = { recette_id: string; jour: string; type_repas: string; personnes: number; restes: boolean }
+const slotsEcrits = (rpcs: Array<{ nom: string; args: unknown }>) =>
+  (rpcs.find((r) => r.nom === "sauvegarder_slots")?.args as { p_slots: SlotEcrit[] }).p_slots
+
+describe("remplacerRepas (RG-75)", () => {
+  beforeEach(() => {
+    semaineJeudi()
+    vi.restoreAllMocks()
+  })
+
+  it("auto : un seul slot écrit, l'autre repas du jour intact", async () => {
+    const { client, rpcs } = catalogue(["salade", "gratin", "omelette"])
+    const resultat = await remplacerRepas(client, { date: "2026-10-29", creneau: "midi" }, JEUDI)
+    expect(rpcs.map((r) => r.nom)).toEqual(["sauvegarder_slots"])
+    expect((rpcs[0].args as { p_semaine: string }).p_semaine).toBe("2026-W44")
+    expect(slotsEcrits(rpcs)).toEqual([
+      { recette_id: "omelette", jour: "jeudi", type_repas: "dejeuner", personnes: 2, restes: false },
+    ])
+    expect(resultat).toEqual({
+      modifie: true,
+      repas: expect.objectContaining({ date: "2026-10-29", creneau: "midi", recette: "omelette" }),
+    })
+  })
+
+  it("auto applique les préférences du foyer (RG-62)", async () => {
+    vi.spyOn(Math, "random").mockReturnValue(0.5)
+    const { client, rpcs } = catalogue(["salade", "gratin", "evitee", "favorite"], {
+      recette_preference: {
+        data: [
+          { recette_id: "evitee", preference: "evitee" },
+          { recette_id: "favorite", preference: "favorite" },
+        ],
+        error: null,
+      },
+    })
+    await remplacerRepas(client, { date: "2026-10-29", creneau: "midi" }, JEUDI)
+    expect(slotsEcrits(rpcs)[0].recette_id).toBe("favorite")
+  })
+
+  it("auto sans autre recette éligible : ErreurOutil qui cite ajouter_recette", async () => {
+    const { client, rpcs } = catalogue(["salade", "gratin"])
+    await expect(remplacerRepas(client, { date: "2026-10-29", creneau: "midi" }, JEUDI)).rejects.toThrow(
+      "ajouter_recette"
+    )
+    expect(rpcs).toEqual([])
+  })
+
+  it("par nom : un résultat → appliqué, personnes conservées (RG-15, RG-16)", async () => {
+    const { client, rpcs } = catalogue(["salade", "gratin", "Blanquette de veau"])
+    const resultat = await remplacerRepas(
+      client,
+      { date: "2026-10-29", creneau: "soir", recette: "blanquette" },
+      JEUDI
+    )
+    expect(slotsEcrits(rpcs)).toEqual([
+      { recette_id: "Blanquette de veau", jour: "jeudi", type_repas: "diner", personnes: 4, restes: false },
+    ])
+    expect(resultat).toMatchObject({ modifie: true, repas: { recette: "Blanquette de veau", personnes: 4 } })
+  })
+
+  it("par nom : nom exact parmi plusieurs partiels → appliqué", async () => {
+    const { client, rpcs } = catalogue(["Blanquette de veau", "Blanquette de veau à l’ancienne"])
+    await remplacerRepas(client, { date: "2026-10-29", creneau: "soir", recette: "blanquette de veau" }, JEUDI)
+    expect(slotsEcrits(rpcs)[0].recette_id).toBe("Blanquette de veau")
+  })
+
+  it("par nom : plusieurs → candidats, rien écrit", async () => {
+    const { client, rpcs } = catalogue(["Blanquette de veau", "Blanquette de poisson"])
+    const resultat = await remplacerRepas(
+      client,
+      { date: "2026-10-29", creneau: "soir", recette: "blanquette" },
+      JEUDI
+    )
+    expect(resultat).toEqual({ modifie: false, candidats: ["Blanquette de poisson", "Blanquette de veau"] })
+    expect(rpcs).toEqual([])
+  })
+
+  it("par nom : aucun → ErreurOutil qui cite ajouter_recette", async () => {
+    const { client, rpcs } = catalogue(["gratin"])
+    const promesse = remplacerRepas(client, { date: "2026-10-29", creneau: "soir", recette: "blanquette" }, JEUDI)
+    await expect(promesse).rejects.toBeInstanceOf(ErreurOutil)
+    await expect(promesse).rejects.toThrow("Propose de l’ajouter avec ajouter_recette")
+    expect(rpcs).toEqual([])
+  })
+
+  it("par nom : une recette masquée par le foyer est introuvable", async () => {
+    const { client } = catalogue(["Blanquette de veau"], {
+      recette_masquee: { data: [{ recette_id: "Blanquette de veau" }], error: null },
+    })
+    await expect(
+      remplacerRepas(client, { date: "2026-10-29", creneau: "soir", recette: "blanquette" }, JEUDI)
+    ).rejects.toBeInstanceOf(ErreurOutil)
+  })
+
+  it("repas absent (pas de déjeuner ce jour) : ErreurOutil, rien écrit", async () => {
+    plannings["2026-W44"] = { semaine: "2026-W44", updated_at: "t", planning_slot: [slot("jeudi", "gratin")] }
+    const { client, rpcs } = catalogue(["gratin", "omelette"])
+    await expect(remplacerRepas(client, { date: "2026-10-29", creneau: "midi" }, JEUDI)).rejects.toThrow(
+      "Aucun repas prévu le jeudi 29 octobre au midi"
+    )
+    expect(rpcs).toEqual([])
+  })
+
+  it("créneau désactivé dans les réglages : ErreurOutil, rien écrit", async () => {
+    const { client, rpcs } = catalogue(["gratin", "omelette"], {
+      reglages: { data: reglages({ max_diner_semaine: "aucun" }), error: null },
+    })
+    await expect(remplacerRepas(client, { date: "2026-10-29", creneau: "soir" }, JEUDI)).rejects.toThrow(
+      "Aucun repas prévu"
+    )
+    expect(rpcs).toEqual([])
+  })
+})
+
+describe("changerPersonnes (RG-77, RG-16)", () => {
+  beforeEach(() => semaineJeudi())
+
+  it("6 personnes : seul le slot visé est réécrit", async () => {
+    const { client, rpcs } = mock()
+    const resultat = await changerPersonnes(client, { date: "2026-10-29", creneau: "soir", personnes: 6 }, JEUDI)
+    expect(slotsEcrits(rpcs)).toEqual([
+      { recette_id: "gratin", jour: "jeudi", type_repas: "diner", personnes: 6, restes: false },
+    ])
+    expect(resultat.repas).toMatchObject({ recette: "gratin", personnes: 6 })
+  })
+
+  it("hors [1 ; 12] ou non entier : ErreurOutil, rien écrit", async () => {
+    for (const personnes of [0, 13, 2.5]) {
+      const { client, rpcs } = mock()
+      await expect(
+        changerPersonnes(client, { date: "2026-10-29", creneau: "soir", personnes }, JEUDI)
+      ).rejects.toThrow("Nombre de personnes invalide : choisis un entier entre 1 et 12.")
+      expect(rpcs).toEqual([])
+    }
   })
 })

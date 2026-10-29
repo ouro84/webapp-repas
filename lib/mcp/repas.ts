@@ -6,7 +6,9 @@
 // qu'un cycle de 14 j qui répète un jour de semaine lit bien deux semaines.
 
 import { dateVersSemaineJour, estDateISO, joursDuCycle } from "@/lib/cycles"
-import { lundiDeSemaine } from "@/lib/semaines"
+import { lundiDeSemaine, semaineISO } from "@/lib/semaines"
+import { semaineDansPlage } from "@/lib/generation"
+import { ErreurOutil } from "@/lib/mcp/erreurs"
 import type { Jour, JourPlanning, Planning } from "@/types"
 
 export type Creneau = "midi" | "soir"
@@ -44,9 +46,24 @@ export function datesDeSemaine(semaine: string): string[] {
   return joursDuCycle(iso, 7)
 }
 
+export const HORS_PLAGE =
+  "Cette date est hors de la plage consultable (12 semaines en arrière, 6 en avant). Choisis une date plus proche."
+
 const MESSAGE_DATE_INVALIDE = "Date invalide : utilise le format AAAA-MM-JJ (ex. 2026-10-29)."
 
 /** `null` si `date` est au format AAAA-MM-JJ et existe au calendrier, sinon le message d'erreur. */
 export function validerDate(date: string): string | null {
   return estDateISO(date) ? null : MESSAGE_DATE_INVALIDE
+}
+
+/**
+ * Semaine ISO et jour d'un repas désigné par `date` (RG-73), après contrôle du
+ * format et de la plage −12 / +6 semaines. Lève `ErreurOutil` sinon.
+ */
+export function localiserRepas(date: string, aujourdhui: Date): { semaine: string; jour: Jour } {
+  const invalide = validerDate(date)
+  if (invalide) throw new ErreurOutil(invalide)
+  const { semaine, jour } = dateVersSemaineJour(date)
+  if (!semaineDansPlage(semaineISO(aujourdhui), semaine)) throw new ErreurOutil(HORS_PLAGE)
+  return { semaine, jour }
 }

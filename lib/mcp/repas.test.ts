@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
-import { datesDeSemaine, repasAuxDates, validerDate } from "@/lib/mcp/repas"
+import { datesDeSemaine, localiserRepas, repasAuxDates, validerDate } from "@/lib/mcp/repas"
+import { ErreurOutil } from "@/lib/mcp/erreurs"
 import { RECETTES_FIXTURES } from "@/tests/fixtures/recettes"
 import type { JourPlanning, Planning } from "@/types"
 
@@ -60,5 +61,19 @@ describe("validerDate", () => {
     for (const date of ["2026-02-30", "26-10-29", "demain", "2026-13-01"]) {
       expect(validerDate(date)).toBe("Date invalide : utilise le format AAAA-MM-JJ (ex. 2026-10-29).")
     }
+  })
+})
+
+describe("localiserRepas (RG-73)", () => {
+  const JEUDI = new Date(2026, 9, 29, 12)
+
+  it("une date de la plage → sa semaine ISO et son jour", () => {
+    expect(localiserRepas("2026-10-29", JEUDI)).toEqual({ semaine: "2026-W44", jour: "jeudi" })
+  })
+
+  it("date hors plage (+8 semaines) ou invalide → ErreurOutil", () => {
+    expect(() => localiserRepas("2026-12-24", JEUDI)).toThrow(ErreurOutil)
+    expect(() => localiserRepas("2026-12-24", JEUDI)).toThrow("hors de la plage")
+    expect(() => localiserRepas("2026-02-30", JEUDI)).toThrow("Date invalide")
   })
 })

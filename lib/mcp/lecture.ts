@@ -16,7 +16,6 @@ import { retirerCreneauxDesactives } from "@/lib/generateur"
 import { semaineDansPlage } from "@/lib/generation"
 import {
   ancreParDefaut,
-  dateVersSemaineJour,
   joursDuCycle,
   libelleCycle,
   semainesDuCycle,
@@ -32,17 +31,15 @@ import { estRestes } from "@/lib/restes"
 import { ErreurOutil } from "@/lib/mcp/erreurs"
 import {
   datesDeSemaine,
+  HORS_PLAGE,
+  localiserRepas,
   repasAuxDates,
   TYPE_REPAS,
-  validerDate,
   type Creneau,
   type RepasDate,
 } from "@/lib/mcp/repas"
 import type { ClientSupabase } from "@/lib/supabase/types"
 import type { Ingredient, Jour, Planning, ReglagesGeneration, TempsPreparation } from "@/types"
-
-export const HORS_PLAGE =
-  "Cette date est hors de la plage consultable (12 semaines en arrière, 6 en avant). Choisis une date plus proche."
 
 export type PlanningMcp = {
   periode: { du: string; au: string; libelle: string }
@@ -105,6 +102,12 @@ export function depuisISO(date: string): Date {
 
 function moisLong(d: Date): string {
   return d.toLocaleDateString("fr-FR", { month: "long" })
+}
+
+/** « le jeudi 29 octobre au midi » : un repas en toutes lettres (messages d'erreur). */
+export function libelleRepas(date: string, creneau: Creneau, jour: Jour): string {
+  const d = depuisISO(date)
+  return `le ${jour} ${d.getDate()} ${moisLong(d)} ${creneau === "midi" ? "au midi" : "au soir"}`
 }
 
 // « du 29 octobre au 4 novembre »
@@ -221,10 +224,7 @@ export async function lireRecette(
   args: { date: string; creneau: Creneau },
   aujourdhui: Date = new Date()
 ): Promise<RecetteMcp> {
-  const invalide = validerDate(args.date)
-  if (invalide) throw new ErreurOutil(invalide)
-  const { semaine, jour } = dateVersSemaineJour(args.date)
-  if (!semaineDansPlage(semaineISO(aujourdhui), semaine)) throw new ErreurOutil(HORS_PLAGE)
+  const { semaine, jour } = localiserRepas(args.date, aujourdhui)
 
   const reglages = await reglagesOuDefaut(supabase)
   const [planning] = await planningsAffiches(supabase, [semaine], reglages)
@@ -232,10 +232,8 @@ export async function lireRecette(
   const jp = planning?.jours.find((j) => j.jour === jour)
   const recette = jp?.[type]
   if (!jp || !recette) {
-    const d = depuisISO(args.date)
-    const moment = args.creneau === "midi" ? "au midi" : "au soir"
     throw new ErreurOutil(
-      `Aucun repas prévu le ${jour} ${d.getDate()} ${moisLong(d)} ${moment}. Appelle lire_planning pour voir les repas prévus.`
+      `Aucun repas prévu ${libelleRepas(args.date, args.creneau, jour)}. Appelle lire_planning pour voir les repas prévus.`
     )
   }
 
