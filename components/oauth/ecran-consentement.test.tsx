@@ -35,10 +35,11 @@ afterEach(() => {
 describe("EcranConsentement (US-50, RG-72)", () => {
   it("affiche le nom du client, les droits et l'email", async () => {
     render(<EcranConsentement authorizationId="auth-1" />)
-    expect(await screen.findByRole("heading", { name: "Autoriser Hermes ?" })).toBeTruthy()
+    expect(await screen.findByRole("heading", { name: /^Autoriser Hermes\s\?$/ })).toBeTruthy()
     expect(screen.getByText(/consulter ton planning, ta liste de courses et tes recettes/)).toBeTruthy()
     expect(screen.getByText(/générer ou modifier ton planning et ta liste de courses, et ajouter des recettes/)).toBeTruthy()
     expect(screen.getByText(/arnaud@example\.com/)).toBeTruthy()
+    expect(screen.getByText(/^Hermes pourra, en ton nom et seulement pour ton foyer/)).toBeTruthy()
     expect(screen.getByText(/hermes\.example\.com/)).toBeTruthy()
     expect(oauth.getAuthorizationDetails).toHaveBeenCalledWith("auth-1")
   })

@@ -71,7 +71,7 @@ async function connecter(page: Page, email: string): Promise<void> {
 // Écran de consentement : boutons ciblés dans sa section, car le bandeau
 // cookies porte lui aussi un bouton « Refuser ».
 function consentement(page: Page, nomClient: string) {
-  return page.getByRole("region", { name: `Autoriser ${nomClient} ?` });
+  return page.getByRole("region", { name: new RegExp(`^Autoriser ${nomClient}\\s\\?$`) });
 }
 
 // Déroule une autorisation complète pour `email` (déjà connecté sur `page`) et
@@ -81,6 +81,9 @@ async function autoriser(page: Page, request: APIRequestContext, nomClient: stri
   const { verifier, challenge } = genererPkce();
   const redirection = capturerRedirection(page);
   await page.goto(urlAutorisation(clientId, challenge, "etat-1"));
+  await expect(consentement(page, nomClient)).toContainText(
+    `${nomClient} pourra, en ton nom et seulement pour ton foyer`
+  );
   await consentement(page, nomClient).getByRole("button", { name: "Autoriser" }).click();
   const retour = await redirection;
   expect(retour.searchParams.get("state")).toBe("etat-1");
@@ -124,7 +127,7 @@ test("non connecté : authorize → /login?suivant=… → connexion → retour 
   await page.waitForURL(/\/login\?.*suivant=/);
   await remplirLogin(page, EMAIL_A);
   await page.waitForURL(/\/oauth\/consent\?authorization_id=/);
-  await expect(page.getByRole("heading", { name: `Autoriser ${nom} ?` })).toBeVisible();
+  await expect(consentement(page, nom)).toBeVisible();
   expect(erreurs).toEqual([]);
 });
 

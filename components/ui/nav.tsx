@@ -99,9 +99,10 @@ export function NavBar() {
   // « Ce soir » serait faux le midi. Même seuil que lib/prochain-repas.ts.
   const libelleCeSoir = libelleMomentActuel(new Date());
 
-  // Tunnel d'onboarding (#22 PR2) : parcours focalisé, sans nav (on ne propose
-  // aucune échappatoire tant que l'onboarding n'est pas terminé).
-  if (pathname === "/bienvenue") return null;
+  // Parcours focalisés, sans nav : tunnel d'onboarding (#22 PR2, aucune
+  // échappatoire tant que l'onboarding n'est pas terminé) et consentement
+  // OAuth (#305, une seule décision à prendre : autoriser ou refuser).
+  if (pathname === "/bienvenue" || pathname.startsWith("/oauth")) return null;
 
   // Nav applicative (liens de section + avatar) réservée aux connectés (#207).
   // Tant que le signal d'auth est indéterminé (null), on retombe sur « suis-je

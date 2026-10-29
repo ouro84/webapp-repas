@@ -8,13 +8,19 @@
 // pourra faire, puis on approuve ou refuse via `auth.oauth.*` et on renvoie le
 // navigateur vers l'URL du client fournie par Supabase (code ou erreur).
 //
+// Parcours focalisé (pas de nav, cf. app/oauth/consent/page.tsx) : le logo OMQ
+// en tête dit chez qui l'on donne son accord, la carte des droits dit ce que
+// l'assistant pourra faire, et une seule décision est demandée.
+//
 // Les droits annoncés couvrent aussi l'écriture : une autorisation accordée
 // maintenant vaudra pour les outils de modification (#306), Supabase ne
 // distinguant pas de portée lecture/écriture.
 
 import { useEffect, useState } from "react";
+import { Eye, PenLine } from "lucide-react";
 import type { OAuthAuthorizationDetails } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
+import { Logo } from "@/components/ui/logo";
 
 const MESSAGE_INVALIDE =
   "Cette demande d’autorisation est invalide ou a expiré. Relance la connexion depuis ton assistant.";
@@ -23,6 +29,8 @@ type Etat =
   | { type: "chargement" }
   | { type: "erreur" }
   | { type: "consentement"; details: OAuthAuthorizationDetails };
+
+type Decision = "autoriser" | "refuser";
 
 function hote(uri: string): string | null {
   try {
@@ -34,7 +42,7 @@ function hote(uri: string): string | null {
 
 export function EcranConsentement({ authorizationId }: { authorizationId: string | null }) {
   const [etat, setEtat] = useState<Etat>({ type: "chargement" });
-  const [envoi, setEnvoi] = useState(false);
+  const [envoi, setEnvoi] = useState<Decision | null>(null);
   const [erreurEnvoi, setErreurEnvoi] = useState<string | null>(null);
 
   useEffect(() => {
@@ -63,81 +71,117 @@ export function EcranConsentement({ authorizationId }: { authorizationId: string
     };
   }, [authorizationId]);
 
-  async function decider(approuver: boolean): Promise<void> {
+  async function decider(decision: Decision): Promise<void> {
     if (etat.type !== "consentement") return;
-    setEnvoi(true);
+    setEnvoi(decision);
     setErreurEnvoi(null);
     const oauth = createClient().auth.oauth;
     const id = etat.details.authorization_id;
     try {
-      const { data, error } = approuver
-        ? await oauth.approveAuthorization(id, { skipBrowserRedirect: true })
-        : await oauth.denyAuthorization(id, { skipBrowserRedirect: true });
+      const { data, error } =
+        decision === "autoriser"
+          ? await oauth.approveAuthorization(id, { skipBrowserRedirect: true })
+          : await oauth.denyAuthorization(id, { skipBrowserRedirect: true });
       if (error || !data) throw error ?? new Error("Réponse vide.");
       window.location.assign(data.redirect_url);
     } catch (erreur) {
       console.error("Décision de consentement OAuth échouée.", erreur);
       setErreurEnvoi(
-        approuver
+        decision === "autoriser"
           ? "L’autorisation n’a pas pu être enregistrée. Réessaie."
           : "Le refus n’a pas pu être transmis. Réessaie."
       );
-      setEnvoi(false);
+      setEnvoi(null);
     }
   }
 
   if (!authorizationId || etat.type === "erreur") {
     return (
-      <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">
-        {MESSAGE_INVALIDE}
-      </p>
+      <div className="flex flex-col items-center gap-6 text-center">
+        <Logo className="size-12 text-brand-600" />
+        <p role="alert" className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600">
+          {MESSAGE_INVALIDE}
+        </p>
+      </div>
     );
   }
 
   if (etat.type === "chargement") {
-    return <p className="text-sm text-brand-700/85">Chargement de la demande…</p>;
+    return (
+      <p role="status" className="animate-pulse text-center text-brand-700/85">
+        Chargement de la demande…
+      </p>
+    );
   }
 
   const { client, user } = etat.details;
   const site = hote(client.uri);
 
   return (
-    <section aria-labelledby="titre-consentement" className="flex flex-col gap-4">
-      <h1 id="titre-consentement" className="font-display text-2xl font-semibold text-brand-900">
-        Autoriser {client.name} ?
+    <section aria-labelledby="titre-consentement" className="flex flex-col">
+      <Logo className="mb-6 size-12 self-center text-brand-600" />
+
+      <h1
+        id="titre-consentement"
+        className="text-center font-display text-2xl font-semibold text-balance text-brand-900"
+      >
+        Autoriser {client.name}&nbsp;?
       </h1>
-      {site && <p className="text-sm text-brand-700/85">{site}</p>}
-      <div className="text-sm text-brand-900">
-        <p>{client.name} pourra, en ton nom et seulement pour ton foyer :</p>
-        <ul className="mt-2 list-disc space-y-1 pl-5">
-          <li>consulter ton planning, ta liste de courses et tes recettes ;</li>
-          <li>générer ou modifier ton planning et ta liste de courses, et ajouter des recettes.</li>
+      <p className="mt-2 text-center text-sm text-brand-700/85">
+        {site ? (
+          <>
+            <span className="font-medium text-brand-900">{site}</span>
+            {" demande l’accès à ton compte On mange quoi ?"}
+          </>
+        ) : (
+          <>Cet assistant demande l’accès à ton compte On mange quoi&nbsp;?</>
+        )}
+      </p>
+
+      <div className="mt-6 rounded-lg border border-brand-100 bg-surface p-4">
+        <p className="text-sm font-medium text-brand-900">
+          {`${client.name} pourra, en ton nom et seulement pour ton foyer :`}
+        </p>
+        <ul className="mt-3 flex flex-col gap-3 text-sm text-brand-900">
+          <li className="flex gap-3">
+            <Eye aria-hidden className="mt-0.5 size-4 shrink-0 text-brand-600" />
+            <span>consulter ton planning, ta liste de courses et tes recettes&nbsp;;</span>
+          </li>
+          <li className="flex gap-3">
+            <PenLine aria-hidden className="mt-0.5 size-4 shrink-0 text-brand-600" />
+            <span>générer ou modifier ton planning et ta liste de courses, et ajouter des recettes.</span>
+          </li>
         </ul>
       </div>
-      <p className="text-sm text-brand-700/85">Connecté en tant que {user.email}.</p>
-      <p className="text-sm text-brand-700/85">
-        Tu pourras retirer cet accès à tout moment depuis ton profil, section « Assistants connectés ».
+
+      <p className="mt-4 text-sm text-brand-700/85">
+        Connecté en tant que <span className="font-medium text-brand-900">{user.email}</span>.
+        Tu pourras retirer cet accès à tout moment depuis ton profil, section «&nbsp;Assistants
+        connectés&nbsp;».
       </p>
+
       {erreurEnvoi && (
-        <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">
+        <p role="alert" className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600">
           {erreurEnvoi}
         </p>
       )}
-      <div className="flex flex-wrap gap-3">
+
+      <div className="mt-6 flex flex-col gap-3">
         <button
           type="button"
-          onClick={() => decider(true)}
-          disabled={envoi}
-          aria-busy={envoi}
-          className="rounded-full bg-primary px-6 py-3 text-sm font-medium text-white transition hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100 disabled:cursor-not-allowed disabled:opacity-60"
+          onClick={() => decider("autoriser")}
+          disabled={envoi !== null}
+          aria-busy={envoi === "autoriser"}
+          className="rounded-full bg-primary px-6 py-3 text-sm font-semibold text-white transition hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100 disabled:cursor-not-allowed disabled:opacity-60"
         >
           Autoriser
         </button>
         <button
           type="button"
-          onClick={() => decider(false)}
-          disabled={envoi}
-          className="rounded-full border border-brand-200 px-6 py-3 text-sm font-medium text-brand-900 transition hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100 disabled:cursor-not-allowed disabled:opacity-60"
+          onClick={() => decider("refuser")}
+          disabled={envoi !== null}
+          aria-busy={envoi === "refuser"}
+          className="rounded-full border border-brand-200 bg-surface px-6 py-3 text-sm font-medium text-brand-700 transition hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100 disabled:cursor-not-allowed disabled:opacity-60"
         >
           Refuser
         </button>

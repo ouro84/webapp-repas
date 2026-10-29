@@ -43,7 +43,7 @@ Store `lib/theme.ts` (`useSyncExternalStore`, clé localStorage `theme` ∈ clai
 
 - **État actif via `estActif(pathname, href)`** : `/` en égalité stricte, les sections en `startsWith` (sinon le logo paraîtrait actif partout). Logo actif : pastille `bg-brand-50` + `aria-current="page"`.
 - **Nav applicative réservée aux connectés** : sinon (login, signup, `/`, `/aide`) elle se réduit au logo + « Aide », pour éviter des liens qui rebondissent vers `/login`. Signal : `useEstConnecte()` (`lib/session.ts`, snapshot initial `null`) ; tant qu'il vaut `null`, on retombe sur `ROUTES_PROTEGEES` (le proxy y garantit la session), d'où pas de scintillement.
-- **Nav masquée sur `/bienvenue`** (parcours focalisé).
+- **Nav masquée sur `/bienvenue` et `/oauth/*`** (parcours focalisés : onboarding, consentement OAuth #305). Ces écrans portent le logo en tête pour l'ancrage de marque.
 - **Budget de largeur mobile saturé.** Les liens de section passent par `LienSection` : icône seule sous `sm:`, libellé à partir de `sm:`. Pourquoi : sans `flex-wrap` ni `overflow-x: hidden` global (volontaire, un débordement doit rester visible), 4 libellés texte faisaient déborder le `body` à 390 px.
   - `aria-label={label}` reste posé en permanence : le libellé masqué par `hidden` sort de l'arbre d'accessibilité. Le nom accessible est donc identique aux deux paliers, et les e2e `getByRole("link", { name })` en dépendent.
   - Tout nouveau lien de nav passe par `LienSection` avec une icône et se re-mesure à **320 px** (marge ~20 px).
@@ -54,6 +54,10 @@ Store `lib/theme.ts` (`useSyncExternalStore`, clé localStorage `theme` ∈ clai
 - Reset global `@media (prefers-reduced-motion: reduce)` dans `globals.css`, plus `motion-safe:` / `motion-reduce:` dans les composants. Ce reset en `*` n'atteint pas les `::view-transition-*` (cf. `courses-cycle.md`).
 - **Stagger de `/planning` rejoué par un nonce** : la génération ne vide pas l'écran, donc les `<li key={jour}>` ne se remontent pas. `genNonce` (state), bumpé seulement dans `genererNouveauPlanning`, sert de `key` aux deux grilles (mobile + desktop). Un remplacement de slot ou un changement de personnes ne le bumpe pas, sinon toute la grille re-animerait à chaque édition.
 - Feedback `active:scale` : utilitaire **`transition`** (couleur + transform), sur les boutons d'action (CTA, actions de slot, steppers, modales, submit). Les switches, liens de nav et lignes de liste en sont exclus.
+
+## Texte JSX
+
+- **Une phrase qui commence par `{expression}` suivie de texte se compose en chaîne** (`{`${nom} pourra…`}`) ou avec un `{" "}` explicite. Pourquoi : sur `/oauth/consent`, le compilateur Next a mangé l'espace (« Claudepourra ») alors que Vitest le rendait correctement ; seul l'e2e l'a vu.
 
 ## Composants partagés
 
