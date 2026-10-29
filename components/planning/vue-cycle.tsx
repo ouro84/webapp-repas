@@ -168,9 +168,22 @@ export function VuePlanningCycle({
     })
   );
 
-  // Basculer vers la vue Semaine (démontage) ne perd pas une écriture débouncée.
+  // Ne jamais perdre une écriture débouncée : ni en basculant vers la vue
+  // Semaine (démontage), ni quand l'app passe en arrière-plan ou se ferme
+  // (mobile verrouillé, onglet quitté, rechargement) — contrairement à la vue
+  // Semaine, rien n'est gardé en localStorage pour la rejouer plus tard.
   useEffect(() => {
+    const surMasquage = () => {
+      if (document.visibilityState === "hidden") void file.vider();
+    };
+    const surPagehide = () => {
+      void file.vider();
+    };
+    document.addEventListener("visibilitychange", surMasquage);
+    window.addEventListener("pagehide", surPagehide);
     return () => {
+      document.removeEventListener("visibilitychange", surMasquage);
+      window.removeEventListener("pagehide", surPagehide);
       void file.vider();
     };
   }, [file]);

@@ -69,6 +69,17 @@ test("modifier le nombre de personnes depuis la vue Cycle persiste au reload", a
   await boutonPlus.click();
   await expect(page.getByText("3 pers.").first()).toBeVisible();
 
+  // Stepper débouncé 800 ms (#301) : l'app passée en arrière-plan (mobile qui
+  // verrouille, onglet quitté) doit envoyer l'écriture tout de suite, sinon un
+  // rechargement ou une fermeture juste après le clic la perdrait.
+  const envoi = page.waitForRequest("**/rest/v1/rpc/sauvegarder_slots", { timeout: 500 });
+  await page.evaluate(() => {
+    Object.defineProperty(document, "visibilityState", { value: "hidden", configurable: true });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  const reponse = await (await envoi).response();
+  expect(reponse?.ok()).toBe(true);
+
   await page.reload();
   await expect(page.getByText("3 pers.").first()).toBeVisible();
 });
