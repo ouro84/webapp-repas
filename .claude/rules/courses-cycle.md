@@ -8,6 +8,7 @@ paths:
   - "lib/coches*.ts"
   - "lib/transitions-courses*.ts"
   - "lib/articles-manuels*.ts"
+  - "lib/liste-courses*.ts"
   - "lib/file-ecriture-slots*.ts"
   - "lib/sync*.ts"
   - "lib/persistance.ts"
@@ -31,6 +32,7 @@ paths:
 
 - `/courses` utilise **`useSyncCourses()`** (coches uniquement : abonnement `storeCoches`, flush, temps réel par ancre, temps réel planning par semaine du cycle), **`useCyclePlanning()`** (planning projeté, clé `cycle_planning`) et **`useCycleAffiche()`** (`{ancre, longueur}`). `useSync()` est réservé à `/planning`.
 - **`cycle_planning` est une projection locale, jamais écrite dans `storePlanning` ni poussée.** Pourquoi : sa `semaine` est en réalité une ancre-date et ses `jour` peuvent être dupliqués ; un push planterait `sauvegarder_planning` ou écraserait les jours d'une semaine voisine.
+- **Composition de la liste = `assemblerListeCourses`** (`lib/liste-courses.ts`, pur) : filtre des créneaux désactivés (RG-46), agrégation (RG-05), fusion des articles manuels. Partagée par `/courses` et par `chargerListeCoursesCycle` (`lib/liste-courses-cycle.ts`, serveur, client injecté, pour le MCP) ; `retirerArticlesCoches` donne « ce qu'il reste à acheter » (RG-78). Pourquoi : une évolution de la liste faite d'un seul côté ferait diverger l'app et l'assistant (règle du jumeau).
 - **Dirty-first adapté** (`chargerCycleDansCache`) : le local fait foi si le backend est vide pour cette ancre **et** si `planningCycle.semaine === ancre` (cas offline et injection e2e).
 - **Limitation connue** : RG-13 (une régénération sur `/planning` vide les coches) peut viser le mauvais cycle **côté distant** si aucun cycle n'a été affiché dans la session (`ancreActive()` vaut `null`). Le nettoyage local reste correct.
 
