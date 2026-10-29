@@ -253,7 +253,15 @@ export async function creerRecette(
     throw new Error(`Création de la recette impossible : ${error?.message ?? "réponse vide"}`)
   }
 
-  await lierIngredients(client, recette.id, saisie.ingredients)
+  try {
+    await lierIngredients(client, recette.id, saisie.ingredients)
+  } catch (erreur) {
+    // Pas de recette orpheline sans ingrédients (#306) : elle serait tirée par
+    // la génération et bloquerait un nouvel essai sous le même nom.
+    const { error: erreurSuppression } = await client.from("recette").delete().eq("id", recette.id)
+    if (erreurSuppression) console.error("Recette orpheline non supprimée.", erreurSuppression)
+    throw erreur
+  }
 
   return saisieVersRecette(recette.id, saisie)
 }

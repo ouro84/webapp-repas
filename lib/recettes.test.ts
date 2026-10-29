@@ -77,4 +77,19 @@ describe("creerRecette — client injecté et auteur fourni", () => {
       [{ recette_id: "r9", ingredient_id: "i1", quantite: 500, unite: "g" }],
     ])
   })
+
+  it("échec des ingrédients : la recette créée est supprimée et l'erreur remonte", async () => {
+    const { client, appels } = creerSupabaseMock({
+      tables: {
+        recette: { data: { id: "r9" }, error: null },
+        ingredient: { data: { id: "i1" }, error: null },
+        recette_ingredient: { data: null, error: { message: "duplicate key" } },
+      },
+    })
+    await expect(creerRecette(saisie, client, "u1")).rejects.toThrow(
+      "Enregistrement des ingrédients impossible : duplicate key"
+    )
+    const suppression = appels.filter((a) => a.table === "recette" && a.ops.some(([op]) => op === "delete"))
+    expect(suppression).toEqual([{ table: "recette", ops: [["delete"], ["eq", "id", "r9"]] }])
+  })
 })

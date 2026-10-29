@@ -43,6 +43,14 @@ describe("validerSaisieRecette", () => {
     }
   })
 
+  it("ingrédient en double (même nom, casse ignorée, même rayon) : refusé", () => {
+    const beurre = { nom: "beurre", quantite: 20, unite: "g" as const, categorie: "produits-frais" as const, fondDePlacard: false }
+    const ingredients = [beurre, { ...beurre, nom: "Beurre", quantite: 30 }]
+    expect(validerSaisieRecette(saisie({ ingredients }))).toBe(
+      "Ingrédient en double : « Beurre ». Additionne les quantités sur une seule ligne."
+    )
+  })
+
   it("nom d'ingrédient de plus de 100 caractères (contrainte ingredient_nom_longueur)", () => {
     const nom = "a".repeat(101)
     const ingredients = [{ ...saisie().ingredients[0], nom }]

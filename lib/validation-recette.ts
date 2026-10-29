@@ -6,6 +6,7 @@
 // impose déjà (contrainte ingredient_nom_longueur, #193).
 
 import type { SaisieRecette } from "@/lib/recettes"
+import { normaliser } from "@/lib/recherche"
 
 export const NOM_INGREDIENT_MAX = 100
 
@@ -13,9 +14,15 @@ export const NOM_INGREDIENT_MAX = 100
 export function validerSaisieRecette(saisie: SaisieRecette): string | null {
   if (saisie.nom.trim() === "") return "Donne un nom à la recette."
   if (saisie.ingredients.length === 0) return "Ajoute au moins un ingrédient."
+  // Deux lignes du même ingrédient (même rayon, même fond de placard) visent la
+  // même ligne recette_ingredient : la base refuserait le doublon (#306).
+  const vus = new Set<string>()
   for (const ingredient of saisie.ingredients) {
     const nom = ingredient.nom.trim()
     if (nom === "") return "Chaque ingrédient doit avoir un nom."
+    const cle = `${normaliser(nom)}|${ingredient.categorie}|${ingredient.fondDePlacard}`
+    if (vus.has(cle)) return `Ingrédient en double : « ${nom} ». Additionne les quantités sur une seule ligne.`
+    vus.add(cle)
     if (nom.length > NOM_INGREDIENT_MAX) {
       return `Nom d’ingrédient trop long : « ${nom} » (${NOM_INGREDIENT_MAX} caractères maximum).`
     }
