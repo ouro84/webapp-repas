@@ -5,6 +5,7 @@
 import { createServerClient } from '@supabase/ssr'
 import type { User } from '@supabase/supabase-js'
 import { NextResponse, type NextRequest } from 'next/server'
+import { cheminDeRetour } from '@/lib/redirection'
 
 // Construit une URL de redirection en PRÉSERVANT le code d'invitation présent
 // dans l'URL entrante (#22 PR3, deep-link) : sans ça, un membre déjà connecté
@@ -80,11 +81,18 @@ export async function proxy(request: NextRequest) {
 
   // Pages protégées : redirige vers /login si non connecté. /bienvenue (tunnel
   // d'onboarding #22 PR2) en fait partie — on ne s'onboarde pas déconnecté.
-  const protectedRoutes = ["/planning", "/courses", "/recettes", "/reglages", "/profil", "/bienvenue", "/ce-soir"]
+  // /oauth (#305, RG-72) : l'écran de consentement exige une session OMQ.
+  const protectedRoutes = ["/planning", "/courses", "/recettes", "/reglages", "/profil", "/bienvenue", "/ce-soir", "/oauth"]
   const isProtectedRoute = protectedRoutes.some(route => pathname.startsWith(route))
 
   if (isProtectedRoute && !user) {
-    return NextResponse.redirect(urlPreservantCode("/login", request))
+    const login = urlPreservantCode("/login", request)
+    // Consentement OAuth : on revient sur la demande après connexion (le
+    // formulaire d'auth lit `suivant`, filtré par cheminDeRetour).
+    if (pathname.startsWith("/oauth")) {
+      login.searchParams.set("suivant", pathname + request.nextUrl.search)
+    }
+    return NextResponse.redirect(login)
   }
 
   const authRoutes = ["/login", "/signup"]
@@ -125,7 +133,9 @@ export async function proxy(request: NextRequest) {
       return NextResponse.redirect(urlPreservantCode("/bienvenue", request))
     }
     if (onboarde && (pathname === "/bienvenue" || isAuthRoute)) {
-      return NextResponse.redirect(urlPreservantCode("/planning", request))
+      // Déjà connecté sur /login?suivant=… (#305) : retour à la demande OAuth.
+      const suivant = isAuthRoute ? request.nextUrl.searchParams.get("suivant") : null
+      return NextResponse.redirect(urlPreservantCode(cheminDeRetour(suivant), request))
     }
   }
 
