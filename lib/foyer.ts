@@ -12,6 +12,7 @@
 // RPC sont déjà en français et lisibles : on les remonte tels quels.
 
 import { createClient } from "@/lib/supabase/client"
+import { clientParDefaut } from "@/lib/supabase/par-defaut"
 import type { ClientSupabase } from "@/lib/supabase/types"
 
 export type EtatFoyer = {
@@ -59,7 +60,7 @@ export async function chargerFoyer(): Promise<EtatFoyer> {
  * Client injectable (#304) : appelable côté serveur en tant que l'utilisateur.
  */
 export async function chargerJourCoursesFoyer(
-  supabase: ClientSupabase = createClient()
+  supabase: ClientSupabase = clientParDefaut()
 ): Promise<number> {
   const { data, error } = await supabase.from("foyers").select("jour_courses").maybeSingle()
   if (error || !data) return 1

@@ -8,6 +8,7 @@
 // planning (qui applique l'éligibilité côté client).
 
 import { createClient } from "@/lib/supabase/client"
+import { clientParDefaut } from "@/lib/supabase/par-defaut"
 import type { ClientSupabase } from "@/lib/supabase/types"
 import {
   dbReglagesToDomain,
@@ -37,7 +38,7 @@ const SELECT_REGLAGES = `
  * Client injectable (#304) : appelable côté serveur en tant que l'utilisateur.
  */
 export async function chargerReglages(
-  supabase: ClientSupabase = createClient()
+  supabase: ClientSupabase = clientParDefaut()
 ): Promise<ReglagesGeneration> {
   const { data, error } = await supabase
     .from("reglages")

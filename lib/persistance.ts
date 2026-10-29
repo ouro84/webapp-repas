@@ -10,9 +10,10 @@
 //
 // Lectures à client injecté (#304, RG-71) : le dernier paramètre optionnel
 // permet de les appeler côté serveur EN TANT QUE l'utilisateur (client « par
-// jeton » du serveur MCP, RLS mon_foyer()) ; défaut = client navigateur.
+// jeton » du serveur MCP, RLS mon_foyer()) ; défaut = client navigateur (clientParDefaut, qui REFUSE hors navigateur).
 
 import { createClient } from "@/lib/supabase/client"
+import { clientParDefaut } from "@/lib/supabase/par-defaut"
 import type { ClientSupabase } from "@/lib/supabase/types"
 import { dbArticleManuelToDomain, dbPlanningToDomain } from "@/lib/adapters"
 import { LONGUEUR_DEFAUT } from "@/lib/cycles"
@@ -68,7 +69,7 @@ export const SELECT_PLANNING = `
  */
 export async function chargerPlanningDistant(
   semaine?: string,
-  supabase: ClientSupabase = createClient()
+  supabase: ClientSupabase = clientParDefaut()
 ): Promise<{
   planning: Planning
   updatedAt: string
@@ -256,7 +257,7 @@ export async function sauvegarderSlotsDistant(
 export async function sauvegarderCycleDistant(
   ancre: string,
   semaines: SemaineGeneree[],
-  supabase: ClientSupabase = createClient()
+  supabase: ClientSupabase = clientParDefaut()
 ): Promise<Record<string, string>> {
   const { data, error } = await supabase.rpc("sauvegarder_cycle", {
     p_ancre: ancre,
@@ -280,7 +281,7 @@ export async function sauvegarderCycleDistant(
  */
 export async function chargerCochesDistantes(
   ancre: string,
-  supabase: ClientSupabase = createClient()
+  supabase: ClientSupabase = clientParDefaut()
 ): Promise<Record<string, number>> {
   const { data, error } = await supabase
     .from("etat_courses_article")
@@ -356,7 +357,7 @@ export async function viderCochesDistantes(ancre: string): Promise<void> {
  *  de bloquer l'affichage de la liste de courses. */
 export async function chargerLongueurCycle(
   ancre: string,
-  supabase: ClientSupabase = createClient()
+  supabase: ClientSupabase = clientParDefaut()
 ): Promise<number> {
   const { data, error } = await supabase
     .from("cycle_courses").select("longueur").eq("ancre", ancre).maybeSingle()
@@ -391,7 +392,7 @@ const SELECT_ARTICLE_MANUEL =
 /** Articles manuels d'une ancre de cycle, dans leur ordre de création. */
 export async function chargerArticlesManuelsDistants(
   ancre: string,
-  supabase: ClientSupabase = createClient()
+  supabase: ClientSupabase = clientParDefaut()
 ): Promise<ArticleManuel[]> {
   const { data, error } = await supabase
     .from("article_manuel")
