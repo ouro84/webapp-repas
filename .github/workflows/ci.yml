@@ -23,6 +23,10 @@ on:
       - "**/*.md"
       - "content/aide/**"
       - "revueDesign/**"
+      # Outillage agent (règles .claude/rules/, settings Claude Code) et
+      # .gitignore : sans effet sur le build ni les tests.
+      - ".claude/**"
+      - ".gitignore"
   push:
     branches: [main]
   # Déclenchement manuel : filet de sécurité quand GitHub « zappe » le run push
