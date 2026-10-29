@@ -16,7 +16,13 @@ import { createClient } from "@/lib/supabase/client"
 import type { ClientSupabase } from "@/lib/supabase/types"
 import { dbArticleManuelToDomain, dbPlanningToDomain } from "@/lib/adapters"
 import { LONGUEUR_DEFAUT } from "@/lib/cycles"
-import type { ArticleManuel, DbArticleManuel, DbPlanningSlot, Planning } from "@/types"
+import type {
+  ArticleManuel,
+  DbArticleManuel,
+  DbPlanningSlot,
+  Planning,
+  SemaineGeneree,
+} from "@/types"
 
 // Sélection imbriquée : le planning, ses slots (avec personnes/restes) et la
 // recette complète de chaque slot (avec ingrédients) — nécessaire pour
@@ -236,6 +242,35 @@ export async function sauvegarderSlotsDistant(
     )
   }
   return data as string
+}
+
+/**
+ * Persiste un cycle généré via la RPC ATOMIQUE `sauvegarder_cycle` (#304) : les
+ * jours du cycle de TOUTES les semaines ISO touchées (upsert des seuls
+ * (jour, type_repas) fournis, jours voisins intacts) ET la purge des coches du
+ * cycle (RG-13), en une transaction. Remplace l'ancienne séquence client
+ * « N × sauvegarder_slots + purge » (non atomique). Partagée par le web
+ * (« Générer mon cycle ») et le serveur MCP (règle du jumeau, RG-79) — client
+ * injectable. Renvoie l'updated_at posé par le trigger serveur, par semaine.
+ */
+export async function sauvegarderCycleDistant(
+  ancre: string,
+  semaines: SemaineGeneree[],
+  supabase: ClientSupabase = createClient()
+): Promise<Record<string, string>> {
+  const { data, error } = await supabase.rpc("sauvegarder_cycle", {
+    p_ancre: ancre,
+    p_semaines: semaines.map(({ semaine, jours }) => ({
+      semaine,
+      slots: construireSlotsJours(jours),
+    })),
+  })
+  if (error || !data) {
+    throw new Error(
+      `Sauvegarde du cycle impossible : ${error?.message ?? "réponse vide"}`
+    )
+  }
+  return data as Record<string, string>
 }
 
 /**

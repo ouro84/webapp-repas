@@ -131,6 +131,13 @@ export type Planning = {
   jours: JourPlanning[]; // 7 entrées
 };
 
+// Jours générés d'un cycle tombant dans UNE semaine ISO (#259, #304) : unité
+// d'écriture de la RPC atomique `sauvegarder_cycle` (web et serveur MCP).
+export type SemaineGeneree = {
+  semaine: string;       // ex: "2026-W44"
+  jours: JourPlanning[]; // seulement les jours du cycle dans cette semaine
+};
+
 // Réglages de génération personnalisés (#45, P09), par utilisateur connecté.
 // `plafonds` : temps de préparation MAXIMUM autorisé par créneau (jour × repas)
 // — la génération n'y place que des recettes de temps ≤ plafond (l'ordre est

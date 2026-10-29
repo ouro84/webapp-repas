@@ -18,6 +18,7 @@ import {
   chargerCochesDistantes,
   chargerLongueurCycle,
   chargerPlanningDistant,
+  sauvegarderCycleDistant,
 } from "@/lib/persistance"
 import { chargerJourCoursesFoyer } from "@/lib/foyer"
 import { chargerReglages } from "@/lib/reglages-data"
@@ -123,6 +124,58 @@ describe("lectures du cycle — client injecté", () => {
   it("le défaut reste le client navigateur", async () => {
     await expect(chargerLongueurCycle("2026-10-29")).rejects.toThrow(
       "client navigateur interdit côté serveur"
+    )
+  })
+})
+
+describe("sauvegarderCycleDistant — RPC atomique sauvegarder_cycle (#304)", () => {
+  const recette = { id: "r1", nom: "R1", tempsPreparation: "rapide" as const, ingredients: [] }
+  const semaines = [
+    { semaine: "2026-W44", jours: [{ jour: "jeudi" as const, diner: recette }] },
+    { semaine: "2026-W45", jours: [{ jour: "lundi" as const, diner: recette }] },
+  ]
+  const slot = (jour: string) => ({
+    recette_id: "r1",
+    jour,
+    type_repas: "diner",
+    personnes: 2,
+    restes: false,
+  })
+
+  it("appelle sauvegarder_cycle une seule fois avec toutes les semaines", async () => {
+    const maj = { "2026-W44": "2026-10-29T12:00:00Z", "2026-W45": "2026-10-29T12:00:00Z" }
+    const { client, rpcs } = creerSupabaseMock({
+      rpc: { sauvegarder_cycle: { data: maj, error: null } },
+    })
+
+    const resultat = await sauvegarderCycleDistant("2026-10-29", semaines, client)
+
+    expect(rpcs).toEqual([
+      {
+        nom: "sauvegarder_cycle",
+        args: {
+          p_ancre: "2026-10-29",
+          p_semaines: [
+            { semaine: "2026-W44", slots: [slot("jeudi")] },
+            { semaine: "2026-W45", slots: [slot("lundi")] },
+          ],
+        },
+      },
+    ])
+    expect(resultat).toEqual(maj)
+  })
+
+  it("remonte l'erreur de la RPC", async () => {
+    const enErreur = creerSupabaseMock({
+      rpc: { sauvegarder_cycle: { data: null, error: { message: "Semaine invalide : x" } } },
+    })
+    await expect(sauvegarderCycleDistant("2026-10-29", semaines, enErreur.client)).rejects.toThrow(
+      "Sauvegarde du cycle impossible : Semaine invalide : x"
+    )
+
+    const vide = creerSupabaseMock({ rpc: { sauvegarder_cycle: { data: null, error: null } } })
+    await expect(sauvegarderCycleDistant("2026-10-29", semaines, vide.client)).rejects.toThrow(
+      "Sauvegarde du cycle impossible : réponse vide"
     )
   })
 })
