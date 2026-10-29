@@ -177,7 +177,7 @@ Le code doit être versionné, sauvegardé hors de la machine locale, et permett
 
 ## Structure de dossiers (à jour)
 
-> Mise à jour 2026-06-15 : l'arbre « cible » d'origine (trio MVP `lib/{generateur,courses,supabase}.ts`) a été remplacé par l'arborescence réelle, qui a beaucoup grossi (épopées #2, #22, #45, #49, #56, #86, #105…). Vue d'ensemble représentative — voir `CLAUDE.md` pour les conventions par fichier.
+> Mise à jour 2026-10-29 (#304, socle MCP) ; 2026-06-15 : l'arbre « cible » d'origine (trio MVP `lib/{generateur,courses,supabase}.ts`) a été remplacé par l'arborescence réelle, qui a beaucoup grossi (épopées #2, #22, #45, #49, #56, #86, #105…). Vue d'ensemble représentative — voir `CLAUDE.md` pour les conventions par fichier.
 
 ```
 webapp-repas/
@@ -196,7 +196,7 @@ webapp-repas/
 │   ├── bienvenue/                # "/bienvenue" — tunnel d'onboarding (#22)
 │   ├── login/  signup/  mot-de-passe-oublie/
 │   ├── auth/                     # reinitialiser/ (page) + signout/ (route)
-│   └── api/planning/generer/route.ts   # Génération côté serveur
+│   └── api/                      # planning/generer (adaptateur HTTP de lib/generation.ts), compte/supprimer
 │
 ├── components/
 │   ├── ui/                       # Génériques (logo, nav, badges, confirmation, avatar, thème…)
@@ -209,10 +209,14 @@ webapp-repas/
 │   ├── generateur.ts  courses.ts  personnes.ts  saisons.ts  restes.ts  semaines.ts
 │   ├── reglages.ts (pur) / reglages-data.ts (accès)  accompagnement.ts  pluriels.ts  recherche.ts  unites.ts
 │   ├── coches.ts / coches-sync.ts  doublons.ts  planning-diff.ts  avatar.ts  clavier.ts
+│   ├── cycles.ts  articles-manuels.ts  file-ecriture-slots.ts   # cycle de courses (#257, #216, #301)
+│   ├── generation.ts             # Génération serveur à client injecté (route + MCP, #304)
+│   ├── liste-courses.ts (pur) / liste-courses-cycle.ts (service serveur à client injecté, #304)
 │   ├── stockage.ts  sync.ts  persistance.ts  recettes.ts  reglages-data.ts  profil.ts  foyer.ts  invitation.ts  theme.ts
 │   ├── adapters.ts               # Conversion DB → domaine
 │   ├── errors.ts  messages-auth.ts
-│   └── supabase/                 # client.ts (navigateur) + server.ts (serveur) — cf. ADR-02
+│   └── supabase/                 # client.ts (navigateur), server.ts (cookies), admin.ts (service_role, suppression de compte),
+│                                 # par-jeton.ts (Bearer JWT + anon, MCP), types.ts (ClientSupabase) — cf. ADR-02, ADR-11
 │
 ├── types/index.ts                # Types domaine + types DB (snake_case)
 ├── data/                         # recettes.json (amorçage, 74) + recettes_25random.json (ancien jeu, réf.)
@@ -341,6 +345,13 @@ L'utilisateur veut piloter OMQ depuis un assistant IA (son Hermes Agent via What
 
 ### Justification
 Un seul mécanisme d'auth couvre tous les clients visés, sans serveur d'autorisation maison ni stockage de jetons côté OMQ, et réutilise l'isolation RLS déjà auditée (ADR-10). L'extraction dans `lib/` solde au passage une dette (persistance de cycle non atomique côté client).
+
+### Mise en œuvre #304 (socle serveur)
+- `genererPourUtilisateur(supabase, demande)` (`lib/generation.ts`) : génération à client injecté ; la route `/api/planning/generer` n'est plus qu'un adaptateur HTTP.
+- Lectures de `lib/persistance.ts`, `lib/foyer.ts`, `lib/reglages-data.ts` à client injectable (défaut : client navigateur).
+- `chargerListeCoursesCycle` (`lib/liste-courses-cycle.ts`) compose la liste avec `assemblerListeCourses`, l'assembleur pur de `/courses`.
+- RPC `sauvegarder_cycle` (jours du cycle sur N semaines ISO + purge des coches RG-13, une transaction), utilisée par « Générer mon cycle » dès #304 et par le MCP ensuite.
+- `creerClientParJeton(jeton)` (`lib/supabase/par-jeton.ts`) : clé anon + `Authorization: Bearer`, jamais `service_role`.
 
 ### Alternatives écartées
 - **Jeton personnel (Bearer statique)** : refusé par Claude et ChatGPT ; Cursor ignore les en-têtes quand le serveur annonce une découverte OAuth. Gardé seulement comme repli si le premier login OAuth de Hermes headless (Docker sur NAS) échoue.
