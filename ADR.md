@@ -417,7 +417,7 @@ Respecte les CGV et le RGPD par construction, évite le blocage Cloudflare, ne c
 - `.env.example` contient les noms des variables sans valeur — commité dans Git
 - `.gitignore` configuré **avant** le premier `git add` — sans exception
 - En production (Vercel) : variables d'environnement configurées dans le dashboard Vercel, jamais dans le code
-- **Rate-limiting (#191, ADR-10)** : `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` à poser dans les variables d'env **Vercel (prod)**. **Absentes ⇒ rate-limiter inactif (no-op)** : volontaire en CI/dev. Si la CI devait un jour les lire, les dupliquer dans **les deux coffres** (Actions **et** Dependabot, cf. CLAUDE.md).
+- **Rate-limiting (#191, ADR-10)** : base Upstash Redis `omq-ratelimit` (Marketplace Vercel, offre gratuite, région `iad1`), branchée sur **Vercel Production seulement** ; l'intégration pose `KV_REST_API_URL` / `KV_REST_API_TOKEN`, lus par `lib/rate-limit.ts` (les noms `UPSTASH_REDIS_REST_*` restent acceptés). **Absentes ⇒ rate-limiter inactif (no-op)** : volontaire en CI/dev. Si la CI devait un jour les lire, les dupliquer dans **les deux coffres** (Actions **et** Dependabot, cf. CLAUDE.md).
 
 ### Convention de commits
 Format : `type: description courte`
