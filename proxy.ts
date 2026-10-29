@@ -19,7 +19,22 @@ function urlPreservantCode(chemin: string, request: NextRequest): URL {
   return url
 }
 
+// Routes servies SANS session à cookies (#305) : le serveur MCP s'authentifie
+// par jeton OAuth (Bearer) et la metadata RFC 9728 est publique. Ni client
+// Supabase à cookies, ni garde d'onboarding : appels de serveur à serveur.
+export function sansSession(pathname: string): boolean {
+  return (
+    pathname === "/api/mcp" ||
+    pathname.startsWith("/api/mcp/") ||
+    pathname.startsWith("/.well-known/")
+  )
+}
+
 export async function proxy(request: NextRequest) {
+  if (sansSession(request.nextUrl.pathname)) {
+    return NextResponse.next()
+  }
+
   let supabaseResponse = NextResponse.next({
     request,
   })
