@@ -5,7 +5,7 @@
 // rattachée à SA semaine par `dateVersSemaineJour` (lib/cycles.ts), si bien
 // qu'un cycle de 14 j qui répète un jour de semaine lit bien deux semaines.
 
-import { dateVersSemaineJour, joursDuCycle } from "@/lib/cycles"
+import { dateVersSemaineJour, estDateISO, joursDuCycle } from "@/lib/cycles"
 import { lundiDeSemaine } from "@/lib/semaines"
 import type { Jour, JourPlanning, Planning } from "@/types"
 
@@ -48,10 +48,5 @@ const MESSAGE_DATE_INVALIDE = "Date invalide : utilise le format AAAA-MM-JJ (ex.
 
 /** `null` si `date` est au format AAAA-MM-JJ et existe au calendrier, sinon le message d'erreur. */
 export function validerDate(date: string): string | null {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date)
-  if (!m) return MESSAGE_DATE_INVALIDE
-  const [a, mo, j] = [Number(m[1]), Number(m[2]), Number(m[3])]
-  const d = new Date(a, mo - 1, j)
-  const reelle = d.getFullYear() === a && d.getMonth() === mo - 1 && d.getDate() === j
-  return reelle ? null : MESSAGE_DATE_INVALIDE
+  return estDateISO(date) ? null : MESSAGE_DATE_INVALIDE
 }

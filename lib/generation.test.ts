@@ -85,6 +85,7 @@ describe("genererPourUtilisateur — mode cycle", () => {
 describe("genererPourUtilisateur — refus 400", () => {
   const cas: Array<[string, Parameters<typeof genererPourUtilisateur>[1], string]> = [
     ["ancre mal formée", { ancre: "2026-10-9" }, "Ancre de cycle invalide."],
+    ["ancre au calendrier impossible", { ancre: "2026-02-30" }, "Ancre de cycle invalide."],
     ["longueur 0", { ancre: "2026-10-29", longueur: 0 }, "Longueur de cycle invalide."],
     ["longueur 15", { ancre: "2026-10-29", longueur: 15 }, "Longueur de cycle invalide."],
     ["longueur 1.5", { ancre: "2026-10-29", longueur: 1.5 }, "Longueur de cycle invalide."],

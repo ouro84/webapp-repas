@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest"
 import {
   ancreCourante, ancreDeSemaine, ancreParDefaut, cycleDecale, joursDuCycle, semainesDuCycle,
-  dateVersSemaineJour, libelleCycle, cyclesSelectionnables, LONGUEUR_DEFAUT,
+  dateVersSemaineJour, estDateISO, libelleCycle, cyclesSelectionnables, LONGUEUR_DEFAUT,
   planningDuCycle, planningGenereParSemaine, remplacerJourDansSemaines,
 } from "@/lib/cycles"
 import type { JourPlanning, Planning } from "@/types"
@@ -229,5 +229,18 @@ describe("remplacerJourDansSemaines (#301)", () => {
     const resultat = remplacerJourDansSemaines(avant, "2026-W20", { jour: "lundi", diner: r("x") })
 
     expect([...resultat.entries()]).toEqual([...avant.entries()])
+  })
+})
+
+describe("estDateISO", () => {
+  it("accepte une date AAAA-MM-JJ qui existe au calendrier", () => {
+    expect(estDateISO("2026-10-29")).toBe(true)
+    expect(estDateISO("2028-02-29")).toBe(true)
+  })
+
+  it("refuse un format autre ou une date impossible", () => {
+    for (const date of ["2026-02-30", "2026-13-01", "2026-2-3", "29/10/2026"]) {
+      expect(estDateISO(date)).toBe(false)
+    }
   })
 })
