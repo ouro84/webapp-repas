@@ -280,6 +280,29 @@ describe("modifierSlotDistant — édition ponctuelle découplée de storePlanni
     expect(local.jours[0].diner.id).toBe("nouveau");
     expect(localStorage.getItem("planning_courant_maj")).toBe("2026-07-16T15:00:00.000Z");
   });
+
+  it("patche storePlanning SANS planifier de push sauvegarder_planning (pas de double écriture, #301)", async () => {
+    const { semaineParDefaut } = await import("@/lib/semaines");
+    const semaine = semaineParDefaut();
+    persistance.chargerPlanningDistant.mockResolvedValue({
+      planning: { semaine, jours: [jourPlanningSimple("lundi", { id: "vieux", nom: "Vieux" })] },
+      updatedAt: "2026-07-16T10:00:00.000Z",
+    });
+    persistance.sauvegarderSlotsDistant.mockResolvedValue("2026-07-16T15:00:00.000Z");
+    const { useSync, modifierSlotDistant } = await chargerSync();
+    const { renderHook } = await import("@testing-library/react");
+    renderHook(() => useSync()); // abonne planifierPush à storePlanning
+    await vi.waitFor(() => expect(localStorage.getItem("semaine_affichee")).toBe(semaine));
+    await vi.waitFor(() => expect(localStorage.getItem("planning_courant")).not.toBeNull());
+
+    await modifierSlotDistant(semaine, jourPlanningSimple("lundi", { id: "nouveau", nom: "Nouveau" }));
+
+    expect(JSON.parse(localStorage.getItem("planning_courant")!).jours[0].diner.id).toBe("nouveau");
+    expect(localStorage.getItem("planning_courant_maj")).toBe("2026-07-16T15:00:00.000Z"); // anti-écho US-21
+    expect(localStorage.getItem("planning_dirty")).toBeNull();
+    await new Promise((r) => setTimeout(r, 900)); // > DELAI_DEBOUNCE_MS (800)
+    expect(persistance.sauvegarderPlanningDistant).not.toHaveBeenCalled();
+  });
 });
 
 describe("useSyncCourses — ancre forcée court-circuite le défaut du jour (#279)", () => {

@@ -1537,6 +1537,12 @@ export async function allerAuCycle(ancre: string): Promise<void> {
  * - `planning_courant_maj` + cache `storePlanning` (alerte de /planning, #56
  *   PR5) : UNIQUEMENT si la semaine éditée est la semaine actuellement
  *   affichée — sinon ce cache ne représente pas cette semaine, rien à patcher.
+ *
+ * Ce patch passe sous la garde `hydratationEnCours` (#301) : la base est DÉJÀ
+ * à jour via `sauvegarder_slots`, donc `planifierPush` ne doit pas relancer un
+ * `sauvegarder_planning` de toute la semaine (double écriture). Une édition
+ * locale déjà en attente (`planning_dirty`) garde son propre minuteur et
+ * repoussera la semaine, patch inclus.
  */
 export async function modifierSlotDistant(
   semaine: string,
@@ -1552,7 +1558,12 @@ export async function modifierSlotDistant(
       const jours = local.jours.map((jp) =>
         jp.jour === jourPlanning.jour ? jourPlanning : jp
       );
-      storePlanning.ecrire(JSON.stringify({ semaine, jours }));
+      hydratationEnCours = true;
+      try {
+        storePlanning.ecrire(JSON.stringify({ semaine, jours }));
+      } finally {
+        hydratationEnCours = false;
+      }
     }
   }
 }
