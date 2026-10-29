@@ -25,6 +25,7 @@ const persistance = vi.hoisted(() => ({
   chargerArticlesManuelsDistants: vi.fn(),
   purgerCyclesAvant: vi.fn(),
   sauvegarderSlotsDistant: vi.fn(),
+  sauvegarderCycleDistant: vi.fn(),
 }));
 vi.mock("@/lib/persistance", () => persistance);
 
@@ -76,6 +77,10 @@ beforeEach(() => {
   persistance.chargerArticlesManuelsDistants.mockResolvedValue([]);
   persistance.purgerCyclesAvant.mockResolvedValue(undefined);
   persistance.sauvegarderSlotsDistant.mockResolvedValue("2026-07-16T12:00:00.000Z");
+  persistance.sauvegarderCycleDistant.mockResolvedValue({
+    "2026-W44": "2026-10-29T12:00:00.000Z",
+    "2026-W45": "2026-10-29T12:00:00.000Z",
+  });
 });
 
 describe("hydrater — last-write-wins / dirty-first (RG-23)", () => {
@@ -411,5 +416,52 @@ describe("stores de cycle — stabilité du snapshot (#257, anti-boucle React #1
     const premier = result.current;
     rerender();
     expect(result.current).toBe(premier);
+  });
+});
+
+describe("appliquerGenerationCycle — écriture atomique sauvegarder_cycle (#304)", () => {
+  const semaines = [
+    { semaine: "2026-W44", jours: [jourPlanningSimple("lundi", { id: "r1", nom: "R1" })] },
+    { semaine: "2026-W45", jours: [jourPlanningSimple("mardi", { id: "r2", nom: "R2" })] },
+  ];
+
+  beforeEach(() => {
+    localStorage.setItem("cycle_affiche", JSON.stringify({ ancre: "2026-10-29", longueur: 7 }));
+  });
+
+  it("un seul appel sauvegarder_cycle, ni sauvegarder_slots ni purge client", async () => {
+    const { appliquerGenerationCycle } = await chargerSync();
+
+    await appliquerGenerationCycle("2026-10-29", semaines);
+
+    expect(persistance.sauvegarderCycleDistant).toHaveBeenCalledTimes(1);
+    expect(persistance.sauvegarderCycleDistant).toHaveBeenCalledWith("2026-10-29", semaines);
+    expect(persistance.sauvegarderSlotsDistant).not.toHaveBeenCalled();
+    expect(persistance.viderCochesDistantes).not.toHaveBeenCalled();
+  });
+
+  it("vide les coches locales du cycle après succès (RG-13)", async () => {
+    localStorage.setItem("courses_cochees", JSON.stringify({ "tomate|piece": 2 }));
+    localStorage.setItem("courses_dirty", "1");
+    const { appliquerGenerationCycle } = await chargerSync();
+
+    await appliquerGenerationCycle("2026-10-29", semaines);
+
+    expect(localStorage.getItem("courses_cochees")).toBeNull();
+    expect(localStorage.getItem("courses_dirty")).toBeNull();
+  });
+
+  it("échec RPC : rejette et laisse les coches locales intactes", async () => {
+    const coches = JSON.stringify({ "tomate|piece": 2 });
+    localStorage.setItem("courses_cochees", coches);
+    persistance.sauvegarderCycleDistant.mockRejectedValue(
+      new Error("Sauvegarde du cycle impossible : boom")
+    );
+    const { appliquerGenerationCycle } = await chargerSync();
+
+    await expect(appliquerGenerationCycle("2026-10-29", semaines)).rejects.toThrow(
+      "Sauvegarde du cycle impossible : boom"
+    );
+    expect(localStorage.getItem("courses_cochees")).toBe(coches);
   });
 });

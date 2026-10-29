@@ -28,7 +28,9 @@ paths:
 
 ## Clients Supabase
 
-`lib/supabase/client.ts` (navigateur, `createBrowserClient`), `lib/supabase/server.ts` (serveur, `createServerClient` + cookies), `lib/supabase/admin.ts` (`service_role`, serveur uniquement, jamais importé côté client). Importer le mauvais client produit des erreurs de session.
+`lib/supabase/client.ts` (navigateur, `createBrowserClient`), `lib/supabase/server.ts` (serveur, `createServerClient` + cookies), `lib/supabase/admin.ts` (`service_role`, serveur uniquement, jamais importé côté client), `lib/supabase/par-jeton.ts` (serveur, clé anon + `Authorization: Bearer <jwt>`, pour le MCP ; jamais `service_role`). Importer le mauvais client produit des erreurs de session.
+
+- Les fonctions d'accès qui doivent tourner côté serveur prennent un client **injecté** typé `ClientSupabase` (`lib/supabase/types.ts`), avec `clientParDefaut()` (`lib/supabase/par-defaut.ts`) comme défaut : client navigateur dans le navigateur, **refus hors navigateur**. Pourquoi : avec le client par jeton, la RLS `mon_foyer()` s'applique au JWT de l'utilisateur (RG-71) et la même fonction sert le web et le MCP ; un `createBrowserClient` côté serveur ne lève pas, il lit en anonyme et renvoie silencieusement « rien ».
 
 ## Observabilité et sécurité HTTP
 

@@ -247,8 +247,8 @@ export function VuePlanningCycle({
   }
 
   // Génération partagée (#279, D2) : accessible directement depuis cette vue,
-  // sans passer par /courses. Le mécanisme (#259) persiste par RPC
-  // sauvegarder_slots, indépendamment de storePlanning/useSync (mono-semaine).
+  // sans passer par /courses. Le mécanisme (#259) persiste par la RPC atomique
+  // sauvegarder_cycle (#304), indépendamment de storePlanning/useSync (mono-semaine).
   const { enGeneration, genererCycle } = useGenerationCycle(
     ancre !== null ? { ancre, longueur } : null
   );

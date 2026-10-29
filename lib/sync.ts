@@ -27,6 +27,7 @@ import {
   modifierArticleManuelDistant,
   purgerCyclesAvant,
   purgerSemainesAvant,
+  sauvegarderCycleDistant,
   sauvegarderPlanningDistant,
   sauvegarderSlotsDistant,
   supprimerArticleManuelDistant,
@@ -52,7 +53,7 @@ import {
 } from "@/lib/cycles";
 import { chargerJourCoursesFoyer } from "@/lib/foyer";
 import { parseApiError } from "@/lib/errors";
-import type { ArticleManuel, JourPlanning, Planning } from "@/types";
+import type { ArticleManuel, JourPlanning, Planning, SemaineGeneree } from "@/types";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 
 // Horodatage de la dernière écriture locale (last-write-wins) et drapeau
@@ -1150,21 +1151,24 @@ function couperPlanningCycle(): Promise<void> {
 }
 
 /**
- * Applique une génération fenêtrée (#259) : persiste chaque semaine touchée via
- * `sauvegarder_slots` (upsert des seuls jours du cycle, sans écraser les jours
- * voisins), invalide les coches du cycle (RG-13) et re-projette depuis la base.
+ * Applique une génération fenêtrée (#259) : persiste le cycle en UNE écriture
+ * atomique via la RPC `sauvegarder_cycle` (#304) — jours du cycle sur toutes les
+ * semaines ISO touchées (sans écraser les jours voisins) ET purge des coches du
+ * cycle (RG-13) dans la même transaction —, puis remet à zéro les coches locales
+ * et re-projette depuis la base. Même RPC que le serveur MCP (règle du jumeau).
  * Le drapeau `suppressionAlerteCycle` évite que l'écho realtime de nos propres
  * écritures ne déclenche l'alerte US-21 pendant la fenêtre de génération.
  */
 export async function appliquerGenerationCycle(
-  semaines: Array<{ semaine: string; jours: Planning["jours"] }>
+  ancre: string,
+  semaines: SemaineGeneree[]
 ): Promise<void> {
   suppressionAlerteCycle = true;
   try {
-    for (const { semaine, jours } of semaines) {
-      const maj = await sauvegarderSlotsDistant(semaine, jours);
-      // Mémorise l'updated_at de notre propre écriture → son écho realtime sera
-      // filtré (en plus du drapeau de suppression, cf. surEventPlanningCycle).
+    const majs = await sauvegarderCycleDistant(ancre, semaines);
+    // Mémorise l'updated_at de notre propre écriture → son écho realtime sera
+    // filtré (en plus du drapeau de suppression, cf. surEventPlanningCycle).
+    for (const [semaine, maj] of Object.entries(majs)) {
       majPlanningCycle.set(semaine, Date.parse(maj));
     }
     await rafraichirCycleGenere();
@@ -1212,12 +1216,12 @@ export function useGenerationCycle(cycle: CycleAffiche | null): {
         mixNonHonore = 0,
         saisonNonHonore = 0,
       } = (await reponse.json()) as {
-        semaines: Array<{ semaine: string; jours: JourPlanning[] }>;
+        semaines: SemaineGeneree[];
         vegeNonHonore?: number;
         mixNonHonore?: number;
         saisonNonHonore?: number;
       };
-      await appliquerGenerationCycle(semaines);
+      await appliquerGenerationCycle(cycle.ancre, semaines);
       return { vegeNonHonore, mixNonHonore, saisonNonHonore };
     } finally {
       setEnGeneration(false);
@@ -1227,14 +1231,12 @@ export function useGenerationCycle(cycle: CycleAffiche | null): {
   return { enGeneration, genererCycle };
 }
 
-/** Invalide les coches du cycle affiché (RG-13) et re-projette le planning depuis
- *  la base (après une génération fenêtrée). */
+/** Remet à zéro les coches LOCALES du cycle affiché (RG-13 — la purge distante
+ *  est faite par la RPC `sauvegarder_cycle`, #304) et re-projette le planning
+ *  depuis la base (après une génération fenêtrée). */
 async function rafraichirCycleGenere(): Promise<void> {
   const courant = lireCycleAffiche();
   if (!courant) return;
-  await viderCochesDistantes(courant.ancre).catch((e) =>
-    console.error("Invalidation des coches du cycle (RG-13) échouée.", e)
-  );
   localStorage.removeItem(CLE_DIRTY_COCHES);
   cochesConnues = {};
   applicationDistanteEnCours = true;

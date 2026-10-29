@@ -8,6 +8,7 @@ paths:
   - "lib/coches*.ts"
   - "lib/transitions-courses*.ts"
   - "lib/articles-manuels*.ts"
+  - "lib/liste-courses*.ts"
   - "lib/file-ecriture-slots*.ts"
   - "lib/sync*.ts"
   - "lib/persistance.ts"
@@ -31,13 +32,15 @@ paths:
 
 - `/courses` utilise **`useSyncCourses()`** (coches uniquement : abonnement `storeCoches`, flush, temps réel par ancre, temps réel planning par semaine du cycle), **`useCyclePlanning()`** (planning projeté, clé `cycle_planning`) et **`useCycleAffiche()`** (`{ancre, longueur}`). `useSync()` est réservé à `/planning`.
 - **`cycle_planning` est une projection locale, jamais écrite dans `storePlanning` ni poussée.** Pourquoi : sa `semaine` est en réalité une ancre-date et ses `jour` peuvent être dupliqués ; un push planterait `sauvegarder_planning` ou écraserait les jours d'une semaine voisine.
+- **Composition de la liste = `assemblerListeCourses`** (`lib/liste-courses.ts`, pur) : filtre des créneaux désactivés (RG-46), agrégation (RG-05), fusion des articles manuels. Partagée par `/courses` et par `chargerListeCoursesCycle` (`lib/liste-courses-cycle.ts`, serveur, client injecté, pour le MCP) ; `retirerArticlesCoches` donne « ce qu'il reste à acheter » (RG-78). Pourquoi : une évolution de la liste faite d'un seul côté ferait diverger l'app et l'assistant (règle du jumeau).
 - **Dirty-first adapté** (`chargerCycleDansCache`) : le local fait foi si le backend est vide pour cette ancre **et** si `planningCycle.semaine === ancre` (cas offline et injection e2e).
 - **Limitation connue** : RG-13 (une régénération sur `/planning` vide les coches) peut viser le mauvais cycle **côté distant** si aucun cycle n'a été affiché dans la session (`ancreActive()` vaut `null`). Le nettoyage local reste correct.
 
 ## « Générer mon cycle » (`/courses`)
 
-- `POST /api/planning/generer` accepte deux modes exclusifs : `{ semaine }` (`/planning`, 14 slots) et `{ ancre, longueur }` (cycle). En mode cycle, la route génère une semaine (saison = ancre), projette les slots sur les jours du cycle via `planningGenereParSemaine` (`lib/cycles.ts`) et renvoie `{ semaines: [{semaine, jours}], … }`. **La route ne persiste pas.**
-- Le client (`appliquerGenerationCycle`) persiste **chaque semaine touchée** via la RPC **`sauvegarder_slots(p_semaine, p_slots)`**, qui upsert **uniquement les (jour, type_repas) fournis**, puis invalide les coches du cycle (RG-13) et re-projette depuis la base (`rechargerProjectionCycle`). Pourquoi pas `sauvegarder_planning` : il remplace toute la semaine et écraserait les jours des cycles voisins.
+- `POST /api/planning/generer` accepte deux modes exclusifs : `{ semaine }` (`/planning`, 14 slots) et `{ ancre, longueur }` (cycle). En mode cycle, la route génère une semaine (saison = ancre), projette les slots sur les jours du cycle via `planningGenereParSemaine` (`lib/cycles.ts`) et renvoie `{ semaines: [{semaine, jours}], … }` (logique dans `genererPourUtilisateur`, `lib/generation.ts`). **La route ne persiste pas.**
+- Le client (`appliquerGenerationCycle(ancre, semaines)`) persiste le cycle en **un seul appel** à la RPC atomique **`sauvegarder_cycle(p_ancre, p_semaines)`** (#304) : upsert des **seuls (jour, type_repas) fournis** sur toutes les semaines ISO touchées **et** purge des coches de l'ancre (RG-13), en une transaction ; puis il remet à zéro les coches locales et re-projette depuis la base (`rechargerProjectionCycle`). Le serveur MCP écrit par la même RPC (`sauvegarderCycleDistant`, client injectable) : règle du jumeau. Pourquoi : la séquence « N × `sauvegarder_slots` + purge » pouvait laisser un cycle à moitié écrit ; et `sauvegarder_planning` remplacerait toute la semaine (jours des cycles voisins écrasés).
+- `sauvegarder_slots` reste la RPC de l'**édition d'un seul repas** (`modifierSlotDistant`, vue Cycle).
 - **Alerte US-21 côté cycle** : `synchroniserAbonnementPlanningCycle(ancre, longueur)` crée un abonnement planning **par semaine ISO** (topic `planning-cycle:<foyer>:<semaine>`) ; `traiterChangementCycleDistant` re-projette et compare `signaturePlanning`. Le filtre anti-écho est double : `signaturePlanning` + `majPlanningCycle` (Map semaine → `updated_at` connu, mise à jour à chaque pull et à chaque push), plus `suppressionAlerteCycle` pendant `appliquerGenerationCycle`.
 
 ## Vue « Cycle » de `/planning` (`components/planning/vue-cycle.tsx`)

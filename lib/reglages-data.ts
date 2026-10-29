@@ -8,6 +8,8 @@
 // planning (qui applique l'éligibilité côté client).
 
 import { createClient } from "@/lib/supabase/client"
+import { clientParDefaut } from "@/lib/supabase/par-defaut"
+import type { ClientSupabase } from "@/lib/supabase/types"
 import {
   dbReglagesToDomain,
   reglagesToDb,
@@ -33,9 +35,11 @@ const SELECT_REGLAGES = `
 /**
  * Charge les réglages de l'utilisateur connecté. La RLS ne renvoie que sa
  * propre ligne (ou aucune) → ligne absente = REGLAGES_DEFAUT.
+ * Client injectable (#304) : appelable côté serveur en tant que l'utilisateur.
  */
-export async function chargerReglages(): Promise<ReglagesGeneration> {
-  const supabase = createClient()
+export async function chargerReglages(
+  supabase: ClientSupabase = clientParDefaut()
+): Promise<ReglagesGeneration> {
   const { data, error } = await supabase
     .from("reglages")
     .select(SELECT_REGLAGES)

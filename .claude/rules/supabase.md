@@ -16,6 +16,7 @@ paths:
 
 - **Tout changement de schéma passe par un fichier** `supabase/migrations/<timestamp 14 chiffres>_<nom>.sql`, appliqué par la CI via `supabase db push` (staging sur chaque PR, prod sur push `main`). Le SQL editor ne modifie jamais le schéma, sinon la base diverge des migrations.
 - **Appliquer une migration de branche sur staging avant `npm run test:e2e:staging`** : l'exécuter via `node scripts/query-supabase.mjs upxoxrjumxpzumakawiv "<sql>"`, puis l'inscrire dans `supabase_migrations.schema_migrations` pour que le `db push` de la CI ne la rejoue pas.
+- **Sans CI** (crédits Actions épuisés) : appliquer le fichier `.sql` par un script Node qui le lit et l'envoie à l'API de management (`/v1/projects/<ref>/database/query`), puis insérer `(version, name, statements = array[<contenu>])` dans `supabase_migrations.schema_migrations`. Pourquoi : un SQL qui contient `$$` et des apostrophes casse en argument shell de `query-supabase.mjs`. En prod, uniquement sur validation humaine, migration **avant** le merge.
 - La baseline `20260606225900_init.sql` est marquée appliquée sur prod et staging ; une base neuve la rejoue entièrement.
 - Vérifier le schéma prod : `node scripts/query-supabase.mjs gabyhlcwahzquolwxmgd "<sql>"`. Si une migration n'a pas atteint la prod (run `push` absent, cf. `ci.md`), la relancer via `gh workflow run CI --ref main`, jamais à la main.
 
@@ -31,8 +32,9 @@ paths:
 
 ## Écritures : RPC ou direct
 
-- **RPC `SECURITY DEFINER` atomiques** (foyer dérivé de `mon_foyer()`, jamais fourni par le client) : `sauvegarder_planning` (remplace la semaine), `sauvegarder_slots` (upsert des seuls slots fournis), `generer_code_invitation`, `apercu_invitation`, `rejoindre_foyer`, `quitter_foyer`, `supprimer_mon_compte`. `planning` n'a donc que des policies select + delete. Pourquoi : un `delete → insert` côté client n'est pas atomique (course entre deux appareils).
+- **RPC `SECURITY DEFINER` atomiques** (foyer dérivé de `mon_foyer()`, jamais fourni par le client) : `sauvegarder_planning` (remplace la semaine), `sauvegarder_slots` (upsert des seuls slots fournis), `sauvegarder_cycle` (jours d'un cycle sur N semaines ISO + purge des coches RG-13 en une transaction : « Générer mon cycle » web **et** MCP, jamais N × `sauvegarder_slots` côté client), `generer_code_invitation`, `apercu_invitation`, `rejoindre_foyer`, `quitter_foyer`, `supprimer_mon_compte`. `planning` n'a donc que des policies select + delete. Pourquoi : un `delete → insert` côté client n'est pas atomique (course entre deux appareils).
 - **Écritures directes sous RLS** quand une opération = une ligne : coches (`etat_courses_article`), `article_manuel`, `recette`, `recette_masquee`, `recette_preference`.
+- **Grants d'une nouvelle RPC** : `revoke execute … from public` **et** `from anon`, puis `grant … to authenticated`. Pourquoi : Supabase accorde explicitement `execute` à `anon` sur les nouvelles fonctions du schéma `public`, que `revoke from public` ne retire pas.
 - `planning.version` est incrémenté par la RPC ; `updated_at` est posé par trigger (cf. `sync-planning.md`).
 - **PostgREST rejette tout `UPDATE` sans clause WHERE** (`21000: UPDATE requires a WHERE clause`), même quand la RLS bornerait déjà le résultat. Ajouter un filtre qui matche les lignes visibles (ex. `.not("id","is",null)`).
 

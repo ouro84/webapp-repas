@@ -43,8 +43,7 @@ import {
   Trash2,
   Users,
 } from "lucide-react";
-import { genererListeCourses } from "@/lib/courses";
-import { retirerCreneauxDesactives } from "@/lib/generateur";
+import { assemblerListeCourses } from "@/lib/liste-courses";
 import { chargerReglages } from "@/lib/reglages-data";
 import { REGLAGES_DEFAUT } from "@/lib/reglages";
 import { messagesAvertissementGeneration } from "@/lib/avertissements-generation";
@@ -66,7 +65,7 @@ import {
   nomTransition,
   nomTransitionCategorie,
 } from "@/lib/transitions-courses";
-import { aQuantiteRenseignee, fusionnerArticlesManuels } from "@/lib/articles-manuels";
+import { aQuantiteRenseignee } from "@/lib/articles-manuels";
 import { storeCoches } from "@/lib/stockage";
 import {
   useSyncCourses,
@@ -342,23 +341,17 @@ function ContenuCourses() {
   // cycle change. Un cycle sans aucun repas planifié (aucune semaine chargée
   // ne couvre ses jours) produit une liste sans lignes — mais des articles
   // manuels (#216) peuvent exister indépendamment de tout repas planifié :
-  // seule l'absence des DEUX vaut état vide (cf. plus bas).
-  const listeRecettes = useMemo<ListeCourses | null>(() => {
-    if (planningCycle === null) return null;
-    // Filtre live (#217, RG-46) avant agrégation : un créneau désactivé ne
-    // produit aucun ingrédient, même si le planning projeté en contient encore
-    // un (slot persisté avant la désactivation) — cf. app/planning/page.tsx.
-    return genererListeCourses(retirerCreneauxDesactives(planningCycle, reglages));
-  }, [planningCycle, reglages]);
-
-  // Fusion des articles manuels (#216) dans la liste agrégée, AVANT tri —
-  // cf. lib/articles-manuels.ts (pas de duplication de trierCategoriesAvecCoches).
+  // seule l'absence des DEUX vaut état vide.
+  // Composition partagée avec le service serveur du MCP (#304, règle du
+  // jumeau) : filtre live des créneaux désactivés (#217, RG-46 — un slot
+  // persisté avant la désactivation ne produit aucun ingrédient), agrégation
+  // (RG-05), puis fusion des articles manuels (#216) AVANT tri — cf.
+  // lib/liste-courses.ts (pas de duplication de trierCategoriesAvecCoches).
   const liste = useMemo<ListeCourses | null>(() => {
-    const base = listeRecettes ?? { normal: [], fondDePlacard: [] };
-    const fusionnee = fusionnerArticlesManuels(base, articlesManuels);
+    const fusionnee = assemblerListeCourses(planningCycle, reglages, articlesManuels);
     const vide = fusionnee.normal.length === 0 && fusionnee.fondDePlacard.length === 0;
     return vide ? null : fusionnee;
-  }, [listeRecettes, articlesManuels]);
+  }, [planningCycle, reglages, articlesManuels]);
 
   // Coches valides ou non : parserCoches tolère l'absence et la corruption.
   const coches = useMemo(() => parserCoches(brutCoches), [brutCoches]);

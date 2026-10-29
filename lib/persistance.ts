@@ -7,11 +7,23 @@
 // concernée (upsert par semaine), de sorte que les semaines s'accumulent en
 // historique (borné par purge, cf. purgerSemainesAvant). La navigation entre
 // semaines est câblée en PR2.
+//
+// Lectures à client injecté (#304, RG-71) : le dernier paramètre optionnel
+// permet de les appeler côté serveur EN TANT QUE l'utilisateur (client « par
+// jeton » du serveur MCP, RLS mon_foyer()) ; défaut = client navigateur (clientParDefaut, qui REFUSE hors navigateur).
 
 import { createClient } from "@/lib/supabase/client"
+import { clientParDefaut } from "@/lib/supabase/par-defaut"
+import type { ClientSupabase } from "@/lib/supabase/types"
 import { dbArticleManuelToDomain, dbPlanningToDomain } from "@/lib/adapters"
 import { LONGUEUR_DEFAUT } from "@/lib/cycles"
-import type { ArticleManuel, DbArticleManuel, DbPlanningSlot, Planning } from "@/types"
+import type {
+  ArticleManuel,
+  DbArticleManuel,
+  DbPlanningSlot,
+  Planning,
+  SemaineGeneree,
+} from "@/types"
 
 // Sélection imbriquée : le planning, ses slots (avec personnes/restes) et la
 // recette complète de chaque slot (avec ingrédients) — nécessaire pour
@@ -55,11 +67,13 @@ export const SELECT_PLANNING = `
  * historique, semaine active). Avec `semaine`, renvoie cette semaine précise
  * (navigation dans l'historique, PR2).
  */
-export async function chargerPlanningDistant(semaine?: string): Promise<{
+export async function chargerPlanningDistant(
+  semaine?: string,
+  supabase: ClientSupabase = clientParDefaut()
+): Promise<{
   planning: Planning
   updatedAt: string
 } | null> {
-  const supabase = createClient()
   let requete = supabase.from("planning").select(SELECT_PLANNING)
   requete = semaine
     ? requete.eq("semaine", semaine)
@@ -232,14 +246,43 @@ export async function sauvegarderSlotsDistant(
 }
 
 /**
+ * Persiste un cycle généré via la RPC ATOMIQUE `sauvegarder_cycle` (#304) : les
+ * jours du cycle de TOUTES les semaines ISO touchées (upsert des seuls
+ * (jour, type_repas) fournis, jours voisins intacts) ET la purge des coches du
+ * cycle (RG-13), en une transaction. Remplace l'ancienne séquence client
+ * « N × sauvegarder_slots + purge » (non atomique). Partagée par le web
+ * (« Générer mon cycle ») et le serveur MCP (règle du jumeau, RG-79) — client
+ * injectable. Renvoie l'updated_at posé par le trigger serveur, par semaine.
+ */
+export async function sauvegarderCycleDistant(
+  ancre: string,
+  semaines: SemaineGeneree[],
+  supabase: ClientSupabase = clientParDefaut()
+): Promise<Record<string, string>> {
+  const { data, error } = await supabase.rpc("sauvegarder_cycle", {
+    p_ancre: ancre,
+    p_semaines: semaines.map(({ semaine, jours }) => ({
+      semaine,
+      slots: construireSlotsJours(jours),
+    })),
+  })
+  if (error || !data) {
+    throw new Error(
+      `Sauvegarde du cycle impossible : ${error?.message ?? "réponse vide"}`
+    )
+  }
+  return data as Record<string, string>
+}
+
+/**
  * Coches distantes d'une ancre de cycle, reconstruites en blob `{ "nom|unité":
  * quantité }` depuis les lignes par-article (#56 PR4, #257). Renvoie un objet
  * vide si aucune ligne (pas de null : l'absence de coche = blob vide).
  */
 export async function chargerCochesDistantes(
-  ancre: string
+  ancre: string,
+  supabase: ClientSupabase = clientParDefaut()
 ): Promise<Record<string, number>> {
-  const supabase = createClient()
   const { data, error } = await supabase
     .from("etat_courses_article")
     .select("cle, quantite")
@@ -312,8 +355,10 @@ export async function viderCochesDistantes(ancre: string): Promise<void> {
 /** Longueur persistée d'un cycle (défaut LONGUEUR_DEFAUT si aucune ligne,
  *  #257). Best-effort : une erreur de lecture retombe sur le défaut plutôt que
  *  de bloquer l'affichage de la liste de courses. */
-export async function chargerLongueurCycle(ancre: string): Promise<number> {
-  const supabase = createClient()
+export async function chargerLongueurCycle(
+  ancre: string,
+  supabase: ClientSupabase = clientParDefaut()
+): Promise<number> {
   const { data, error } = await supabase
     .from("cycle_courses").select("longueur").eq("ancre", ancre).maybeSingle()
   if (error) return LONGUEUR_DEFAUT
@@ -345,8 +390,10 @@ const SELECT_ARTICLE_MANUEL =
   "id, libelle, quantite, unite, categorie, fond_de_placard, coche" as const
 
 /** Articles manuels d'une ancre de cycle, dans leur ordre de création. */
-export async function chargerArticlesManuelsDistants(ancre: string): Promise<ArticleManuel[]> {
-  const supabase = createClient()
+export async function chargerArticlesManuelsDistants(
+  ancre: string,
+  supabase: ClientSupabase = clientParDefaut()
+): Promise<ArticleManuel[]> {
   const { data, error } = await supabase
     .from("article_manuel")
     .select(SELECT_ARTICLE_MANUEL)
