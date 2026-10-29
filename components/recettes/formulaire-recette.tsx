@@ -17,6 +17,7 @@ import type {
   Unite,
 } from "@/types";
 import type { SaisieRecette } from "@/lib/recettes";
+import { validerSaisieRecette } from "@/lib/validation-recette";
 import { suggererAccompagnement } from "@/lib/accompagnement";
 import { LIBELLE_SAISON, SAISONS, suggererSaisons } from "@/lib/saisons";
 
@@ -204,26 +205,16 @@ export function FormulaireRecette({
   }
 
   // Valide et convertit la saisie ; retourne null + message si invalide.
+  // Règles partagées avec l'outil MCP ajouter_recette (#306, RG-76).
   function valider(): SaisieRecette | string {
-    if (nom.trim() === "") return "Donne un nom à la recette.";
-    if (lignes.length === 0) return "Ajoute au moins un ingrédient.";
-
-    const ingredients: Ingredient[] = [];
-    for (const l of lignes) {
-      if (l.nom.trim() === "") return "Chaque ingrédient doit avoir un nom.";
-      const quantite = Number(l.quantite.replace(",", "."));
-      if (!Number.isFinite(quantite) || quantite <= 0) {
-        return `Quantité invalide pour « ${l.nom.trim()} ».`;
-      }
-      ingredients.push({
-        nom: l.nom.trim(),
-        quantite,
-        unite: l.unite,
-        categorie: l.categorie,
-        fondDePlacard: l.fondDePlacard,
-      });
-    }
-    return {
+    const ingredients: Ingredient[] = lignes.map((l) => ({
+      nom: l.nom.trim(),
+      quantite: Number(l.quantite.replace(",", ".")),
+      unite: l.unite,
+      categorie: l.categorie,
+      fondDePlacard: l.fondDePlacard,
+    }));
+    const saisie: SaisieRecette = {
       nom: nom.trim(),
       tempsPreparation: temps,
       vegetarien: vegeEffectif,
@@ -234,6 +225,7 @@ export function FormulaireRecette({
       etapes: etapes.map((e) => e.trim()).filter((e) => e !== ""),
       ingredients,
     };
+    return validerSaisieRecette(saisie) ?? saisie;
   }
 
   async function soumettre(evenement: React.FormEvent): Promise<void> {

@@ -3,7 +3,7 @@
 // ou en cuisine, on tape vite et sans ponctuation.
 
 import { describe, test, expect } from "vitest";
-import { filtrerRecettes } from "@/lib/recherche";
+import { filtrerRecettes, rechercherRecettes } from "@/lib/recherche";
 import type { Recette } from "@/types";
 
 // La recherche ne regarde que le nom : le reste est sans importance ici.
@@ -59,5 +59,29 @@ describe("filtrerRecettes — recherche du sélecteur (US-06)", () => {
 
   test("aucune correspondance → liste vide (état vide du sélecteur)", () => {
     expect(filtrerRecettes(RECETTES, "bouillabaisse")).toEqual([]);
+  });
+});
+
+describe("rechercherRecettes — désignation par nom côté MCP (#306, RG-75)", () => {
+  const BLANQUETTES = [recette("Blanquette de veau"), recette("Blanquette de veau à l'ancienne")];
+
+  test("un nom exact (casse ignorée) l'emporte sur les correspondances partielles", () => {
+    expect(rechercherRecettes(BLANQUETTES, "blanquette de VEAU").map((r) => r.nom)).toEqual([
+      "Blanquette de veau",
+    ]);
+  });
+
+  test("sans nom exact : toutes les correspondances partielles", () => {
+    expect(rechercherRecettes(BLANQUETTES, "blanquette")).toHaveLength(2);
+  });
+
+  test("accents ignorés", () => {
+    expect(rechercherRecettes([recette("Pâtes carbonara")], "pates").map((r) => r.nom)).toEqual([
+      "Pâtes carbonara",
+    ]);
+  });
+
+  test("aucune correspondance : liste vide", () => {
+    expect(rechercherRecettes(BLANQUETTES, "zzz")).toEqual([]);
   });
 });
