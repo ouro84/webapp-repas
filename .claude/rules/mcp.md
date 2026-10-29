@@ -25,12 +25,15 @@ paths:
 
 - `/api/mcp` : `mcp-handler` v2 (sans état, pas de Redis), `withMcpAuth(…, { required: true, resourceMetadataPath: "/.well-known/oauth-protected-resource/api/mcp" })`, puis `limiteMcp` (préfixe `rl:mcp`, 60/min/utilisateur, 429 JSON-RPC). `limiteMcp` n'agit qu'avec les secrets Upstash sur Vercel.
 - Metadata RFC 9728 servie aux deux chemins (`/.well-known/oauth-protected-resource` et `…/api/mcp`), `resource` = `<origine>/api/mcp`. Pourquoi : les clients sondent l'un ou l'autre.
-- `proxy.ts` : `sansSession()` laisse passer `/api/mcp` et `/.well-known/*` sans client à cookies ; `/oauth` est protégé, et un visiteur non connecté revient au consentement via `/login?suivant=…` (`cheminDeRetour`, anti open-redirect).
+- `proxy.ts` : `sansSession()` laisse passer `/api/mcp` et `/.well-known/*` sans client à cookies ; `/oauth` est protégé, et un visiteur non connecté revient au consentement via `/login?suivant=…`.
+- **`cheminDeRetour` résout le chemin avec `new URL()` et exige la même origine**, après avoir refusé caractères de contrôle et antislash. Pourquoi : l'analyseur d'URL supprime tabulations et retours à la ligne, si bien que `/%09/evil.com` devenait `//evil.com` (open redirect post-login).
+- **Le consentement affiche l'hôte du `redirect_uri` enregistré, jamais `client.uri`.** Pourquoi : en DCR, n'importe qui se déclare « Claude, claude.ai » ; seul le `redirect_uri` dit où part le code.
 
 ## Outils
 
 - **Toujours créer `creerClientParJeton(jeton)` dans l'outil et le passer aux lectures**, jamais `clientParDefaut()` ni `service_role`. Pourquoi : la RLS `mon_foyer()` s'applique au JWT de l'utilisateur (RG-71).
 - **Composer les services de `lib/`** (`chargerListeCoursesCycle`, `retirerArticlesCoches`, `chargerPlanningDistant`, `retirerCreneauxDesactives`, `ingredientsAEchelle`, `LIBELLES_CATEGORIES`) plutôt que réimplémenter. Pourquoi : règle du jumeau, `/courses` et la fiche recette affichent la même chose.
+- **La date du jour des outils est celle de Paris** (`aujourdhuiParis()`, passée par `lib/mcp/serveur.ts`). Pourquoi : Vercel tourne en UTC ; entre minuit et 1-2 h, le MCP calculait un autre jour, donc un autre cycle que `/courses` autour du week-end.
 - Contrats RG-73/78 : un repas = `date` (AAAA-MM-JJ) + `creneau` (`midi` | `soir`), plage −12/+6 semaines (`semaineDansPlage`) ; liste de courses non cochée par défaut. Toute évolution d'un contrat se répercute dans la description de l'outil (`lib/mcp/serveur.ts`), que lit l'assistant.
 - Erreurs attendues = `ErreurOutil` (message français qui dit quoi faire ensuite, renvoyé en `isError`). Toute autre exception est loggée et masquée derrière un message générique.
 

@@ -128,8 +128,23 @@ describe("POST /api/mcp — outils (US-51, RG-78)", () => {
       await appeler("tools/call", { name: "lire_liste_courses", arguments: { inclure_coches: true } })
     )
     expect(m.creerClientParJeton).toHaveBeenCalledWith("jwt-oauth")
-    expect(m.lireListeCourses).toHaveBeenCalledWith({ jeton: "jwt-oauth" }, { inclure_coches: true })
+    expect(m.lireListeCourses).toHaveBeenCalledWith({ jeton: "jwt-oauth" }, { inclure_coches: true }, expect.any(Date))
     expect(result?.structuredContent).toEqual({ categories: [], a_verifier_au_placard: [], nombre_articles: 0 })
+  })
+})
+
+describe("POST /api/mcp — date du jour (fuseau du foyer)", () => {
+  it("les outils reçoivent la date de Paris, pas celle d'UTC", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] })
+    vi.setSystemTime(new Date("2026-10-30T23:30:00Z")) // samedi 00h30 à Paris (UTC+1)
+    try {
+      m.lirePlanning.mockResolvedValue({ periode: {}, repas: [] })
+      await lire(await appeler("tools/call", { name: "lire_planning", arguments: {} }))
+      const aujourdhui = m.lirePlanning.mock.calls[0][2] as Date
+      expect([aujourdhui.getMonth(), aujourdhui.getDate()]).toEqual([9, 31])
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 

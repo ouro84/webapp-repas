@@ -9,8 +9,9 @@
 // navigateur vers l'URL du client fournie par Supabase (code ou erreur).
 //
 // Parcours focalisé (pas de nav, cf. app/oauth/consent/page.tsx) : le logo OMQ
-// en tête dit chez qui l'on donne son accord, la carte des droits dit ce que
-// l'assistant pourra faire, et une seule décision est demandée.
+// en tête dit chez qui l'on donne son accord, l'hôte de retour dit où part le
+// code, la carte des droits dit ce que l'assistant pourra faire, et une seule
+// décision est demandée.
 //
 // Les droits annoncés couvrent aussi l'écriture : une autorisation accordée
 // maintenant vaudra pour les outils de modification (#306), Supabase ne
@@ -114,8 +115,11 @@ export function EcranConsentement({ authorizationId }: { authorizationId: string
     );
   }
 
-  const { client, user } = etat.details;
-  const site = hote(client.uri);
+  const { client, user, redirect_uri: redirectUri } = etat.details;
+  // Hôte du redirect_uri ENREGISTRÉ : c'est là que part le code d'accès. On
+  // n'affiche pas client.uri, que le client déclare librement en DCR (un
+  // tiers pourrait se présenter en « claude.ai »).
+  const destination = hote(redirectUri);
 
   return (
     <section aria-labelledby="titre-consentement" className="flex flex-col">
@@ -128,15 +132,14 @@ export function EcranConsentement({ authorizationId }: { authorizationId: string
         Autoriser {client.name}&nbsp;?
       </h1>
       <p className="mt-2 text-center text-sm text-brand-700/85">
-        {site ? (
-          <>
-            <span className="font-medium text-brand-900">{site}</span>
-            {" demande l’accès à ton compte On mange quoi ?"}
-          </>
-        ) : (
-          <>Cet assistant demande l’accès à ton compte On mange quoi&nbsp;?</>
-        )}
+        Cet assistant demande l’accès à ton compte On mange quoi&nbsp;?
       </p>
+      {destination && (
+        <p className="mt-1 text-center text-sm text-brand-700/85">
+          {"Après ton choix, retour vers "}
+          <span className="font-medium text-brand-900">{destination}</span>.
+        </p>
+      )}
 
       <div className="mt-6 rounded-lg border border-brand-100 bg-surface p-4">
         <p className="text-sm font-medium text-brand-900">

@@ -2,13 +2,15 @@
 //
 // Chaque appel d'outil crée un client Supabase « par jeton » avec le jeton
 // OAuth de la requête (RG-71 : RLS mon_foyer(), jamais `service_role`) et
-// délègue à lib/mcp/lecture.ts. Noms d'outils en français `snake_case`.
+// délègue à lib/mcp/lecture.ts, avec la date du jour à Paris (le serveur est
+// en UTC). Noms d'outils en français `snake_case`.
 
 import type { CallToolResult, McpServer } from "@modelcontextprotocol/server"
 import { z } from "zod"
 import { creerClientParJeton } from "@/lib/supabase/par-jeton"
 import { ErreurOutil } from "@/lib/mcp/erreurs"
 import { lireListeCourses, lirePlanning, lireRecette } from "@/lib/mcp/lecture"
+import { aujourdhuiParis } from "@/lib/mcp/repas"
 import type { ClientSupabase } from "@/lib/supabase/types"
 
 const ERREUR_INTERNE = "Erreur interne d'OMQ. Réessaie dans un instant."
@@ -49,7 +51,7 @@ export function enregistrerOutilsLecture(server: McpServer): void {
         semaine: z.string().optional().describe("Semaine ISO, ex. 2026-W44. Par défaut : le cycle en cours."),
       }),
     },
-    async (args, ctx) => executer(ctx, (supabase) => lirePlanning(supabase, args))
+    async (args, ctx) => executer(ctx, (supabase) => lirePlanning(supabase, args, aujourdhuiParis()))
   )
 
   server.registerTool(
@@ -62,7 +64,7 @@ export function enregistrerOutilsLecture(server: McpServer): void {
         inclure_coches: z.boolean().optional().describe("Inclure les articles déjà cochés (défaut : non)."),
       }),
     },
-    async (args, ctx) => executer(ctx, (supabase) => lireListeCourses(supabase, args))
+    async (args, ctx) => executer(ctx, (supabase) => lireListeCourses(supabase, args, aujourdhuiParis()))
   )
 
   server.registerTool(
@@ -76,6 +78,6 @@ export function enregistrerOutilsLecture(server: McpServer): void {
         creneau: z.enum(["midi", "soir"]).describe("Créneau du repas."),
       }),
     },
-    async (args, ctx) => executer(ctx, (supabase) => lireRecette(supabase, args))
+    async (args, ctx) => executer(ctx, (supabase) => lireRecette(supabase, args, aujourdhuiParis()))
   )
 }

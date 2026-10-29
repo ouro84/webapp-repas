@@ -40,7 +40,10 @@ describe("EcranConsentement (US-50, RG-72)", () => {
     expect(screen.getByText(/générer ou modifier ton planning et ta liste de courses, et ajouter des recettes/)).toBeTruthy()
     expect(screen.getByText(/arnaud@example\.com/)).toBeTruthy()
     expect(screen.getByText(/^Hermes pourra, en ton nom et seulement pour ton foyer/)).toBeTruthy()
-    expect(screen.getByText(/hermes\.example\.com/)).toBeTruthy()
+    // Hôte affiché = celui du redirect_uri enregistré (où part le code), jamais
+    // client.uri, que le client choisit librement en DCR.
+    expect(screen.getByText("127.0.0.1:27890")).toBeTruthy()
+    expect(screen.queryByText(/hermes\.example\.com/)).toBeNull()
     expect(oauth.getAuthorizationDetails).toHaveBeenCalledWith("auth-1")
   })
 
