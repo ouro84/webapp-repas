@@ -601,7 +601,7 @@ Réduire à zéro l'effort de planification hebdomadaire des repas, du choix des
 > **When** je (re)génère mon cycle  
 > **Then** les coches du cycle sont **réinitialisées** (RG-13, cohérent avec la régénération planning), et un autre membre « en magasin » est **alerté** de la modification (US-21, RG-55)
 
-### US-49 — Vue planning calée sur le cycle (#260, P27)
+### US-49 — Vue planning calée sur le cycle (#260, P27 ; édition depuis #283)
 
 > **En tant qu'** utilisateur, je veux **visualiser mon planning sur la même fenêtre que ma liste de courses** (mon cycle), pour voir « ce que j'ai prévu jusqu'à ma prochaine virée ».
 
@@ -610,7 +610,7 @@ Réduire à zéro l'effort de planification hebdomadaire des repas, du choix des
 > **Then** le planning s'affiche jour par jour sur la fenêtre du cycle courant (ancre + longueur), avec un navigateur ‹ cycle précédent / suivant › (RG-57)
 
 > **Given** la vue « Cycle » est affichée  
-> **Then** elle est en **lecture seule** — je peux consulter une recette (fiche) mais l'édition (changer, sélectionner, personnes, restes) et la génération restent dans la vue **« Semaine »** (RG-57)
+> **Then** je peux consulter une recette (fiche) et **éditer chaque repas** (changer, sélectionner, personnes, restes, annuler) ; l'édition s'applique **immédiatement**, la sauvegarde part en arrière-plan (RG-57)
 
 > **Given** je n'ai jamais touché la bascule  
 > **Then** la vue **« Semaine »** (calendaire) reste l'affichage par défaut — aucun changement de comportement (RG-57)
@@ -1010,7 +1010,7 @@ La liste de courses (US-03/RG-05) n'est plus fenêtrée sur la semaine ISO mais 
 - **RG-54 — Réglage foyer & rétro-compatibilité** : le jour de courses (`jourCourses`, ISO 1=lundi…7=dimanche) est un réglage **du foyer** (pas de l'utilisateur), car les coches sont partagées au foyer ; défaut **lundi**. Avec ce défaut, le cycle **coïncide exactement** avec la semaine ISO lundi→dimanche — **zéro changement de comportement observable** pour un foyer qui ne touche pas ce réglage. Changer le jour de courses ne s'applique qu'aux **cycles futurs** : les ancres et coches déjà constituées restent accessibles telles quelles en navigation.
 - **RG-55 — Coches par cycle, temps réel inchangé** : les coches de la liste (RG-10 à RG-14) sont clées par **ancre de cycle** (et non plus par semaine) ; la synchronisation temps réel entre membres du foyer (US-20) et la présence « en magasin » (RG-31) fonctionnent à l'identique, à l'échelle du cycle affiché.
 - **RG-56 — Génération fenêtrée (US-48, #259)** : « Générer mon cycle » remplit les 14 slots du cycle affiché (saison = ancre du cycle ; `lib/generateur.ts` inchangé), répartis dans les **1-2 semaines ISO** touchées et persistés **par semaine** en n'écrivant **que** les jours du cycle (les jours hors cycle des semaines touchées sont préservés). Comme toute génération complète, elle **réinitialise les coches** du cycle (RG-13) et bump la version du planning → un membre « en magasin » est alerté (US-21/RG-55). La navigation planning par semaine (RG-24) reste la vue de référence « on mange quoi ce soir ? ».
-- **RG-57 — Vue planning cycle, lecture seule (US-49, #260)** : `/planning` propose une bascule **« Semaine | Cycle »** (défaut **Semaine**, rétro-compatible). La vue Cycle projette le planning sur les jours du cycle courant (mêmes `ancre`/`longueur` que `/courses`, `lib/cycles`), avec navigation ‹ cycle précédent / suivant ›. Elle est en **lecture seule** (consultation de fiche autorisée) : l'édition et la génération restent en vue Semaine, driver du quotidien (décision produit D5). Justification : un cycle non calendaire chevauche 1-2 semaines ISO, or la persistance/undo/temps réel du planning est mono-semaine (storePlanning/useSync) — éditer hors de la semaine affichée sortirait de ce modèle ; une éditabilité partielle serait incohérente. « Générer mon cycle » (US-48) couvre le besoin d'écriture à l'échelle du cycle.
+- **RG-57 — Vue planning cycle, éditable (US-49, #260, #283)** : `/planning` propose une bascule **« Semaine | Cycle »** (défaut **Semaine**, rétro-compatible). La vue Cycle projette le planning sur les jours du cycle courant (mêmes `ancre`/`longueur` que `/courses`, `lib/cycles`), avec navigation ‹ cycle précédent / suivant ›. Elle permet la consultation de fiche et l'**édition complète** (changer, sélection manuelle, personnes, restes) : (1) l'édition est écrite **directement en base** pour la semaine ISO du jour édité (`sauvegarder_slots`), sans passer par `storePlanning` — un cycle non calendaire chevauche 1-2 semaines ISO, or la persistance/undo/temps réel de `storePlanning`/`useSync` est mono-semaine ; (2) la mise à jour est **optimiste** (affichage immédiat, grille jamais rechargée), avec **une seule écriture par édition** (stepper personnes débouncé 800 ms) et, en cas d'échec, **retour à la valeur précédente + message d'erreur** (#301) ; (3) l'undo passe par le toast « Annuler », qui rejoue l'ancien repas. « Générer mon cycle » (US-48) couvre le besoin d'écriture à l'échelle du cycle.
 
 ### RG-19 — Snapshot d'annulation (US-09)
 
