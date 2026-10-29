@@ -8,18 +8,22 @@
 // (scripts/configurer-oauth-supabase.mjs).
 
 import { test, expect, attacherGardeCrash } from "./fixtures";
-import type { APIRequestContext, Browser, BrowserContext, Page } from "@playwright/test";
-import { E2E_PASSWORD, lireEnvLocal, marquerOnboardingCompletDistant } from "./helpers";
+import type { Browser, BrowserContext, Page } from "@playwright/test";
+import { lireEnvLocal } from "./helpers";
 import {
   appelerOutilMcp,
+  autoriser,
   capturerRedirection,
-  echangerCode,
+  connecter,
+  consentement,
   enregistrerClientOAuth,
   enregistrerPlanning,
   genererPkce,
+  inscrire,
   jetonMotDePasse,
   rafraichir,
   recettesCatalogue,
+  remplirLogin,
   urlAutorisation,
 } from "./oauth";
 import { semaineISO } from "../lib/semaines";
@@ -30,17 +34,6 @@ const EMAIL_B = `claude-e2e-oauth-${RUN}-b@example.com`;
 const EMAIL_C = `claude-e2e-oauth-${RUN}-c@example.com`;
 
 test.describe.configure({ mode: "serial" });
-
-async function inscrire(request: APIRequestContext, email: string, onboarde = true): Promise<void> {
-  const r = await request.post(`${lireEnvLocal("NEXT_PUBLIC_SUPABASE_URL")}/auth/v1/signup`, {
-    headers: { apikey: lireEnvLocal("NEXT_PUBLIC_SUPABASE_ANON_KEY"), "Content-Type": "application/json" },
-    data: { email, password: E2E_PASSWORD },
-  });
-  if (![200, 400, 422].includes(r.status())) {
-    throw new Error(`Signup ${email} impossible : HTTP ${r.status()} — ${await r.text()}`);
-  }
-  if (onboarde) await marquerOnboardingCompletDistant(request, email, E2E_PASSWORD);
-}
 
 const contextes: BrowserContext[] = [];
 
@@ -54,43 +47,6 @@ async function pageVierge(browser: Browser): Promise<{ page: Page; erreurs: stri
   const page = await contexte.newPage();
   const garde = attacherGardeCrash(page);
   return { page, erreurs: garde.erreurs };
-}
-
-async function remplirLogin(page: Page, email: string): Promise<void> {
-  await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Mot de passe", { exact: true }).fill(E2E_PASSWORD);
-  await page.getByRole("button", { name: "Se connecter" }).click();
-}
-
-async function connecter(page: Page, email: string): Promise<void> {
-  await page.goto("/login");
-  await remplirLogin(page, email);
-  await page.waitForURL("**/planning");
-}
-
-// Écran de consentement : boutons ciblés dans sa section, car le bandeau
-// cookies porte lui aussi un bouton « Refuser ».
-function consentement(page: Page, nomClient: string) {
-  return page.getByRole("region", { name: new RegExp(`^Autoriser ${nomClient}\\s\\?$`) });
-}
-
-// Déroule une autorisation complète pour `email` (déjà connecté sur `page`) et
-// renvoie le client et les jetons obtenus.
-async function autoriser(page: Page, request: APIRequestContext, nomClient: string) {
-  const { clientId } = await enregistrerClientOAuth(request, nomClient);
-  const { verifier, challenge } = genererPkce();
-  const redirection = capturerRedirection(page);
-  await page.goto(urlAutorisation(clientId, challenge, "etat-1"));
-  await expect(consentement(page, nomClient)).toContainText(
-    `${nomClient} pourra, en ton nom et seulement pour ton foyer`
-  );
-  await consentement(page, nomClient).getByRole("button", { name: "Autoriser" }).click();
-  const retour = await redirection;
-  expect(retour.searchParams.get("state")).toBe("etat-1");
-  const code = retour.searchParams.get("code");
-  expect(code).toBeTruthy();
-  const jetons = await echangerCode(request, clientId, code!, verifier);
-  return { clientId, ...jetons };
 }
 
 test.beforeAll(async ({ request }) => {

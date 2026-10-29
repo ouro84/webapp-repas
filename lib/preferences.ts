@@ -7,6 +7,8 @@
 // (même schéma que recette_masquee, #105).
 
 import { createClient } from "@/lib/supabase/client"
+import { clientParDefaut } from "@/lib/supabase/par-defaut"
+import type { ClientSupabase } from "@/lib/supabase/types"
 import type { PreferencesRecettes, RecettePreference } from "@/lib/generateur"
 
 /**
@@ -14,8 +16,9 @@ import type { PreferencesRecettes, RecettePreference } from "@/lib/generateur"
  * Sert la vue en liste (« Mes recettes ») qui affiche N recettes à la fois —
  * un seul aller-retour plutôt qu'une requête par recette.
  */
-export async function chargerPreferences(): Promise<PreferencesRecettes> {
-  const client = createClient()
+export async function chargerPreferences(
+  client: ClientSupabase = clientParDefaut()
+): Promise<PreferencesRecettes> {
   const { data, error } = await client
     .from("recette_preference")
     .select("recette_id, preference")

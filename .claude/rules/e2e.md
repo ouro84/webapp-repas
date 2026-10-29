@@ -21,7 +21,7 @@ paths:
 - Un compte né d'un signup a `onboarding_complete = false` et serait redirigé vers `/bienvenue` : appeler `marquerOnboardingCompletDistant` après le signup (sauf `onboarding.spec`, qui teste justement le tunnel).
 - Confirmation email désactivée sur staging, condition nécessaire à `auth.setup.ts`.
 
-- **`oauth-mcp.spec`** (#305) joue un assistant IA avec `e2e/oauth.ts` (DCR, PKCE, échange de code, appels JSON-RPC à `/api/mcp`). Il exige OAuth Server activé sur staging et `site_url = http://localhost:3000` (cf. `mcp.md`) ; chaque test crée un client DCR, qui s'accumule sur staging comme les comptes jetables.
+- **`oauth-mcp.spec`** (#305) et **`mcp-ecriture.spec`** (#306) jouent un assistant IA avec `e2e/oauth.ts` (DCR, PKCE, échange de code, appels JSON-RPC à `/api/mcp`, parcours `inscrire` / `connecter` / `autoriser`). Il exige OAuth Server activé sur staging et `site_url = http://localhost:3000` (cf. `mcp.md`) ; chaque test crée un client DCR, qui s'accumule sur staging comme les comptes jetables.
 
 ## Le compte partagé : chaque spec restaure ce qu'elle touche
 

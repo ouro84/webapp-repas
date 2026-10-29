@@ -8,7 +8,8 @@
 
 import { createHash, randomBytes } from "node:crypto";
 import type { APIRequestContext, APIResponse, Page } from "@playwright/test";
-import { E2E_PASSWORD, lireEnvLocal } from "./helpers";
+import { expect } from "./fixtures";
+import { E2E_PASSWORD, lireEnvLocal, marquerOnboardingCompletDistant } from "./helpers";
 
 export const REDIRECTION = "http://127.0.0.1:9999/callback";
 
@@ -193,4 +194,54 @@ export async function recettesCatalogue(
   );
   if (!r.ok()) throw new Error(`Lecture du catalogue impossible : HTTP ${r.status()}`);
   return (await r.json()) as Array<{ id: string; nom: string }>;
+}
+
+// --- Parcours partagés par oauth-mcp.spec et mcp-ecriture.spec (#306) ---
+
+export async function inscrire(request: APIRequestContext, email: string, onboarde = true): Promise<void> {
+  const r = await request.post(`${lireEnvLocal("NEXT_PUBLIC_SUPABASE_URL")}/auth/v1/signup`, {
+    headers: { apikey: lireEnvLocal("NEXT_PUBLIC_SUPABASE_ANON_KEY"), "Content-Type": "application/json" },
+    data: { email, password: E2E_PASSWORD },
+  });
+  if (![200, 400, 422].includes(r.status())) {
+    throw new Error(`Signup ${email} impossible : HTTP ${r.status()} — ${await r.text()}`);
+  }
+  if (onboarde) await marquerOnboardingCompletDistant(request, email, E2E_PASSWORD);
+}
+
+export async function remplirLogin(page: Page, email: string): Promise<void> {
+  await page.getByLabel("Email").fill(email);
+  await page.getByLabel("Mot de passe", { exact: true }).fill(E2E_PASSWORD);
+  await page.getByRole("button", { name: "Se connecter" }).click();
+}
+
+export async function connecter(page: Page, email: string): Promise<void> {
+  await page.goto("/login");
+  await remplirLogin(page, email);
+  await page.waitForURL("**/planning");
+}
+
+// Écran de consentement : boutons ciblés dans sa section, car le bandeau
+// cookies porte lui aussi un bouton « Refuser ».
+export function consentement(page: Page, nomClient: string) {
+  return page.getByRole("region", { name: new RegExp(`^Autoriser ${nomClient}\\s\\?$`) });
+}
+
+// Déroule une autorisation complète pour `email` (déjà connecté sur `page`) et
+// renvoie le client et les jetons obtenus.
+export async function autoriser(page: Page, request: APIRequestContext, nomClient: string) {
+  const { clientId } = await enregistrerClientOAuth(request, nomClient);
+  const { verifier, challenge } = genererPkce();
+  const redirection = capturerRedirection(page);
+  await page.goto(urlAutorisation(clientId, challenge, "etat-1"));
+  await expect(consentement(page, nomClient)).toContainText(
+    `${nomClient} pourra, en ton nom et seulement pour ton foyer`
+  );
+  await consentement(page, nomClient).getByRole("button", { name: "Autoriser" }).click();
+  const retour = await redirection;
+  expect(retour.searchParams.get("state")).toBe("etat-1");
+  const code = retour.searchParams.get("code");
+  expect(code).toBeTruthy();
+  const jetons = await echangerCode(request, clientId, code!, verifier);
+  return { clientId, ...jetons };
 }

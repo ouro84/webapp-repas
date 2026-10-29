@@ -96,6 +96,17 @@ export function semainesDuCycle(ancre: string, longueur: number): string[] {
   return ordonnees
 }
 
+/** Vrai si `date` est au format AAAA-MM-JJ ET existe au calendrier (refuse
+ *  2026-02-30, que `new Date` décalerait au 2 mars). Partagé par la génération
+ *  serveur et les outils MCP (#306). */
+export function estDateISO(date: string): boolean {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date)
+  if (!m) return false
+  const [a, mo, j] = [Number(m[1]), Number(m[2]), Number(m[3])]
+  const d = new Date(a, mo - 1, j)
+  return d.getFullYear() === a && d.getMonth() === mo - 1 && d.getDate() === j
+}
+
 /** Pont vers le stockage par semaine ISO : une date → (semaine, jour). */
 export function dateVersSemaineJour(dateISO: string): { semaine: string; jour: Jour } {
   const d = depuisISO(dateISO)

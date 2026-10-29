@@ -11,6 +11,8 @@
 // Lectures à client injecté (#304, RG-71) : le dernier paramètre optionnel
 // permet de les appeler côté serveur EN TANT QUE l'utilisateur (client « par
 // jeton » du serveur MCP, RLS mon_foyer()) ; défaut = client navigateur (clientParDefaut, qui REFUSE hors navigateur).
+// Écritures à client injecté (#306) : sauvegarderSlotsDistant, coches,
+// articles manuels — le MCP écrit par les mêmes RPC / tables que l'UI (RG-79).
 
 import { createClient } from "@/lib/supabase/client"
 import { clientParDefaut } from "@/lib/supabase/par-defaut"
@@ -230,9 +232,9 @@ function construireSlotsJours(jours: Planning["jours"]): ReturnType<typeof const
  */
 export async function sauvegarderSlotsDistant(
   semaine: string,
-  jours: Planning["jours"]
+  jours: Planning["jours"],
+  supabase: ClientSupabase = clientParDefaut()
 ): Promise<string> {
-  const supabase = createClient()
   const { data, error } = await supabase.rpc("sauvegarder_slots", {
     p_semaine: semaine,
     p_slots: construireSlotsJours(jours),
@@ -309,9 +311,9 @@ export async function chargerCochesDistantes(
 export async function cocherArticleDistant(
   ancre: string,
   cle: string,
-  quantite: number
+  quantite: number,
+  supabase: ClientSupabase = clientParDefaut()
 ): Promise<void> {
-  const supabase = createClient()
   const { error } = await supabase
     .from("etat_courses_article")
     .upsert(
@@ -326,9 +328,9 @@ export async function cocherArticleDistant(
 /** Décoche un article (delete de sa ligne ; le foyer est filtré par la RLS). */
 export async function decocherArticleDistant(
   ancre: string,
-  cle: string
+  cle: string,
+  supabase: ClientSupabase = clientParDefaut()
 ): Promise<void> {
-  const supabase = createClient()
   const { error } = await supabase
     .from("etat_courses_article")
     .delete()
@@ -417,9 +419,9 @@ export type SaisieArticleManuel = {
 /** Crée un article manuel sur l'ancre affichée. Renvoie la ligne créée. */
 export async function creerArticleManuelDistant(
   ancre: string,
-  saisie: SaisieArticleManuel
+  saisie: SaisieArticleManuel,
+  supabase: ClientSupabase = clientParDefaut()
 ): Promise<ArticleManuel> {
-  const supabase = createClient()
   const { data, error } = await supabase
     .from("article_manuel")
     .insert({
@@ -462,9 +464,9 @@ export async function modifierArticleManuelDistant(
 /** Bascule l'état coché d'un article manuel (colonne dédiée, pas le blob RG-12). */
 export async function basculerCocheArticleManuelDistant(
   id: string,
-  coche: boolean
+  coche: boolean,
+  supabase: ClientSupabase = clientParDefaut()
 ): Promise<void> {
-  const supabase = createClient()
   const { error } = await supabase.from("article_manuel").update({ coche }).eq("id", id)
   if (error) {
     throw new Error(`Cochage de l'article manuel impossible : ${error.message}`)

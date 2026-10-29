@@ -25,6 +25,7 @@ import {
 } from "@/lib/semaines"
 import {
   dateVersSemaineJour,
+  estDateISO,
   LONGUEUR_DEFAUT,
   LONGUEUR_MAX,
   planningGenereParSemaine,
@@ -108,7 +109,8 @@ export async function genererPourUtilisateur(
 
   if ("ancre" in demande) {
     ancre = demande.ancre
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(ancre)) {
+    // Format ET date réelle : 2026-02-30 passerait la regex (#306).
+    if (!estDateISO(ancre)) {
       throw new ErreurGeneration("Ancre de cycle invalide.", 400)
     }
     if (demande.longueur !== undefined) {

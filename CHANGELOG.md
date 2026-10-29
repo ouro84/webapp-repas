@@ -9,6 +9,7 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ### Corrigé
 
+- Un planning ne peut plus contenir une recette d'un autre foyer, même par un appel direct à l'API (#306). Une date de début de cycle impossible (comme le 30 février) est désormais refusée.
 - Premier planning de l'onboarding : s'il est généré le samedi entre minuit et 1 h (2 h en été), il porte bien sur la semaine suivante, comme le reste de l'app, et non plus sur la semaine en cours (le serveur calculait la date en heure UTC).
 
 ### Sécurité
@@ -17,6 +18,7 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ### Ajouté
 
+- Ton assistant IA peut désormais **modifier** ton planning et ta liste (#306) : générer ton cycle (il te demande confirmation avant d'écraser un cycle existant), remplacer un repas au hasard ou par une recette que tu nommes, changer le nombre de personnes, ajouter une recette à celles du foyer, ajouter un article à la liste de courses et cocher un article. Ses modifications apparaissent en direct chez les autres membres du foyer, avec l'alerte habituelle s'ils sont en magasin. Article d'aide : « Connecter OMQ à votre assistant IA ».
 - Connecter un assistant IA à OMQ (#305) : OMQ expose désormais un **serveur MCP** à l'adresse `/api/mcp`. Ajoute cette adresse dans ton assistant (Claude, Cursor, OpenCode, Hermes…) : il t'envoie sur un écran OMQ qui te demande de te connecter, puis d'**autoriser** l'assistant nommé. Il peut alors te dire **ce qu'on mange** (par date et midi/soir), t'envoyer **ta liste de courses** (ce qu'il reste à acheter, par rayon, articles ajoutés à la main compris) et te donner **la recette d'un repas** à l'échelle du nombre de personnes, avec ses étapes. Il ne voit que les données de ton foyer. Tu retrouves les assistants autorisés dans **`/profil`, section « Assistants connectés »**, d'où tu peux les **déconnecter** à tout moment.
 - Supprimer mon compte (#237) : depuis `/profil`, une nouvelle section **« Zone dangereuse »** permet de supprimer définitivement ton compte et tes données, après ré-authentification (mot de passe) et confirmation forte (taper **SUPPRIMER**). En **foyer partagé**, tes recettes restent visibles pour les autres membres (elles ne sont plus attribuées à personne) ; en solo, tout est effacé, y compris le foyer. Action **irréversible**.
 - Pages légales, consentement CGU et bandeau cookies (#235, #236) : trois nouvelles pages **Conditions générales d'utilisation**, **Politique de confidentialité** et **Mentions légales** (accessibles depuis le pied de page, sans connexion). L'inscription demande désormais d'**accepter les CGU** (case non pré-cochée) avant de créer un compte. Un **bandeau cookies** propose Accepter/Refuser à ta première visite pour la mesure d'audience — ton choix est mémorisé et **révocable à tout moment** depuis `/profil`, section « Vie privée ». Si ton navigateur envoie Do Not Track, ton choix est réglé sur refus automatiquement, sans jamais te redemander.

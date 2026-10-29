@@ -16,7 +16,6 @@ import { retirerCreneauxDesactives } from "@/lib/generateur"
 import { semaineDansPlage } from "@/lib/generation"
 import {
   ancreParDefaut,
-  dateVersSemaineJour,
   joursDuCycle,
   libelleCycle,
   semainesDuCycle,
@@ -32,16 +31,15 @@ import { estRestes } from "@/lib/restes"
 import { ErreurOutil } from "@/lib/mcp/erreurs"
 import {
   datesDeSemaine,
+  HORS_PLAGE,
+  localiserRepas,
   repasAuxDates,
   TYPE_REPAS,
-  validerDate,
   type Creneau,
+  type RepasDate,
 } from "@/lib/mcp/repas"
 import type { ClientSupabase } from "@/lib/supabase/types"
 import type { Ingredient, Jour, Planning, ReglagesGeneration, TempsPreparation } from "@/types"
-
-const HORS_PLAGE =
-  "Cette date est hors de la plage consultable (12 semaines en arrière, 6 en avant). Choisis une date plus proche."
 
 export type PlanningMcp = {
   periode: { du: string; au: string; libelle: string }
@@ -55,6 +53,24 @@ export type PlanningMcp = {
     vegetarien: boolean
     temps_preparation: TempsPreparation
   }>
+}
+
+export type RepasMcp = PlanningMcp["repas"][number]
+
+/** Repas désigné par date + créneau (RG-73), tel que le renvoient les outils. */
+export function versRepasMcp({ date, creneau, jour, jp }: RepasDate): RepasMcp {
+  const type = TYPE_REPAS[creneau]
+  const recette = jp[type]!
+  return {
+    date,
+    creneau,
+    jour,
+    recette: recette.nom,
+    personnes: personnesDuSlot(jp, type),
+    restes: estRestes(jp, type),
+    vegetarien: recette.vegetarien === true,
+    temps_preparation: recette.tempsPreparation,
+  }
 }
 
 export type ArticleMcp = { nom: string; quantite: string; manuel: boolean; coche?: boolean }
@@ -79,7 +95,7 @@ export type RecetteMcp = {
   etapes: string[]
 }
 
-function depuisISO(date: string): Date {
+export function depuisISO(date: string): Date {
   const [a, m, j] = date.split("-").map(Number)
   return new Date(a, m - 1, j)
 }
@@ -88,21 +104,27 @@ function moisLong(d: Date): string {
   return d.toLocaleDateString("fr-FR", { month: "long" })
 }
 
+/** « le jeudi 29 octobre au midi » : un repas en toutes lettres (messages d'erreur). */
+export function libelleRepas(date: string, creneau: Creneau, jour: Jour): string {
+  const d = depuisISO(date)
+  return `le ${jour} ${d.getDate()} ${moisLong(d)} ${creneau === "midi" ? "au midi" : "au soir"}`
+}
+
 // « du 29 octobre au 4 novembre »
-function libellePeriode(du: string, au: string): string {
+export function libellePeriode(du: string, au: string): string {
   const [d, a] = [depuisISO(du), depuisISO(au)]
   return `du ${d.getDate()} ${moisLong(d)} au ${a.getDate()} ${moisLong(a)}`
 }
 
 // Réglages best-effort, comme /courses et /planning : illisibles → défauts.
-async function reglagesOuDefaut(supabase: ClientSupabase): Promise<ReglagesGeneration> {
+export async function reglagesOuDefaut(supabase: ClientSupabase): Promise<ReglagesGeneration> {
   return chargerReglages(supabase).catch((erreur): ReglagesGeneration => {
     console.error("Chargement des réglages échoué (défauts appliqués).", erreur)
     return REGLAGES_DEFAUT
   })
 }
 
-async function planningsAffiches(
+export async function planningsAffiches(
   supabase: ClientSupabase,
   semaines: string[],
   reglages: ReglagesGeneration
@@ -151,24 +173,11 @@ export async function lirePlanning(
 
   return {
     periode: { du, au, libelle: libellePeriode(du, au) },
-    repas: repasAuxDates(plannings, dates).map(({ date, creneau, jour, jp }) => {
-      const type = TYPE_REPAS[creneau]
-      const recette = jp[type]!
-      return {
-        date,
-        creneau,
-        jour,
-        recette: recette.nom,
-        personnes: personnesDuSlot(jp, type),
-        restes: estRestes(jp, type),
-        vegetarien: recette.vegetarien === true,
-        temps_preparation: recette.tempsPreparation,
-      }
-    }),
+    repas: repasAuxDates(plannings, dates).map(versRepasMcp),
   }
 }
 
-function versArticle(i: Ingredient, coches: Coches | null): ArticleMcp {
+export function versArticle(i: Ingredient, coches: Coches | null): ArticleMcp {
   return {
     nom: accorderNom(i),
     quantite: aQuantiteRenseignee(i) ? formaterQuantite(i) : "",
@@ -215,10 +224,7 @@ export async function lireRecette(
   args: { date: string; creneau: Creneau },
   aujourdhui: Date = new Date()
 ): Promise<RecetteMcp> {
-  const invalide = validerDate(args.date)
-  if (invalide) throw new ErreurOutil(invalide)
-  const { semaine, jour } = dateVersSemaineJour(args.date)
-  if (!semaineDansPlage(semaineISO(aujourdhui), semaine)) throw new ErreurOutil(HORS_PLAGE)
+  const { semaine, jour } = localiserRepas(args.date, aujourdhui)
 
   const reglages = await reglagesOuDefaut(supabase)
   const [planning] = await planningsAffiches(supabase, [semaine], reglages)
@@ -226,10 +232,8 @@ export async function lireRecette(
   const jp = planning?.jours.find((j) => j.jour === jour)
   const recette = jp?.[type]
   if (!jp || !recette) {
-    const d = depuisISO(args.date)
-    const moment = args.creneau === "midi" ? "au midi" : "au soir"
     throw new ErreurOutil(
-      `Aucun repas prévu le ${jour} ${d.getDate()} ${moisLong(d)} ${moment}. Appelle lire_planning pour voir les repas prévus.`
+      `Aucun repas prévu ${libelleRepas(args.date, args.creneau, jour)}. Appelle lire_planning pour voir les repas prévus.`
     )
   }
 

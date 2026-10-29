@@ -38,8 +38,14 @@ paths:
 - Un repas `restes: true` garde le nom du plat d'origine ; les descriptions d'outils disent à l'assistant qu'il n'y a rien à cuisiner.
 - Contrats RG-73/78 : un repas = `date` (AAAA-MM-JJ) + `creneau` (`midi` | `soir`), plage −12/+6 semaines (`semaineDansPlage`) ; liste de courses non cochée par défaut. Toute évolution d'un contrat se répercute dans la description de l'outil (`lib/mcp/serveur.ts`), que lit l'assistant.
 - Erreurs attendues = `ErreurOutil` (message français qui dit quoi faire ensuite, renvoyé en `isError`). Toute autre exception est loggée et masquée derrière un message générique.
+- **Une écriture MCP passe par les mêmes RPC et tables que l'UI** (`sauvegarder_cycle`, `sauvegarder_slots`, `etat_courses_article`, `article_manuel`, `recette`), via les fonctions de `lib/` rendues injectables. Pourquoi : temps réel et alerte US-21 viennent sans code dédié (RG-79), vérifié en e2e.
+- **Une ambiguïté n'est pas une erreur** : `remplacer_repas` et `cocher_article` renvoient `{ modifie: false, candidats }` sans rien écrire (`remplacer_repas` : 10 candidats au plus, plus `total`). Un nom exact (casse et accents ignorés, `rechercherRecettes`) l'emporte sur les correspondances partielles ; entre homonymes exacts, la recette du foyer l'emporte (`homonymeDuFoyer`) ; des articles indiscernables (même libellé, même quantité) se traitent l'un après l'autre. Pourquoi : l'assistant ne doit jamais tourner en rond sur une ambiguïté qu'il ne peut pas lever.
+- Un tirage de `remplacer_repas` renvoie `avertissements`, les mêmes messages que les toasts du site après « ↺ changer » (RG-26/27/28).
+- **L'édition d'un repas n'envoie que le créneau visé** à `sauvegarder_slots` (`ecrireCreneau`). Pourquoi : la RPC upserte chaque slot fourni, renvoyer tout le jour réécrirait l'autre repas même s'il vient de changer ailleurs.
+- `generer_cycle` refuse un cycle qui porte déjà un repas affiché, sauf `remplacer: true`, et consomme aussi `limiteGeneration(userId)` (seau `rl:generer` partagé avec le web), via le rappel `verifierQuota` appelé juste avant de générer. Pourquoi : un utilisateur n'a qu'un quota de génération, quel que soit le canal, et un refus « cycle existant » ne doit pas l'entamer.
+- **`ajouter_recette` passe `auteurId` à `creerRecette`.** Pourquoi : le client par jeton n'a pas de session, `auth.getUser()` y échoue. `executer()` fournit `userId` (claim `sub`) à chaque outil.
 
 ## Tests
 
-- Unitaires : `lib/mcp/*.test.ts` (client mocké, client navigateur qui lève), `app/api/mcp/route.test.ts` (vrai mcp-handler, auth et lectures mockées).
-- e2e : `e2e/oauth-mcp.spec.ts` (comptes jetables, un client DCR par test). Les boutons du consentement se ciblent dans la région « Autoriser <client> ? », car le bandeau cookies porte aussi un bouton « Refuser ».
+- Unitaires : `lib/mcp/*.test.ts` (client mocké, client navigateur qui lève), `app/api/mcp/route.test.ts` (vrai mcp-handler, auth, lectures et écritures mockées).
+- e2e : `e2e/oauth-mcp.spec.ts` et `e2e/mcp-ecriture.spec.ts` (comptes jetables ; helpers `inscrire`, `connecter`, `autoriser` dans `e2e/oauth.ts`). Les boutons du consentement se ciblent dans la région « Autoriser <client> ? », car le bandeau cookies porte aussi un bouton « Refuser ».

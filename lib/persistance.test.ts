@@ -18,7 +18,12 @@ import {
   chargerCochesDistantes,
   chargerLongueurCycle,
   chargerPlanningDistant,
+  basculerCocheArticleManuelDistant,
+  cocherArticleDistant,
+  creerArticleManuelDistant,
+  decocherArticleDistant,
   sauvegarderCycleDistant,
+  sauvegarderSlotsDistant,
 } from "@/lib/persistance"
 import { chargerJourCoursesFoyer } from "@/lib/foyer"
 import { chargerReglages } from "@/lib/reglages-data"
@@ -177,5 +182,73 @@ describe("sauvegarderCycleDistant — RPC atomique sauvegarder_cycle (#304)", ()
     await expect(sauvegarderCycleDistant("2026-10-29", semaines, vide.client)).rejects.toThrow(
       "Sauvegarde du cycle impossible : réponse vide"
     )
+  })
+})
+
+// Écritures à client injecté (#306) : le serveur MCP écrit EN TANT QUE
+// l'utilisateur, par les mêmes RPC / tables que l'UI (RG-79).
+describe("écritures — client injecté (#306)", () => {
+  const recette = { id: "r1", nom: "R1", tempsPreparation: "rapide" as const, ingredients: [] }
+
+  it("sauvegarderSlotsDistant appelle sauvegarder_slots via le client injecté", async () => {
+    const { client, rpcs } = creerSupabaseMock({
+      rpc: { sauvegarder_slots: { data: "2026-10-29T12:00:00Z", error: null } },
+    })
+    const maj = await sauvegarderSlotsDistant("2026-W44", [{ jour: "jeudi", diner: recette }], client)
+    expect(maj).toBe("2026-10-29T12:00:00Z")
+    expect(rpcs).toEqual([
+      {
+        nom: "sauvegarder_slots",
+        args: {
+          p_semaine: "2026-W44",
+          p_slots: [{ recette_id: "r1", jour: "jeudi", type_repas: "diner", personnes: 2, restes: false }],
+        },
+      },
+    ])
+  })
+
+  it("cocherArticleDistant upserte la clé nom|unité et sa quantité", async () => {
+    const { client, appels } = creerSupabaseMock()
+    await cocherArticleDistant("2026-10-29", "oignon|g", 200, client)
+    expect(appels).toEqual([
+      {
+        table: "etat_courses_article",
+        ops: [["upsert", { ancre: "2026-10-29", cle: "oignon|g", quantite: 200 }, { onConflict: "foyer_id,ancre,cle" }]],
+      },
+    ])
+  })
+
+  it("decocherArticleDistant supprime la ligne de l'ancre et de la clé", async () => {
+    const { client, appels } = creerSupabaseMock()
+    await decocherArticleDistant("2026-10-29", "oignon|g", client)
+    expect(appels[0].table).toBe("etat_courses_article")
+    expect(appels[0].ops).toEqual([["delete"], ["eq", "ancre", "2026-10-29"], ["eq", "cle", "oignon|g"]])
+  })
+
+  it("creerArticleManuelDistant insère l'article sur l'ancre", async () => {
+    const { client, appels } = creerSupabaseMock({
+      tables: {
+        article_manuel: {
+          data: { id: "a1", libelle: "Bougies", quantite: null, unite: null, categorie: "autre", fond_de_placard: false, coche: false },
+          error: null,
+        },
+      },
+    })
+    const article = await creerArticleManuelDistant(
+      "2026-10-29",
+      { libelle: "Bougies", quantite: null, unite: null, categorie: "autre", fondDePlacard: false },
+      client
+    )
+    expect(article).toMatchObject({ id: "a1", libelle: "Bougies", coche: false })
+    expect(appels[0].ops[0]).toEqual([
+      "insert",
+      { ancre: "2026-10-29", libelle: "Bougies", quantite: null, unite: null, categorie: "autre", fond_de_placard: false },
+    ])
+  })
+
+  it("basculerCocheArticleManuelDistant met à jour la coche de l'article", async () => {
+    const { client, appels } = creerSupabaseMock()
+    await basculerCocheArticleManuelDistant("a1", true, client)
+    expect(appels).toEqual([{ table: "article_manuel", ops: [["update", { coche: true }], ["eq", "id", "a1"]] }])
   })
 })

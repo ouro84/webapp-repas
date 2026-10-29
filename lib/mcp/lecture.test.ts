@@ -156,7 +156,7 @@ describe("lirePlanning (RG-73, RG-78)", () => {
       new ErreurOutil("Semaine invalide : utilise le format AAAA-Www (ex. 2026-W44).")
     )
     await expect(lirePlanning(client, { semaine: "2027-W30" }, JEUDI)).rejects.toThrow(
-      "Cette date est hors de la plage consultable (12 semaines en arrière, 6 en avant). Choisis une date plus proche."
+      "Cette date est hors de la plage autorisée (12 semaines en arrière, 6 en avant). Choisis une date plus proche."
     )
   })
 })
@@ -250,7 +250,7 @@ describe("lireRecette (RG-73, RG-78)", () => {
       )
     }
     await expect(lireRecette(client, { date: "2027-12-01", creneau: "soir" }, JEUDI)).rejects.toThrow(
-      "Cette date est hors de la plage consultable (12 semaines en arrière, 6 en avant). Choisis une date plus proche."
+      "Cette date est hors de la plage autorisée (12 semaines en arrière, 6 en avant). Choisis une date plus proche."
     )
   })
 })
