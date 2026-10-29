@@ -22,6 +22,16 @@
 // dédié et léger (toast « Annuler » qui rejoue l'ancien JourPlanning), pas de
 // réutilisation du snapshot localStorage de la vue Semaine (inutile ici).
 //
+// ÉDITION OPTIMISTE (#301) : chaque édition patche immédiatement `parSemaine`
+// (remplacerJourDansSemaines, lib/cycles) et confie l'écriture distante à une
+// file par jour (creerFileEcritureSlots, lib/file-ecriture-slots) : départ
+// immédiat pour les actions ponctuelles, débounce pour le stepper personnes,
+// une seule écriture en vol par jour, retour à l'état confirmé + toast en cas
+// d'échec. Jamais de `chargerCycle` après une édition : son
+// `setChargement(true)` démonte la grille (« Chargement… », scroll et menus
+// perdus) le temps d'un aller-retour réseau. La file est vidée avant toute
+// relecture (navigation, génération) et au démontage.
+//
 // Le lien « Liste de courses → » vit aussi ici (passe l'ancre affichée en
 // query param, #279).
 //
@@ -30,7 +40,7 @@
 // cycle (date concrète) via lib/cycles (fonctions pures).
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -40,7 +50,13 @@ import {
   joursDuCycle,
   libelleCycle,
   LONGUEUR_DEFAUT,
+  remplacerJourDansSemaines,
 } from "@/lib/cycles";
+import {
+  creerFileEcritureSlots,
+  DELAI_STEPPER_MS,
+  type FileEcritureSlots,
+} from "@/lib/file-ecriture-slots";
 import { modifierPersonnes, personnesDuSlot } from "@/lib/personnes";
 import { estRestes, marquerRestes } from "@/lib/restes";
 import { chargerJourCoursesFoyer } from "@/lib/foyer";
@@ -65,6 +81,8 @@ import { FicheRecette } from "@/components/planning/fiche-recette";
 import type { JourPlanning, Planning, Recette, ReglagesGeneration } from "@/types";
 
 type TypeRepas = "dejeuner" | "diner";
+
+const ID_TOAST_ANNULATION_CYCLE = "annulation-slot-cycle";
 
 // « jeudi 9 juil. » avec majuscule initiale (les jours du cycle sont des dates
 // concrètes, pas des jours de semaine abstraits comme dans la vue semaine).
@@ -135,6 +153,40 @@ export function VuePlanningCycle({
   // Réglages (#217) : pilotent le filtre live des créneaux désactivés. Défaut
   // tant que non chargés = comportement antérieur (tout actif).
   const [reglages, setReglages] = useState<ReglagesGeneration>(REGLAGES_DEFAUT);
+  // File d'écriture par jour (#301) : l'état local est déjà à jour quand elle
+  // écrit ; en cas d'échec, on revient à l'état confirmé du jour + toast
+  // (« toute erreur capturée est affichée »).
+  const [file] = useState<FileEcritureSlots>(() =>
+    creerFileEcritureSlots({
+      ecrire: modifierSlotDistant,
+      surEchec: (semaine, jourConfirme, erreur) => {
+        console.error("Édition du slot échouée.", erreur);
+        setParSemaine((m) => remplacerJourDansSemaines(m, semaine, jourConfirme));
+        toast.dismiss(ID_TOAST_ANNULATION_CYCLE);
+        toast.error("Impossible d'enregistrer la modification. Réessaie.");
+      },
+    })
+  );
+
+  // Ne jamais perdre une écriture débouncée : ni en basculant vers la vue
+  // Semaine (démontage), ni quand l'app passe en arrière-plan ou se ferme
+  // (mobile verrouillé, onglet quitté, rechargement) — contrairement à la vue
+  // Semaine, rien n'est gardé en localStorage pour la rejouer plus tard.
+  useEffect(() => {
+    const surMasquage = () => {
+      if (document.visibilityState === "hidden") void file.vider();
+    };
+    const surPagehide = () => {
+      void file.vider();
+    };
+    document.addEventListener("visibilitychange", surMasquage);
+    window.addEventListener("pagehide", surPagehide);
+    return () => {
+      document.removeEventListener("visibilitychange", surMasquage);
+      window.removeEventListener("pagehide", surPagehide);
+      void file.vider();
+    };
+  }, [file]);
 
   useEffect(() => {
     let actif = true;
@@ -196,16 +248,26 @@ export function VuePlanningCycle({
 
   // Génération partagée (#279, D2) : accessible directement depuis cette vue,
   // sans passer par /courses. Le mécanisme (#259) persiste par RPC
-  // sauvegarder_slots, indépendamment de storePlanning/useSync (mono-semaine)
-  // — ne contredit donc pas la lecture seule de l'ÉDITION de slot (cf.
-  // en-tête de ce fichier).
+  // sauvegarder_slots, indépendamment de storePlanning/useSync (mono-semaine).
   const { enGeneration, genererCycle } = useGenerationCycle(
     ancre !== null ? { ancre, longueur } : null
   );
 
+  // Verrou d'édition pendant « Générer mon cycle » (revue #301) : posé dès le
+  // clic, AVANT le vidage de la file, et levé une fois la projection relue.
+  // Sans lui, une édition faite pendant la génération armerait une écriture de
+  // l'ANCIEN jour qui écraserait silencieusement le jour généré ; il bloque
+  // aussi un double clic pendant le vidage (enGeneration n'est posé qu'après).
+  const generationVerrouillee = useRef(false);
+  const [verrouAffiche, setVerrouAffiche] = useState(false);
+
   async function genererMonCycle(): Promise<void> {
-    if (enGeneration) return;
+    if (enGeneration || generationVerrouillee.current) return;
+    generationVerrouillee.current = true;
+    setVerrouAffiche(true);
     try {
+      // Une écriture débouncée tardive écraserait le cycle généré (#301).
+      await file.vider();
       const { vegeNonHonore, mixNonHonore, saisonNonHonore } = await genererCycle();
       toast.success("Cycle généré");
       for (const message of messagesAvertissementGeneration({
@@ -216,7 +278,7 @@ export function VuePlanningCycle({
         toast.warning(message);
       }
       // Recharge la projection affichée pour refléter le nouveau contenu.
-      if (ancre !== null) void chargerCycle(ancre);
+      if (ancre !== null) await chargerCycle(ancre);
     } catch (erreur) {
       console.error("Génération du cycle échouée.", erreur);
       toast.error(
@@ -224,43 +286,52 @@ export function VuePlanningCycle({
           ? erreur.message
           : "Impossible de générer le cycle. Vérifie ta connexion et réessaie."
       );
+    } finally {
+      generationVerrouillee.current = false;
+      setVerrouAffiche(false);
     }
   }
 
-  const ID_TOAST_ANNULATION_CYCLE = "annulation-slot-cycle";
+  // Mise à jour optimiste de l'affichage (#301) — jamais de rechargement.
+  function appliquerLocal(semaine: string, jour: JourPlanning): void {
+    setParSemaine((m) => remplacerJourDansSemaines(m, semaine, jour));
+  }
 
-  // Annule la dernière édition en rejouant l'ANCIEN JourPlanning par le même
-  // chemin d'écriture — pas de snapshot persistant (contrairement à la vue
-  // Semaine) : la fermeture du toast (~5 s) borne naturellement la fenêtre.
-  function toastAnnulable(message: string, semaine: string, ancienJour: JourPlanning): void {
+  // Annule la dernière édition (US-09) en rejouant l'ANCIEN JourPlanning par le
+  // même chemin — pas de snapshot persistant (contrairement à la vue Semaine) :
+  // la fermeture du toast (~5 s) borne naturellement la fenêtre.
+  function toastAnnulable(
+    message: string,
+    semaine: string,
+    ancienJour: JourPlanning,
+    nouveauJour: JourPlanning
+  ): void {
     toast(message, {
       id: ID_TOAST_ANNULATION_CYCLE,
       action: {
         label: "Annuler",
         onClick: () => {
-          void modifierSlotDistant(semaine, ancienJour).then(() => {
-            if (ancre !== null) void chargerCycle(ancre);
-          });
+          if (generationVerrouillee.current) return;
+          appliquerLocal(semaine, ancienJour);
+          file.planifier(semaine, ancienJour, { delaiMs: 0, precedent: nouveauJour });
         },
       },
       duration: 5000,
     });
   }
 
-  async function appliquerEdition(
+  // Action ponctuelle (changer, sélectionner, restes) : affichage immédiat,
+  // écriture immédiate en arrière-plan ; l'échec passe par surEchec (revert).
+  function appliquerEdition(
     semaine: string,
     ancienJourPlanning: JourPlanning,
     nouveauJourPlanning: JourPlanning,
     messageToast: string | null
-  ): Promise<void> {
-    try {
-      await modifierSlotDistant(semaine, nouveauJourPlanning);
-      if (ancre !== null) void chargerCycle(ancre);
-      if (messageToast) toastAnnulable(messageToast, semaine, ancienJourPlanning);
-    } catch (erreur) {
-      console.error("Édition du slot échouée.", erreur);
-      toast.error("Impossible d'enregistrer la modification. Réessaie.");
-    }
+  ): void {
+    if (generationVerrouillee.current) return;
+    appliquerLocal(semaine, nouveauJourPlanning);
+    file.planifier(semaine, nouveauJourPlanning, { delaiMs: 0, precedent: ancienJourPlanning });
+    if (messageToast) toastAnnulable(messageToast, semaine, ancienJourPlanning, nouveauJourPlanning);
   }
 
   function planningDeLaSemaine(semaine: string): Planning | null {
@@ -290,7 +361,7 @@ export function VuePlanningCycle({
       return;
     }
     const nouveauJourPlanning = nouveauPlanning.jours.find((jp) => jp.jour === jour)!;
-    void appliquerEdition(semaine, ancienJourPlanning, nouveauJourPlanning, "Recette remplacée");
+    appliquerEdition(semaine, ancienJourPlanning, nouveauJourPlanning, "Recette remplacée");
   }
 
   // Sélection manuelle (US-06) : remplace le slot par la recette choisie —
@@ -307,7 +378,7 @@ export function VuePlanningCycle({
       const nouveauPlanning = remplacerSlotManuel(planningSemaine, cible.jour, cible.typeRepas, recette);
       if (nouveauPlanning === null) return;
       const nouveauJourPlanning = nouveauPlanning.jours.find((jp) => jp.jour === cible.jour)!;
-      void appliquerEdition(cible.semaine, ancienJourPlanning, nouveauJourPlanning, "Recette remplacée");
+      appliquerEdition(cible.semaine, ancienJourPlanning, nouveauJourPlanning, "Recette remplacée");
     };
     if (confirmerSiPasse(cible.dateISO, executer)) return;
     executer();
@@ -315,19 +386,25 @@ export function VuePlanningCycle({
 
   // Nombre de personnes (US-07) — action mineure, non undoable (même
   // comportement que la vue Semaine, cf. app/planning/page.tsx#changerPersonnes).
+  // Débouncé (#301) : une rafale de clics ne produit qu'une écriture.
   function changerPersonnesSlot(
     semaine: string,
     jour: JourPlanning["jour"],
     typeRepas: TypeRepas,
     personnes: number
   ): void {
+    if (generationVerrouillee.current) return;
     const planningSemaine = planningDeLaSemaine(semaine);
     if (!planningSemaine) return;
+    const ancienJourPlanning = planningSemaine.jours.find((jp) => jp.jour === jour);
+    if (!ancienJourPlanning) return;
     const nouveauPlanning = modifierPersonnes(planningSemaine, jour, typeRepas, personnes);
     if (nouveauPlanning === null) return;
     const nouveauJourPlanning = nouveauPlanning.jours.find((jp) => jp.jour === jour)!;
-    void modifierSlotDistant(semaine, nouveauJourPlanning).then(() => {
-      if (ancre !== null) void chargerCycle(ancre);
+    appliquerLocal(semaine, nouveauJourPlanning);
+    file.planifier(semaine, nouveauJourPlanning, {
+      delaiMs: DELAI_STEPPER_MS,
+      precedent: ancienJourPlanning,
     });
   }
 
@@ -353,7 +430,7 @@ export function VuePlanningCycle({
     const nouveauPlanning = marquerRestes(planningSemaine, jour, typeRepas, valeur);
     if (nouveauPlanning === null) return;
     const nouveauJourPlanning = nouveauPlanning.jours.find((jp) => jp.jour === jour)!;
-    void appliquerEdition(
+    appliquerEdition(
       semaine,
       ancienJourPlanning,
       nouveauJourPlanning,
@@ -456,7 +533,7 @@ export function VuePlanningCycle({
         <button
           type="button"
           aria-label="Cycle précédent"
-          onClick={() => void chargerCycle(cycleDecale(ancre, -1))}
+          onClick={() => void file.vider().then(() => chargerCycle(cycleDecale(ancre, -1)))}
           className="relative flex size-8 shrink-0 items-center justify-center rounded-full border border-brand-200 text-brand-700 transition after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.92] motion-reduce:active:scale-100"
         >
           <ChevronLeft aria-hidden="true" className="size-4" />
@@ -470,7 +547,7 @@ export function VuePlanningCycle({
         <button
           type="button"
           aria-label="Cycle suivant"
-          onClick={() => void chargerCycle(cycleDecale(ancre, 1))}
+          onClick={() => void file.vider().then(() => chargerCycle(cycleDecale(ancre, 1)))}
           className="relative flex size-8 shrink-0 items-center justify-center rounded-full border border-brand-200 text-brand-700 transition after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.92] motion-reduce:active:scale-100"
         >
           <ChevronRight aria-hidden="true" className="size-4" />
@@ -478,11 +555,11 @@ export function VuePlanningCycle({
         <button
           type="button"
           onClick={() => void genererMonCycle()}
-          disabled={enGeneration}
+          disabled={enGeneration || verrouAffiche}
           className="relative inline-flex items-center gap-1.5 rounded-full border border-brand-200 px-4 py-2 text-sm font-medium text-brand-700 transition after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100 disabled:cursor-not-allowed disabled:opacity-60"
         >
           <Sparkles aria-hidden="true" className="size-4" />
-          {enGeneration ? "Génération…" : "Générer mon cycle"}
+          {enGeneration || verrouAffiche ? "Génération…" : "Générer mon cycle"}
         </button>
         <Link
           href={`/courses?ancre=${ancre}`}

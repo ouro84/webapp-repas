@@ -2,9 +2,9 @@ import { describe, it, expect } from "vitest"
 import {
   ancreCourante, ancreDeSemaine, ancreParDefaut, cycleDecale, joursDuCycle, semainesDuCycle,
   dateVersSemaineJour, libelleCycle, cyclesSelectionnables, LONGUEUR_DEFAUT,
-  planningDuCycle, planningGenereParSemaine,
+  planningDuCycle, planningGenereParSemaine, remplacerJourDansSemaines,
 } from "@/lib/cycles"
-import type { Planning } from "@/types"
+import type { JourPlanning, Planning } from "@/types"
 import { genererListeCourses } from "@/lib/courses"
 import { semaineISO } from "@/lib/semaines"
 
@@ -196,5 +196,38 @@ describe("ancreDeSemaine", () => {
     const jeudi = new Date("2026-07-09T10:00:00") // jeudi 2026-W28
     const semaine = semaineISO(jeudi)
     expect(ancreDeSemaine(semaine, 4)).toBe(ancreCourante(jeudi, 4))
+  })
+})
+
+describe("remplacerJourDansSemaines (#301)", () => {
+  const r = (id: string) => ({ id, nom: id, tempsPreparation: "rapide" as const, ingredients: [] })
+  const lundiW12: JourPlanning = { jour: "lundi", diner: r("ancien") }
+  const mardiW12: JourPlanning = { jour: "mardi", diner: r("mardi") }
+  const w13: Planning = { semaine: "2026-W13", jours: [{ jour: "lundi", diner: r("w13") }] }
+  const entree = (): Map<string, Planning> =>
+    new Map([
+      ["2026-W12", { semaine: "2026-W12", jours: [lundiW12, mardiW12] }],
+      ["2026-W13", w13],
+    ])
+
+  it("remplace le jour ciblé sans muter l'entrée ni toucher les autres jours/semaines", () => {
+    const avant = entree()
+    const nouveau: JourPlanning = { jour: "lundi", diner: r("nouveau"), personnes: { diner: 4 } }
+
+    const resultat = remplacerJourDansSemaines(avant, "2026-W12", nouveau)
+
+    expect(resultat.get("2026-W12")!.jours.find((j) => j.jour === "lundi")).toBe(nouveau)
+    expect(resultat.get("2026-W12")!.jours.find((j) => j.jour === "mardi")).toBe(mardiW12)
+    expect(resultat.get("2026-W13")).toBe(w13)
+    expect(avant.get("2026-W12")!.jours.find((j) => j.jour === "lundi")).toBe(lundiW12)
+    expect(resultat).not.toBe(avant)
+  })
+
+  it("semaine absente → contenu identique", () => {
+    const avant = entree()
+
+    const resultat = remplacerJourDansSemaines(avant, "2026-W20", { jour: "lundi", diner: r("x") })
+
+    expect([...resultat.entries()]).toEqual([...avant.entries()])
   })
 })

@@ -23,6 +23,11 @@ La base est la source de vérité ; localStorage est le cache de la semaine affi
 - Les `pousser*()` sont **sérialisés** (garde anti-concurrence), pour éviter `duplicate key` et les échecs RLS.
 - **Historique** : les semaines s'accumulent en base. `hydrater` purge une fois par session ce qui précède `semaineDecalee(courante, -12)` (fire-and-forget, garde `dejaPurge`).
 
+## Rechargements après édition
+
+- **Jamais de `setChargement(true)` sur un rechargement post-édition.** Une édition met l'état local à jour de façon optimiste ; seuls le montage, la navigation et la génération affichent « Chargement… ». Pourquoi : l'état de chargement démonte la grille (scroll, menus, stepper perdus) le temps d'un aller-retour réseau (#301).
+- **Tout patch de `storePlanning` qui reflète une écriture déjà faite en base passe sous la garde `hydratationEnCours`** (cf. `modifierSlotDistant`). Pourquoi : sinon `planifierPush` relance un `sauvegarder_planning` de toute la semaine (double écriture).
+
 ## Navigation entre semaines
 
 - Semaine affichée : store `useSemaineAffichee` (clé `semaine_affichee`). `planning_courant` / `courses_cochees` sont le cache **de cette semaine**.
