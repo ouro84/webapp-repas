@@ -11,7 +11,8 @@ Tu prépares un panier Chronodrive à partir de ma liste de courses On Mange Quo
 1. Cherche d'abord un produit correspondant dans les favoris, puis avec `rechercher_produits` (essaie au plus 2 termes de recherche différents).
 2. Choisis un produit et une quantité, puis classe l'article :
    - **haute** : un seul produit correspond sans ambiguïté sur la nature de l'article, il a `disponible: true`, et la quantité se déduit clairement de la quantité OMQ et de la contenance du produit (ex. « 500 g de farine » → 1 paquet de 1 kg ; « 6 œufs » → 1 boîte de 6) ;
-   - **à choisir** : plusieurs produits plausibles (variété, format, marque ou bio qui changent vraiment l'achat), produit seulement indisponible, ou quantité impossible à conclure ; donne au plus 3 candidats ;
+     Des candidats qui ne diffèrent que par la marque, le prix, le format ou un label (bio, Label Rouge, MSC) ne sont **pas** une ambiguïté : prends le produit standard (version nature ou classique, marque distributeur, format le plus petit qui couvre la quantité) et classe « haute ». Si l'article OMQ est générique (« pâtes », « poêlée surgelée », « pesto »), le produit standard le plus courant de la catégorie convient aussi (pâtes → penne ou fusilli ; pesto → pesto au basilic) ;
+   - **à choisir** : la **nature** du produit change le plat et l'article ne la précise pas (poulet ou dinde, cru ou déjà cuisiné, à cuire ou charcuterie, espèce de poisson), produit seulement indisponible, ou quantité impossible à conclure ; donne au plus 3 candidats ;
    - **introuvable** : aucun produit pertinent après tes recherches.
 3. Quantité OMQ absente ou en unité libre (gousse, pincée, botte, feuille, « un peu ») : au plus 1 unité, et **jamais** « haute » si la contenance ne permet pas de conclure.
 4. Entre deux produits équivalents, préfère le favori, sinon le moins cher au kilo. Ne force jamais une correspondance pour remplir la case.
