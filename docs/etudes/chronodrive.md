@@ -84,3 +84,30 @@ Notes :
 ## Résultats du spike
 
 _À compléter par #307 : go / no-go, mesures, ajustements._
+
+### Protocole relevé
+
+Sources lues le 2026-10-30 comme documentation (aucun code exécuté) : `y-vex/chronodrive-mcp` (commit du 2026-05-09), `arvernesmotion/Chronodrivemcp` (2026-09-22), `ncleton/chronodrive-mcp` (2026-10-09). Les trois concordent sur le flux et les en-têtes.
+
+**Constantes publiques.** Lues dans le HTML de `https://www.chronodrive.com` (config Nuxt), jamais recopiées en dur : une clé `x-api-key` par microservice, sous la forme `CHR_API_<SERVICE>_APIKEY` (UUID), et le `CLIENT_ID` OAuth. Services utiles : `CUSTOMERS`, `CARTS`, `PRODUCTS`, `FAVOURITE_PRODUCTS`.
+
+**En-têtes de tout appel API** : `x-chronodrive-site-id` (drive), `x-chronodrive-site-mode` (`DRIVE`, sinon `HOME_DELIVERY` : on garde celui où le compte a un panier), `x-device-type: WEB`, `referer: https://www.chronodrive.com/`, `content-type` et `Accept` en JSON, un `User-Agent` de navigateur de bureau, `Authorization: Bearer …`, `x-api-key` du service appelé.
+
+| Étape | Appel | Corps / paramètres | Réponse utile |
+|---|---|---|---|
+| Login | `POST connect.chronodrive.com/identity/v1/password/login` | JSON `client_id`, `scope`, `email`, `password` | `tkn` |
+| Autorisation | `GET connect.chronodrive.com/oauth/authorize` (en-têtes `Origin`/`Referer` du site) | `client_id`, `response_type=code`, `nonce`, `persistent=true`, `redirect_uri=https://www.chronodrive.com`, `scope`, `response_mode=web_message`, `prompt=none`, `code_challenge` (S256), `tkn` | page HTML contenant `"code":"…"` |
+| Jeton | `POST connect.chronodrive.com/oauth/token` | JSON `client_id`, `grant_type=authorization_code`, `code_verifier`, `code`, `redirect_uri` | `access_token` (+ `refresh_token` attendu avec `offline_access`) |
+| Client | `GET api.chronodrive.com/v1/customers/me` (clé `CUSTOMERS`) | | `id` |
+| Panier courant | `GET v1/customers/me/carts` (clé `CARTS`) | | `content[0].id` |
+| Lire le panier | `GET v1/carts/{id}` (clé `CARTS`) | | `items[].product`, `items[].quantity` |
+| Ajouter | `POST v1/carts/{id}/items` (clé `CARTS`) | `{"content":[{"clientOrigin":"WEB|SEARCH|TG|/promotions","productId","quantity"}],"optimizedMode":true}` | `content[0].returnType == "SUCCESS"` |
+| Retirer | `DELETE v1/carts/{id}/items/{productId}` (clé `CARTS`) | | 2xx |
+| Favoris | `GET v1/favourite-products` (clé `FAVOURITE_PRODUCTS`) | `page` (à partir de 1), `size=50` | `content[]`, `page.hasNext` |
+| Recherche | `GET v1/products` (clé `PRODUCTS`, en-têtes `X-Kamino-User-Consent: true`, `X-Kamino-User-Id: <id client>`) | `searchTerm`, `page=1`, `size`, `withKamino=true`, `kaminoMode=ADVANCED` | `content[]` |
+
+`scope` = `openid profile email phone full_write offline_access`.
+
+**Fiche produit** (même forme en recherche, favoris et panier) : `id`, `labels.productLabel`, `labels.brandLabel`, `labels.unitQuantityLabel` (contenance), `prices.defaultPrice`, `prices.pricePerUnitMeasure`, `flags.isOrganic`, et pour la disponibilité `stock`, `remainingStock`, `isEligible`, `maxCartQuantity`.
+
+**Inconnues.** Aucun des trois projets n'utilise le `refresh_token` : ils refont le login complet sur un 401. Le grant `refresh_token` reste à vérifier (Task 2). Aucun ne mentionne de captcha ni de 2FA ; `ncleton` passe par Camoufox par précaution, sans échec documenté en HTTP simple.
