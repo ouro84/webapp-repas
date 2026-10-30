@@ -62,3 +62,6 @@ revueDesign/
 
 # graphify — graphe de connaissances généré localement
 /graphify-out/
+
+# Spike Chronodrive (#307) : dépendances installées sur le NAS
+integrations/**/node_modules
