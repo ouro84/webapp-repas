@@ -417,7 +417,7 @@ Respecte les CGV et le RGPD par construction, évite le blocage Cloudflare, ne c
 ### Conséquence pratique
 - L'intégration reste **personnelle** (exécuteur auto-hébergé). L'ouvrir à tous passe par un partenariat officiel (#310, épopée Go public).
 - L'API privée peut changer sans préavis : l'exécuteur doit échouer proprement et le rapporter.
-- Précisions du spike #307 : Chronodrive ne délivre **pas de refresh token**, l'exécuteur se reconnecte avec ses identifiants à chaque run ; le webhook se signe au format **Standard Webhooks** (`webhook-id`, `webhook-timestamp`, `webhook-signature`), celui que vérifie Hermes ; Funnel tourne sur le port **10000** du NAS (443 et 8443 déjà pris), l'URL enregistrée dans `executeur_panier` porte donc un port.
+- Précisions du spike #307 : Chronodrive ne délivre **pas de refresh token**, l'exécuteur se reconnecte avec ses identifiants quand le jeton (2 h) a expiré ; le webhook se signe au format **Standard Webhooks** (`webhook-id`, `webhook-timestamp`, `webhook-signature`), celui que vérifie Hermes ; Funnel tourne sur le port **10000** du NAS (443 et 8443 déjà pris), l'URL enregistrée dans `executeur_panier` porte donc un port.
 
 ---
 
