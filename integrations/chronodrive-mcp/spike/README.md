@@ -22,3 +22,10 @@ Tout tourne dans le conteneur `hermes` (réseau host, donc IP résidentielle), d
 D=/share/CACHEDEV1_DATA/.qpkg/container-station/bin/docker
 $D exec -u 1000 -w /opt/data/chronodrive-spike hermes node sonde.mjs login
 ```
+
+## État laissé sur le NAS après le spike
+
+- MCP `chronodrive-spike` branché dans `config.yaml` de Hermes, **en lecture seule** (`CHRONODRIVE_LECTURE_SEULE: '1'`), utile pour #308.
+- Plateforme webhook de Hermes activée sur `127.0.0.1:8644`, **sans aucune route** ; secret HMAC gardé dans `/opt/data/chronodrive.env` (`OMQ_WEBHOOK_SECRET`).
+- Tailscale Funnel **coupé**. Pour le rouvrir (#308) : port **10000** (443 et 8443 sont pris sur le NAS), `tailscale funnel --bg --https=10000 --set-path /webhooks/<route> http://127.0.0.1:8644/webhooks/<route>`.
+- Sauvegardes : `config.yaml.bak-avant-spike-307`, `config.yaml.bak-avant-webhook-307`.
