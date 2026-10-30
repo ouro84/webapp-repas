@@ -83,7 +83,29 @@ Notes :
 
 ## Résultats du spike
 
-_À compléter par #307 : go / no-go, mesures, ajustements._
+**Verdict : GO** (2026-10-30). Critères fixés dans #307 avant toute mesure ; PoC dans `integrations/chronodrive-mcp/spike/`, mesures détaillées dans `spike/mesures/mapping-2026-10-30.md`.
+
+Conditions du spike : compte Chronodrive **neuf**, créé pour le PoC (aucune commande, un seul favori), drive Toulouse Lalande (`1034`), liste OMQ réelle de 36 articles non cochés (cycle du 30/10 au 05/11), Hermes v0.21.5 dans Docker sur le NAS, cascade LLM `glm-5.3-flash`. Le compte neuf est le pire cas pour le mapping : la recherche fait tout le travail que les favoris d'un vrai compte feraient en premier.
+
+| Critère | Verdict | Mesure |
+|---|---|---|
+| 1. Login depuis le NAS (bloquant) | ✅ | Password → PKCE → jeton sans captcha, sans 2FA, sans blocage Cloudflare. Jeton valable 7 200 s. **Aucun `refresh_token`** malgré `offline_access` : le client refait le login avec les identifiants de l'exécuteur à l'expiration (vérifié, sans saisie). |
+| 2. Panier visible dans l'appli mobile (bloquant) | ✅ | Un produit ajouté deux fois par l'API apparaît dans l'appli avec la quantité 2 (l'ajout **incrémente**, ce qui confirme RG-83). |
+| 3. Mapping (seuil ≥ 60 % « haute », 0 faux) | ✅ | Run 1 : 44 % (prompt trop prudent : marque ou format comptés comme ambiguïtés). Run 2, après l'unique ajustement : **30 « haute » sur 36 (83 %)**, 5 à choisir, 1 introuvable, **0 faux** selon l'utilisateur. Préférence relevée : marques nationales plutôt que distributeur. |
+| 4. Déclenchement push (non bloquant) | ✅ | Funnel publie un seul chemin vers la plateforme webhook de Hermes (`127.0.0.1:8644`). Depuis Internet : signé 202 et run lancé ; mauvais secret ou sans signature 401 ; racine et chemin voisin 404. |
+| 5. Durée d'un run (non bloquant) | ⚠️ | Run complet déclenché par webhook : **12 min 10 s** (27 articles, ajouts compris, sans coche OMQ). Mapping seul sur 36 articles : 15 min 24 s. Un vrai run (36 articles + ajouts + coches) dépasse 15 min. |
+
+**Constats qui changent la spec ou l'implémentation (#308).**
+
+- **Un ajout peut réussir sans renvoyer `SUCCESS`.** Le run complet a reçu `returnType: NO_STOCK_AFTER` pour un produit, le PoC l'a traité en échec et l'a rapporté « à choisir »… alors que le produit était bien dans le panier. Un ajout non rapporté n'est pas coché dans OMQ, et une relance le doublerait. L'exécuteur doit donc **confirmer chaque ajout en relisant le panier** plutôt que se fier au code de retour.
+- **Articles « à vérifier au placard » non cochés = à acheter.** L'utilisateur les coche lui-même avant de lancer la demande s'il les a déjà. Le run 1 et le run complet les avaient écartés d'eux-mêmes : le prompt de l'exécuteur doit le dire explicitement.
+- **Pas de refresh token** : les identifiants restent nécessaires chez l'exécuteur (déjà le cas, ADR-12) ; un login par run.
+- **Signature du webhook** : Hermes vérifie le format **Standard Webhooks** (en-têtes `webhook-id`, `webhook-timestamp`, `webhook-signature: v1,<base64 HMAC-SHA256 de « id.timestamp.corps »>`), avec fenêtre anti-rejeu et dédoublonnage par `webhook-id`. C'est le format qu'OMQ doit émettre (`spike/envoyer-webhook.mjs`).
+- **Funnel sur le port 10000** : sur le NAS, 443 et 8443 sont déjà pris (« address already in use », TLS coupé). L'URL de l'exécuteur porte donc un port ; aucun impact côté OMQ, qui stocke une URL. Premier lancement : certificat Let's Encrypt émis en 35 s environ.
+- **Clés de service** : `GET v1/customers/me/carts` attend la clé `CUSTOMERS`, pas `CARTS`. Un 401 « API Key is not valid » signale une mauvaise clé, pas un jeton expiré.
+- **Identifiant du drive** : absent de l'URL du site ; il se lit dans `GET v1/sites` (clé `SITES`, sans authentification), champ `id` du drive cherché par `name`.
+
+**Ajustements reportés** : RG-82 (placard explicite, préférence de marque), RG-83 (confirmation par relecture du panier, expiration **30 min**), ADR-12 **accepté** avec les précisions ci-dessus.
 
 ### Protocole relevé
 

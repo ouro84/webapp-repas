@@ -392,7 +392,7 @@ Un seul mécanisme d'auth couvre tous les clients visés, sans serveur d'autoris
 
 ## ADR-12 — Paniers d'enseigne : OMQ ne stocke ni n'appelle jamais l'enseigne (#303)
 
-> Statut : **proposé** (grilling 2026-10-29), confirmé ou ajusté par le spike #307. Étude complète : `docs/etudes/chronodrive.md`.
+> Statut : **accepté** (grilling 2026-10-29, go du spike #307 le 2026-10-30). Étude et mesures : `docs/etudes/chronodrive.md`.
 
 ### Contexte
 L'utilisateur veut que son panier Chronodrive se remplisse depuis la liste de courses OMQ. Chronodrive n'a **pas d'API publique** ; son API front privée est utilisable avec les identifiants du client. Contraintes relevées : **CGV art. 3** (le client s'engage à ne pas communiquer ses identifiants à un tiers), **art. 19** (pas d'extraction substantielle du catalogue), site derrière **Cloudflare** (risque de blocage des IP datacenter comme celles de Vercel), et RGPD (stocker les mots de passe de tiers ferait d'OMQ le gardien d'un secret très sensible, dans une base destinée au B2C). L'utilisateur fait ses courses à 99 % sur l'appli mobile et fait tourner Hermes Agent en Docker sur un NAS (accès local ou Tailscale).
@@ -417,6 +417,7 @@ Respecte les CGV et le RGPD par construction, évite le blocage Cloudflare, ne c
 ### Conséquence pratique
 - L'intégration reste **personnelle** (exécuteur auto-hébergé). L'ouvrir à tous passe par un partenariat officiel (#310, épopée Go public).
 - L'API privée peut changer sans préavis : l'exécuteur doit échouer proprement et le rapporter.
+- Précisions du spike #307 : Chronodrive ne délivre **pas de refresh token**, l'exécuteur se reconnecte avec ses identifiants à chaque run ; le webhook se signe au format **Standard Webhooks** (`webhook-id`, `webhook-timestamp`, `webhook-signature`), celui que vérifie Hermes ; Funnel tourne sur le port **10000** du NAS (443 et 8443 déjà pris), l'URL enregistrée dans `executeur_panier` porte donc un port.
 
 ---
 

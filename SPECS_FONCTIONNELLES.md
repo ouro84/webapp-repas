@@ -731,7 +731,7 @@ Réduire à zéro l'effort de planification hebdomadaire des repas, du choix des
 > **When** la modification est enregistrée  
 > **Then** elle apparaît chez lui en temps réel, avec l'alerte habituelle s'il est en magasin (RG-79)
 
-### US-53 — Constituer son panier Chronodrive depuis OMQ (#303, conditionnée au spike #307)
+### US-53 — Constituer son panier Chronodrive depuis OMQ (#303, go du spike #307)
 
 > **En tant qu'** utilisateur qui fait ses courses sur l'appli Chronodrive, je veux que **mon panier se remplisse tout seul** à partir de ma liste de courses et de mes produits habituels, pour n'avoir plus qu'à le relire et valider.
 
@@ -1202,12 +1202,12 @@ Un foyer peut exprimer une préférence explicite pour une recette, sans jamais 
 
 ### RG-80 à RG-84 — Constituer son panier Chronodrive (US-53, #303)
 
-> **Conditionnées au go du spike #307** ; les valeurs marquées « provisoire » sont fixées par ses mesures.
+> **Go du spike #307** (2026-10-30) ; mesures et constats dans `docs/etudes/chronodrive.md`, « Résultats du spike ».
 
 - **RG-80 — OMQ ne touche jamais l'enseigne** : OMQ ne stocke aucun identifiant d'enseigne et n'appelle aucune API d'enseigne depuis ses serveurs (ADR-12). Tout ce qui parle à Chronodrive tourne chez l'utilisateur, sur son **exécuteur**.
 - **RG-81 — Exécuteur enregistré et déclenchement à vide** : le bouton « Constituer mon panier Chronodrive » n'apparaît sur `/courses` que si un exécuteur est enregistré pour le foyer (`executeur_panier`, §5.8). Le clic crée une demande et envoie à l'exécuteur un webhook **signé HMAC qui ne contient aucune donnée métier** ; l'exécuteur récupère ensuite la demande via le MCP OMQ (`prendre_demande_panier`), avec son propre jeton OAuth (RG-71). Un webhook forgé ne peut au pire que réveiller l'exécuteur pour rien.
-- **RG-82 — Périmètre et garde-fous** : entrées = articles **non cochés** du cycle affiché, articles manuels non cochés inclus. Pour chaque article, l'exécuteur cherche d'abord dans les **favoris** Chronodrive, puis dans la recherche, et choisit produit et quantité. Confiance haute → ajout au panier ; confiance basse ou aucun résultat → rien n'est ajouté, l'article est reporté. Pas de validation article par article. L'exécuteur ne passe **jamais** commande, ne réserve pas de créneau et ne paie pas : la validation finale reste humaine, dans l'appli Chronodrive.
-- **RG-83 — Coche à l'ajout et idempotence** : chaque article ajouté au panier est **coché dans OMQ juste après son ajout**. Une relance ne traite donc que les articles restants (l'ajout Chronodrive incrémente les quantités : sans cette règle, une relance doublerait le panier). Une seule demande active par foyer ; une demande `en_cours` au-delà d'un délai d'expiration (15 min, **provisoire**) passe en `echec` et le bouton redevient disponible.
+- **RG-82 — Périmètre et garde-fous** : entrées = articles **non cochés** du cycle affiché, articles manuels et articles « à vérifier au placard » non cochés inclus (l'utilisateur coche avant de lancer la demande ce qu'il a déjà). Pour chaque article, l'exécuteur cherche d'abord dans les **favoris** Chronodrive, puis dans la recherche, et choisit produit et quantité ; une différence de marque, de format ou de label n'est pas une ambiguïté (préférence de marque réglée dans l'exécuteur), seule une différence de nature du produit l'est (poulet ou dinde, cru ou cuisiné…). Confiance haute → ajout au panier ; confiance basse ou aucun résultat → rien n'est ajouté, l'article est reporté. Pas de validation article par article. L'exécuteur ne passe **jamais** commande, ne réserve pas de créneau et ne paie pas : la validation finale reste humaine, dans l'appli Chronodrive.
+- **RG-83 — Coche à l'ajout et idempotence** : chaque article ajouté au panier est **coché dans OMQ juste après son ajout**. Une relance ne traite donc que les articles restants (l'ajout Chronodrive incrémente les quantités : sans cette règle, une relance doublerait le panier). Un ajout se **confirme en relisant le panier**, pas au seul code de retour (Chronodrive peut ajouter le produit en renvoyant `NO_STOCK_AFTER`, mesuré au spike #307). Une seule demande active par foyer ; une demande `en_cours` au-delà de **30 min** passe en `echec` et le bouton redevient disponible (run complet mesuré à 12 min sur 27 articles, au-delà de 15 min sur 36).
 - **RG-84 — Compte-rendu** : en fin de run, l'exécuteur rapporte à OMQ (`rapporter_panier`) trois listes — ajoutés (produit, quantité), à choisir, introuvables — affichées sur `/courses` (dernier rapport). Le compte-rendu part aussi sur la messagerie de l'exécuteur (Telegram pour Hermes) ; une notification OMQ native est hors périmètre (#309).
 
 ### RG-22 — Repas en « restes » (US-12)

@@ -30,6 +30,7 @@ Les pièges et décisions non évidentes vivent dans `.claude/rules/*.md`, charg
 | `ci.md` | GitHub Actions, budget de minutes, keep-alive Supabase, secrets |
 | `aide-notion.md` | Doc utilisateur `/aide` tirée de Notion |
 | `mcp.md` | Serveur MCP `/api/mcp`, OAuth 2.1 (Supabase OAuth Server), consentement, outils |
+| `chronodrive.md` | Exécuteur panier Chronodrive (`integrations/chronodrive-mcp/`), API privée, NAS, webhook |
 
 ## Maintenance de ces fichiers — critère de merge
 
