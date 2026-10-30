@@ -202,7 +202,8 @@ export async function appeler(session, methode, chemin, options = {}) {
   try {
     return await requete(session, methode, chemin, options);
   } catch (e) {
-    if (e.statut !== 401) throw e;
+    // Un 401 « API Key is not valid » signale une mauvaise clé de service, pas un jeton expiré.
+    if (e.statut !== 401 || /API Key/i.test(e.message)) throw e;
     const neuve = { ...session, ...(session.jetonRafraichissement ? await rafraichir(session) : await seConnecter()) };
     enregistrer(neuve);
     Object.assign(session, neuve);
