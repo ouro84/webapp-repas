@@ -99,7 +99,7 @@ Sources lues le 2026-10-30 comme documentation (aucun code exécuté) : `y-vex/c
 | Autorisation | `GET connect.chronodrive.com/oauth/authorize` (en-têtes `Origin`/`Referer` du site) | `client_id`, `response_type=code`, `nonce`, `persistent=true`, `redirect_uri=https://www.chronodrive.com`, `scope`, `response_mode=web_message`, `prompt=none`, `code_challenge` (S256), `tkn` | page HTML contenant `"code":"…"` |
 | Jeton | `POST connect.chronodrive.com/oauth/token` | JSON `client_id`, `grant_type=authorization_code`, `code_verifier`, `code`, `redirect_uri` | `access_token` (+ `refresh_token` attendu avec `offline_access`) |
 | Client | `GET api.chronodrive.com/v1/customers/me` (clé `CUSTOMERS`) | | `id` |
-| Panier courant | `GET v1/customers/me/carts` (clé `CARTS`) | | `content[0].id` |
+| Panier courant | `GET v1/customers/me/carts` (clé `CUSTOMERS`, la clé `CARTS` y est refusée) | | `content[0].id` |
 | Lire le panier | `GET v1/carts/{id}` (clé `CARTS`) | | `items[].product`, `items[].quantity` |
 | Ajouter | `POST v1/carts/{id}/items` (clé `CARTS`) | `{"content":[{"clientOrigin":"WEB|SEARCH|TG|/promotions","productId","quantity"}],"optimizedMode":true}` | `content[0].returnType == "SUCCESS"` |
 | Retirer | `DELETE v1/carts/{id}/items/{productId}` (clé `CARTS`) | | 2xx |

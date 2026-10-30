@@ -15,7 +15,7 @@ const [commande, ...args] = process.argv.slice(2);
 const commandes = {
   async login() {
     const s = await ouvrirSession({ forcerLogin: true });
-    return { ok: true, expireDans: Math.round((s.expireA - Date.now()) / 1000), offlineAccess: Boolean(s.jetonRafraichissement), mode: s.mode };
+    return { ok: true, expireDans: Math.round((s.expireA - Date.now()) / 1000), offlineAccess: Boolean(s.jetonRafraichissement), mode: s.mode, champsJeton: s.champsJeton, scopeAccorde: s.scopeAccorde };
   },
   async refresh() {
     const s = await ouvrirSession({ forcerRefresh: true });

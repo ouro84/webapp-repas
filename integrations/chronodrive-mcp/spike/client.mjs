@@ -73,6 +73,9 @@ function sessionDepuisJeton(corps) {
     jetonAcces: corps.access_token,
     jetonRafraichissement: corps.refresh_token ?? null,
     expireA: Date.now() + (corps.expires_in ?? 300) * 1000,
+    // Diagnostic du spike : noms des champs et scope accordé, jamais les valeurs.
+    champsJeton: Object.keys(corps),
+    scopeAccorde: corps.scope ?? null,
   };
 }
 
@@ -144,7 +147,8 @@ async function completer(session) {
   if (session.panierId) return session;
   const moi = await requete(session, "GET", "/v1/customers/me", { service: "CUSTOMERS" });
   for (const mode of ["DRIVE", "HOME_DELIVERY"]) {
-    const paniers = await requete({ ...session, mode }, "GET", "/v1/customers/me/carts", { service: "CARTS" });
+    // Route du service clients : la clé CARTS y est refusée (401 « API Key is not valid »).
+    const paniers = await requete({ ...session, mode }, "GET", "/v1/customers/me/carts", { service: "CUSTOMERS" });
     const panierId = paniers?.content?.[0]?.id;
     if (panierId) return { ...session, clientId: String(moi.id ?? ""), panierId: String(panierId), mode };
   }
@@ -192,13 +196,14 @@ async function requete(session, methode, chemin, { service, corps, params, entet
   return texte ? JSON.parse(texte) : null;
 }
 
-// Appel API authentifié : sur 401, un seul refresh puis nouvel essai (Review Focus 1).
+// Appel API authentifié : sur 401, une seule reconnexion puis nouvel essai (Review Focus 1).
+// Chronodrive ne renvoie pas de refresh token malgré offline_access : on refait alors le login.
 export async function appeler(session, methode, chemin, options = {}) {
   try {
     return await requete(session, methode, chemin, options);
   } catch (e) {
     if (e.statut !== 401) throw e;
-    const neuve = await rafraichir(session);
+    const neuve = { ...session, ...(session.jetonRafraichissement ? await rafraichir(session) : await seConnecter()) };
     enregistrer(neuve);
     Object.assign(session, neuve);
     return requete(session, methode, chemin, options);
