@@ -16,12 +16,17 @@ export function cheminCache(env: Record<string, string | undefined> = process.en
 export type Correspondance = { productId: string; libelle: string; vuLe: string };
 export type EntreeCorrespondance = { terme: string; productId: string; libelle: string };
 
-/** Minuscules, sans accents, espaces réduits : « Crème  FRAÎCHE » → « creme fraiche ». */
+/**
+ * Minuscules, sans accents, ligatures dépliées, espaces réduits : « Crème  FRAÎCHE » → « creme fraiche »,
+ * « Œufs » → « oeufs ». NFD ne décompose pas `œ`/`æ` : sans ce dépliage, « œufs » et « oeufs » divergeraient.
+ */
 export function normaliserTerme(terme: string): string {
   return terme
     .normalize("NFD")
     .replace(/\p{M}/gu, "")
     .toLowerCase()
+    .replace(/œ/g, "oe")
+    .replace(/æ/g, "ae")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -36,17 +41,29 @@ const TAILLE_LOT = 500;
 
 export class Correspondances {
   #base: DatabaseSync;
+  #fermee = false;
 
   constructor(chemin: string) {
-    this.#base = new DatabaseSync(chemin, { timeout: DELAI_ATTENTE_MS });
-    this.#base.exec(
-      `create table if not exists correspondance (
-         terme text primary key,
-         product_id text not null,
-         libelle text not null,
-         vu_le text not null
-       )`,
-    );
+    try {
+      this.#base = new DatabaseSync(chemin, { timeout: DELAI_ATTENTE_MS });
+    } catch (e) {
+      // Erreur SQLite brute peu parlante (« unable to open database file ») : on nomme le fichier.
+      throw new Error(`cache des correspondances : ouverture de ${chemin} impossible (${e instanceof Error ? e.message : String(e)})`);
+    }
+    try {
+      this.#base.exec(
+        `create table if not exists correspondance (
+           terme text primary key,
+           product_id text not null,
+           libelle text not null,
+           vu_le text not null
+         )`,
+      );
+    } catch (e) {
+      // Base ouverte mais inutilisable : le handle est libéré avant de remonter l'erreur.
+      this.#base.close();
+      throw e;
+    }
   }
 
   /** Correspondances connues parmi `termes`, indexées par terme normalisé. */
@@ -88,7 +105,11 @@ export class Correspondances {
       }
       this.#base.exec("commit");
     } catch (erreur) {
-      this.#base.exec("rollback");
+      try {
+        this.#base.exec("rollback");
+      } catch {
+        // Transaction déjà annulée par SQLite : l'erreur d'origine est la seule utile.
+      }
       throw erreur;
     }
   }
@@ -97,7 +118,10 @@ export class Correspondances {
     this.#base.prepare("delete from correspondance where terme = ?").run(normaliserTerme(terme));
   }
 
+  /** Idempotent : un second appel ne fait rien. */
   fermer(): void {
+    if (this.#fermee) return;
+    this.#fermee = true;
     this.#base.close();
   }
 }

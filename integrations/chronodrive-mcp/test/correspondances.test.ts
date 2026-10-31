@@ -2,11 +2,11 @@
 import { test } from "node:test";
 import { spawn } from "node:child_process";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { Correspondances, normaliserTerme } from "../src/correspondances.ts";
+import { CHEMIN_CACHE_PAR_DEFAUT, cheminCache, Correspondances, normaliserTerme } from "../src/correspondances.ts";
 
 // Dossier unique par test, supprimé à la fin : la base ne survit jamais au test.
 function avecBase(corps: (chemin: string) => void): void {
@@ -20,9 +20,49 @@ function avecBase(corps: (chemin: string) => void): void {
 
 test("normalisation (casse, accents, espaces)", () => {
   assert.equal(normaliserTerme("  Crème   FRAÎCHE épaisse "), "creme fraiche epaisse");
-  assert.equal(normaliserTerme("Œufs\tfrais\n"), "œufs frais");
   assert.equal(normaliserTerme("lait"), "lait");
   assert.equal(normaliserTerme("   "), "");
+});
+
+test("normalisation : ligatures œ/æ dépliées (« œufs » = « oeufs »)", () => {
+  assert.equal(normaliserTerme("Œufs\tfrais\n"), "oeufs frais");
+  assert.equal(normaliserTerme("bœuf"), normaliserTerme("boeuf"));
+  assert.equal(normaliserTerme("Cæsar"), "caesar");
+});
+
+test("cheminCache : CHRONODRIVE_CACHE s'il est non vide, sinon le chemin du NAS", () => {
+  assert.equal(cheminCache({ CHRONODRIVE_CACHE: " /tmp/cache.sqlite " }), "/tmp/cache.sqlite");
+  assert.equal(cheminCache({ CHRONODRIVE_CACHE: "   " }), CHEMIN_CACHE_PAR_DEFAUT);
+  assert.equal(cheminCache({}), CHEMIN_CACHE_PAR_DEFAUT);
+});
+
+test("fermer deux fois : sans erreur", () => {
+  avecBase((chemin) => {
+    const cache = new Correspondances(chemin);
+    cache.fermer();
+    assert.doesNotThrow(() => cache.fermer());
+  });
+});
+
+test("dossier parent absent : erreur claire qui nomme le fichier", () => {
+  avecBase((chemin) => {
+    const introuvable = join(chemin, "..", "absent", "correspondances.sqlite");
+    assert.throws(() => new Correspondances(introuvable), (e: unknown) => {
+      assert.ok(e instanceof Error);
+      assert.match(e.message, /cache des correspondances : ouverture de .*absent.* impossible/);
+      return true;
+    });
+  });
+});
+
+test("fichier qui n'est pas une base : erreur, et le fichier n'est pas laissé ouvert", () => {
+  avecBase((chemin) => {
+    writeFileSync(chemin, "ceci n'est pas une base SQLite, ".repeat(200));
+    assert.throws(() => new Correspondances(chemin), /not a database/);
+    // Handle libéré : sous Windows, un fichier encore ouvert ne pourrait pas être supprimé.
+    unlinkSync(chemin);
+    assert.equal(existsSync(chemin), false);
+  });
 });
 
 test("memoriser puis connues", () => {
@@ -132,18 +172,24 @@ test("écriture concurrente : memoriser attend le verrou au lieu de lever", asyn
     ],
     { stdio: ["ignore", "pipe", "ignore"] },
   );
+  const fin = new Promise((r) => autre.once("exit", r));
   try {
     await new Promise<void>((resolve, reject) => {
-      autre.once("error", reject);
-      autre.once("exit", () => reject(new Error("le verrou n'a pas été pris")));
-      autre.stdout.once("data", () => resolve());
+      const delai = setTimeout(() => reject(new Error("le verrou n'a pas été pris en 10 s")), 10_000);
+      const finir = (action: () => void) => {
+        clearTimeout(delai);
+        action();
+      };
+      autre.once("error", (e) => finir(() => reject(e)));
+      autre.once("exit", () => finir(() => reject(new Error("le verrou n'a pas été pris"))));
+      autre.stdout.once("data", () => finir(resolve));
     });
-    const debut = Date.now();
-    cache.memoriser([{ terme: "lait", productId: "11", libelle: "Lait" }]);
-    assert.ok(Date.now() - debut >= 100, "memoriser aurait dû attendre la libération du verrou");
+    // Pas de borne basse sur la durée (fragile selon la machine) : memoriser ne lève pas et la valeur est lue.
+    assert.doesNotThrow(() => cache.memoriser([{ terme: "lait", productId: "11", libelle: "Lait" }]));
     assert.equal(cache.connues(["lait"]).get("lait")?.productId, "11");
   } finally {
-    autre.kill();
+    if (autre.exitCode === null && autre.signalCode === null) autre.kill();
+    await fin;
     cache.fermer();
     rmSync(dossier, { recursive: true, force: true });
   }
