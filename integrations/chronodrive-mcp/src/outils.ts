@@ -156,27 +156,58 @@ export function creerServeur(deps: Dependances): McpServer {
     }
   }
 
-  // Produits proposés par `chercher_produits`, par client puis par terme normalisé : id → instant de
-  // la dernière proposition pour CE terme (cache, favoris, recherche effectivement renvoyés).
-  // `ajouter_au_panier` refuse sans POST une ligne dont le produit n'a pas été proposé pour son terme
-  // depuis moins de 30 min. Pourquoi : au run réel, l'id des lasagnes proposé pour « œufs » a été
-  // recopié sur la ligne « lait » ; « vu par ailleurs » (`produitVu`) ne suffit pas.
-  const propositions = new WeakMap<object, Map<string, Map<string, number>>>();
+  // Produits proposés par `chercher_produits`, par client puis par terme normalisé : numéro de
+  // l'appel où le terme a été cherché pour la première fois, instant de sa dernière recherche, et
+  // id → instant de la dernière proposition pour CE terme (cache, favoris, recherche renvoyés).
+  // Tout expire après 30 min et est élagué à chaque appel. `ajouter_au_panier` refuse sans POST une
+  // ligne dont le produit n'a pas été proposé pour son terme. Pourquoi : au run réel, l'id des
+  // lasagnes proposé pour « œufs » a été recopié sur la ligne « lait » ; « vu par ailleurs »
+  // (`produitVu`) ne suffit pas.
+  type TermeCherche = { premierAppel: number; chercheA: number; ids: Map<string, number> };
+  const propositions = new WeakMap<object, { appels: number; termes: Map<string, TermeCherche> }>();
   const instant = deps.maintenant ?? Date.now;
+  const frais = (a: number) => instant() - a <= DUREE_FAVORIS_MS;
 
-  function noterPropositions(client: object, terme: string, produits: Produit[]): void {
-    let parTerme = propositions.get(client);
-    if (!parTerme) propositions.set(client, (parTerme = new Map()));
-    const cle = normaliserTerme(terme);
-    let ids = parTerme.get(cle);
-    if (!ids) parTerme.set(cle, (ids = new Map()));
+  // Un appel de `chercher_produits` = un numéro ; `premierAppel` d'un terme n'est jamais rajeuni
+  // tant que son entrée vit (chaque recherche la prolonge de 30 min).
+  function noterPropositions(client: object, lot: [string, Produit[]][]): void {
+    let etat = propositions.get(client);
+    if (!etat) propositions.set(client, (etat = { appels: 0, termes: new Map() }));
+    for (const [cle, t] of etat.termes) {
+      if (!frais(t.chercheA)) etat.termes.delete(cle);
+      else for (const [id, a] of t.ids) if (!frais(a)) t.ids.delete(id);
+    }
+    const appel = ++etat.appels;
     const a = instant();
-    for (const p of produits) if (p.id) ids.set(p.id, a);
+    for (const [terme, produits] of lot) {
+      const cle = normaliserTerme(terme);
+      let t = etat.termes.get(cle);
+      if (!t) etat.termes.set(cle, (t = { premierAppel: appel, chercheA: a, ids: new Map() }));
+      t.chercheA = a;
+      for (const p of produits) if (p.id) t.ids.set(p.id, a);
+    }
   }
 
-  function propose(client: object, terme: string, productId: string): boolean {
-    const a = propositions.get(client)?.get(normaliserTerme(terme))?.get(productId);
-    return a !== undefined && instant() - a <= DUREE_FAVORIS_MS;
+  function termeCherche(client: object, terme: string): TermeCherche | undefined {
+    const t = propositions.get(client)?.termes.get(normaliserTerme(terme));
+    return t && frais(t.chercheA) ? t : undefined;
+  }
+
+  // Produit proposé pour le terme de la ligne. Avec une reformulation (`terme_recherche` distinct
+  // de `terme` une fois normalisé), elle seule valide le produit, et seulement si l'article lui-même
+  // a été cherché et si la reformulation a été cherchée pour la première fois dans un appel
+  // STRICTEMENT postérieur. Pourquoi : `{terme: "lait", terme_recherche: "œufs"}` passerait sinon
+  // avec n'importe quel produit proposé pour « œufs » ; la skill cherche ses reformulations après coup.
+  function propose(client: object, terme: string, termeRecherche: string | undefined, productId: string): boolean {
+    const article = termeCherche(client, terme);
+    let valide = article;
+    if (termeRecherche && normaliserTerme(termeRecherche) !== normaliserTerme(terme)) {
+      const reformulation = termeCherche(client, termeRecherche);
+      if (!article || !reformulation || reformulation.premierAppel <= article.premierAppel) return false;
+      valide = reformulation;
+    }
+    const a = valide?.ids.get(productId);
+    return a !== undefined && frais(a);
   }
 
   // Un seul lot d'ajout à la fois : deux lots parallèles entremêleraient leurs relectures
@@ -281,7 +312,7 @@ export function creerServeur(deps: Dependances): McpServer {
       // chargement + 29 min serait refusé à l'ajout deux minutes plus tard (« vu il y a plus de 30 min »).
       // Les 30 min de `produitVu` courent ainsi depuis le dernier affichage au LLM.
       noterProduits(client, montresParTerme.flatMap(([, montres]) => montres), horloge);
-      for (const [t, montres] of montresParTerme) noterPropositions(client, t, montres);
+      noterPropositions(client, montresParTerme);
       return { resultats, ...etat };
     },
   );
@@ -293,7 +324,8 @@ export function creerServeur(deps: Dependances): McpServer {
       "La quantité S'AJOUTE à celle déjà présente. Le panier est relu avant et après :",
       "`confirme: true` seulement si la quantité du produit a réellement augmenté (`avant` → `apres`) ; `erreur` explique un refus ou un ajout partiel.",
       "Seul un produit renvoyé par chercher_produits depuis moins de 30 min POUR CE TERME est accepté : copier l'`id` depuis le résultat du terme de cet article,",
-      "et passer `terme_recherche` quand le produit vient d'une reformulation. Sinon la ligne est refusée sans envoi (« produit non proposé pour cet article »).",
+      "et passer `terme_recherche` quand le produit vient d'une reformulation, cherchée dans un appel de chercher_produits POSTÉRIEUR à celui du terme.",
+      "Sinon la ligne est refusée sans envoi (« produit non proposé pour cet article »).",
       "Ne jamais relancer une ligne non confirmée sans relire le panier (`lire_panier`) : l'ajout a pu passer.",
       "Les lignes confirmées sont retenues pour le terme (cache des correspondances). Ne commande rien.",
     ].join(" "),
@@ -307,7 +339,9 @@ export function creerServeur(deps: Dependances): McpServer {
               .trim()
               .max(200)
               .optional()
-              .describe("Terme passé à chercher_produits quand il diffère de `terme` (reformulation, ex. « poireau » pour « poireaux »)"),
+              .describe(
+                "Reformulation passée à chercher_produits, dans un appel postérieur à celui de `terme`, quand le produit vient de son résultat (ex. « poireau » pour « poireaux »)",
+              ),
             productId: z.string().trim().min(1).max(50).describe("`id` d'un produit renvoyé par chercher_produits pour ce terme"),
             quantite: z.number().int().min(1).max(20),
           }),
@@ -322,11 +356,11 @@ export function creerServeur(deps: Dependances): McpServer {
       }
       return enSerie(async () => {
         const client = deps.client();
-        // Garde par terme (`propositions`) : le terme validé est la reformulation s'il y en a une.
-        // Un produit jamais vu garde le refus « produit inconnu » ; un produit vu pour un autre terme,
-        // ou seulement dans le panier, est « non proposé ».
+        // Garde par terme (`propose`). Un produit jamais vu en recherche ou en favoris (même s'il est
+        // dans le panier) garde le refus « produit inconnu » ; un produit vu pour un autre terme, ou
+        // avec une reformulation non valable, est « non proposé ».
         const aEnvoyer = lignes.map(({ terme: t, terme_recherche, productId, quantite }) => {
-          if (propose(client, terme_recherche || t, productId)) return { productId, quantite };
+          if (propose(client, t, terme_recherche, productId)) return { productId, quantite };
           return { productId, quantite, refus: produitVu(client, productId, horloge) ? PRODUIT_NON_PROPOSE : PRODUIT_INCONNU };
         });
         const bilan = await ajouterLignes(client, aEnvoyer, horloge);

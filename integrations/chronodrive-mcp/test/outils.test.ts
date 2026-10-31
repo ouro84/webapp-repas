@@ -389,7 +389,9 @@ test("ajouter_au_panier : produit proposé pour un autre terme → refusé sans 
   const sim = clientSimule({
     ...panier.routes,
     ...routesFavoris([produit("146939", "Lait demi-écrémé 1,5% M.G UHT bio", {}, "LACTEL"), lasagnes]),
-    // Aucun favori pour « œufs » : la recherche renvoie les lasagnes parmi les œufs.
+    // En production, 1697 a atteint « œufs » par les favoris (« aux oeufs ») ; la nouvelle règle des
+    // favoris l'écarte, donc le test l'y amène par la recherche. Pour la garde par terme, c'est
+    // équivalent : le produit est proposé pour « œufs », pas pour « lait ».
     [RECHERCHE]: () => ({ content: [lasagnes, produit("2001", "Oeufs gros de poules élevées en plein air")] }),
   });
   const cache = cacheSimule();
@@ -491,13 +493,107 @@ test("proposition par terme : 30 min depuis la dernière proposition pour CE ter
     await appeler("ajouter_au_panier", {
       lignes: [
         { terme: "lait", productId: "10", quantite: 1 },
-        { terme: "lait", terme_recherche: "lait demi-écrémé", productId: "10", quantite: 1 },
+        { terme: "lait demi-écrémé", productId: "10", quantite: 1 },
       ],
     }),
   );
   assert.equal(lait.erreur, NON_PROPOSE);
   // La seconde ligne n'est pas un doublon : la première n'a pas été envoyée.
   assert.equal(demi.confirme, true);
+});
+
+test("terme_recherche : accepté seulement pour une reformulation cherchée dans un appel ULTÉRIEUR au terme", async () => {
+  const lasagnes = produit("1697", "Feuilles de lasagnes aux oeufs N°199", {}, "BARILLA");
+  const sim = clientSimule({
+    ...panierSimule("p1", {}).routes,
+    ...routesFavoris([produit("146939", "Lait demi-écrémé 1,5% M.G UHT bio", {}, "LACTEL")]),
+    [RECHERCHE]: (appel) => {
+      const t = appel.params?.searchTerm;
+      if (t === "œufs") return { content: [lasagnes] };
+      if (t === "crème") return { content: [produit("60", "Crème fraîche")] };
+      if (t === "crème fraîche") return { content: [produit("61", "Crème fraîche épaisse")] };
+      return { content: [] };
+    },
+  });
+  const { appeler } = await demarrer({ client: () => sim.client });
+  // Appel 1 : « œufs » et « lait » ensemble ; « crème » seul en appel 2 ; « crème fraîche » en appel 3.
+  termes(await appeler("chercher_produits", { termes: ["œufs", "lait"] }));
+  termes(await appeler("chercher_produits", { termes: ["crème"] }));
+  termes(await appeler("chercher_produits", { termes: ["crème fraîche"] }));
+  // Une nouvelle recherche de « œufs » ne le rajeunit pas : seul compte son PREMIER appel.
+  termes(await appeler("chercher_produits", { termes: ["œufs"] }));
+
+  const lignes = lignesAjout(
+    await appeler("ajouter_au_panier", {
+      lignes: [
+        // Reformulation cherchée dans le même appel que le terme : refusée.
+        { terme: "lait", terme_recherche: "œufs", productId: "1697", quantite: 1 },
+        // Reformulation cherchée AVANT le terme (« crème », appel 2, pour l'article « crème fraîche », appel 3) : refusée.
+        { terme: "crème fraîche", terme_recherche: "crème", productId: "60", quantite: 1 },
+        // Terme jamais cherché : refusé, même si la reformulation a proposé le produit.
+        { terme: "beurre", terme_recherche: "crème fraîche", productId: "61", quantite: 1 },
+      ],
+    }),
+  );
+  assert.deepEqual(
+    lignes.map((l) => [l.productId, l.erreur]),
+    [
+      ["1697", NON_PROPOSE],
+      ["60", NON_PROPOSE],
+      ["61", NON_PROPOSE],
+    ],
+  );
+  assert.equal(sim.compter("POST /v1/carts/p1/items"), 0);
+
+  // Vraie reformulation : « crème fraîche » (appel 3) pour l'article « crème » (appel 2).
+  const [ok] = lignesAjout(
+    await appeler("ajouter_au_panier", { lignes: [{ terme: "crème", terme_recherche: "crème fraîche", productId: "61", quantite: 1 }] }),
+  );
+  assert.equal(ok.confirme, true);
+});
+
+test("terme_recherche : l'ordre des appels expire avec le terme (30 min)", async () => {
+  const h = { t: 1_800_000_000_000 };
+  const maintenant = () => h.t;
+  const sim = clientSimule({
+    ...panierSimule("p1", {}).routes,
+    ...routesFavoris([]),
+    [RECHERCHE]: () => ({ content: [produit("61", "Crème fraîche épaisse")] }),
+  });
+  const { appeler } = await demarrer({ client: () => sim.client, maintenant });
+  termes(await appeler("chercher_produits", { termes: ["crème fraîche"] })); // appel 1
+  h.t += 31 * 60_000;
+  termes(await appeler("chercher_produits", { termes: ["crème"] })); // appel 2 : « crème fraîche » élagué
+  termes(await appeler("chercher_produits", { termes: ["crème fraîche"] })); // appel 3 : nouveau premier appel
+  const [ligne] = lignesAjout(
+    await appeler("ajouter_au_panier", { lignes: [{ terme: "crème", terme_recherche: "crème fraîche", productId: "61", quantite: 1 }] }),
+  );
+  assert.equal(ligne.confirme, true);
+});
+
+test("cache retenu par chercher_produits = proposition pour le terme", async () => {
+  const sim = clientSimule({ ...panierSimule("p1", {}).routes, ...routesFavoris([produit("10", "Lait demi-écrémé")]) });
+  const cache = cacheSimule({ lait: { productId: "10", libelle: "Lait demi-écrémé" } });
+  const { appeler } = await demarrer({ client: () => sim.client, cache: () => cache.cache });
+  const [lait] = termes(await appeler("chercher_produits", { termes: ["lait"] }));
+  assert.equal(lait.cache?.id, "10");
+  assert.deepEqual(lait.favoris, []);
+  const [ligne] = lignesAjout(await appeler("ajouter_au_panier", { lignes: [{ terme: "lait", productId: "10", quantite: 1 }] }));
+  assert.equal(ligne.confirme, true);
+});
+
+test("client remplacé (config relue) entre la recherche et l'ajout : lignes refusées sans POST", async () => {
+  const avant = clientSimule({ ...panierSimule("p1", {}).routes, ...routesFavoris([produit("10", "Lait demi-écrémé")]) });
+  const apres = clientSimule(panierSimule("p1", {}).routes);
+  let courant = avant.client;
+  const { appeler } = await demarrer({ client: () => courant });
+  termes(await appeler("chercher_produits", { termes: ["lait"] }));
+  courant = apres.client;
+  const [ligne] = lignesAjout(await appeler("ajouter_au_panier", { lignes: [{ terme: "lait", productId: "10", quantite: 1 }] }));
+  assert.equal(ligne.confirme, false);
+  assert.match(ligne.erreur ?? "", /relance chercher_produits/);
+  assert.equal(apres.compter("POST /v1/carts/p1/items"), 0);
+  assert.equal(avant.compter("POST /v1/carts/p1/items"), 0);
 });
 
 test("ajouter_au_panier : schéma — quantité entière 1..20, 20 lignes au plus", async () => {
