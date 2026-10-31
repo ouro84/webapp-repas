@@ -124,8 +124,8 @@ test("après génération d'un planning, la liste de courses n'est pas vide", as
   // Le compteur de progression confirme une liste non vide (« 0 coché sur 38 … », US-05).
   await expect(page.getByText(/^0 coché sur [1-9]\d*/)).toBeVisible();
   // Au moins une catégorie et plusieurs lignes d'ingrédients.
-  await expect(page.locator("main section h2").first()).toBeVisible();
-  expect(await page.locator("main li").count()).toBeGreaterThan(0);
+  await expect(page.getByTestId("categories-courses").locator("section h2").first()).toBeVisible();
+  expect(await page.getByTestId("categories-courses").locator("li").count()).toBeGreaterThan(0);
 });
 
 test("les catégories d'ingrédients et le fond de placard sont visibles", async ({
@@ -248,7 +248,7 @@ test("une catégorie entièrement cochée glisse en bas de liste, titre rayé (#
   // Titres de section dans l'ordre du DOM (catégories normales puis fond de
   // placard, toujours en dernier). « Viandes & Poissons » n'a qu'un article
   // (lardons) → cocher cet article termine la catégorie.
-  const titres = page.locator("main section h2 button");
+  const titres = page.getByTestId("categories-courses").locator("section h2 button");
 
   // Ordre canonique initial (RG-05).
   await expect(titres).toHaveText([
@@ -570,7 +570,7 @@ test("le réordonnancement fonctionne sous mouvement réduit (RG-11 / RG-39)", a
 
   // RG-39 : la catégorie terminée glisse en bas des catégories normales.
   await page.getByRole("checkbox", { name: /lardons/ }).click();
-  await expect(page.locator("main section h2 button")).toHaveText([
+  await expect(page.getByTestId("categories-courses").locator("section h2 button")).toHaveText([
     "Légumes & Fruits",
     "Produits frais",
     "Épicerie",

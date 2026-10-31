@@ -427,6 +427,28 @@ export async function demandesPanierActives(
   return (await r.json()) as Array<{ id: string; statut: "en_attente" | "en_cours" }>;
 }
 
+/**
+ * Supprime toutes les demandes de panier d'un foyer (service_role) : un test
+ * qui a besoin d'un foyer sans historique (captures) crée cet état lui-même
+ * et nettoie derrière lui, sans dépendre de l'ordre des tests.
+ */
+export async function supprimerDemandesPanier(request: APIRequestContext, foyerId: string): Promise<void> {
+  const { url, headers } = enTetesServiceRole();
+  const r = await request.delete(`${url}/rest/v1/demande_panier?foyer_id=eq.${foyerId}`, { headers });
+  if (!r.ok()) throw new Error(`Suppression des demandes impossible : HTTP ${r.status()} — ${await r.text()}`);
+}
+
+/**
+ * Déplace une demande de panier sur une autre ancre (service_role). La route
+ * vise toujours le cycle courant : c'est le seul moyen, en e2e, d'avoir la
+ * demande d'un autre cycle (comme celle que l'assistant préparera, #320).
+ */
+export async function deplacerDemandePanier(request: APIRequestContext, id: string, ancre: string): Promise<void> {
+  const { url, headers } = enTetesServiceRole();
+  const r = await request.patch(`${url}/rest/v1/demande_panier?id=eq.${id}`, { headers, data: { ancre } });
+  if (!r.ok()) throw new Error(`Déplacement de la demande ${id} impossible : HTTP ${r.status()} — ${await r.text()}`);
+}
+
 /** Enregistre l'exécuteur de panier d'un foyer (RPC service_role seulement, #308). */
 export async function enregistrerExecuteurPanier(
   request: APIRequestContext,

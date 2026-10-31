@@ -18,18 +18,21 @@
 import { createHmac, randomBytes } from "node:crypto";
 import { createServer, type IncomingHttpHeaders, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { join } from "node:path";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import type { APIRequestContext, BrowserContext, Locator, Page, Request } from "@playwright/test";
 import { test, expect } from "./fixtures";
 import { appelerOutilMcp, autoriser, connecter, inscrire, jetonMotDePasse } from "./oauth";
 import {
   demandesPanierActives,
+  deplacerDemandePanier,
   enregistrerExecuteurPanier,
   lireEnvLocal,
+  supprimerDemandesPanier,
   supprimerExecuteurPanier,
   vieillirDemandePanier,
 } from "./helpers";
 import { MESSAGE_INJOIGNABLE, MESSAGES_PANIER } from "../lib/panier";
+import { cycleDecale } from "../lib/cycles";
 
 const RUN = Date.now();
 const EMAIL_A = `claude-e2e-panier-a-${RUN}@example.com`;
@@ -37,6 +40,10 @@ const EMAIL_B = `claude-e2e-panier-b-${RUN}@example.com`;
 const CORPS_WEBHOOK = '{"evenement":"demande_panier"}';
 // Secret au format Standard Webhooks : la clé HMAC est le base64 décodé (RG-81).
 const SECRET = `whsec_${randomBytes(32).toString("base64")}`;
+
+// Message de la carte quand l'exécuteur ne répond pas (RG-81), sans le motif
+// technique (« réponse HTTP 500 ») qui reste en base.
+const MESSAGE_CARTE_INJOIGNABLE = "Ton exécuteur n’a pas répondu. Vérifie qu’il est allumé, puis réessaie.";
 
 const RAPPORT = {
   ajoutes: [{ article: "lait", produit: "Lait demi-écrémé 1 L", marque: "Lactel", quantite: 2 }],
@@ -184,6 +191,27 @@ function rapporter(request: APIRequestContext, jeton: string, demandeId: string,
   });
 }
 
+/** Une demande prise puis rapportée « terminee » ; renvoie son id et son ancre. */
+async function demandeTerminee(request: APIRequestContext): Promise<{ id: string; ancre: string }> {
+  const id = await demanderOk();
+  const { demande } = await prendre(request, jetonA);
+  expect(demande?.id).toBe(id);
+  expect((await rapporter(request, jetonA, id)).resultat?.isError).toBeFalsy();
+  return { id, ancre: demande!.ancre };
+}
+
+/**
+ * Déplace la demande sur le cycle SUIVANT et y génère un planning (sans liste,
+ * la carte n'est pas montée). Renvoie l'ancre du cycle suivant.
+ */
+async function demandeDuCycleSuivant(request: APIRequestContext, demande: { id: string; ancre: string }): Promise<string> {
+  const suivant = cycleDecale(demande.ancre, 1);
+  await deplacerDemandePanier(request, demande.id, suivant);
+  const generation = await appelerOutilMcp(request, jetonA, "generer_cycle", { ancre: suivant, remplacer: true });
+  expect(generation.resultat?.isError).toBeFalsy();
+  return suivant;
+}
+
 test.beforeAll(async ({ browser, request }) => {
   const urlWebhook = await demarrerRecepteur();
   await Promise.all([inscrire(request, EMAIL_A), inscrire(request, EMAIL_B)]);
@@ -266,7 +294,7 @@ async function ouvrirCourses(page: Page): Promise<void> {
   };
   page.on("request", noterLecture);
   try {
-    const etatLu = page.waitForResponse((r) => r.url().includes("/rpc/etat_panier"));
+    const etatLu = page.waitForResponse((r) => r.url().includes("/rpc/etat_panier"), { timeout: 30_000 });
     await page.goto("/courses");
     await expect(page.getByText(/^\d+ cochés? sur \d+/)).toBeVisible();
     const reponseEtat = await etatLu;
@@ -286,16 +314,46 @@ async function ouvrirCourses(page: Page): Promise<void> {
   }
 }
 
-// Captures de contrôle visuel, HORS CI : `CAPTURES_PANIER=<dossier>` active le
-// test et donne le dossier de sortie (jamais test-results/, publié en CI).
-// Premier test du fichier : l'état « disponible » est vierge (aucune demande).
-const DOSSIER_CAPTURES = process.env.CAPTURES_PANIER ?? "";
+// Captures de contrôle visuel, HORS CI : `CAPTURES_PANIER=<dossier absolu hors
+// du dépôt>` active le test et donne le dossier de sortie (jamais
+// test-results/, publié en CI). Le test crée l'état dont il a besoin (aucune
+// demande au départ) et nettoie derrière lui : il ne dépend pas de l'ordre.
+const CAPTURES_PANIER = process.env.CAPTURES_PANIER ?? "";
 const FORMATS = [
   { width: 320, height: 800 },
   { width: 390, height: 844 },
 ] as const;
 
-async function capturer(etat: string, attendre: (carte: Locator) => Promise<void>): Promise<void> {
+/** Dossier de sortie validé : absolu et hors du dépôt, sinon refusé. */
+function dossierCaptures(): string {
+  if (!isAbsolute(CAPTURES_PANIER)) {
+    throw new Error(`CAPTURES_PANIER doit être un chemin absolu : « ${CAPTURES_PANIER} »`);
+  }
+  const depuisDepot = relative(process.cwd(), resolve(CAPTURES_PANIER));
+  if (!depuisDepot.startsWith("..") && !isAbsolute(depuisDepot)) {
+    throw new Error(`CAPTURES_PANIER ne doit pas être dans le dépôt : « ${CAPTURES_PANIER} »`);
+  }
+  return CAPTURES_PANIER;
+}
+
+/**
+ * Ramène la page sur le cycle courant par le relais `?ancre=` (#279) : le
+ * cycle affiché est mémorisé (localStorage), et un rechargement montrerait
+ * d'abord le cycle suivant, le temps de l'hydratation.
+ */
+async function revenirAuCycle(page: Page, ancre: string): Promise<void> {
+  await page.goto(`/courses?ancre=${ancre}`);
+  await expect(page).toHaveURL(/\/courses$/);
+  await expect(
+    carteDe(page).getByRole("button", { name: /^(Constituer mon panier Chronodrive|Relancer pour les articles restants|Panier en cours…)$/ })
+  ).toBeVisible();
+}
+
+async function capturer(
+  dossier: string,
+  etat: string,
+  attendre: (carte: Locator) => Promise<void>
+): Promise<void> {
   for (const taille of FORMATS) {
     for (const theme of ["light", "dark"] as const) {
       await pageA.setViewportSize(taille);
@@ -306,8 +364,31 @@ async function capturer(etat: string, attendre: (carte: Locator) => Promise<void
       await attendre(carte);
       // Aucun débordement horizontal, même à 320 px.
       expect(await pageA.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(taille.width);
+      // Le bouton, s'il existe, tient sur une ligne (libellé non tronqué).
+      const boutons = carte.getByRole("button", { name: /panier|Relancer/i });
+      if ((await boutons.count()) > 0) {
+        // Le contenu (spinner compris, ou la place qu'il prendra pendant
+        // l'envoi : 14 px + 6 px d'écart sous `sm:`) tient dans la pilule, sans
+        // retour à la ligne. Mesure par Range : `scrollWidth` compterait la
+        // zone tactile `after:-inset-1`.
+        const mesure = await boutons.first().evaluate((b) => {
+          const plage = document.createRange();
+          plage.selectNodeContents(b);
+          const style = getComputedStyle(b);
+          const spinner = b.querySelector("svg") ? 0 : 20;
+          return {
+            contenu: Math.ceil(plage.getBoundingClientRect().width) + spinner,
+            disponible: b.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight),
+            hauteur: Math.round(b.getBoundingClientRect().height),
+          };
+        });
+        expect(
+          mesure.contenu <= mesure.disponible && mesure.hauteur < 50,
+          `bouton sur une ligne (${etat}, ${taille.width} px) : ${JSON.stringify(mesure)}`
+        ).toBe(true);
+      }
       await carte.screenshot({
-        path: join(DOSSIER_CAPTURES, `${etat}-${taille.width}-${theme}.png`),
+        path: join(dossier, `${etat}-${taille.width}-${theme}.png`),
         animations: "disabled",
       });
     }
@@ -315,36 +396,68 @@ async function capturer(etat: string, attendre: (carte: Locator) => Promise<void
 }
 
 test("captures de la carte (hors CI, CAPTURES_PANIER)", async ({ request }) => {
-  test.skip(!DOSSIER_CAPTURES, "contrôle visuel manuel : CAPTURES_PANIER=<dossier>");
-  test.setTimeout(240_000);
+  test.skip(!CAPTURES_PANIER, "contrôle visuel manuel : CAPTURES_PANIER=<dossier>");
+  test.setTimeout(480_000);
+  const dossier = dossierCaptures();
+  await supprimerDemandesPanier(request, foyerA);
+  let courant = "";
   try {
-    await capturer("disponible", async (carte) => {
+    await capturer(dossier, "disponible", async (carte) => {
       await expect(carte.getByRole("button", { name: "Constituer mon panier Chronodrive" })).toBeEnabled();
     });
 
-    const demandeId = await demanderOk();
-    await capturer("en-cours", async (carte) => {
+    // Vraiment `en_cours` : prise par l'exécuteur.
+    const enCours = await demanderOk();
+    const prise = (await prendre(request, jetonA)).demande;
+    expect(prise?.id).toBe(enCours);
+    courant = prise!.ancre;
+    await capturer(dossier, "en-cours", async (carte) => {
       await expect(carte.getByRole("button", { name: "Panier en cours…" })).toBeDisabled();
     });
 
-    expect((await prendre(request, jetonA)).demande?.id).toBe(demandeId);
-    expect((await rapporter(request, jetonA, demandeId)).resultat?.isError).toBeFalsy();
-    await capturer("rapport", async (carte) => {
+    expect((await rapporter(request, jetonA, enCours)).resultat?.isError).toBeFalsy();
+    await capturer(dossier, "rapport", async (carte) => {
       await expect(carte.getByText("1 ajouté · 1 à choisir · 1 introuvable")).toBeVisible();
+      await expect(carte.getByRole("button", { name: "Relancer pour les articles restants" })).toBeEnabled();
     });
-    await capturer("rapport-deplie", async (carte) => {
+    await capturer(dossier, "rapport-deplie", async (carte) => {
       await carte.getByText("Ajoutés au panier").click();
       await expect(carte.getByText("Lait demi-écrémé 1 L · Lactel × 2")).toBeVisible();
     });
 
     modeReponse = 500;
     expect((await demander()).statut).toBe(502);
-    await capturer("echec", async (carte) => {
-      await expect(carte.getByText("Ton exécuteur n’a pas répondu (réponse HTTP 500).")).toBeVisible();
+    modeReponse = 202;
+    await capturer(dossier, "echec", async (carte) => {
+      await expect(carte.getByText(MESSAGE_CARTE_INJOIGNABLE)).toBeVisible();
+    });
+
+    // Échec rapporté par l'exécuteur, avec ce qu'il a ajouté avant la panne.
+    const partielle = await demanderOk();
+    expect((await prendre(request, jetonA)).demande?.id).toBe(partielle);
+    const motif = "Session Chronodrive expirée, connexion impossible.";
+    expect((await rapporter(request, jetonA, partielle, "echec", motif)).resultat?.isError).toBeFalsy();
+    await capturer(dossier, "echec-rapport-partiel", async (carte) => {
+      await expect(carte.getByText(`Ton exécuteur a signalé un problème : ${motif}`)).toBeVisible();
+      await expect(carte.getByText("1 ajouté · 1 à choisir · 1 introuvable")).toBeVisible();
+    });
+
+    const suivant = await demandeDuCycleSuivant(request, await demandeTerminee(request));
+    await capturer(dossier, "lecture-seule-cycle-suivant", async (carte) => {
+      // Relais `?ancre=` plutôt que « Cycle suivant » : un clic pendant
+      // l'hydratation d'un rechargement partirait du cycle mémorisé.
+      await pageA.goto(`/courses?ancre=${suivant}`);
+      await expect(carte.getByText("1 ajouté · 1 à choisir · 1 introuvable")).toBeVisible();
+      await expect(carte.getByRole("button", { name: /panier|Relancer/i })).toHaveCount(0);
     });
   } finally {
+    modeReponse = 202;
+    if (courant) await revenirAuCycle(pageA, courant);
     await pageA.setViewportSize({ width: 390, height: 844 });
     await pageA.emulateMedia({ colorScheme: null });
+    // Les demandes actives sont d'abord vieillies par afterEach ; ici, on
+    // repart d'un foyer sans historique pour les tests suivants.
+    await supprimerDemandesPanier(request, foyerA);
   }
 });
 
@@ -544,20 +657,48 @@ test("UI : compte-rendu affiché après rapporter_panier (RG-82, RG-84)", async 
   await expect(ajoute).toBeHidden();
   await carte.getByText("Ajoutés au panier").click();
   await expect(ajoute).toBeVisible();
-  // Demande close : une nouvelle est possible.
+  await expect(carte.getByText(/^Terminé à \d{2} h \d{2}$/)).toBeVisible();
+  // Demande close : relancer pour les articles restants est possible, en
+  // action secondaire (RG-83).
+  await expect(carte.getByRole("button", { name: "Relancer pour les articles restants" })).toBeEnabled();
+  expect(await carte.getByRole("button", { name: "Constituer mon panier Chronodrive" }).count()).toBe(0);
+});
+
+test("UI : cycle suivant avec sa demande → carte en lecture seule, sans bouton (RG-84)", async ({ request }) => {
+  const terminee = await demandeTerminee(request);
+  await demandeDuCycleSuivant(request, terminee);
+
+  // Cycle courant : aucune demande de ce cycle, bouton principal sans rapport.
+  await ouvrirCourses(pageA);
+  const carte = carteDe(pageA);
   await expect(carte.getByRole("button", { name: "Constituer mon panier Chronodrive" })).toBeEnabled();
+  expect(await carte.getByText("1 ajouté · 1 à choisir · 1 introuvable").count()).toBe(0);
+
+  // Cycle suivant : le rapport de CE cycle, sans bouton (la route vise
+  // toujours le cycle courant).
+  await pageA.getByRole("button", { name: "Cycle suivant" }).click();
+  await expect(carte.getByText("1 ajouté · 1 à choisir · 1 introuvable")).toBeVisible();
+  await expect(carte.getByRole("button", { name: /panier|Relancer/i })).toHaveCount(0);
+
+  // Retour au cycle courant : les tests suivants ouvrent /courses sur le
+  // cycle mémorisé, qui doit être le courant.
+  await revenirAuCycle(pageA, terminee.ancre);
 });
 
 test("UI : échec affiché quand l’exécuteur répond 500, bouton réactivé (RG-81)", async () => {
   modeReponse = 500;
   await ouvrirCourses(pageA);
   const carte = carteDe(pageA);
+  // Libellé de départ selon l'historique laissé par les tests précédents
+  // (relance après un compte-rendu) ; après l'échec, toujours le principal.
+  await carte.getByRole("button", { name: /^(Constituer mon panier Chronodrive|Relancer pour les articles restants)$/ }).click();
   const bouton = carte.getByRole("button", { name: "Constituer mon panier Chronodrive" });
-
-  await bouton.click();
-  // Le toast reprend le message de la route ; la carte, le motif de la demande.
-  await expect(pageA.getByText(MESSAGE_INJOIGNABLE)).toBeVisible();
-  await expect(carte.getByText("Ton exécuteur n’a pas répondu (réponse HTTP 500).")).toBeVisible();
+  // 502 : c'est la carte qui porte le message, en mots simples (le motif brut
+  // « réponse HTTP 500 » reste en base). Le toast aurait été émis AVANT la
+  // relecture qui affiche ce message : son absence ici est probante.
+  await expect(carte.getByText(MESSAGE_CARTE_INJOIGNABLE)).toBeVisible();
+  await expect(carte.getByText(/^Terminé à \d{2} h \d{2}$/)).toBeVisible();
+  expect(await pageA.getByText(MESSAGE_INJOIGNABLE).count()).toBe(0);
   await expect(bouton).toBeEnabled();
   expect(recues).toHaveLength(1);
 });

@@ -149,5 +149,5 @@ test("« Générer mon cycle » remplit la liste depuis l'état vide (#259)", as
 
   // La liste se peuple : compteur de progression + au moins un article cochable.
   await expect(page.getByText(/coché.? sur [1-9]/)).toBeVisible({ timeout: 20_000 });
-  await expect(page.locator("main li").first()).toBeVisible();
+  await expect(page.getByTestId("categories-courses").locator("li").first()).toBeVisible();
 });
