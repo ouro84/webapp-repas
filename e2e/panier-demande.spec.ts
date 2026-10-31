@@ -25,9 +25,10 @@ import {
   demandesPanierActives,
   enregistrerExecuteurPanier,
   lireEnvLocal,
+  supprimerExecuteurPanier,
   vieillirDemandePanier,
 } from "./helpers";
-import { MESSAGES_PANIER } from "../lib/panier";
+import { MESSAGE_INJOIGNABLE, MESSAGES_PANIER } from "../lib/panier";
 
 const RUN = Date.now();
 const EMAIL_A = `claude-e2e-panier-a-${RUN}@example.com`;
@@ -127,10 +128,18 @@ async function lireDemande(request: APIRequestContext, email: string, id: string
   return lignes[0] ?? null;
 }
 
-// Le « clic » : la route avec la session à cookies du compte A.
+// Le « clic » : la route avec la session à cookies du compte A. Le statut et
+// le corps brut sont dans l'erreur si la réponse n'est pas du JSON (page
+// d'erreur Next, proxy), plutôt qu'un « Unexpected token » muet.
 async function demander(): Promise<{ statut: number; corps: { demande_id?: string; error?: string } }> {
   const r = await pageA.request.post("/api/panier/demande");
-  return { statut: r.status(), corps: await r.json() };
+  const statut = r.status();
+  const brut = await r.text();
+  try {
+    return { statut, corps: JSON.parse(brut) };
+  } catch {
+    throw new Error(`POST /api/panier/demande : HTTP ${statut}, corps non JSON : ${brut.slice(0, 500)}`);
+  }
 }
 
 async function demanderOk(): Promise<string> {
@@ -151,8 +160,13 @@ async function prendre(request: APIRequestContext, jeton: string) {
   return appel.resultat!.structuredContent as { demande: { id: string; ancre: string } | null };
 }
 
-function rapporter(request: APIRequestContext, jeton: string, demandeId: string, statut = "terminee") {
-  return appelerOutilMcp(request, jeton, "rapporter_panier", { demande_id: demandeId, statut, ...RAPPORT });
+function rapporter(request: APIRequestContext, jeton: string, demandeId: string, statut = "terminee", motif?: string) {
+  return appelerOutilMcp(request, jeton, "rapporter_panier", {
+    demande_id: demandeId,
+    statut,
+    ...(motif ? { motif } : {}),
+    ...RAPPORT,
+  });
 }
 
 test.beforeAll(async ({ browser, request }) => {
@@ -185,18 +199,26 @@ test.beforeEach(() => {
 // Chaque test repart sans demande active : celles qui restent sont reculées
 // au-delà des délais d'expiration (RG-83), clôturées au prochain appel de RPC.
 test.afterEach(async ({ request }) => {
+  // beforeAll en échec : rien à nettoyer, et ne pas masquer sa vraie erreur.
+  if (!foyerA) return;
   for (const { id, statut } of await demandesPanierActives(request, foyerA)) {
     await vieillirDemandePanier(request, id, statut === "en_attente" ? "cree_le" : "pris_le", 60);
   }
 });
 
-test.afterAll(async () => {
+test.afterAll(async ({ request }) => {
   await Promise.all(contextes.splice(0).map((c) => c.close()));
-  if (!serveur) return;
-  // Le fetch de Next garde ses connexions ouvertes (keep-alive) : les couper,
-  // sinon close() attend leur expiration.
-  serveur.closeAllConnections();
-  await new Promise<void>((ok) => serveur.close(() => ok()));
+  if (serveur) {
+    // Le fetch de Next garde ses connexions ouvertes (keep-alive) : les couper,
+    // sinon close() attend leur expiration.
+    serveur.closeAllConnections();
+    await new Promise<void>((ok) => serveur.close(() => ok()));
+  }
+  // beforeAll en échec : rien à nettoyer, et ne pas masquer sa vraie erreur.
+  if (!foyerA) return;
+  // Supprimer l'exécuteur nettoie staging et exerce le trigger qui supprime
+  // son secret Vault.
+  expect(await supprimerExecuteurPanier(request, foyerA)).toBe(0);
 });
 
 test("clic → webhook signé reçu, corps sans donnée (RG-81)", async () => {
@@ -216,6 +238,11 @@ test("clic → webhook signé reçu, corps sans donnée (RG-81)", async () => {
   expect(headers["webhook-signature"]).toBe(signatureAttendue(id, horodatage, corps));
 });
 
+// L'index unique partiel est la garantie « une seule demande active ». Le
+// verrou consultatif par foyer sérialise les deux créations : la seconde voit
+// la première par le contrôle préalable (message OMQ02 propre). La branche
+// `unique_violation` n'est donc pas exercée ici : la provoquer exigerait de
+// contourner le verrou, ce qui ne se fait pas de façon fiable en e2e.
 test("deux créations concurrentes → une 202, une 409 (RG-83)", async () => {
   const resultats = await Promise.all([demander(), demander()]);
   expect(resultats.map((r) => r.statut).sort()).toEqual([202, 409]);
@@ -260,16 +287,33 @@ test("exécuteur en 500 → 502, demande echec/injoignable, nouvelle demande pos
   modeReponse = 500;
   const { statut, corps } = await demander();
   expect(statut).toBe(502);
-  expect(corps.error).toBeTruthy();
+  expect(corps.error).toBe(MESSAGE_INJOIGNABLE);
   expect(recues).toHaveLength(1);
 
+  // Motif lisible par le foyer (§5.8), pas la cause brute.
   const { derniere } = await etatPanier(request, EMAIL_A);
-  expect(derniere).toMatchObject({ statut: "echec", cause_echec: "injoignable", motif_echec: "HTTP 500" });
+  expect(derniere).toMatchObject({ statut: "echec", cause_echec: "injoignable", motif_echec: "réponse HTTP 500" });
 
   modeReponse = 202;
   const nouvelle = await demanderOk();
   expect(nouvelle).not.toBe(derniere!.id);
   expect(recues).toHaveLength(2);
+});
+
+test("rapport en échec → echec/executeur avec le motif de l'exécuteur (RG-84)", async ({ request }) => {
+  const demandeId = await demanderOk();
+  expect((await prendre(request, jetonA)).demande?.id).toBe(demandeId);
+
+  const motif = "Session Chronodrive expirée, connexion impossible.";
+  const rapport = await rapporter(request, jetonA, demandeId, "echec", motif);
+  expect(rapport.resultat?.isError).toBeFalsy();
+  expect(rapport.resultat?.structuredContent).toEqual({ statut: "echec", rapport_tardif: false });
+  expect(await lireDemande(request, EMAIL_A, demandeId)).toMatchObject({
+    statut: "echec",
+    cause_echec: "executeur",
+    motif_echec: motif,
+    rapport: RAPPORT,
+  });
 });
 
 test("en_attente vieillie de 6 min → echec/non_prise à la lecture (RG-83)", async ({ request }) => {
@@ -325,6 +369,8 @@ test("isolation foyer : un autre compte ne prend ni ne rapporte la demande (RG-7
   expect(refuse.resultat?.isError).toBe(true);
   expect(texte(refuse)).toBe(MESSAGES_PANIER.OMQ03);
   expect(await etatPanier(request, EMAIL_B)).toEqual({ executeur: false, derniere: null });
+  // Ni par lecture directe de la table, sous RLS (RG-71).
+  expect(await lireDemande(request, EMAIL_B, demandeId)).toBeNull();
 
   // La demande de A est intacte : A la prend toujours.
   expect((await prendre(request, jetonA)).demande?.id).toBe(demandeId);

@@ -441,3 +441,17 @@ export async function enregistrerExecuteurPanier(
   });
   if (!r.ok()) throw new Error(`Enregistrement de l'exécuteur impossible : HTTP ${r.status()} — ${await r.text()}`);
 }
+
+/**
+ * Supprime l'exécuteur de panier d'un foyer (service_role) et renvoie le
+ * nombre d'exécuteurs qui restent pour ce foyer (0 attendu). Nettoie staging
+ * et exerce le trigger qui supprime le secret Vault (#308).
+ */
+export async function supprimerExecuteurPanier(request: APIRequestContext, foyerId: string): Promise<number> {
+  const { url, headers } = enTetesServiceRole();
+  const suppression = await request.delete(`${url}/rest/v1/executeur_panier?foyer_id=eq.${foyerId}`, { headers });
+  if (!suppression.ok()) throw new Error(`Suppression de l'exécuteur impossible : HTTP ${suppression.status()} — ${await suppression.text()}`);
+  const relecture = await request.get(`${url}/rest/v1/executeur_panier?foyer_id=eq.${foyerId}&select=id`, { headers });
+  if (!relecture.ok()) throw new Error(`Relecture de l'exécuteur impossible : HTTP ${relecture.status()}`);
+  return ((await relecture.json()) as unknown[]).length;
+}
