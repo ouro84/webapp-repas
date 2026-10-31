@@ -39,6 +39,9 @@ const limiteurGeneration = creerLimiteur("rl:generer", 10, "60 s")
 // Serveur MCP (#305, RG-78) : 60 requêtes par minute et par utilisateur — un
 // assistant enchaîne initialize, tools/list et plusieurs appels par question.
 const limiteurMcp = creerLimiteur("rl:mcp", 60, "60 s")
+// Demande de panier (#308, RG-81) : 5 requêtes par minute et par utilisateur —
+// chaque demande déclenche un webhook vers l'exécuteur du foyer.
+const limiteurPanier = creerLimiteur("rl:panier", 5, "60 s")
 
 async function verifier(
   limiteur: Ratelimit | null,
@@ -71,4 +74,12 @@ export async function limiteGeneration(
  */
 export async function limiteMcp(identifiant: string): Promise<{ autorise: boolean }> {
   return verifier(limiteurMcp, identifiant)
+}
+
+/**
+ * Quota de la demande de panier par utilisateur (préfixe `rl:panier`). Mêmes
+ * règles : no-op sans env, fail-open.
+ */
+export async function limitePanier(identifiant: string): Promise<{ autorise: boolean }> {
+  return verifier(limiteurPanier, identifiant)
 }

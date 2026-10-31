@@ -96,6 +96,38 @@ describe("limiteMcp (#305, RG-78)", () => {
   })
 })
 
+describe("limitePanier (#308, RG-81)", () => {
+  it("limitePanier : NO-OP sans variables Upstash", async () => {
+    const { limitePanier } = await charger()
+    expect(await limitePanier("u1")).toEqual({ autorise: true })
+    expect(constructions).toHaveLength(0)
+  })
+
+  it("limitePanier : préfixe rl:panier et 5 requêtes / 60 s", async () => {
+    vi.stubEnv("UPSTASH_REDIS_REST_URL", "https://upstash.test")
+    vi.stubEnv("UPSTASH_REDIS_REST_TOKEN", "jeton")
+    const { limitePanier } = await charger()
+    limit.mockResolvedValue({ success: false })
+    expect(await limitePanier("u1")).toEqual({ autorise: false })
+    expect(limit).toHaveBeenCalledWith("u1")
+    expect(constructions).toContainEqual({
+      prefix: "rl:panier",
+      limiter: { requetes: 5, fenetre: "60 s" },
+    })
+  })
+
+  it("limitePanier : fail-open si Upstash lève", async () => {
+    vi.stubEnv("UPSTASH_REDIS_REST_URL", "https://upstash.test")
+    vi.stubEnv("UPSTASH_REDIS_REST_TOKEN", "jeton")
+    const espion = vi.spyOn(console, "error").mockImplementation(() => {})
+    const { limitePanier } = await charger()
+    limit.mockRejectedValue(new Error("réseau"))
+    expect(await limitePanier("u1")).toEqual({ autorise: true })
+    expect(espion).toHaveBeenCalled()
+    espion.mockRestore()
+  })
+})
+
 describe("variables d'environnement (intégration Vercel Marketplace)", () => {
   it("active le limiteur avec KV_REST_API_URL / KV_REST_API_TOKEN (noms posés par l'intégration Upstash de Vercel)", async () => {
     vi.stubEnv("KV_REST_API_URL", "https://upstash.test")
@@ -103,6 +135,6 @@ describe("variables d'environnement (intégration Vercel Marketplace)", () => {
     const { limiteMcp } = await charger()
     limit.mockResolvedValue({ success: false })
     expect(await limiteMcp("u1")).toEqual({ autorise: false })
-    expect(constructions.map((c) => c.prefix)).toEqual(["rl:generer", "rl:mcp"])
+    expect(constructions.map((c) => c.prefix)).toEqual(["rl:generer", "rl:mcp", "rl:panier"])
   })
 })

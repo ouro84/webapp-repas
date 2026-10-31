@@ -374,3 +374,84 @@ export async function fermerModaleDoublonsSiPresente(page: Page): Promise<void> 
     await modale.getByRole("button", { name: /Plus tard|Terminé/ }).click();
   }
 }
+
+// --- Demandes de panier (#308) : écritures réservées au service_role ---
+
+function enTetesServiceRole(): { url: string; headers: Record<string, string> } {
+  const cle = lireEnvLocal("SUPABASE_SERVICE_ROLE_KEY");
+  return {
+    url: lireEnvLocal("NEXT_PUBLIC_SUPABASE_URL"),
+    headers: { apikey: cle, Authorization: `Bearer ${cle}`, "Content-Type": "application/json" },
+  };
+}
+
+/**
+ * Recule `cree_le` ou `pris_le` d'une demande de panier de `minutes`, pour
+ * simuler l'expiration paresseuse (RG-83 : en_attente > 5 min, en_cours >
+ * 30 min) sans attendre. Les clients n'ont aucun droit d'écriture sur
+ * `demande_panier` : passe par le service_role. Le décalage part de la valeur
+ * en base (et non de l'horloge locale), pour rester juste malgré un écart
+ * d'horloge entre la machine de test et Postgres.
+ */
+export async function vieillirDemandePanier(
+  request: APIRequestContext,
+  id: string,
+  champ: "cree_le" | "pris_le",
+  minutes: number
+): Promise<void> {
+  const { url, headers } = enTetesServiceRole();
+  const lecture = await request.get(`${url}/rest/v1/demande_panier?id=eq.${id}&select=${champ}`, { headers });
+  if (!lecture.ok()) throw new Error(`Lecture de la demande ${id} impossible : HTTP ${lecture.status()}`);
+  const [ligne] = (await lecture.json()) as Array<Record<string, string | null>>;
+  const valeur = ligne?.[champ];
+  if (!valeur) throw new Error(`Demande ${id} : ${champ} absent, rien à vieillir`);
+  const recule = new Date(new Date(valeur).getTime() - minutes * 60_000).toISOString();
+  const maj = await request.patch(`${url}/rest/v1/demande_panier?id=eq.${id}`, {
+    headers,
+    data: { [champ]: recule },
+  });
+  if (!maj.ok()) throw new Error(`Vieillissement de la demande ${id} impossible : HTTP ${maj.status()}`);
+}
+
+/** Demandes actives (`en_attente` | `en_cours`) d'un foyer, lues en service_role. */
+export async function demandesPanierActives(
+  request: APIRequestContext,
+  foyerId: string
+): Promise<Array<{ id: string; statut: "en_attente" | "en_cours" }>> {
+  const { url, headers } = enTetesServiceRole();
+  const r = await request.get(
+    `${url}/rest/v1/demande_panier?foyer_id=eq.${foyerId}&statut=in.(en_attente,en_cours)&select=id,statut`,
+    { headers }
+  );
+  if (!r.ok()) throw new Error(`Lecture des demandes actives impossible : HTTP ${r.status()}`);
+  return (await r.json()) as Array<{ id: string; statut: "en_attente" | "en_cours" }>;
+}
+
+/** Enregistre l'exécuteur de panier d'un foyer (RPC service_role seulement, #308). */
+export async function enregistrerExecuteurPanier(
+  request: APIRequestContext,
+  foyerId: string,
+  urlWebhook: string,
+  secret: string
+): Promise<void> {
+  const { url, headers } = enTetesServiceRole();
+  const r = await request.post(`${url}/rest/v1/rpc/enregistrer_executeur_panier`, {
+    headers,
+    data: { p_foyer: foyerId, p_url: urlWebhook, p_secret: secret },
+  });
+  if (!r.ok()) throw new Error(`Enregistrement de l'exécuteur impossible : HTTP ${r.status()} — ${await r.text()}`);
+}
+
+/**
+ * Supprime l'exécuteur de panier d'un foyer (service_role) et renvoie le
+ * nombre d'exécuteurs qui restent pour ce foyer (0 attendu). Nettoie staging
+ * et exerce le trigger qui supprime le secret Vault (#308).
+ */
+export async function supprimerExecuteurPanier(request: APIRequestContext, foyerId: string): Promise<number> {
+  const { url, headers } = enTetesServiceRole();
+  const suppression = await request.delete(`${url}/rest/v1/executeur_panier?foyer_id=eq.${foyerId}`, { headers });
+  if (!suppression.ok()) throw new Error(`Suppression de l'exécuteur impossible : HTTP ${suppression.status()} — ${await suppression.text()}`);
+  const relecture = await request.get(`${url}/rest/v1/executeur_panier?foyer_id=eq.${foyerId}&select=id`, { headers });
+  if (!relecture.ok()) throw new Error(`Relecture de l'exécuteur impossible : HTTP ${relecture.status()}`);
+  return ((await relecture.json()) as unknown[]).length;
+}

@@ -44,6 +44,10 @@ paths:
 - **L'édition d'un repas n'envoie que le créneau visé** à `sauvegarder_slots` (`ecrireCreneau`). Pourquoi : la RPC upserte chaque slot fourni, renvoyer tout le jour réécrirait l'autre repas même s'il vient de changer ailleurs.
 - `generer_cycle` refuse un cycle qui porte déjà un repas affiché, sauf `remplacer: true`, et consomme aussi `limiteGeneration(userId)` (seau `rl:generer` partagé avec le web), via le rappel `verifierQuota` appelé juste avant de générer. Pourquoi : un utilisateur n'a qu'un quota de génération, quel que soit le canal, et un refus « cycle existant » ne doit pas l'entamer.
 - **`ajouter_recette` passe `auteurId` à `creerRecette`.** Pourquoi : le client par jeton n'a pas de session, `auth.getUser()` y échoue. `executer()` fournit `userId` (claim `sub`) à chaque outil.
+- **Outils de l'exécuteur de panier** (`lib/mcp/panier.ts`, #308), appelés par Hermes sous son propre jeton, jamais par un humain. Toute la logique vit dans les RPC (`prendre_demande_panier`, `rapporter_panier`) ; le module traduit réponses et codes d'erreur. Pourquoi : un seul chemin pour l'expiration et le rapport tardif, quel que soit l'appelant.
+  - `prendre_demande_panier` (sans argument) passe la plus ancienne demande `en_attente` du foyer en `en_cours` et renvoie `{ demande: { id, ancre } }`, ou `{ demande: null }` s'il n'y a rien à faire (webhook forgé ou rejoué, demande expirée) : l'exécuteur s'arrête. `null` n'est pas une erreur.
+  - `rapporter_panier` (`demande_id`, `statut` `terminee` | `echec`, `motif`, listes `ajoutes` / `a_choisir` / `introuvables`) : un `echec` sans `motif` lève `ErreurOutil` avant tout appel ; `OMQ03` devient une `ErreurOutil` qui dit de s'arrêter sans réessayer (demande close, remplacée ou inconnue). Renvoie `{ statut, rapport_tardif }`. Son `inputSchema` étend `schemaRapport` (cf. `chronodrive.md`).
+  - Les deux descriptions commencent par « Réservé à l’exécuteur de panier du foyer… ne l’appelle jamais pour consulter l’état d’un panier ». Pourquoi : tout assistant connecté voit ces outils (pas de filtrage par `client_id` en v1), et `prendre` ferait passer une vraie demande en cours.
 
 ## Tests
 

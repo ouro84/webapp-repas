@@ -17,11 +17,16 @@ paths:
 ## Comptes de test et projets
 
 - Projet **`e2e-partage`** : compte partagé, exécution en série (`workers: 1`). En CI, le compte est `claude-e2e-p1@example.com` (variable `E2E_EMAIL`) ; par défaut, `claude-e2e-test@example.com`. Signup idempotent dans `auth.setup.ts`, session réutilisée via `e2e/.auth/user.json`.
-- Projet **`e2e-jetable`** (`SPECS_JETABLE` : onboarding, acquisition, foyer-clonage, foyer-rg29, suppression-compte, oauth-mcp…) : comptes à email unique par run, `--workers=4`. Ils s'accumulent sur staging (la clé anon ne peut pas supprimer un compte), sauf ceux de `suppression-compte.spec`, réellement supprimés.
+- Projet **`e2e-jetable`** (`SPECS_JETABLE` : onboarding, acquisition, foyer-clonage, foyer-rg29, rgpd-signup, suppression-compte, oauth-mcp, mcp-ecriture, panier-demande) : comptes à email unique par run, `--workers=4`. Ils s'accumulent sur staging (la clé anon ne peut pas supprimer un compte), sauf ceux de `suppression-compte.spec`, réellement supprimés.
 - Un compte né d'un signup a `onboarding_complete = false` et serait redirigé vers `/bienvenue` : appeler `marquerOnboardingCompletDistant` après le signup (sauf `onboarding.spec`, qui teste justement le tunnel).
 - Confirmation email désactivée sur staging, condition nécessaire à `auth.setup.ts`.
 
 - **`oauth-mcp.spec`** (#305) et **`mcp-ecriture.spec`** (#306) jouent un assistant IA avec `e2e/oauth.ts` (DCR, PKCE, échange de code, appels JSON-RPC à `/api/mcp`, parcours `inscrire` / `connecter` / `autoriser`). Il exige OAuth Server activé sur staging et `site_url = http://localhost:3000` (cf. `mcp.md`) ; chaque test crée un client DCR, qui s'accumule sur staging comme les comptes jetables.
+- **`panier-demande.spec`** (#308, dans `SPECS_JETABLE`) : un récepteur HTTP local joue l'exécuteur, enregistré par `enregistrerExecuteurPanier` avec son URL.
+  - Le récepteur appelle **`closeAllConnections()` avant `close()`**. Pourquoi : le `fetch` de Next garde ses connexions ouvertes, `close()` seul attend leur expiration.
+  - Toute écriture sur `demande_panier` / `executeur_panier` passe par un helper `service_role` (`vieillirDemandePanier`, `enregistrerExecuteurPanier`, `supprimerExecuteurPanier` en `afterAll`). Pourquoi : les rôles client n'ont aucun droit d'écriture. `vieillirDemandePanier` recule `cree_le` ou `pris_le` depuis la valeur en base, pour simuler l'expiration (RG-83) sans attendre.
+  - **Une seule connexion par mot de passe et par compte** (`sessionDe`, jeton mis en cache), jamais un `jetonMotDePasse` par lecture. Pourquoi : l'Auth de staging limite les connexions ; avec 4 workers jetables en parallèle, la CI prenait des 429 jusque dans le `beforeAll` des relances.
+  - **Relire une demande par son id, pas via `etat_panier().derniere`.** Pourquoi : vieillir `cree_le` change l'ordre du tri `cree_le desc`, la « dernière » n'est plus celle qu'on croit.
 
 ## Le compte partagé : chaque spec restaure ce qu'elle touche
 
