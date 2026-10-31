@@ -24,6 +24,8 @@ const MASQUE = "[masqué]";
 export class ErreurChronodrive extends Error {
   etape: string;
   statut?: number;
+  // Requête abandonnée faute de réponse en 20 s : Chronodrive a pu l'appliquer quand même.
+  delaiDepasse?: boolean;
 
   constructor(etape: string, message: string, statut?: number) {
     super(`${etape} : ${message}`);
@@ -419,7 +421,11 @@ export class ClientChronodrive {
 
   #erreurTransport(etape: string, e: unknown, libelle: string): ErreurChronodrive {
     const nom = e instanceof Error || e instanceof DOMException ? e.name : "erreur";
-    if (nom === "TimeoutError") return new ErreurChronodrive(etape, `délai dépassé (${Math.round(this.#delaiRequete / 1000)} s sans réponse)`);
+    if (nom === "TimeoutError") {
+      const erreur = new ErreurChronodrive(etape, `délai dépassé (${Math.round(this.#delaiRequete / 1000)} s sans réponse)`);
+      erreur.delaiDepasse = true;
+      return erreur;
+    }
     return new ErreurChronodrive(etape, `${libelle} (${nom})`);
   }
 

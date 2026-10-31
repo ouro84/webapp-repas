@@ -399,6 +399,7 @@ test("délai de 20 s par requête : erreur « délai dépassé » ; corps illisi
     assert.ok(e instanceof ErreurChronodrive);
     assert.equal(e.etape, "GET /v1/customers/me/carts");
     assert.match(e.message, /délai dépassé/);
+    assert.equal(e.delaiDepasse, true);
     return true;
   });
 

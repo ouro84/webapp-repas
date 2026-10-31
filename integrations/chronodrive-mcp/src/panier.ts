@@ -27,6 +27,9 @@ const QUANTITE_MAX = 20;
 export const BUDGET_LOT_MS = 90_000;
 export const PRODUIT_INCONNU = "produit inconnu ou vu il y a plus de 30 min : relance chercher_produits";
 export const NON_TENTE = "non tenté : délai du lot dépassé";
+// POST abandonné faute de réponse et sans écart constaté : Chronodrive a pu l'appliquer après la
+// relecture. Jamais un simple « non confirmé » : la skill le traite comme « peut-être ajouté ».
+export const PEUT_ETRE_APPLIQUE = "ajout peut-être appliqué (délai dépassé) : à vérifier dans le panier";
 // Origine d'ajout envoyée telle quelle par le spike, dont les ajouts ont réussi
 // (docs/etudes/chronodrive.md, « Protocole relevé », ligne « Ajouter »).
 const CLIENT_ORIGIN = "WEB|SEARCH|TG|/promotions";
@@ -162,7 +165,7 @@ export async function ajouterLignes(client: Appelant, lignes: LigneAjout[], opti
       envoi.returnType = typeof returnType === "string" ? returnType : null;
     } catch (e) {
       // On continue : l'ajout a pu passer malgré l'erreur, la relecture tranchera.
-      envoi.erreurPost = messageErreur(e);
+      envoi.erreurPost = e instanceof ErreurChronodrive && e.delaiDepasse ? PEUT_ETRE_APPLIQUE : messageErreur(e);
     }
   }
 

@@ -146,6 +146,42 @@ test("chercher_produits : erreur de connexion → tout l'appel échoue, pas de l
   assert.equal(beurre.erreur, null);
 });
 
+test("chercher_produits : 401 persistant sur la recherche → tout l'appel échoue, logins bornés", async () => {
+  // Le client simulé représente le vrai : chaque appel en 401 a déjà fait son unique reconnexion.
+  // Un seul appel de recherche = un seul login de plus, quel que soit le nombre de termes.
+  const sim = clientSimule({
+    ...routesFavoris([]),
+    [RECHERCHE]: () => {
+      throw new ErreurChronodrive("GET /v1/products", "HTTP 401 Unauthorized", 401);
+    },
+  });
+  const { appeler } = await demarrer({ client: () => sim.client });
+  const r = await appeler("chercher_produits", { termes: ["lait", "beurre", "farine"] });
+  assert.equal(r.isError, true);
+  assert.match(r.content[0].text, /HTTP 401/);
+  assert.equal(sim.compter(RECHERCHE), 1);
+});
+
+test("favori montré à chargement + 29 min puis ajouté 2 min plus tard : accepté (relance de run)", async () => {
+  const h = { t: 1_800_000_000_000 };
+  const maintenant = () => h.t;
+  const sim = clientSimule({ ...routesFavoris([produit("15", "Lait demi-écrémé")]), ...panierSimule("p1", {}).routes });
+  const { appeler } = await demarrer({ client: () => sim.client, maintenant });
+
+  termes(await appeler("chercher_produits", { termes: ["lait"] })); // chargement des favoris
+  h.t += 29 * 60_000;
+  const [lait] = termes(await appeler("chercher_produits", { termes: ["lait"] })); // favoris servis par la mémoire
+  assert.deepEqual(lait.favoris.map((p) => p.id), ["15"]);
+  assert.equal(sim.compter(FAVORIS), 1);
+  h.t += 2 * 60_000;
+
+  const a = await appeler("ajouter_au_panier", { lignes: [{ terme: "lait", productId: "15", quantite: 1 }] });
+  assert.ok(!a.isError, a.content[0].text);
+  const [ligne] = (a.structuredContent as { resultats: { confirme: boolean; erreur: string | null }[] }).resultats;
+  assert.equal(ligne.erreur, null);
+  assert.equal(ligne.confirme, true);
+});
+
 test("chercher_produits : cache indisponible → oublié, favoris puis recherche", async () => {
   const sim = clientSimule({
     ...routesFavoris([produit("10", "Lait entier", { stock: 0 }), produit("11", "Beurre doux")]),

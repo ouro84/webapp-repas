@@ -212,6 +212,31 @@ test("échec d'un POST : les autres lignes passent, confirmation toujours par é
   assert.equal(ok.erreur, null);
 });
 
+test("POST sans réponse (délai dépassé) et sans écart : « peut-être appliqué », jamais un simple non confirmé", async () => {
+  const panier = panierSimule("p1", {});
+  const sim = clientSimule({
+    ...panier.routes,
+    [AJOUTS]: (appel, n) => {
+      if (n === 1) {
+        const e = new ErreurChronodrive("POST /v1/carts/p1/items", "délai dépassé (20 s sans réponse)");
+        e.delaiDepasse = true;
+        throw e;
+      }
+      return panier.routes[AJOUTS](appel, n);
+    },
+  });
+  voir(sim.client, ["62", "63"]);
+  const {
+    resultats: [lent, ok],
+  } = await ajouterLignes(sim.client, [
+    { productId: "62", quantite: 1 },
+    { productId: "63", quantite: 1 },
+  ]);
+  assert.equal(lent.confirme, false);
+  assert.equal(lent.erreur, "ajout peut-être appliqué (délai dépassé) : à vérifier dans le panier");
+  assert.equal(ok.confirme, true);
+});
+
 test("relecture finale en échec une fois : retentée, l'ajout est confirmé", async () => {
   const panier = panierSimule("p1", {});
   const sim = clientSimule({

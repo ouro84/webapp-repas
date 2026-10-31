@@ -6,7 +6,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-import { chargerFavoris, produitVu, rechercher, type AppelantRecherche, type OptionsHorloge, type Produit } from "./catalogue.ts";
+import { chargerFavoris, noterProduits, produitVu, rechercher, type AppelantRecherche, type OptionsHorloge, type Produit } from "./catalogue.ts";
 import { ErreurChronodrive } from "./client.ts";
 import { normaliserTerme, type Correspondance, type Correspondances, type EntreeCorrespondance } from "./correspondances.ts";
 import { ajouterLignes, lirePanierCourant, type ResultatAjout } from "./panier.ts";
@@ -105,8 +105,10 @@ export type ResultatTerme = {
 // donc elles interrompent tout l'appel de `chercher_produits`.
 const ETAPES_CONNEXION = new Set(["config", "config-front", "login", "authorize", "token", "GET /v1/customers/me"]);
 
+// Un 401 qui a survécu à l'unique reconnexion du client se répéterait aussi à chaque terme
+// (un login par terme) : même traitement.
 function erreurDeConnexion(e: unknown): boolean {
-  return e instanceof ErreurChronodrive && ETAPES_CONNEXION.has(e.etape);
+  return e instanceof ErreurChronodrive && (ETAPES_CONNEXION.has(e.etape) || e.statut === 401);
 }
 
 const AVERTISSEMENT_CACHE = "cache des correspondances indisponible : résultats calculés sans lui (voir les journaux du NAS)";
@@ -194,6 +196,8 @@ export function creerServeur(deps: Dependances): McpServer {
       const etat: { avertissement?: string } = {};
       const connues = avecCache((c) => c.connues(termes), new Map<string, Correspondance>(), etat);
       const resultats: ResultatTerme[] = [];
+      // Fiches complètes effectivement montrées au LLM : notées à nouveau en fin d'appel.
+      const montres: Produit[] = [];
       for (const t of termes) {
         const r: ResultatTerme = { terme: t, cache: null, favoris: [], recherche: [], erreur: null };
         resultats.push(r);
@@ -201,15 +205,21 @@ export function creerServeur(deps: Dependances): McpServer {
           const entree = connues.get(normaliserTerme(t));
           if (entree) {
             const produit = await ficheActuelle(client, entree, favoris);
-            if (produit?.disponible) r.cache = pourLeLlm(produit);
+            if (produit?.disponible) {
+              r.cache = pourLeLlm(produit);
+              montres.push(produit);
+            }
             // Produit retrouvé mais indisponible : l'entrée est supprimée. Introuvable : ignorée seulement.
             else if (produit) avecCache((c) => c.oublier(t), undefined, etat);
           }
           if (r.cache) continue;
           const pourTerme = favorisPour(t, favoris);
           r.favoris = pourTerme.map(pourLeLlm);
+          montres.push(...pourTerme);
           if (!pourTerme.some((p) => p.disponible)) {
-            r.recherche = (await rechercher(client, t, RECHERCHE_MAX, horloge)).slice(0, RECHERCHE_MAX).map(pourLeLlm);
+            const trouves = (await rechercher(client, t, RECHERCHE_MAX, horloge)).slice(0, RECHERCHE_MAX);
+            r.recherche = trouves.map(pourLeLlm);
+            montres.push(...trouves);
           }
         } catch (e) {
           // Pas de reconnexion terme par terme : une erreur de connexion arrête tout l'appel.
@@ -217,6 +227,10 @@ export function creerServeur(deps: Dependances): McpServer {
           r.erreur = messagePourLeLlm(e);
         }
       }
+      // Les favoris viennent d'une mémoire de 30 min : sans cette note, un favori montré à
+      // chargement + 29 min serait refusé à l'ajout deux minutes plus tard (« vu il y a plus de 30 min »).
+      // Les 30 min de `produitVu` courent ainsi depuis le dernier affichage au LLM.
+      noterProduits(client, montres, horloge);
       return { resultats, ...etat };
     },
   );
