@@ -1,7 +1,7 @@
 // Lecture de l'état du panier et lancement d'une demande côté navigateur
 // (#308, RG-81/RG-83). Client Supabase injecté mocké ; fetch injecté.
 
-import { describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { chargerEtatPanier, lancerDemandePanier } from "@/lib/panier-client"
 import type { EtatPanier } from "@/lib/panier-affichage"
@@ -27,6 +27,8 @@ describe("chargerEtatPanier", () => {
 })
 
 describe("lancerDemandePanier", () => {
+  afterEach(() => vi.restoreAllMocks())
+
   it("202 → ok, POST sans corps", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ demande_id: "d1" }), { status: 202 })
@@ -50,10 +52,12 @@ describe("lancerDemandePanier", () => {
   })
 
   it("réseau coupé → message français, ne lève pas", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {})
     const fetchMock = vi.fn().mockRejectedValue(new TypeError("Failed to fetch"))
     await expect(lancerDemandePanier({ fetch: fetchMock })).resolves.toEqual({
       ok: false,
       message: "Connexion impossible : vérifie ton réseau, puis réessaie.",
     })
+    expect(spy).toHaveBeenCalled()
   })
 })
