@@ -4,7 +4,9 @@
 import { produitVu, versProduit, type Appelant, type OptionsHorloge, type Produit } from "./catalogue.ts";
 import { ErreurChronodrive } from "./client.ts";
 
-export type LigneAjout = { productId: string; quantite: number };
+// `refus` : refus décidé par l'appelant avant tout envoi (garde par terme de `ajouter_au_panier`,
+// src/outils.ts) ; la ligne n'est pas envoyée et ne compte pas comme doublon.
+export type LigneAjout = { productId: string; quantite: number; refus?: string | null };
 
 export type ResultatAjout = {
   productId: string;
@@ -80,9 +82,10 @@ type Envoi = { index: number; quantite: number; plafond: string | null; tente: b
 // par l'écart de quantité du produit entre les deux lectures (RG-83), jamais au `returnType`
 // (`NO_STOCK_AFTER` ajoute quand même) ni à la présence (le produit peut déjà être au panier).
 // Écart < demande : confirmé mais signalé dans `erreur`.
-// Seul un produit vu en recherche ou en favoris depuis moins de 30 min est envoyé, et jamais s'il
-// y est indisponible : un `productId` inventé ou périmé est refusé sans POST. La quantité doit être
-// un entier ≥ 1, plafonné à 20, puis à `maxCartQuantity` moins la quantité déjà au panier (lu comme
+// Une ligne refusée par l'appelant (`refus`) n'est pas envoyée. Seul un produit vu en recherche ou
+// en favoris depuis moins de 30 min est envoyé, et jamais s'il y est indisponible : un `productId`
+// inventé ou périmé est refusé sans POST. La quantité doit être un entier ≥ 1, plafonné à 20,
+// puis à `maxCartQuantity` moins la quantité déjà au panier (lu comme
 // un plafond total : prudent si c'est en fait un plafond par ajout, l'écart signale alors le manque).
 // Budget du lot : 90 s ; au-delà, les lignes restantes reviennent « non tenté », sans POST.
 export async function ajouterLignes(client: Appelant, lignes: LigneAjout[], options: OptionsHorloge = {}): Promise<BilanAjout> {
@@ -109,6 +112,10 @@ export async function ajouterLignes(client: Appelant, lignes: LigneAjout[], opti
 
     if (!productId) {
       resultat.erreur = "productId vide";
+      continue;
+    }
+    if (ligne.refus) {
+      resultat.erreur = ligne.refus;
       continue;
     }
     if (vus.has(productId)) {

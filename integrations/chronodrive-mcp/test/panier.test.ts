@@ -141,6 +141,23 @@ test("productId jamais vu (ni recherche ni favoris) → refusé sans POST, même
   }
 });
 
+test("refus de l'appelant (garde par terme) : ligne non envoyée, et pas comptée comme doublon", async () => {
+  const sim = clientSimule(panierSimule("p1", {}).routes);
+  voir(sim.client, ["95"]);
+  const { resultats } = await ajouterLignes(sim.client, [
+    { productId: "95", quantite: 1, refus: "produit non proposé pour cet article : relance chercher_produits pour ce terme" },
+    { productId: "95", quantite: 1 },
+  ]);
+  assert.deepEqual(
+    resultats.map((r) => [r.confirme, r.erreur]),
+    [
+      [false, "produit non proposé pour cet article : relance chercher_produits pour ce terme"],
+      [true, null],
+    ],
+  );
+  assert.equal(sim.compter(AJOUTS), 1);
+});
+
 test("quantité : entier ≥ 1, plafonnée à 20 et à maxCartQuantity ; vide puis doublon refusés", async () => {
   const panier = panierSimule("p1", { "51": 1 });
   const sim = clientSimule({

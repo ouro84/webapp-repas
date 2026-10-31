@@ -9,7 +9,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { ErreurChronodrive } from "../src/client.ts";
 import { normaliserTerme, type Correspondance, type EntreeCorrespondance } from "../src/correspondances.ts";
 import { creerServeur, favorisPour, NOMS_OUTILS, type CacheCorrespondances, type Dependances } from "../src/outils.ts";
-import { clientSimule, fiche, panierSimule, voir, type Route } from "./simulation.ts";
+import { clientSimule, fiche, panierSimule, type Route } from "./simulation.ts";
 import { versProduit } from "../src/catalogue.ts";
 
 const RECHERCHE = "GET /v1/products";
@@ -366,12 +366,145 @@ test("ajouter_au_panier : productId jamais vu → refusé sans POST", async () =
   assert.deepEqual(cache.memorises, []);
 });
 
+type LigneResultat = { terme: string; productId: string; confirme: boolean; erreur: string | null };
+
+function lignesAjout(r: Resultat): LigneResultat[] {
+  assert.ok(!r.isError, r.content[0]?.text);
+  return (r.structuredContent as { resultats: LigneResultat[] }).resultats;
+}
+
+const NON_PROPOSE = "produit non proposé pour cet article : relance chercher_produits pour ce terme";
+
+test("ajouter_au_panier : produit proposé pour un autre terme → refusé sans POST (run du 2026-10-31, lait → lasagnes)", async () => {
+  const panier = panierSimule("p1", {});
+  const lasagnes = produit("1697", "Feuilles de lasagnes aux oeufs N°199", {}, "BARILLA");
+  const sim = clientSimule({
+    ...panier.routes,
+    ...routesFavoris([produit("146939", "Lait demi-écrémé 1,5% M.G UHT bio", {}, "LACTEL"), lasagnes]),
+    // Aucun favori pour « œufs » : la recherche renvoie les lasagnes parmi les œufs.
+    [RECHERCHE]: () => ({ content: [lasagnes, produit("2001", "Oeufs gros de poules élevées en plein air")] }),
+  });
+  const cache = cacheSimule();
+  const { appeler } = await demarrer({ client: () => sim.client, cache: () => cache.cache });
+
+  const [oeufs, lait] = termes(await appeler("chercher_produits", { termes: ["œufs", "lait"] }));
+  assert.deepEqual(oeufs.recherche.map((p) => p.id), ["1697", "2001"]);
+  assert.deepEqual(lait.favoris.map((p) => p.id), ["146939"]);
+
+  // L'id des lasagnes recopié sur la ligne « lait » : refusé, rien n'est envoyé ni mémorisé.
+  const [refus] = lignesAjout(await appeler("ajouter_au_panier", { lignes: [{ terme: "lait", productId: "1697", quantite: 1 }] }));
+  assert.equal(refus.confirme, false);
+  assert.equal(refus.erreur, NON_PROPOSE);
+  assert.equal(sim.compter("POST /v1/carts/p1/items"), 0);
+  assert.deepEqual(cache.memorises, []);
+
+  // Le bon produit pour « lait » passe ; le refus d'une ligne ne compte pas comme doublon pour
+  // la ligne « œufs » du même lot qui vise légitimement 1697.
+  const lot = lignesAjout(
+    await appeler("ajouter_au_panier", {
+      lignes: [
+        { terme: "lait", productId: "1697", quantite: 1 },
+        { terme: "lait", productId: "146939", quantite: 1 },
+        { terme: "Œufs", productId: "1697", quantite: 1 },
+      ],
+    }),
+  );
+  assert.deepEqual(
+    lot.map((l) => [l.productId, l.confirme, l.erreur]),
+    [
+      ["1697", false, NON_PROPOSE],
+      ["146939", true, null],
+      ["1697", true, null],
+    ],
+  );
+  assert.deepEqual(
+    sim.appels.filter((a) => a.methode === "POST").map((a) => (a.corps as { content: { productId: string }[] }).content[0].productId),
+    ["146939", "1697"],
+  );
+});
+
+test("ajouter_au_panier : reformulation → `terme_recherche` valide la ligne, le cache retient l'article", async () => {
+  const sim = clientSimule({
+    ...panierSimule("p1", {}).routes,
+    ...routesFavoris([]),
+    [RECHERCHE]: (appel) => ({ content: appel.params?.searchTerm === "poireau" ? [produit("77", "Poireau botte")] : [] }),
+  });
+  const cache = cacheSimule();
+  const { appeler } = await demarrer({ client: () => sim.client, cache: () => cache.cache });
+  termes(await appeler("chercher_produits", { termes: ["poireaux"] }));
+  const [poireau] = termes(await appeler("chercher_produits", { termes: ["poireau"] }));
+  assert.deepEqual(poireau.recherche.map((p) => p.id), ["77"]);
+
+  // Sans `terme_recherche`, le produit n'a pas été proposé pour « poireaux » : refusé.
+  const [sans] = lignesAjout(await appeler("ajouter_au_panier", { lignes: [{ terme: "poireaux", productId: "77", quantite: 1 }] }));
+  assert.equal(sans.erreur, NON_PROPOSE);
+  assert.equal(sim.compter("POST /v1/carts/p1/items"), 0);
+
+  // `terme_recherche` vide = absent ; une reformulation qui n'a pas proposé le produit : refusé.
+  for (const terme_recherche of ["", "poireaux verts"]) {
+    const [ligne] = lignesAjout(
+      await appeler("ajouter_au_panier", { lignes: [{ terme: "poireaux", terme_recherche, productId: "77", quantite: 1 }] }),
+    );
+    assert.equal(ligne.erreur, NON_PROPOSE, terme_recherche);
+  }
+
+  const [avec] = lignesAjout(
+    await appeler("ajouter_au_panier", { lignes: [{ terme: "poireaux", terme_recherche: " Poireau ", productId: "77", quantite: 1 }] }),
+  );
+  assert.equal(avec.confirme, true);
+  assert.equal(avec.terme, "poireaux");
+  // Clé du cache = l'article OMQ, pas la reformulation.
+  assert.deepEqual(cache.memorises, [[{ terme: "poireaux", productId: "77", libelle: "Produit 77" }]]);
+});
+
+test("ajouter_au_panier : produit vu seulement par lire_panier → refusé sans POST", async () => {
+  const sim = clientSimule({ ...panierSimule("p1", { "91": 1 }).routes, ...routesFavoris([]), [RECHERCHE]: () => ({ content: [] }) });
+  const { appeler } = await demarrer({ client: () => sim.client });
+  termes(await appeler("chercher_produits", { termes: ["lait"] }));
+  assert.ok(!(await appeler("lire_panier")).isError);
+  const [ligne] = lignesAjout(await appeler("ajouter_au_panier", { lignes: [{ terme: "lait", productId: "91", quantite: 1 }] }));
+  assert.equal(ligne.confirme, false);
+  assert.match(ligne.erreur ?? "", /relance chercher_produits/);
+  assert.equal(sim.compter("POST /v1/carts/p1/items"), 0);
+});
+
+test("proposition par terme : 30 min depuis la dernière proposition pour CE terme", async () => {
+  const h = { t: 1_800_000_000_000 };
+  const maintenant = () => h.t;
+  const sim = clientSimule({ ...panierSimule("p1", {}).routes, ...routesFavoris([produit("10", "Lait demi-écrémé")]) });
+  const { appeler } = await demarrer({ client: () => sim.client, maintenant });
+
+  termes(await appeler("chercher_produits", { termes: ["lait"] }));
+  h.t += 20 * 60_000;
+  // Le même produit, proposé pour un autre terme : sa fiche vue est rafraîchie, pas la proposition pour « lait ».
+  termes(await appeler("chercher_produits", { termes: ["lait demi-écrémé"] }));
+  h.t += 11 * 60_000;
+  const [lait, demi] = lignesAjout(
+    await appeler("ajouter_au_panier", {
+      lignes: [
+        { terme: "lait", productId: "10", quantite: 1 },
+        { terme: "lait", terme_recherche: "lait demi-écrémé", productId: "10", quantite: 1 },
+      ],
+    }),
+  );
+  assert.equal(lait.erreur, NON_PROPOSE);
+  // La seconde ligne n'est pas un doublon : la première n'a pas été envoyée.
+  assert.equal(demi.confirme, true);
+});
+
 test("ajouter_au_panier : schéma — quantité entière 1..20, 20 lignes au plus", async () => {
   const sim = clientSimule({});
   const { appeler } = await demarrer({ client: () => sim.client });
   const ligne = { terme: "lait", productId: "10", quantite: 1 };
 
-  for (const lignes of [[{ ...ligne, quantite: 21 }], [{ ...ligne, quantite: 0 }], [{ ...ligne, quantite: 1.5 }], [], Array(21).fill(ligne)]) {
+  for (const lignes of [
+    [{ ...ligne, quantite: 21 }],
+    [{ ...ligne, quantite: 0 }],
+    [{ ...ligne, quantite: 1.5 }],
+    [{ ...ligne, terme_recherche: "x".repeat(201) }],
+    [],
+    Array(21).fill(ligne),
+  ]) {
     const r = await appeler("ajouter_au_panier", { lignes });
     assert.equal(r.isError, true, JSON.stringify(lignes).slice(0, 80));
   }
@@ -384,9 +517,14 @@ test("ajouter_au_panier : deux appels parallèles sont exécutés l'un après l'
     await new Promise((r) => setTimeout(r, 20));
     return panier.routes["POST /v1/carts/p1/items"](appel, n);
   };
-  const sim = clientSimule({ ...panier.routes, "POST /v1/carts/p1/items": lent });
-  voir(sim.client, ["10", "20"]);
+  const sim = clientSimule({
+    ...panier.routes,
+    ...routesFavoris([produit("10", "Lait demi-écrémé"), produit("20", "Beurre doux")]),
+    "POST /v1/carts/p1/items": lent,
+  });
   const { appeler } = await demarrer({ client: () => sim.client });
+  termes(await appeler("chercher_produits", { termes: ["lait", "beurre"] }));
+  const debut = sim.appels.length;
 
   const [a, b] = await Promise.all([
     appeler("ajouter_au_panier", { lignes: [{ terme: "lait", productId: "10", quantite: 1 }] }),
@@ -399,7 +537,7 @@ test("ajouter_au_panier : deux appels parallèles sont exécutés l'un après l'
   const lecture = ["GET /v1/customers/me/carts", "GET /v1/carts/p1"];
   const lot = [...lecture, "POST /v1/carts/p1/items", ...lecture];
   // Sans sérialisation, les relectures « avant » et `lire_panier` passeraient avant le premier POST.
-  assert.deepEqual(sim.appels.map((x) => `${x.methode} ${x.chemin}`), [...lot, ...lecture, ...lot]);
+  assert.deepEqual(sim.appels.slice(debut).map((x) => `${x.methode} ${x.chemin}`), [...lot, ...lecture, ...lot]);
   for (const r of [a, b]) {
     const [ligne] = (r.structuredContent as { resultats: { confirme: boolean }[] }).resultats;
     assert.equal(ligne.confirme, true);
@@ -411,6 +549,7 @@ test("ajouter_au_panier : un lot en échec ne bloque pas le suivant", async () =
   const panier = panierSimule("p1", {});
   const sim = clientSimule({
     ...panier.routes,
+    ...routesFavoris([produit("10", "Lait demi-écrémé")]),
     "GET /v1/customers/me/carts": () => {
       if (echec) {
         echec = false;
@@ -419,8 +558,8 @@ test("ajouter_au_panier : un lot en échec ne bloque pas le suivant", async () =
       return { content: [{ id: "p1" }] };
     },
   });
-  voir(sim.client, ["10"]);
   const { appeler } = await demarrer({ client: () => sim.client });
+  termes(await appeler("chercher_produits", { termes: ["lait"] }));
   const ligne = { terme: "lait", productId: "10", quantite: 1 };
   const [a, b] = await Promise.all([appeler("ajouter_au_panier", { lignes: [ligne] }), appeler("ajouter_au_panier", { lignes: [ligne] })]);
   assert.equal(a.isError, true);

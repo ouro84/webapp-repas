@@ -6,10 +6,19 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-import { chargerFavoris, noterProduits, produitVu, rechercher, type AppelantRecherche, type OptionsHorloge, type Produit } from "./catalogue.ts";
+import {
+  chargerFavoris,
+  DUREE_FAVORIS_MS,
+  noterProduits,
+  produitVu,
+  rechercher,
+  type AppelantRecherche,
+  type OptionsHorloge,
+  type Produit,
+} from "./catalogue.ts";
 import { ErreurChronodrive } from "./client.ts";
 import { normaliserTerme, type Correspondance, type Correspondances, type EntreeCorrespondance } from "./correspondances.ts";
-import { ajouterLignes, lirePanierCourant, type ResultatAjout } from "./panier.ts";
+import { ajouterLignes, lirePanierCourant, PRODUIT_INCONNU, type ResultatAjout } from "./panier.ts";
 
 export type CacheCorrespondances = Pick<Correspondances, "connues" | "memoriser" | "oublier">;
 
@@ -36,6 +45,8 @@ const FAVORIS_MAX = 5;
 const RECHERCHE_MAX = 8;
 // Recherche de vérification d'une correspondance du cache, par son libellé.
 const TAILLE_VERIFICATION = 20;
+
+export const PRODUIT_NON_PROPOSE = "produit non proposé pour cet article : relance chercher_produits pour ce terme";
 
 // Erreur destinée au LLM, rédigée ici : son message est sûr.
 export class ErreurOutil extends Error {
@@ -145,6 +156,29 @@ export function creerServeur(deps: Dependances): McpServer {
     }
   }
 
+  // Produits proposés par `chercher_produits`, par client puis par terme normalisé : id → instant de
+  // la dernière proposition pour CE terme (cache, favoris, recherche effectivement renvoyés).
+  // `ajouter_au_panier` refuse sans POST une ligne dont le produit n'a pas été proposé pour son terme
+  // depuis moins de 30 min. Pourquoi : au run réel, l'id des lasagnes proposé pour « œufs » a été
+  // recopié sur la ligne « lait » ; « vu par ailleurs » (`produitVu`) ne suffit pas.
+  const propositions = new WeakMap<object, Map<string, Map<string, number>>>();
+  const instant = deps.maintenant ?? Date.now;
+
+  function noterPropositions(client: object, terme: string, produits: Produit[]): void {
+    let parTerme = propositions.get(client);
+    if (!parTerme) propositions.set(client, (parTerme = new Map()));
+    const cle = normaliserTerme(terme);
+    let ids = parTerme.get(cle);
+    if (!ids) parTerme.set(cle, (ids = new Map()));
+    const a = instant();
+    for (const p of produits) if (p.id) ids.set(p.id, a);
+  }
+
+  function propose(client: object, terme: string, productId: string): boolean {
+    const a = propositions.get(client)?.get(normaliserTerme(terme))?.get(productId);
+    return a !== undefined && instant() - a <= DUREE_FAVORIS_MS;
+  }
+
   // Un seul lot d'ajout à la fois : deux lots parallèles entremêleraient leurs relectures
   // avant/après du panier, et l'écart de quantité ne serait plus attribuable (RG-83).
   let file: Promise<unknown> = Promise.resolve();
@@ -209,11 +243,14 @@ export function creerServeur(deps: Dependances): McpServer {
       const etat: { avertissement?: string } = {};
       const connues = avecCache((c) => c.connues(termes), new Map<string, Correspondance>(), etat);
       const resultats: ResultatTerme[] = [];
-      // Fiches complètes effectivement montrées au LLM : notées à nouveau en fin d'appel.
-      const montres: Produit[] = [];
+      // Fiches complètes effectivement montrées au LLM, par terme : notées à nouveau en fin d'appel,
+      // comme vues et comme proposées pour ce terme.
+      const montresParTerme: [string, Produit[]][] = [];
       for (const t of termes) {
         const r: ResultatTerme = { terme: t, cache: null, favoris: [], recherche: [], erreur: null };
         resultats.push(r);
+        const montres: Produit[] = [];
+        montresParTerme.push([t, montres]);
         try {
           const entree = connues.get(normaliserTerme(t));
           if (entree) {
@@ -243,7 +280,8 @@ export function creerServeur(deps: Dependances): McpServer {
       // Les favoris viennent d'une mémoire de 30 min : sans cette note, un favori montré à
       // chargement + 29 min serait refusé à l'ajout deux minutes plus tard (« vu il y a plus de 30 min »).
       // Les 30 min de `produitVu` courent ainsi depuis le dernier affichage au LLM.
-      noterProduits(client, montres, horloge);
+      noterProduits(client, montresParTerme.flatMap(([, montres]) => montres), horloge);
+      for (const [t, montres] of montresParTerme) noterPropositions(client, t, montres);
       return { resultats, ...etat };
     },
   );
@@ -254,7 +292,8 @@ export function creerServeur(deps: Dependances): McpServer {
       "Ajoute un lot de produits au panier Chronodrive (20 lignes au plus, un même productId une seule fois par lot).",
       "La quantité S'AJOUTE à celle déjà présente. Le panier est relu avant et après :",
       "`confirme: true` seulement si la quantité du produit a réellement augmenté (`avant` → `apres`) ; `erreur` explique un refus ou un ajout partiel.",
-      "Seul un produit renvoyé par chercher_produits depuis moins de 30 min est accepté.",
+      "Seul un produit renvoyé par chercher_produits depuis moins de 30 min POUR CE TERME est accepté : copier l'`id` depuis le résultat du terme de cet article,",
+      "et passer `terme_recherche` quand le produit vient d'une reformulation. Sinon la ligne est refusée sans envoi (« produit non proposé pour cet article »).",
       "Ne jamais relancer une ligne non confirmée sans relire le panier (`lire_panier`) : l'ajout a pu passer.",
       "Les lignes confirmées sont retenues pour le terme (cache des correspondances). Ne commande rien.",
     ].join(" "),
@@ -263,7 +302,13 @@ export function creerServeur(deps: Dependances): McpServer {
         .array(
           z.object({
             terme: terme.describe("Article de la liste de courses que ce produit couvre"),
-            productId: z.string().trim().min(1).max(50).describe("`id` d'un produit renvoyé par chercher_produits"),
+            terme_recherche: z
+              .string()
+              .trim()
+              .max(200)
+              .optional()
+              .describe("Terme passé à chercher_produits quand il diffère de `terme` (reformulation, ex. « poireau » pour « poireaux »)"),
+            productId: z.string().trim().min(1).max(50).describe("`id` d'un produit renvoyé par chercher_produits pour ce terme"),
             quantite: z.number().int().min(1).max(20),
           }),
         )
@@ -277,7 +322,14 @@ export function creerServeur(deps: Dependances): McpServer {
       }
       return enSerie(async () => {
         const client = deps.client();
-        const bilan = await ajouterLignes(client, lignes.map(({ productId, quantite }) => ({ productId, quantite })), horloge);
+        // Garde par terme (`propositions`) : le terme validé est la reformulation s'il y en a une.
+        // Un produit jamais vu garde le refus « produit inconnu » ; un produit vu pour un autre terme,
+        // ou seulement dans le panier, est « non proposé ».
+        const aEnvoyer = lignes.map(({ terme: t, terme_recherche, productId, quantite }) => {
+          if (propose(client, terme_recherche || t, productId)) return { productId, quantite };
+          return { productId, quantite, refus: produitVu(client, productId, horloge) ? PRODUIT_NON_PROPOSE : PRODUIT_INCONNU };
+        });
+        const bilan = await ajouterLignes(client, aEnvoyer, horloge);
         const resultats: (ResultatAjout & { terme: string })[] = bilan.resultats.map((r, i) => ({ terme: lignes[i].terme, ...r }));
         // Libellé tiré de la fiche du panier relu après l'ajout, sinon de la fiche vue ; jamais du
         // productId (il sert à retrouver le produit par recherche). Sans libellé, rien n'est mémorisé.
