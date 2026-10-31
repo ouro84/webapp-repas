@@ -3,11 +3,11 @@
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, statSync, writeFileSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, statSync, utimesSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { ClientChronodrive, ErreurChronodrive, chargerConfig, type Config } from "../src/client.ts";
+import { ClientChronodrive, ErreurChronodrive, chargerConfig, fabriqueClient, type Config } from "../src/client.ts";
 
 const EMAIL = "arnaud.test@example.org";
 const MOT_DE_PASSE = "M0t-de-passe!secret";
@@ -209,32 +209,58 @@ test("jeton expiré (marge 60 s) → nouveau login avant l'appel", async () => {
 });
 
 test("401 jeton → login complet puis rejeu, une seule fois", async () => {
-  // Cas 1 : le 1er appel au panier prend un 401 (jeton révoqué), le rejeu passe.
+  // Cas 1 : session déjà ouverte, le 2e appel au panier prend un 401 (jeton révoqué), le rejeu passe.
   const sim = fetchSimule([
     ...routesLogin(),
     {
       methode: "GET",
       motif: R_PANIERS,
-      reponse: (_a, n) => (n === 1 ? json({ message: "Unauthorized" }, 401) : json({ content: [{ id: "panier-2" }] })),
+      reponse: (_a, n) => (n === 2 ? json({ message: "Unauthorized" }, 401) : json({ content: [{ id: `panier-${n}` }] })),
     },
   ]);
   const client = new ClientChronodrive(nouvelleConfig(), { fetch: sim.fetch, maintenant: horloge().maintenant });
+  await client.appeler("GET", "/v1/customers/me/carts", { service: "CUSTOMERS" });
   const r = await client.appeler<{ content: { id: string }[] }>("GET", "/v1/customers/me/carts", { service: "CUSTOMERS" });
-  assert.equal(r.content[0].id, "panier-2");
+  assert.equal(r.content[0].id, "panier-3");
   assert.equal(sim.compter("POST", R_LOGIN), 2);
-  assert.equal(sim.compter("GET", R_PANIERS), 2);
+  assert.equal(sim.compter("GET", R_PANIERS), 3);
   assert.equal(sim.appels.at(-1)?.entetes.get("authorization"), `Bearer ${JETON}-2`);
 
   // Cas 2 : 401 persistant → une seule reconnexion, puis ErreurChronodrive (pas de 3e login).
-  const simKo = fetchSimule([...routesLogin(), { methode: "GET", motif: R_PANIERS, reponse: () => json({ message: "Unauthorized" }, 401) }]);
+  const simKo = fetchSimule([
+    ...routesLogin(),
+    { methode: "GET", motif: R_PANIERS, reponse: (_a, n) => (n === 1 ? json({ content: [] }) : json({ message: "Unauthorized" }, 401)) },
+  ]);
   const clientKo = new ClientChronodrive(nouvelleConfig(), { fetch: simKo.fetch, maintenant: horloge().maintenant });
+  await clientKo.appeler("GET", "/v1/customers/me/carts", { service: "CUSTOMERS" });
   await assert.rejects(clientKo.appeler("GET", "/v1/customers/me/carts", { service: "CUSTOMERS" }), (e: unknown) => {
     assert.ok(e instanceof ErreurChronodrive);
     assert.equal(e.statut, 401);
     return true;
   });
   assert.equal(simKo.compter("POST", R_LOGIN), 2);
-  assert.equal(simKo.compter("GET", R_PANIERS), 2);
+  assert.equal(simKo.compter("GET", R_PANIERS), 3);
+});
+
+test("401 jeton juste après un login du même appel → pas de second login", async () => {
+  const sim = fetchSimule([...routesLogin(), { methode: "GET", motif: R_PANIERS, reponse: () => json({ message: "Unauthorized" }, 401) }]);
+  const client = new ClientChronodrive(nouvelleConfig(), { fetch: sim.fetch, maintenant: horloge().maintenant });
+  await assert.rejects(client.appeler("GET", "/v1/customers/me/carts", { service: "CUSTOMERS" }), (e: unknown) => {
+    assert.ok(e instanceof ErreurChronodrive);
+    assert.equal(e.statut, 401);
+    return true;
+  });
+  assert.equal(sim.compter("POST", R_LOGIN), 1);
+  assert.equal(sim.compter("GET", R_PANIERS), 1);
+});
+
+test("login partagé entre appels concurrents", async () => {
+  const sim = fetchSimule([...routesLogin(), { methode: "GET", motif: R_PANIERS, reponse: () => json({ content: [] }) }]);
+  const client = new ClientChronodrive(nouvelleConfig(), { fetch: sim.fetch, maintenant: horloge().maintenant });
+  const appel = () => client.appeler("GET", "/v1/customers/me/carts", { service: "CUSTOMERS" });
+  await Promise.all([appel(), appel(), appel()]);
+  assert.equal(sim.compter("POST", R_LOGIN), 1);
+  assert.equal(sim.compter("GET", R_PANIERS), 3);
 });
 
 test("401 « API Key is not valid » → pas de login, ErreurChronodrive", async () => {
@@ -250,7 +276,176 @@ test("401 « API Key is not valid » → pas de login, ErreurChronodrive", async
     return true;
   });
   assert.equal(sim.compter("POST", R_LOGIN), 1); // le login initial seulement
-  assert.equal(sim.compter("GET", R_PANIERS), 1); // aucun rejeu
+  // Une seule relecture des clés sur l'accueil (sans login), puis un seul rejeu.
+  assert.equal(sim.compter("GET", R_ACCUEIL), 2);
+  assert.equal(sim.compter("GET", R_PANIERS), 2);
+});
+
+test("401 « API Key is not valid » → clés relues sur l'accueil puis rejeu, sans login", async () => {
+  const NOUVELLE = "55555555-aaaa-4bbb-8ccc-000000000005";
+  let html = HTML_ACCUEIL;
+  const sim = fetchSimule([
+    { methode: "GET", motif: R_ACCUEIL, reponse: () => new Response(html, { headers: { "content-type": "text/html" } }) },
+    ...routesLogin().slice(1),
+    {
+      methode: "GET",
+      motif: R_PANIERS,
+      reponse: (a) => (a.entetes.get("x-api-key") === NOUVELLE ? json({ content: [{ id: "p" }] }) : json({ message: "API Key is not valid" }, 401)),
+    },
+  ]);
+  const config = nouvelleConfig();
+  const client = new ClientChronodrive(config, { fetch: sim.fetch, maintenant: horloge().maintenant });
+  await client.idClient(); // session ouverte avec les anciennes clés
+  html = HTML_ACCUEIL.replace(CLES.CUSTOMERS, NOUVELLE);
+
+  const r = await client.appeler<{ content: { id: string }[] }>("GET", "/v1/customers/me/carts", { service: "CUSTOMERS" });
+  assert.equal(r.content[0].id, "p");
+  assert.equal(sim.compter("POST", R_LOGIN), 1);
+  assert.equal(sim.compter("GET", R_ACCUEIL), 2);
+  assert.equal(sim.compter("GET", R_PANIERS), 2);
+  // Les nouvelles clés sont gardées, en mémoire et dans la session.
+  assert.equal(JSON.parse(readFileSync(config.fichierSession, "utf8")).cles.CUSTOMERS, NOUVELLE);
+  await client.appeler("GET", "/v1/customers/me/carts", { service: "CUSTOMERS" });
+  assert.equal(sim.compter("GET", R_ACCUEIL), 2);
+});
+
+test("fichier de session modifié (mtime) → relu au prochain appel", async () => {
+  const config = nouvelleConfig();
+  const h = horloge();
+  const sim = fetchSimule([...routesLogin(), { methode: "GET", motif: R_PANIERS, reponse: () => json({ content: [] }) }]);
+  const client = new ClientChronodrive(config, { fetch: sim.fetch, maintenant: h.maintenant });
+  const appeler = () => client.appeler("GET", "/v1/customers/me/carts", { service: "CUSTOMERS" });
+  await appeler();
+
+  const ecrire = (modif: Record<string, unknown>, decalage: number) => {
+    const session = JSON.parse(readFileSync(config.fichierSession, "utf8"));
+    writeFileSync(config.fichierSession, JSON.stringify({ ...session, ...modif }));
+    const t = new Date(Date.now() + decalage);
+    utimesSync(config.fichierSession, t, t);
+  };
+  // Jeton bidon à expiration future, posé à la main : repris tel quel, sans login.
+  ecrire({ accessToken: "jeton-bidon", expireA: h.t + 3_600_000 }, 10_000);
+  await appeler();
+  assert.equal(sim.appels.at(-1)?.entetes.get("authorization"), "Bearer jeton-bidon");
+  assert.equal(sim.compter("POST", R_LOGIN), 1);
+
+  // Même jeton, expiration passée : login complet au prochain appel.
+  ecrire({ expireA: h.t - 1 }, 20_000);
+  await appeler();
+  assert.equal(sim.compter("POST", R_LOGIN), 2);
+  assert.equal(sim.appels.at(-1)?.entetes.get("authorization"), `Bearer ${JETON}-2`);
+});
+
+test("session liée au compte : ignorée si l'e-mail ou le drive change", async () => {
+  const config = nouvelleConfig();
+  const routes = () => [...routesLogin(), { methode: "GET", motif: R_PANIERS, reponse: () => json({ content: [] }) }];
+  const sim = fetchSimule(routes());
+  await new ClientChronodrive(config, { fetch: sim.fetch, maintenant: horloge().maintenant }).appeler("GET", "/v1/customers/me/carts", { service: "CUSTOMERS" });
+
+  for (const autre of [{ ...config, siteId: "9999" }, { ...config, email: "autre.compte@example.org" }]) {
+    const sim2 = fetchSimule(routes());
+    await new ClientChronodrive(autre, { fetch: sim2.fetch, maintenant: horloge().maintenant }).appeler("GET", "/v1/customers/me/carts", {
+      service: "CUSTOMERS",
+    });
+    assert.equal(sim2.compter("POST", R_LOGIN), 1);
+  }
+  // Le fichier de session ne porte pas l'e-mail en clair.
+  assert.ok(!readFileSync(config.fichierSession, "utf8").includes("example.org"));
+});
+
+test("fabriqueClient : chronodrive.env modifié (mtime) → nouvelle config au prochain appel d'outil", async () => {
+  const dossier = mkdtempSync(join(tmpdir(), "chronodrive-fabrique-"));
+  const chemin = join(dossier, "chronodrive.env");
+  const ecrire = (contenu: string, decalage: number) => {
+    writeFileSync(chemin, contenu);
+    const t = new Date(Date.now() + decalage);
+    utimesSync(chemin, t, t);
+  };
+  const env = (site: string) =>
+    `CHRONODRIVE_EMAIL=${EMAIL}\nCHRONODRIVE_MOT_DE_PASSE=${MOT_DE_PASSE}\nCHRONODRIVE_SITE_ID=${site}\nCHRONODRIVE_SESSION=${join(dossier, "s.json")}\n`;
+  ecrire(env("1034"), 0);
+  const sim = fetchSimule([...routesLogin(), { methode: "GET", motif: R_PANIERS, reponse: () => json({ content: [] }) }]);
+  const client = fabriqueClient({ CHRONODRIVE_ENV: chemin }, { fetch: sim.fetch, maintenant: horloge().maintenant });
+
+  const premier = client();
+  assert.equal(client(), premier); // fichier inchangé : même client
+  await premier.appeler("GET", "/v1/customers/me/carts", { service: "CUSTOMERS" });
+  assert.equal(sim.appels.at(-1)?.entetes.get("x-chronodrive-site-id"), "1034");
+
+  ecrire(env("2068"), 10_000);
+  const second = client();
+  assert.notEqual(second, premier);
+  await second.appeler("GET", "/v1/customers/me/carts", { service: "CUSTOMERS" });
+  assert.equal(sim.appels.at(-1)?.entetes.get("x-chronodrive-site-id"), "2068");
+  assert.equal(sim.compter("POST", R_LOGIN), 2); // autre drive : la session n'est pas reprise
+
+  // Config devenue invalide : erreur, puis reprise dès qu'elle est corrigée.
+  ecrire("CHRONODRIVE_EMAIL=\n", 20_000);
+  assert.throws(() => client(), /CHRONODRIVE_MOT_DE_PASSE|CHRONODRIVE_EMAIL/);
+  ecrire(env("2068"), 30_000);
+  assert.ok(client() instanceof ClientChronodrive);
+});
+
+test("délai de 20 s par requête : erreur « délai dépassé » ; corps illisible : ErreurChronodrive", async () => {
+  const sim = fetchSimule([...routesLogin(), { methode: "GET", motif: R_PANIERS, reponse: () => new Promise<Response>(() => {}) }]);
+  // fetch simulé qui respecte le signal d'abandon, comme le vrai.
+  const fetchAvecSignal = ((url: string, init: RequestInit = {}) =>
+    Promise.race([
+      sim.fetch(url, init),
+      new Promise<Response>((_r, rejeter) => init.signal?.addEventListener("abort", () => rejeter(init.signal?.reason))),
+    ])) as typeof fetch;
+  const client = new ClientChronodrive(nouvelleConfig(), { fetch: fetchAvecSignal, maintenant: horloge().maintenant, delaiRequeteMs: 30 });
+  await assert.rejects(client.appeler("GET", "/v1/customers/me/carts", { service: "CUSTOMERS" }), (e: unknown) => {
+    assert.ok(e instanceof ErreurChronodrive);
+    assert.equal(e.etape, "GET /v1/customers/me/carts");
+    assert.match(e.message, /délai dépassé/);
+    return true;
+  });
+
+  const simCorps = fetchSimule([
+    ...routesLogin(),
+    {
+      methode: "GET",
+      motif: R_PANIERS,
+      reponse: () =>
+        new Response(
+          new ReadableStream({
+            start(c) {
+              c.error(new TypeError(`terminated ${JETON}`));
+            },
+          }),
+        ),
+    },
+  ]);
+  const client2 = new ClientChronodrive(nouvelleConfig(), { fetch: simCorps.fetch, maintenant: horloge().maintenant });
+  await assert.rejects(client2.appeler("GET", "/v1/customers/me/carts", { service: "CUSTOMERS" }), (e: unknown) => {
+    assert.ok(e instanceof ErreurChronodrive);
+    assert.match(e.message, /lecture de la réponse impossible \(TypeError\)/);
+    assert.ok(!e.message.includes(JETON));
+    return true;
+  });
+});
+
+test("échec d'écriture de la session : l'appel réussit, aucun fichier temporaire ne reste", async () => {
+  const dossier = mkdtempSync(join(tmpdir(), "chronodrive-session-ko-"));
+  // Le chemin de session est un dossier : le renommage final échoue.
+  const fichierSession = join(dossier, "session.json");
+  mkdirSync(fichierSession);
+  const journal: string[] = [];
+  const sim = fetchSimule([...routesLogin(), { methode: "GET", motif: R_PANIERS, reponse: () => json({ content: [{ id: "p" }] }) }]);
+  const client = new ClientChronodrive(
+    { email: EMAIL, motDePasse: MOT_DE_PASSE, siteId: "1034", mode: "DRIVE", fichierSession },
+    { fetch: sim.fetch, maintenant: horloge().maintenant, journal: (m) => journal.push(m) },
+  );
+  const r = await client.appeler<{ content: { id: string }[] }>("GET", "/v1/customers/me/carts", { service: "CUSTOMERS" });
+  assert.equal(r.content[0].id, "p");
+  assert.deepEqual(readdirSync(dossier), ["session.json"]);
+  assert.equal(journal.length, 1);
+  assert.match(journal[0], /session/);
+  for (const s of [EMAIL, MOT_DE_PASSE, JETON]) assert.ok(!journal[0].includes(s));
+  // La session en mémoire sert encore : pas de second login.
+  await client.appeler("GET", "/v1/customers/me/carts", { service: "CUSTOMERS" });
+  assert.equal(sim.compter("POST", R_LOGIN), 1);
 });
 
 test("en-têtes de tout appel", async () => {
@@ -343,6 +538,21 @@ test("erreur de login sans secret dans le message", async () => {
   } finally {
     for (const c of consoles) c.mock.restore();
   }
+});
+
+test("secret avec des blancs : caviardé avant la réduction des espaces", async () => {
+  const motDePasse = "mot  de\tpasse  secret";
+  const sim = fetchSimule([
+    ...routesLogin().filter((r) => r.motif !== R_LOGIN),
+    { methode: "POST", motif: R_LOGIN, reponse: () => new Response(`refus pour ${motDePasse}`, { status: 401 }) },
+  ]);
+  const client = new ClientChronodrive({ ...nouvelleConfig(), motDePasse }, { fetch: sim.fetch, maintenant: horloge().maintenant });
+  await assert.rejects(client.appeler("GET", "/v1/customers/me/carts", { service: "CUSTOMERS" }), (e: unknown) => {
+    assert.ok(e instanceof ErreurChronodrive);
+    assert.match(e.message, /refus pour \[masqué\]/);
+    assert.ok(!/passe/.test(e.message), e.message);
+    return true;
+  });
 });
 
 test("chargerConfig : le fichier l'emporte sur l'environnement", () => {
