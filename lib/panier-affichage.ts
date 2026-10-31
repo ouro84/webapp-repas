@@ -28,14 +28,21 @@ export type AffichagePanier =
   | { visible: false }
   | {
       visible: true
+      /** Bouton de lancement : sur le cycle courant seulement (RG-81). Ailleurs, lecture seule. */
+      boutonDisponible: boolean
+      /** Après un `terminee` du cycle courant : bouton secondaire « Relancer… » (RG-83). */
+      relance: boolean
       actif: boolean
       lanceA: string | null
       echec: string | null
       rapport: RapportPanier | null
       tardif: boolean
+      /** Heure de fin (`termine_le`) d'un échec ou d'un compte-rendu affiché. */
+      termineA: string | null
     }
 
 const MESSAGE_ECHEC_DEFAUT = "Le panier n’a pas pu être constitué."
+const MESSAGE_ECHEC_INJOIGNABLE = "Ton exécuteur n’a pas répondu. Vérifie qu’il est allumé, puis réessaie."
 
 /** Une demande active (RG-83) : `en_attente` ou `en_cours`. */
 export function estActive(demande: DemandePanier | null): boolean {
@@ -44,14 +51,15 @@ export function estActive(demande: DemandePanier | null): boolean {
 
 /**
  * Message d'échec lu par la personne ; `motif_echec` est déjà en français
- * lisible. Sans motif : message générique.
+ * lisible. Sans motif : message générique. Injoignable : mots simples, sans
+ * le motif technique (« réponse HTTP 500 », « erreur réseau »), qui reste en base.
  */
 export function messageEchec(
   cause: DemandePanier["cause_echec"],
   motif: string | null
 ): string {
+  if (cause === "injoignable") return MESSAGE_ECHEC_INJOIGNABLE
   if (!motif) return MESSAGE_ECHEC_DEFAUT
-  if (cause === "injoignable") return `Ton exécuteur n’a pas répondu (${motif}).`
   if (cause === "executeur") return `Ton exécuteur a signalé un problème : ${motif}`
   return motif
 }
@@ -76,43 +84,80 @@ const FORMAT_HEURE = new Intl.DateTimeFormat("fr-FR", {
   hourCycle: "h23",
 })
 
-/** Heure de Paris au format `HH h MM` (ex. `18 h 05`), espaces ordinaires. */
+/**
+ * Heure de Paris au format `HH h MM` (ex. `18 h 05`), espaces ordinaires.
+ * Date invalide → `""` : l'appelant n'affiche alors pas la ligne d'heure.
+ */
 export function heureLancement(iso: string): string {
-  const parties = FORMAT_HEURE.formatToParts(new Date(iso))
-  const heure = parties.find((p) => p.type === "hour")?.value ?? "00"
-  const minute = parties.find((p) => p.type === "minute")?.value ?? "00"
-  return `${heure} h ${minute}`
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return ""
+  const parties = FORMAT_HEURE.formatToParts(date)
+  const heure = parties.find((p) => p.type === "hour")?.value
+  const minute = parties.find((p) => p.type === "minute")?.value
+  return heure && minute ? `${heure} h ${minute}` : ""
+}
+
+/** Un rapport qui a quelque chose à lire (au moins une liste non vide). */
+function rapportNonVide(rapport: RapportPanier | null): rapport is RapportPanier {
+  return (
+    rapport !== null &&
+    (rapport.ajoutes.length > 0 || rapport.a_choisir.length > 0 || rapport.introuvables.length > 0)
+  )
 }
 
 /**
  * Ce que la carte doit montrer. La carte n'existe que pour un membre dont le
- * foyer a un exécuteur (RG-81) et sur le cycle courant : la demande vise
- * toujours le cycle courant. Une demande active bloque le bouton quelle que
- * soit son ancre (une seule par foyer, RG-83) ; échec et rapport ne sont
- * montrés que s'ils concernent le cycle affiché.
+ * foyer a un exécuteur (RG-81). Le bouton n'existe que sur le cycle courant :
+ * la demande vise toujours le cycle courant. Une demande active le bloque
+ * quelle que soit son ancre (une seule par foyer, RG-83). État en cours,
+ * échec et rapport ne sont montrés que sur le cycle auquel ils appartiennent :
+ * sur un autre cycle, la carte est en lecture seule, et absente si aucune
+ * demande ne le concerne (RG-84).
  */
 export function affichagePanier(
   etat: EtatPanier,
   ancreAffichee: string,
   ancreCourante: string
 ): AffichagePanier {
-  if (!etat.executeur || ancreAffichee !== ancreCourante) return { visible: false }
+  if (!etat.executeur) return { visible: false }
 
   const derniere = etat.derniere
-  const actif = estActive(derniere)
+  const courant = ancreAffichee === ancreCourante
   const duCycle = derniere !== null && derniere.ancre === ancreAffichee
+  if (!courant && !duCycle) return { visible: false }
+
+  // Hors cycle courant, `derniere` est forcément de ce cycle (duCycle).
+  const actif = estActive(derniere)
+  const echec =
+    duCycle && derniere.statut === "echec"
+      ? messageEchec(derniere.cause_echec, derniere.motif_echec)
+      : null
+  // `rapporter_panier` stocke le rapport même en `echec` : un rapport partiel
+  // (ce qui a été ajouté avant la panne) se montre avec le message d'échec.
   const rapport =
-    duCycle && derniere.statut === "terminee" ? derniere.rapport : null
+    duCycle &&
+    (derniere.statut === "terminee" ||
+      (derniere.statut === "echec" && rapportNonVide(derniere.rapport)))
+      ? derniere.rapport
+      : null
+
+  if (!courant && !actif && echec === null && rapport === null) return { visible: false }
+
+  const lanceA = actif && derniere ? heureLancement(derniere.cree_le) : ""
+  const termineA =
+    duCycle && (echec !== null || rapport !== null) && derniere.termine_le
+      ? heureLancement(derniere.termine_le)
+      : ""
 
   return {
     visible: true,
+    boutonDisponible: courant,
+    relance: courant && duCycle && derniere.statut === "terminee",
     actif,
-    lanceA: actif && derniere ? heureLancement(derniere.cree_le) : null,
-    echec:
-      duCycle && derniere.statut === "echec"
-        ? messageEchec(derniere.cause_echec, derniere.motif_echec)
-        : null,
+    lanceA: lanceA || null,
+    echec,
     rapport,
     tardif: rapport !== null && derniere !== null && derniere.rapport_tardif,
+    termineA: termineA || null,
   }
 }
