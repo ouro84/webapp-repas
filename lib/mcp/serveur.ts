@@ -1,9 +1,9 @@
-// Enregistrement des outils du serveur MCP d'OMQ (#305, #306, US-51, US-52,
-// RG-73→79).
+// Enregistrement des outils du serveur MCP d'OMQ (#305, #306, #308, US-51,
+// US-52, US-53, RG-73→79, RG-81→84).
 //
 // Chaque appel d'outil crée un client Supabase « par jeton » avec le jeton
 // OAuth de la requête (RG-71 : RLS mon_foyer(), jamais `service_role`) et
-// délègue à lib/mcp/lecture.ts ou lib/mcp/ecriture-*.ts, avec la date du jour
+// délègue à lib/mcp/lecture.ts, lib/mcp/ecriture-*.ts ou lib/mcp/panier.ts, avec la date du jour
 // à Paris (le serveur est en UTC). Noms d'outils en français `snake_case`.
 
 import type { CallToolResult, McpServer } from "@modelcontextprotocol/server"
@@ -14,6 +14,8 @@ import { lireListeCourses, lirePlanning, lireRecette } from "@/lib/mcp/lecture"
 import { changerPersonnes, genererCycle, remplacerRepas } from "@/lib/mcp/ecriture-planning"
 import { ajouterRecette } from "@/lib/mcp/ecriture-recettes"
 import { ajouterArticleCourses, cocherArticle } from "@/lib/mcp/ecriture-courses"
+import { prendreDemandePanier, rapporterPanier } from "@/lib/mcp/panier"
+import { schemaRapport } from "@/lib/panier"
 import { limiteGeneration } from "@/lib/rate-limit"
 import { aujourdhuiParis } from "@/lib/semaines"
 import { LIBELLES_UNITES } from "@/lib/unites"
@@ -218,5 +220,35 @@ export function enregistrerOutilsEcriture(server: McpServer): void {
       }),
     },
     async (args, ctx) => executer(ctx, (supabase) => cocherArticle(supabase, args, aujourdhuiParis()))
+  )
+
+  // Outils de l'exécuteur de panier (#308, RG-81→84) : appelés par Hermes, pas
+  // par un humain. OMQ ne parle jamais à l'enseigne (RG-80).
+  server.registerTool(
+    "prendre_demande_panier",
+    {
+      title: "Prendre la demande de panier",
+      description:
+        "À appeler au réveil, dès réception du webhook « demande_panier » d'OMQ, avant toute autre action. Prend la demande de panier en attente du foyer et la marque en cours. Si la réponse est `demande: null`, il n'y a rien à faire : arrête-toi sans rien faire d'autre (webhook rejoué, demande expirée ou déjà prise). Sinon, `demande.id` sert à rapporter_panier, et `demande.ancre` (AAAA-MM-JJ) désigne le cycle de courses à traiter : c'est le cycle en cours, celui que lit lire_liste_courses.",
+      inputSchema: z.object({}),
+    },
+    async (_args, ctx) => executer(ctx, (supabase) => prendreDemandePanier(supabase))
+  )
+
+  server.registerTool(
+    "rapporter_panier",
+    {
+      title: "Rapporter le panier préparé",
+      description:
+        "À appeler une seule fois, en fin de run, pour la demande prise par prendre_demande_panier. Avant de rapporter, coche chaque article dans OMQ avec cocher_article juste après l'avoir ajouté au panier de l'enseigne, pas en fin de run. `ajoutes` : articles mis au panier (produit, marque, quantité). `a_choisir` : articles à trancher par le foyer, avec la raison et 3 candidats au plus. `introuvables` : articles absents de l'enseigne. N'envoie aucun identifiant de produit ni aucun prix : ils sont refusés. `statut: \"echec\"` exige `motif`, une phrase lisible par le foyer. Si l'outil répond que la demande ne peut plus recevoir de rapport, arrête-toi sans réessayer.",
+      inputSchema: schemaRapport.extend({
+        demande_id: z.uuid().describe("Identifiant renvoyé par prendre_demande_panier (`demande.id`)."),
+        statut: z
+          .enum(["terminee", "echec"])
+          .describe("terminee : panier préparé, même partiellement ; echec : run interrompu."),
+        motif: z.string().optional().describe("Obligatoire si statut = echec : pourquoi le panier n'a pas pu être fait."),
+      }),
+    },
+    async (args, ctx) => executer(ctx, (supabase) => rapporterPanier(supabase, args))
   )
 }

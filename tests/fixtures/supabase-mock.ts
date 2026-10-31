@@ -10,7 +10,7 @@ import type { ClientSupabase } from "@/lib/supabase/types"
 
 export type ReponseMock = {
   data: unknown
-  error: { message: string } | null
+  error: { message: string; code?: string } | null
   count?: number | null
 }
 export type AppelTable = { table: string; ops: Array<[string, ...unknown[]]> }

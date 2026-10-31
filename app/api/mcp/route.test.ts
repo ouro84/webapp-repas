@@ -17,6 +17,8 @@ const m = vi.hoisted(() => ({
   ajouterRecette: vi.fn(),
   ajouterArticleCourses: vi.fn(),
   cocherArticle: vi.fn(),
+  prendreDemandePanier: vi.fn(),
+  rapporterPanier: vi.fn(),
   creerClientParJeton: vi.fn((jeton: string) => ({ jeton })),
 }))
 
@@ -34,6 +36,10 @@ vi.mock("@/lib/mcp/ecriture-recettes", () => ({ ajouterRecette: m.ajouterRecette
 vi.mock("@/lib/mcp/ecriture-courses", () => ({
   ajouterArticleCourses: m.ajouterArticleCourses,
   cocherArticle: m.cocherArticle,
+}))
+vi.mock("@/lib/mcp/panier", () => ({
+  prendreDemandePanier: m.prendreDemandePanier,
+  rapporterPanier: m.rapporterPanier,
 }))
 vi.mock("@/lib/mcp/lecture", () => ({
   lireRecette: m.lireRecette,
@@ -111,7 +117,7 @@ describe("POST /api/mcp — authentification (RG-71)", () => {
 })
 
 describe("POST /api/mcp — outils (US-51, RG-78)", () => {
-  it("jeton valide : tools/list expose exactement les 3 lectures et les 6 écritures (#306)", async () => {
+  it("jeton valide : tools/list expose exactement les 3 lectures, les 6 écritures (#306) et les 2 outils de panier (#308)", async () => {
     const reponse = await appeler("tools/list")
     expect(reponse.status).toBe(200)
     const { result } = await lire(reponse)
@@ -125,6 +131,8 @@ describe("POST /api/mcp — outils (US-51, RG-78)", () => {
       "lire_liste_courses",
       "lire_planning",
       "lire_recette",
+      "prendre_demande_panier",
+      "rapporter_panier",
       "remplacer_repas",
     ])
   })
@@ -259,5 +267,62 @@ describe("POST /api/mcp — outils d'écriture (#306, US-52)", () => {
       { date: "2026-10-31", creneau: "soir", personnes: 6 },
       expect.any(Date)
     )
+  })
+})
+
+describe("POST /api/mcp — outils de l'exécuteur de panier (#308, RG-81→84)", () => {
+  const DEMANDE = "11111111-1111-4111-8111-111111111111"
+  const RAPPORT = {
+    ajoutes: [{ article: "lait", produit: "Lait demi-écrémé 1 L", marque: "Lactel", quantite: 2 }],
+    a_choisir: [],
+    introuvables: [{ article: "estragon" }],
+  }
+
+  it("prendre_demande_panier : client par jeton, résultat relayé", async () => {
+    m.prendreDemandePanier.mockResolvedValue({ demande: null })
+    const { result } = await lire(await appeler("tools/call", { name: "prendre_demande_panier", arguments: {} }))
+    expect(m.prendreDemandePanier).toHaveBeenCalledWith({ jeton: "jwt-oauth" })
+    expect(result?.structuredContent).toEqual({ demande: null })
+  })
+
+  it("rapporter_panier : arguments transmis tels quels", async () => {
+    m.rapporterPanier.mockResolvedValue({ statut: "terminee", rapport_tardif: false })
+    const args = { demande_id: DEMANDE, statut: "terminee", ...RAPPORT }
+    const { result } = await lire(await appeler("tools/call", { name: "rapporter_panier", arguments: args }))
+    expect(result?.isError).toBeFalsy()
+    expect(m.rapporterPanier).toHaveBeenCalledWith({ jeton: "jwt-oauth" }, args)
+    expect(result?.structuredContent).toEqual({ statut: "terminee", rapport_tardif: false })
+  })
+
+  it("rapporter_panier : un prix ou plus de 3 candidats sont refusés avant l'outil (RG-84)", async () => {
+    const avecPrix = {
+      demande_id: DEMANDE,
+      statut: "terminee",
+      ...RAPPORT,
+      ajoutes: [{ ...RAPPORT.ajoutes[0], prix: 1.29 }],
+    }
+    const tropDeCandidats = {
+      demande_id: DEMANDE,
+      statut: "terminee",
+      ...RAPPORT,
+      a_choisir: [{ article: "farine", raison: "formats", candidats: ["a", "b", "c", "d"] }],
+    }
+    for (const args of [avecPrix, tropDeCandidats]) {
+      const { result, error } = await lire(await appeler("tools/call", { name: "rapporter_panier", arguments: args }))
+      expect(result?.isError === true || error !== undefined).toBe(true)
+    }
+    expect(m.rapporterPanier).not.toHaveBeenCalled()
+  })
+
+  it("les descriptions guident l'exécuteur : arrêt sur null, ancre, une fois, 3 candidats, cocher avant", async () => {
+    const { result } = await lire(await appeler("tools/list"))
+    const description = (nom: string) =>
+      (result?.tools as Array<{ name: string; description: string }>).find((t) => t.name === nom)!.description
+    expect(description("prendre_demande_panier")).toContain("`demande: null`")
+    expect(description("prendre_demande_panier")).toContain("lire_liste_courses")
+    expect(description("rapporter_panier")).toContain("une seule fois")
+    expect(description("rapporter_panier")).toContain("3 candidats au plus")
+    expect(description("rapporter_panier")).toContain("cocher_article")
+    expect(description("rapporter_panier")).toContain("ni aucun prix")
   })
 })
