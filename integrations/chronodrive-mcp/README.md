@@ -240,7 +240,7 @@ Seulement après la validation du run réel (Task 8 de #308).
 
 3. Dans le dépôt, supprimer `integrations/chronodrive-mcp/spike/` et mettre à jour `.claude/rules/chronodrive.md`.
 
-La session `/opt/data/chronodrive-session.json` est partagée avec le nouveau MCP : la garder.
+La session écrite par le spike dans `/opt/data/chronodrive-session.json` n'a pas d'empreinte `compte` : le nouveau MCP l'ignore, se connecte une fois de plus au premier appel, puis réécrit le fichier avec sa propre session. Il n'y a rien à garder : ce fichier peut être supprimé à tout moment, le MCP en recrée un à la connexion suivante.
 
 ## Dépannage
 
@@ -255,6 +255,7 @@ Les messages d'erreur remontent au LLM puis sur Telegram. Ils sont caviardés : 
 | `aucun panier courant … CHRONODRIVE_SITE_ID et CHRONODRIVE_MODE` | Le compte n'a pas de panier pour ce drive et ce mode. Vérifier ces deux variables dans `chronodrive.env` : le mode n'est jamais deviné (pas de repli `DRIVE` → `HOME_DELIVERY`). |
 | `produit inconnu ou vu il y a plus de 30 min` | Ligne refusée sans envoi : le produit n'a pas été renvoyé par `chercher_produits` depuis moins de 30 min (identifiant inventé, ou run trop long). Rien n'est ajouté. |
 | `non tenté : délai du lot dépassé` | Le lot d'ajout a dépassé 90 s : les lignes restantes n'ont pas été envoyées. Rien n'est ajouté pour elles. |
+| `ajout peut-être appliqué (délai dépassé)` | L'ajout est parti mais Chronodrive n'a pas répondu en 20 s, et le panier relu ne le montre pas encore : Chronodrive a pu l'appliquer en retard. Vérifier le panier dans l'appli avant toute relance. |
 | `login : réponse sans tkn (captcha ou 2FA ?)` | Chronodrive demande un captcha ou une double authentification. Se connecter une fois dans un navigateur depuis le même réseau, puis réessayer. |
 | `[cf-ray …, cf-mitigated …]` dans l'erreur | Blocage Cloudflare. Vérifier que le conteneur sort bien par l'IP résidentielle (réseau host). |
 | `avertissement` : cache des correspondances indisponible | Non bloquant : le run continue sans cache. Cause habituelle : `database is locked`, quand deux processus écrivent plus de 5 s (deux MCP lancés, ou le spike encore actif), ou fichier SQLite non inscriptible par l'utilisateur 1000. |

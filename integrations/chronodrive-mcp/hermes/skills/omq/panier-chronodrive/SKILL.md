@@ -95,7 +95,7 @@ La quantité **s'ajoute** à celle déjà présente dans le panier. Chaque résu
   - Réponse `modifie: false` avec `candidats` : rappelle `cocher_article` avec la `quantite` exacte du bon candidat.
   - Réponse `modifie: false` avec `article` : il était déjà coché, rien à faire.
   - **Erreur** (l'outil échoue, ce n'est pas une réponse avec `candidats`) : n'ajoute plus aucun lot. Finis de cocher les autres lignes confirmées du lot, puis passe à « Échec technique » avec le motif « coche OMQ impossible ». Pourquoi : un article ajouté mais non coché serait ajouté une seconde fois à la relance (RG-83).
-- Une ligne dont l'`erreur` commence par « ajout envoyé mais panier non relu » est un **Échec technique** : l'ajout a peut-être eu lieu, sans preuve. Ne lance plus aucun lot, finis de cocher les lignes confirmées du lot, puis suis « Échec technique » avec le motif « panier Chronodrive non relu après un ajout ». Ces lignes vont dans `a_choisir`, avec la raison « ajout non confirmé, à vérifier dans le panier ».
+- Une ligne dont l'`erreur` commence par « ajout envoyé mais panier non relu » ou par « ajout peut-être appliqué » est un **Échec technique** : l'ajout a peut-être eu lieu, sans preuve (Chronodrive a pu l'appliquer en retard). Ne lance plus aucun lot, finis de cocher les lignes confirmées du lot, puis suis « Échec technique » avec le motif « ajout Chronodrive non confirmé, à vérifier dans le panier ». Ces lignes vont dans `a_choisir`, avec la raison « ajout non confirmé, à vérifier dans le panier ».
 - Toute autre ligne `confirme: false` passe « à choisir », avec la raison « ajout non confirmé » suivie de son `erreur` s'il y en a une, et le produit choisi comme seul candidat. Ne la relance **jamais** et ne la coche pas. C'est aussi le cas de « non tenté : délai du lot dépassé » et de « produit inconnu ou vu il y a plus de 30 min » : rien n'a été envoyé pour elles.
 
 ### 6. Rapporter
@@ -145,7 +145,7 @@ Ne liste pas les autres articles ajoutés un par un : ils sont sur `/courses`. P
 Ces cas arrêtent le run, une fois la demande prise :
 
 - un outil Chronodrive renvoie une erreur sur tout l'appel : connexion impossible, captcha, API changée, exécuteur en lecture seule ;
-- une ligne d'ajout revient avec « ajout envoyé mais panier non relu » (étape 5) ;
+- une ligne d'ajout revient avec « ajout envoyé mais panier non relu » ou « ajout peut-être appliqué » (étape 5) ;
 - `cocher_article` échoue (étape 5) ;
 - `lire_liste_courses` ou un autre outil OMQ échoue.
 
@@ -155,14 +155,14 @@ Ne relance pas l'appel en erreur : le client Chronodrive refait déjà lui-même
    - « Connexion à Chronodrive impossible » ;
    - « Chronodrive a changé son site » ;
    - « Exécuteur en lecture seule : rien n'a été ajouté » ;
-   - « panier Chronodrive non relu après un ajout » ;
+   - « ajout Chronodrive non confirmé, à vérifier dans le panier » ;
    - « coche OMQ impossible » ;
    - « Liste de courses OMQ illisible ».
 
    Un refus suit la même règle qu’à l’étape 6. Si OMQ lui-même est injoignable, cet appel peut échouer aussi : la demande passera en échec seule après 30 min.
 2. Remplis les listes avec ce qui est déjà connu :
    - les articles déjà ajoutés (cochés ou non) dans `ajoutes` ;
-   - les lignes « ajout envoyé mais panier non relu » dans `a_choisir`, avec la raison « ajout non confirmé, à vérifier dans le panier » ;
+   - les lignes « ajout envoyé mais panier non relu » et « ajout peut-être appliqué » dans `a_choisir`, avec la raison « ajout non confirmé, à vérifier dans le panier » ;
    - les articles d'un lot d'ajout dont tout l'appel est en erreur dans `a_choisir`, avec la raison « ajout interrompu, à vérifier dans le panier » ;
    - les articles déjà classés « à choisir » ou « introuvable » dans leur liste.
 3. Les articles pas encore traités ne figurent dans aucune liste : ils restent non cochés, et une relance les reprendra.
@@ -170,7 +170,7 @@ Ne relance pas l'appel en erreur : le client Chronodrive refait déjà lui-même
    - « Panier Chronodrive en échec : <motif>. » ;
    - le message d'erreur de l'outil ;
    - ce qui a été ajouté ;
-   - **« peut-être ajoutés, à vérifier dans le panier »** : les articles des lignes « ajout envoyé mais panier non relu » et d'un lot interrompu, un par ligne ;
+   - **« peut-être ajoutés, à vérifier dans le panier »** : les articles des lignes « ajout envoyé mais panier non relu » et « ajout peut-être appliqué », et ceux d'un lot interrompu, un par ligne ;
    - **les articles ajoutés au panier mais non cochés dans OMQ**, un par ligne : Arnaud doit les cocher à la main avant toute relance, sinon ils seraient ajoutés une seconde fois (RG-83) ;
    - le rappel « Rien n'est commandé. ».
 
