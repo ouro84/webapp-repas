@@ -14,9 +14,9 @@ import { ajouterLignes, lirePanierCourant, type ResultatAjout } from "./panier.t
 export type CacheCorrespondances = Pick<Correspondances, "connues" | "memoriser" | "oublier">;
 
 export type Dependances = {
-  // Fabriques appelées au premier outil qui en a besoin : `initialize` et `tools/list` ne lisent
-  // ni identifiants ni réseau. Le client renvoyé doit rester le même d'un appel à l'autre
-  // (favoris et fiches vues sont mémorisés par client).
+  // Fabriques appelées une fois par appel d'outil qui en a besoin : `initialize` et `tools/list` ne
+  // lisent ni identifiants ni réseau. Le client renvoyé doit rester le même tant que la config ne
+  // change pas (favoris et fiches vues sont mémorisés par client, src/client.ts `fabriqueClient`).
   client: () => AppelantRecherche;
   cache: () => CacheCorrespondances;
   lectureSeule: boolean;
@@ -85,13 +85,29 @@ export function favorisPour(terme: string, favoris: Produit[]): Produit[] {
 
 type Contenu = Record<string, unknown>;
 
+// Fiche renvoyée au LLM, allégée : `prix` suffit pour départager, et `maxCartQuantity` est
+// appliqué par `ajouterLignes` (src/panier.ts).
+export type ProduitLlm = Omit<Produit, "prixUnite" | "maxPanier">;
+
+function pourLeLlm({ prixUnite: _prixUnite, maxPanier: _maxPanier, ...produit }: Produit): ProduitLlm {
+  return produit;
+}
+
 export type ResultatTerme = {
   terme: string;
-  cache: Produit | null;
-  favoris: Produit[];
-  recherche: Produit[];
+  cache: ProduitLlm | null;
+  favoris: ProduitLlm[];
+  recherche: ProduitLlm[];
   erreur: string | null;
 };
+
+// Erreurs de connexion : elles se répéteraient terme par terme (une tentative de login chacune),
+// donc elles interrompent tout l'appel de `chercher_produits`.
+const ETAPES_CONNEXION = new Set(["config", "config-front", "login", "authorize", "token", "GET /v1/customers/me"]);
+
+function erreurDeConnexion(e: unknown): boolean {
+  return e instanceof ErreurChronodrive && ETAPES_CONNEXION.has(e.etape);
+}
 
 const AVERTISSEMENT_CACHE = "cache des correspondances indisponible : résultats calculés sans lui (voir les journaux du NAS)";
 
@@ -165,11 +181,13 @@ export function creerServeur(deps: Dependances): McpServer {
       "Pour chaque terme : `cache` = produit déjà acheté pour ce terme lors d'un run précédent, encore disponible (à privilégier) ;",
       "`favoris` = achats habituels du compte dont le libellé contient les mots du terme (5 au plus) ;",
       "`recherche` = résultats du catalogue (8 au plus), lancée seulement s'il n'y a ni cache ni favori disponible.",
+      "Quand `cache` est retenu, `favoris` et `recherche` sont vides.",
       "Chaque produit porte `disponible` : `false` = hors stock ou non commandable (voir `raison`), ne jamais l'ajouter.",
-      "`erreur` non nulle : la recherche de ce terme a échoué, les autres termes restent valables.",
+      "`erreur` non nulle : la recherche de ce terme a échoué, les autres termes restent valables. Une erreur de connexion fait échouer tout l'appel.",
     ].join(" "),
     { termes: z.array(terme).min(1).max(40).describe("Articles à chercher, tels qu'écrits dans la liste de courses (ex. « lait demi-écrémé »)") },
-    true,
+    // Pas en lecture seule : une entrée du cache dont le produit est indisponible est supprimée.
+    false,
     async ({ termes }) => {
       const client = deps.client();
       const favoris = await chargerFavoris(client, horloge);
@@ -177,20 +195,25 @@ export function creerServeur(deps: Dependances): McpServer {
       const connues = avecCache((c) => c.connues(termes), new Map<string, Correspondance>(), etat);
       const resultats: ResultatTerme[] = [];
       for (const t of termes) {
-        const r: ResultatTerme = { terme: t, cache: null, favoris: favorisPour(t, favoris), recherche: [], erreur: null };
+        const r: ResultatTerme = { terme: t, cache: null, favoris: [], recherche: [], erreur: null };
         resultats.push(r);
         try {
           const entree = connues.get(normaliserTerme(t));
           if (entree) {
             const produit = await ficheActuelle(client, entree, favoris);
-            if (produit?.disponible) r.cache = produit;
+            if (produit?.disponible) r.cache = pourLeLlm(produit);
             // Produit retrouvé mais indisponible : l'entrée est supprimée. Introuvable : ignorée seulement.
             else if (produit) avecCache((c) => c.oublier(t), undefined, etat);
           }
-          if (!r.cache && !r.favoris.some((p) => p.disponible)) {
-            r.recherche = (await rechercher(client, t, RECHERCHE_MAX, horloge)).slice(0, RECHERCHE_MAX);
+          if (r.cache) continue;
+          const pourTerme = favorisPour(t, favoris);
+          r.favoris = pourTerme.map(pourLeLlm);
+          if (!pourTerme.some((p) => p.disponible)) {
+            r.recherche = (await rechercher(client, t, RECHERCHE_MAX, horloge)).slice(0, RECHERCHE_MAX).map(pourLeLlm);
           }
         } catch (e) {
+          // Pas de reconnexion terme par terme : une erreur de connexion arrête tout l'appel.
+          if (erreurDeConnexion(e)) throw e;
           r.erreur = messagePourLeLlm(e);
         }
       }
@@ -204,6 +227,7 @@ export function creerServeur(deps: Dependances): McpServer {
       "Ajoute un lot de produits au panier Chronodrive (20 lignes au plus, un même productId une seule fois par lot).",
       "La quantité S'AJOUTE à celle déjà présente. Le panier est relu avant et après :",
       "`confirme: true` seulement si la quantité du produit a réellement augmenté (`avant` → `apres`) ; `erreur` explique un refus ou un ajout partiel.",
+      "Seul un produit renvoyé par chercher_produits depuis moins de 30 min est accepté.",
       "Ne jamais relancer une ligne non confirmée sans relire le panier (`lire_panier`) : l'ajout a pu passer.",
       "Les lignes confirmées sont retenues pour le terme (cache des correspondances). Ne commande rien.",
     ].join(" "),
@@ -222,16 +246,19 @@ export function creerServeur(deps: Dependances): McpServer {
     false,
     async ({ lignes }) => {
       if (deps.lectureSeule) {
-        throw new ErreurOutil("lecture seule (CHRONODRIVE_LECTURE_SEULE=1) : aucun ajout au panier, aucun appel à Chronodrive");
+        throw new ErreurOutil("lecture seule (CHRONODRIVE_LECTURE_SEULE n'est pas '0') : aucun ajout au panier, aucun appel à Chronodrive");
       }
       return enSerie(async () => {
         const client = deps.client();
-        const resultats: (ResultatAjout & { terme: string })[] = (
-          await ajouterLignes(client, lignes.map(({ productId, quantite }) => ({ productId, quantite })), horloge)
-        ).map((r, i) => ({ terme: lignes[i].terme, ...r }));
-        const confirmes: EntreeCorrespondance[] = resultats
-          .filter((r) => r.confirme)
-          .map((r) => ({ terme: r.terme, productId: r.productId, libelle: produitVu(client, r.productId, horloge)?.libelle || r.productId }));
+        const bilan = await ajouterLignes(client, lignes.map(({ productId, quantite }) => ({ productId, quantite })), horloge);
+        const resultats: (ResultatAjout & { terme: string })[] = bilan.resultats.map((r, i) => ({ terme: lignes[i].terme, ...r }));
+        // Libellé tiré de la fiche du panier relu après l'ajout, sinon de la fiche vue ; jamais du
+        // productId (il sert à retrouver le produit par recherche). Sans libellé, rien n'est mémorisé.
+        const confirmes: EntreeCorrespondance[] = resultats.flatMap((r) => {
+          if (!r.confirme) return [];
+          const libelle = bilan.produits.get(r.productId)?.libelle || produitVu(client, r.productId, horloge)?.libelle;
+          return libelle ? [{ terme: r.terme, productId: r.productId, libelle }] : [];
+        });
         const etat: { avertissement?: string } = {};
         if (confirmes.length > 0) avecCache((c) => c.memoriser(confirmes), undefined, etat);
         return { resultats, ...etat };
@@ -244,14 +271,16 @@ export function creerServeur(deps: Dependances): McpServer {
     "Contenu actuel du panier Chronodrive : chaque ligne porte la fiche produit et la quantité. À utiliser pour vérifier un ajout douteux avant toute relance.",
     {},
     true,
-    async () => {
-      const panier = await lirePanierCourant(deps.client());
-      const lignes = [...panier.lignes].flatMap(([id, quantite]) => {
-        const produit = panier.produits.get(id);
-        return produit ? [{ produit, quantite }] : [];
-      });
-      return { lignes };
-    },
+    // Dans la file des ajouts : une lecture ne s'intercale pas entre les relectures d'un lot.
+    () =>
+      enSerie(async () => {
+        const panier = await lirePanierCourant(deps.client());
+        const lignes = [...panier.lignes].flatMap(([id, quantite]) => {
+          const produit = panier.produits.get(id);
+          return produit ? [{ produit: pourLeLlm(produit), quantite }] : [];
+        });
+        return { lignes };
+      }),
   );
 
   outil(

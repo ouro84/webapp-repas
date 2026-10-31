@@ -9,7 +9,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { ErreurChronodrive } from "../src/client.ts";
 import { normaliserTerme, type Correspondance, type EntreeCorrespondance } from "../src/correspondances.ts";
 import { creerServeur, favorisPour, NOMS_OUTILS, type CacheCorrespondances, type Dependances } from "../src/outils.ts";
-import { clientSimule, fiche, panierSimule, type Route } from "./simulation.ts";
+import { clientSimule, fiche, panierSimule, voir, type Route } from "./simulation.ts";
 import { versProduit } from "../src/catalogue.ts";
 
 const RECHERCHE = "GET /v1/products";
@@ -93,10 +93,57 @@ test("chercher_produits : cache disponible → retenu, sans recherche", async ()
   const [lait] = termes(r);
   assert.equal(lait.terme, "lait");
   assert.equal(lait.cache?.id, "10");
+  // Cache retenu : ni favoris ni recherche renvoyés (charge utile réduite).
+  assert.deepEqual(lait.favoris, []);
+  assert.deepEqual(lait.recherche, []);
   assert.equal(sim.compter(RECHERCHE), 0);
   assert.deepEqual(cache.oublies, []);
   // Le texte porte le même JSON que structuredContent.
   assert.deepEqual(JSON.parse(r.content[0].text), r.structuredContent);
+});
+
+test("produits renvoyés au LLM sans prixUnite ni maxPanier (prix gardé)", async () => {
+  const sim = clientSimule({
+    ...routesFavoris([produit("12", "Beurre doux", { maxCartQuantity: 6 })]),
+    [RECHERCHE]: () => ({ content: [produit("13", "Farine T55", { maxCartQuantity: 6 })] }),
+    ...panierSimule("p1", { "12": 1 }).routes,
+  });
+  const { appeler } = await demarrer({ client: () => sim.client });
+  const r = await appeler("chercher_produits", { termes: ["beurre", "farine"] });
+  const [beurre, farine] = termes(r);
+  const panier = await appeler("lire_panier");
+  const { lignes } = panier.structuredContent as { lignes: { produit: Record<string, unknown> }[] };
+  for (const p of [beurre.favoris[0], farine.recherche[0], lignes[0].produit] as unknown as Record<string, unknown>[]) {
+    assert.ok(!("prixUnite" in p) && !("maxPanier" in p), JSON.stringify(p));
+    assert.equal(p.prix, 2.5);
+  }
+});
+
+test("chercher_produits : erreur de connexion → tout l'appel échoue, pas de login terme par terme", async () => {
+  const sim = clientSimule({
+    ...routesFavoris([]),
+    [RECHERCHE]: () => {
+      throw new ErreurChronodrive("login", "HTTP 403 [cf-ray x, cf-mitigated challenge]");
+    },
+  });
+  const { appeler } = await demarrer({ client: () => sim.client });
+  const r = await appeler("chercher_produits", { termes: ["lait", "beurre", "farine"] });
+  assert.equal(r.isError, true);
+  assert.match(r.content[0].text, /^login : HTTP 403/);
+  assert.equal(sim.compter(RECHERCHE), 1);
+
+  // Erreur d'un terme hors connexion : seul ce terme est en erreur.
+  const sim2 = clientSimule({
+    ...routesFavoris([]),
+    [RECHERCHE]: (_a, n) => {
+      if (n === 1) throw new ErreurChronodrive("GET /v1/products", "HTTP 500");
+      return { content: [produit("14", "Beurre")] };
+    },
+  });
+  const { appeler: appeler2 } = await demarrer({ client: () => sim2.client });
+  const [lait, beurre] = termes(await appeler2("chercher_produits", { termes: ["lait", "beurre"] }));
+  assert.match(lait.erreur ?? "", /HTTP 500/);
+  assert.equal(beurre.erreur, null);
 });
 
 test("chercher_produits : cache indisponible → oublié, favoris puis recherche", async () => {
@@ -213,7 +260,7 @@ test("ajouter_au_panier : confirmé → mémorisé ; non confirmé → pas mémo
   });
   const cache = cacheSimule();
   const { appeler } = await demarrer({ client: () => sim.client, cache: () => cache.cache });
-  // Les fiches vues (libellés mémorisés) viennent de la recherche qui précède l'ajout dans un run.
+  // Les fiches vues (seules acceptées à l'ajout) viennent de la recherche qui précède l'ajout dans un run.
   termes(await appeler("chercher_produits", { termes: ["lait", "beurre"] }));
 
   const r = await appeler("ajouter_au_panier", {
@@ -231,7 +278,21 @@ test("ajouter_au_panier : confirmé → mémorisé ; non confirmé → pas mémo
       ["beurre", "20", 0, 0, false],
     ],
   );
-  assert.deepEqual(cache.memorises, [[{ terme: "Lait", productId: "10", libelle: "Lait demi-écrémé" }]]);
+  // Libellé de la fiche du panier relu après l'ajout (« Produit 10 » dans la simulation), jamais le productId.
+  assert.deepEqual(cache.memorises, [[{ terme: "Lait", productId: "10", libelle: "Produit 10" }]]);
+});
+
+test("ajouter_au_panier : productId jamais vu → refusé sans POST", async () => {
+  const sim = clientSimule(panierSimule("p1", {}).routes);
+  const cache = cacheSimule();
+  const { appeler } = await demarrer({ client: () => sim.client, cache: () => cache.cache });
+  const r = await appeler("ajouter_au_panier", { lignes: [{ terme: "lait", productId: "999", quantite: 1 }] });
+  assert.ok(!r.isError, r.content[0].text);
+  const [ligne] = (r.structuredContent as { resultats: { confirme: boolean; erreur: string }[] }).resultats;
+  assert.equal(ligne.confirme, false);
+  assert.equal(ligne.erreur, "produit inconnu ou vu il y a plus de 30 min : relance chercher_produits");
+  assert.equal(sim.compter("POST /v1/carts/p1/items"), 0);
+  assert.deepEqual(cache.memorises, []);
 });
 
 test("ajouter_au_panier : schéma — quantité entière 1..20, 20 lignes au plus", async () => {
@@ -253,15 +314,21 @@ test("ajouter_au_panier : deux appels parallèles sont exécutés l'un après l'
     return panier.routes["POST /v1/carts/p1/items"](appel, n);
   };
   const sim = clientSimule({ ...panier.routes, "POST /v1/carts/p1/items": lent });
+  voir(sim.client, ["10", "20"]);
   const { appeler } = await demarrer({ client: () => sim.client });
 
   const [a, b] = await Promise.all([
     appeler("ajouter_au_panier", { lignes: [{ terme: "lait", productId: "10", quantite: 1 }] }),
+    appeler("lire_panier"),
     appeler("ajouter_au_panier", { lignes: [{ terme: "beurre", productId: "20", quantite: 1 }] }),
-  ]);
-  const lot = ["GET /v1/customers/me/carts", "GET /v1/carts/p1", "POST /v1/carts/p1/items", "GET /v1/customers/me/carts", "GET /v1/carts/p1"];
-  // Sans sérialisation, les deux relectures « avant » passeraient avant le premier POST.
-  assert.deepEqual(sim.appels.map((x) => `${x.methode} ${x.chemin}`), [...lot, ...lot]);
+  ]).then(([x, lecture, y]) => {
+    assert.ok(!lecture.isError, lecture.content[0].text);
+    return [x, y];
+  });
+  const lecture = ["GET /v1/customers/me/carts", "GET /v1/carts/p1"];
+  const lot = [...lecture, "POST /v1/carts/p1/items", ...lecture];
+  // Sans sérialisation, les relectures « avant » et `lire_panier` passeraient avant le premier POST.
+  assert.deepEqual(sim.appels.map((x) => `${x.methode} ${x.chemin}`), [...lot, ...lecture, ...lot]);
   for (const r of [a, b]) {
     const [ligne] = (r.structuredContent as { resultats: { confirme: boolean }[] }).resultats;
     assert.equal(ligne.confirme, true);
@@ -281,12 +348,23 @@ test("ajouter_au_panier : un lot en échec ne bloque pas le suivant", async () =
       return { content: [{ id: "p1" }] };
     },
   });
+  voir(sim.client, ["10"]);
   const { appeler } = await demarrer({ client: () => sim.client });
   const ligne = { terme: "lait", productId: "10", quantite: 1 };
   const [a, b] = await Promise.all([appeler("ajouter_au_panier", { lignes: [ligne] }), appeler("ajouter_au_panier", { lignes: [ligne] })]);
   assert.equal(a.isError, true);
   assert.match(a.content[0].text, /HTTP 503/);
   assert.ok(!b.isError, b.content[0].text);
+  assert.equal((b.structuredContent as { resultats: { confirme: boolean }[] }).resultats[0].confirme, true);
+});
+
+test("annotations : chercher_produits n'est pas en lecture seule (il peut oublier une entrée du cache)", async () => {
+  const { mcp } = await demarrer({ client: () => clientSimule({}).client });
+  const { tools } = await mcp.listTools();
+  const annotation = (nom: string) => tools.find((t) => t.name === nom)?.annotations?.readOnlyHint;
+  assert.equal(annotation("chercher_produits"), false);
+  assert.equal(annotation("lire_panier"), true);
+  assert.equal(annotation("ajouter_au_panier"), false);
 });
 
 test("lire_panier : lignes avec fiche et quantité", async () => {

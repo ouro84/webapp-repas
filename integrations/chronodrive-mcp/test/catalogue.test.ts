@@ -3,7 +3,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { chargerFavoris, rechercher, versProduit } from "../src/catalogue.ts";
+import { chargerFavoris, PAGES_FAVORIS_MAX, rechercher, versProduit } from "../src/catalogue.ts";
+import { ErreurChronodrive } from "../src/client.ts";
 import { clientSimule, fiche } from "./simulation.ts";
 
 test("fiche produit du protocole → Produit", () => {
@@ -110,6 +111,18 @@ test("favoris : un échec n'est pas mémorisé, l'appel suivant recharge", async
     (await chargerFavoris(sim.client)).map((p) => p.id),
     ["8"],
   );
+});
+
+test("favoris : hasNext toujours vrai → erreur explicite après 100 pages, jamais une liste tronquée", async () => {
+  const sim = clientSimule({
+    "GET /v1/favourite-products": (_a, n) => ({ content: [fiche(String(n))], page: { hasNext: true } }),
+  });
+  await assert.rejects(chargerFavoris(sim.client), (e: unknown) => {
+    assert.ok(e instanceof ErreurChronodrive);
+    assert.match(e.message, /plus de 100 pages de favoris/);
+    return true;
+  });
+  assert.equal(sim.compter("GET /v1/favourite-products"), PAGES_FAVORIS_MAX);
 });
 
 test("recherche : en-têtes Kamino et paramètres du protocole", async () => {

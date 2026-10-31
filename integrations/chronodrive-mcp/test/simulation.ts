@@ -1,6 +1,7 @@
 // Client Chronodrive simulé pour les tests du catalogue et du panier (#308, Task 2).
 // Aucun réseau : chaque appel `appeler` doit trouver sa route `MÉTHODE /chemin`, sinon le test
 // échoue bruyamment. Le panier simulé incrémente sa quantité au POST, comme l'API réelle.
+import { noterProduits, versProduit, type OptionsHorloge } from "../src/catalogue.ts";
 
 export type AppelSimule = {
   methode: string;
@@ -50,6 +51,11 @@ export function fiche(id: string, extra: Record<string, unknown> = {}): Record<s
     stock: 12,
     ...extra,
   };
+}
+
+// Produits « vus » (comme après chercher_produits) : `ajouterLignes` refuse un produit jamais vu.
+export function voir(client: object, ids: string[], options: OptionsHorloge = {}, extra: Record<string, unknown> = {}): void {
+  noterProduits(client, ids.map((id) => versProduit(fiche(id, extra))), options);
 }
 
 // Panier simulé : `quantites` est l'état serveur, chaque ligne lue porte la fiche `fiche(id)`.

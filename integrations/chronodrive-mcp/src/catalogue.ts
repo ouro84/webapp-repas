@@ -1,7 +1,7 @@
 // Catalogue de l'exécuteur Chronodrive (#308) : fiche produit, disponibilité, favoris, recherche.
 // Protocole : docs/etudes/chronodrive.md, « Protocole relevé » (même fiche en recherche, favoris
 // et panier). Aucun log : stdout est le canal stdio du MCP.
-import type { ClientChronodrive } from "./client.ts";
+import { ErreurChronodrive, type ClientChronodrive } from "./client.ts";
 
 export type Produit = {
   id: string;
@@ -22,7 +22,8 @@ export type AppelantRecherche = Pick<ClientChronodrive, "appeler" | "idClient">;
 
 const TAILLE_PAGE_FAVORIS = 50;
 // Garde-fou : un `page.hasNext` toujours vrai ne doit pas faire boucler le run (5 000 favoris).
-const PAGES_FAVORIS_MAX = 100;
+// Au-delà, erreur explicite plutôt qu'une liste tronquée en silence.
+export const PAGES_FAVORIS_MAX = 100;
 
 type Brut = Record<string, unknown>;
 
@@ -127,10 +128,15 @@ async function toutesLesPagesDeFavoris(client: Appelant, options: OptionsHorloge
       params: { page: String(page), size: String(TAILLE_PAGE_FAVORIS) },
     });
     produits.push(...produitsDe(corps));
-    if (objet(objet(corps).page).hasNext !== true) break;
+    if (objet(objet(corps).page).hasNext !== true) {
+      noterProduits(client, produits, options);
+      return produits;
+    }
   }
-  noterProduits(client, produits, options);
-  return produits;
+  throw new ErreurChronodrive(
+    "GET /v1/favourite-products",
+    `plus de ${PAGES_FAVORIS_MAX} pages de favoris (page.hasNext toujours vrai) : pagination de l'API changée ?`,
+  );
 }
 
 // Recherche Kamino : l'identifiant client part en en-tête `X-Kamino-User-Id`.
