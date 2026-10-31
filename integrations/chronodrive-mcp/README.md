@@ -88,7 +88,7 @@ Le code TypeScript est exécuté tel quel par Node 26, sans build. La copie en u
 | `CHRONODRIVE_SITE_ID` | oui | Identifiant du drive (lu dans `GET v1/sites?size=500`, cf. `docs/etudes/chronodrive.md`). |
 | `CHRONODRIVE_MODE` | non | `DRIVE` (défaut) ou `HOME_DELIVERY`. |
 | `CHRONODRIVE_SESSION` | non | Fichier de session, par défaut `/opt/data/chronodrive-session.json` (mode `600`, réécrit à chaque connexion). |
-| `OMQ_WEBHOOK_SECRET` | pour la route | Secret `whsec_<base64>` de la route webhook. Il n'est pas lu par le MCP mais rangé ici (cf. `hermes/route-webhook.md`). |
+| `OMQ_WEBHOOK_SECRET` | pour la route | Secret de la route webhook, partagé à l'identique avec OMQ. Un secret brut convient. Il n'est pas lu par le MCP mais rangé ici (cf. `hermes/route-webhook.md`). |
 
 Ces variables peuvent aussi venir de l'environnement du processus, mais le fichier l'emporte.
 
@@ -162,9 +162,14 @@ Contrôle de fumée, en lecture seule, depuis Hermes :
 
 Suivre `hermes/route-webhook.md` :
 
-- secret `whsec_<base64>` ;
+- secret `OMQ_WEBHOOK_SECRET` de `chronodrive.env`, brut et conservé ;
 - `hermes webhook subscribe panier-omq …`, sans redémarrage ;
 - Funnel sur le port **10000**, chemin `/webhooks/panier-omq`.
+
+**À vérifier en Task 6 et Task 8 : limiter les outils du run webhook.** Par défaut, un run webhook voit `web_search`, `web_extract`, `vision_analyze`, `clarify` et **tous** les serveurs MCP activés : linkedin, camofox-browser, dodojo, en plus de `chronodrive` et OMQ. La skill interdit les autres outils, mais le contenu de la liste et les libellés Chronodrive sont des données non fiables. Il faut donc vérifier si la route peut se limiter aux deux toolsets MCP `chronodrive` et « On Mange Quoi ? ». Une route dynamique ne prend pas `toolsets`. Les pistes :
+
+- une route statique dans `platforms.webhook.extra.routes.panier-omq` avec `toolsets`, qui demande un redémarrage ;
+- ou `platform_toolsets.webhook`, qui s'applique à toutes les routes.
 
 ## Enregistrer l'exécuteur dans OMQ
 
@@ -173,7 +178,7 @@ L'exécuteur se déclare par la fonction SQL `enregistrer_executeur_panier(foyer
 Le secret vient d'une variable d'environnement et n'est jamais tapé en clair dans une commande, à cause de l'historique du shell. Depuis le PC, Git Bash, à la racine du dépôt (`SUPABASE_ACCESS_TOKEN` posé) :
 
 ```sh
-read -rs OMQ_WEBHOOK_SECRET        # coller le secret whsec_… (rien ne s'affiche)
+read -rs OMQ_WEBHOOK_SECRET        # coller le secret de chronodrive.env (rien ne s'affiche)
 node scripts/query-supabase.mjs gabyhlcwahzquolwxmgd \
   "select enregistrer_executeur_panier('<foyer_id>', 'https://<nas>.<tailnet>.ts.net:10000/webhooks/panier-omq', '$OMQ_WEBHOOK_SECRET')"
 unset OMQ_WEBHOOK_SECRET
@@ -224,6 +229,6 @@ Les messages d'erreur remontent au LLM puis sur Telegram. Ils sont caviardés : 
 | `[cf-ray …, cf-mitigated …]` dans l'erreur | Blocage Cloudflare. Vérifier que le conteneur sort bien par l'IP résidentielle (réseau host). |
 | `avertissement` : cache des correspondances indisponible | Non bloquant : le run continue sans cache. Cause habituelle : `database is locked`, quand deux processus écrivent plus de 5 s (deux MCP lancés, ou le spike encore actif), ou fichier SQLite non inscriptible par l'utilisateur 1000. |
 | `lecture seule (CHRONODRIVE_LECTURE_SEULE=1)` | Mode voulu pour la mesure et le déploiement à blanc. Pour un run réel : `'0'` dans `config.yaml`, puis redémarrage avec Arnaud. Le run rapporte un échec « Exécuteur en lecture seule ». |
-| Webhook en 401 côté Hermes | Secret différent entre la route et OMQ, ou secret sans préfixe `whsec_`. Ré-enregistrer l'exécuteur avec le secret exact de la route. |
+| Webhook en 401 côté Hermes | Deux causes possibles. Le secret diffère entre la route et OMQ : ré-enregistrer l'exécuteur avec la chaîne exacte de `OMQ_WEBHOOK_SECRET` (sans espace ni retour à la ligne). Ou l'horodatage est périmé : Hermes refuse un `webhook-timestamp` à plus de 300 s ; vérifier l'heure du NAS. |
 | Demande « exécuteur injoignable » sur `/courses` | Funnel coupé (`tailscale funnel status`), gateway arrêtée, ou route absente. |
 | Aucun message Telegram | Normal si le run a trouvé `demande: null` : il répond `[SILENT]`. Sinon, vérifier `--deliver telegram` sur la route. |

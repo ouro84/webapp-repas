@@ -23,25 +23,13 @@ Si `hermes` n'est pas dans le `PATH` du conteneur, utiliser `/opt/hermes/.venv/b
 - La skill est installée dans `/opt/data/skills/omq/panier-chronodrive/SKILL.md` (cf. `README.md`).
 - Le MCP `chronodrive` est déclaré dans `config.yaml` et la gateway a redémarré depuis.
 - La plateforme webhook écoute en local seulement (`platforms.webhook.extra.host: 127.0.0.1`, port `8644`). Vérification depuis le NAS (le conteneur est en réseau host) : `curl -s http://127.0.0.1:8644/health` répond `{"status":"ok","platform":"webhook"}`.
-- Le secret `OMQ_WEBHOOK_SECRET` est dans `/opt/data/chronodrive.env` (mode `600`), au format **`whsec_<base64>`**, sans guillemets.
+- Le secret `OMQ_WEBHOOK_SECRET` est dans `/opt/data/chronodrive.env` (mode `600`), sans guillemets. Celui du spike est un secret **brut** et il est conservé.
 
 ## 1. Secret de la route
 
-Format Standard Webhooks : `whsec_` suivi de la clé HMAC en base64. Hermes **et** OMQ décodent ce base64 ; un secret sans préfixe serait pris brut des deux côtés. Les deux doivent donc recevoir exactement la même chaîne (cf. `.claude/rules/chronodrive.md`).
+OMQ et Hermes acceptent tous deux un secret brut. Ils n'ont besoin que d'une chose : recevoir **exactement la même chaîne**. Un secret au format `whsec_<base64>` marcherait aussi, puisque les deux côtés le décodent de la même façon. Il n'y a rien à convertir.
 
-Le secret laissé par le spike n'a peut-être pas ce format. Dans ce cas, en génère un nouveau, sans l'afficher :
-
-```sh
-$D exec -u 1000 hermes sh -c '
-  F=/opt/data/chronodrive.env
-  sed -i "/^OMQ_WEBHOOK_SECRET=/d" "$F"
-  printf "OMQ_WEBHOOK_SECRET=whsec_%s\n" "$(head -c 32 /dev/urandom | base64 | tr -d "\n")" >> "$F"
-  chmod 600 "$F"
-  grep -c "^OMQ_WEBHOOK_SECRET=whsec_" "$F"
-'
-```
-
-La dernière commande doit afficher `1`. Le secret ne va **jamais** dans Git ni dans `config.yaml`. Il ne figure dans aucune commande tapée en clair.
+Le secret ne va **jamais** dans Git ni dans `config.yaml`, et il ne figure dans aucune commande tapée en clair.
 
 ## 2. Créer la route
 
@@ -54,35 +42,20 @@ $D exec -u 1000 hermes sh -c '
     --prompt "Une demande de panier OMQ attend. Applique la skill panier-chronodrive." \
     --skills panier-chronodrive \
     --deliver telegram \
+    --deliver-chat-id 8985917282 \
+    --description "Réveil de l’exécuteur de panier Chronodrive par OMQ (#308)" \
     --secret "$SECRET"
 '
 ```
 
 - **Prompt de réveil** : « Une demande de panier OMQ attend. Applique la skill panier-chronodrive. ». Il reste volontairement court : la procédure est dans la skill, que Hermes injecte avant le prompt.
-- **Skill** : `panier-chronodrive`. Hermes n'injecte que la première skill trouvée de la liste.
-- **Livraison** : `telegram`. Sans `chat_id`, Hermes livre au canal maison de Telegram (`home_channel`, chat `8985917282`). Une réponse `[SILENT]` (aucune demande à traiter) n'est pas livrée.
-
-### Options à vérifier avant de lancer
-
-Les options `--skills` et `--secret` n'ont **pas** été vérifiées sur la v0.21.5. La reconnaissance du NAS confirme seulement que la route accepte `skills`, `secret`, `deliver` et `deliver_extra`. Avant la première création, lancer :
-
-```sh
-$D exec -u 1000 hermes hermes webhook subscribe --help
-```
-
-Puis adapter la commande :
-
-- si l'option de skill s'appelle autrement (`--skill`, plusieurs `--skills`…), prendre ce nom ;
-- si la CLI **génère** le secret au lieu de le recevoir, ne pas passer `--secret`. Recopier ensuite le secret généré dans `OMQ_WEBHOOK_SECRET`, s'il est au format `whsec_` ; sinon, voir ci-dessous ;
-- si la CLI ne prend ni `--skills` ni `--secret`, éditer l'entrée `panier-omq` de `/opt/data/webhook_subscriptions.json` après création. Sauvegarder le fichier d'abord. Clés `skills: ["panier-chronodrive"]` et `secret`. Le fichier est relu à chaud ;
-- pour livrer ailleurs qu'au canal maison, chercher l'option de `deliver_extra.chat_id` dans l'aide.
-
-Corriger ce document dans la PR une fois la commande exacte connue.
+- **Skill** : `--skills` prend une liste séparée par des virgules ; ici une seule skill, `panier-chronodrive`.
+- **Livraison** : `telegram`, chat `8985917282` (canal maison d'Arnaud). Une réponse `[SILENT]` (aucune demande à traiter) n'est pas livrée.
+- **Secret** : pendant l'exécution de la commande, `--secret "$SECRET"` est visible un court instant dans `/proc/*/cmdline` du conteneur. C'est accepté : seul l'utilisateur du conteneur y a accès.
 
 ### Contrôle
 
 ```sh
-$D exec -u 1000 hermes hermes webhook --help        # sous-commande de liste, si elle existe
 $D exec -u 1000 hermes sh -c 'stat -c "%a %U" /opt/data/webhook_subscriptions.json'
 ```
 
@@ -113,10 +86,22 @@ L'URL de l'exécuteur à enregistrer dans OMQ est `https://<nas>.<tailnet>.ts.ne
 
 Suivre la section « Enregistrer l'exécuteur » du `README.md`. Le même secret `OMQ_WEBHOOK_SECRET` y sert. En prod, l'enregistrement se fait **seulement sur l'accord explicite d'Arnaud**.
 
-## Rotation du secret
+## Rotation du secret (facultative)
 
-1. Générer un nouveau secret (étape 1).
-2. Mettre à jour la route. Recréer la route `panier-omq` (étape 2) ou éditer son `secret` dans `webhook_subscriptions.json`.
+1. Générer un nouveau secret dans `chronodrive.env`, sans l'afficher :
+
+   ```sh
+   $D exec -u 1000 hermes sh -c '
+     F=/opt/data/chronodrive.env
+     sed -i "/^OMQ_WEBHOOK_SECRET=/d" "$F"
+     printf "OMQ_WEBHOOK_SECRET=%s\n" "$(head -c 32 /dev/urandom | base64 | tr -d "\n")" >> "$F"
+     chmod 600 "$F"
+     grep -c "^OMQ_WEBHOOK_SECRET=" "$F"
+   '
+   ```
+
+   La dernière commande doit afficher `1`.
+2. Recréer la route `panier-omq` (étape 2). Si la CLI refuse un nom déjà pris, supprimer d'abord la route (`hermes webhook --help` donne la sous-commande).
 3. Ré-enregistrer l'exécuteur dans OMQ avec le nouveau secret. Le secret Vault existant est alors mis à jour.
 
 Entre les étapes 2 et 3, les webhooks d'OMQ sont refusés en 401 : la demande passe en échec « exécuteur injoignable ». C'est sans conséquence, il suffit de relancer.
@@ -125,5 +110,5 @@ Entre les étapes 2 et 3, les webhooks d'OMQ sont refusés en 401 : la demande p
 
 ```sh
 $D exec tailscale tailscale funnel --https=10000 off
-$D exec -u 1000 hermes hermes webhook --help   # sous-commande de suppression (unsubscribe / remove)
+$D exec -u 1000 hermes hermes webhook --help   # sous-commande de suppression de la route
 ```
