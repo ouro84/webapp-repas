@@ -25,6 +25,8 @@ Protocole et mesures : `docs/etudes/chronodrive.md`. PoC du spike #307 : `integr
 - **TypeScript à syntaxe effaçable, imports en `.ts`, sans build** (`erasableSyntaxOnly`). Pourquoi : Node l'exécute tel quel (type stripping), sur Node 24 en local et 26 sur le NAS.
 - **`node --test "test/*.test.ts"`, pas `node --test test/`**. Pourquoi : Node 24 prend un dossier pour un fichier et échoue (`Cannot find module`).
 - **Aucun message d'erreur ni log ne porte de secret** : `ClientChronodrive` caviarde identifiants, jetons, `tkn`, `code`, cookies, e-mails et JWT dans l'extrait de réponse, et réécrit une erreur réseau sans sa cause. Pourquoi : les erreurs remontent au LLM puis sur Telegram (RG-80).
+- **Disponibilité (`src/catalogue.ts`) : un champ absent est une inconnue qui ne bloque pas.** Bloquent seulement `isEligible === false`, un stock ≤ 0 (`remainingStock` s'il est numérique, sinon `stock`) et un `maxCartQuantity` < 1 ; sinon `maxCartQuantity` plafonne la quantité, lu comme un total au panier. Pourquoi : aucun produit hors stock n'a été observé au spike, et l'écart de quantité confirme de toute façon l'ajout (RG-83).
+- **`ajouterLignes` refuse un même `productId` deux fois dans un lot.** Pourquoi : avec une seule relecture avant et après, l'écart de quantité ne serait plus attribuable à une ligne.
 - Le mode `600` du fichier de session ne se vérifie pas sous Windows (seul le bit lecture seule existe) ; le test ne l'affirme que sur POSIX. Pourquoi : le NAS est sous Linux.
 
 ## Exécution sur le NAS
