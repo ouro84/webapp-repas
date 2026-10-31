@@ -749,6 +749,30 @@ Réduire à zéro l'effort de planification hebdomadaire des repas, du choix des
 > **Given** aucun exécuteur n'est enregistré pour mon foyer  
 > **Then** le bouton n'apparaît pas (RG-81)
 
+> **Given** mon exécuteur est injoignable (NAS éteint, réseau coupé)  
+> **When** je clique sur le bouton  
+> **Then** la demande échoue aussitôt, le motif s'affiche et le bouton reste disponible (RG-81)
+
+### US-54 — Préparer mon cycle avec mon assistant (#320, après #308)
+
+> **En tant qu'** utilisateur qui a un assistant connecté à OMQ (Hermes), je veux qu'il **prépare mon prochain cycle à partir de nos habitudes**, le fasse valider, lance le panier et prévienne mon foyer, pour que la semaine soit organisée en quelques messages.
+
+> **Given** mon foyer a un historique de planning  
+> **When** je demande à mon assistant de préparer le prochain cycle  
+> **Then** il me présente les tendances qu'il a découvertes, avec leurs preuves, et me fait confirmer les nouvelles avant de s'en servir (RG-86)
+
+> **Given** les tendances sont confirmées  
+> **When** l'assistant génère le cycle suivant et l'ajuste  
+> **Then** il m'envoie la liste des repas, chaque modification expliquée par sa tendance, et attend mon accord avant d'aller plus loin (RG-85, RG-86)
+
+> **Given** j'ai validé les repas et vérifié mon placard dans OMQ  
+> **When** je donne mon accord pour le panier  
+> **Then** l'assistant lance la demande de panier, que `/courses` affiche comme si j'avais cliqué sur le bouton (RG-85, RG-81→84)
+
+> **Given** le panier est prêt  
+> **When** je demande à l'assistant de prévenir un proche  
+> **Then** il lui envoie la liste des repas dans le format que j'ai défini, et ne le fait jamais sans mon ordre (RG-86)
+
 ---
 
 ## 5. Modèle de données
@@ -871,8 +895,9 @@ Un snapshot d'annulation (US-09) est conservé sous la clé `planning_snapshot` 
 ### 5.8 Assistants IA et panier d'enseigne (#302, #303)
 
 - **Assistants (MCP)** : aucune table OMQ. Les clients OAuth, autorisations et jetons vivent dans le schéma `auth` de Supabase (Supabase OAuth Server). Un jeton d'assistant porte `auth.jwt()->>'client_id'`, ce qui permet de distinguer un appel d'assistant si besoin.
-- **`executeur_panier`** (scope foyer, RLS) : `foyer_id`, `enseigne` (`chronodrive`), `url_webhook`, `secret_hmac` (chiffré), horodatages. Au plus une ligne par foyer et par enseigne. Renseignée à la main en v1 (pas d'UI). **Ne contient aucun identifiant d'enseigne** (RG-80).
-- **`demande_panier`** (scope foyer, RLS) : `foyer_id`, `ancre` du cycle, `statut` (`en_attente` | `en_cours` | `terminee` | `echec`), `rapport` (JSON : ajoutés, à choisir, introuvables), horodatages de création, de prise en charge et de fin. Au plus une demande active (`en_attente` ou `en_cours`) par foyer (RG-83).
+- **`executeur_panier`** (scope foyer, RLS) : `foyer_id`, `enseigne` (`chronodrive`), `url_webhook`, `secret_id` (référence vers `vault.secrets` : le secret HMAC est chiffré par **Supabase Vault**, jamais en clair dans la table ni lu par l'application), horodatages. Au plus une ligne par foyer et par enseigne. Renseignée à la main en v1 (pas d'UI, SQL documenté dans le README de l'exécuteur). Supprimer la ligne supprime son secret Vault (trigger). **Ne contient aucun identifiant d'enseigne** (RG-80).
+- **`demande_panier`** (scope foyer, RLS) : `foyer_id`, `ancre` du cycle, `statut` (`en_attente` | `en_cours` | `terminee` | `echec`), `motif_echec` (texte, si `echec`), `rapport` (JSON, RG-84), horodatages de création, de prise en charge et de fin. Au plus une demande active (`en_attente` ou `en_cours`) par foyer (RG-83). Historique complet conservé ; `/courses` n'affiche que la dernière.
+- Les deux tables suivent le foyer (`on delete cascade`).
 
 ---
 
@@ -1206,9 +1231,31 @@ Un foyer peut exprimer une préférence explicite pour une recette, sans jamais 
 
 - **RG-80 — OMQ ne touche jamais l'enseigne** : OMQ ne stocke aucun identifiant d'enseigne et n'appelle aucune API d'enseigne depuis ses serveurs (ADR-12). Tout ce qui parle à Chronodrive tourne chez l'utilisateur, sur son **exécuteur**.
 - **RG-81 — Exécuteur enregistré et déclenchement à vide** : le bouton « Constituer mon panier Chronodrive » n'apparaît sur `/courses` que si un exécuteur est enregistré pour le foyer (`executeur_panier`, §5.8). Le clic crée une demande et envoie à l'exécuteur un webhook **signé HMAC qui ne contient aucune donnée métier** ; l'exécuteur récupère ensuite la demande via le MCP OMQ (`prendre_demande_panier`), avec son propre jeton OAuth (RG-71). Un webhook forgé ne peut au pire que réveiller l'exécuteur pour rien.
+  - **Signature** : format Standard Webhooks (`webhook-id`, `webhook-timestamp`, `webhook-signature: v1,<base64 HMAC-SHA256 de « id.timestamp.corps »>`), corps `{"evenement":"demande_panier"}`. Elle est calculée **dans Postgres** par la RPC qui crée la demande (`SECURITY DEFINER`, secret lu dans Vault) : la RPC renvoie URL, en-têtes et corps, jamais le secret. L'application n'a besoin ni du secret ni de la clé `service_role`.
+  - **Envoi** par une route serveur, délai d'attente **10 s**, sans nouvelle tentative, rate-limit dédié. Échec réseau, délai dépassé ou réponse non 2xx → la demande passe aussitôt en `echec` (« exécuteur injoignable ») et le bouton redevient disponible.
+  - `prendre_demande_panier` sans demande `en_attente` renvoie `{ demande: null }` : l'exécuteur s'arrête sans rien faire.
 - **RG-82 — Périmètre et garde-fous** : entrées = articles **non cochés** du cycle affiché, articles manuels et articles « à vérifier au placard » non cochés inclus (l'utilisateur coche avant de lancer la demande ce qu'il a déjà). Pour chaque article, l'exécuteur cherche d'abord dans les **favoris** Chronodrive, puis dans la recherche, et choisit produit et quantité ; une différence de marque, de format ou de label n'est pas une ambiguïté (préférence de marque réglée dans l'exécuteur), seule une différence de nature du produit l'est (poulet ou dinde, cru ou cuisiné…). Confiance haute → ajout au panier ; confiance basse ou aucun résultat → rien n'est ajouté, l'article est reporté. Pas de validation article par article. L'exécuteur ne passe **jamais** commande, ne réserve pas de créneau et ne paie pas : la validation finale reste humaine, dans l'appli Chronodrive.
-- **RG-83 — Coche à l'ajout et idempotence** : chaque article ajouté au panier est **coché dans OMQ juste après son ajout**. Une relance ne traite donc que les articles restants (l'ajout Chronodrive incrémente les quantités : sans cette règle, une relance doublerait le panier). Un ajout se **confirme en comparant la quantité du produit dans le panier avant et après l'ajout**, pas au seul code de retour (Chronodrive peut ajouter le produit en renvoyant `NO_STOCK_AFTER`, constaté au spike #307). Une seule demande active par foyer ; une demande `en_cours` au-delà de **30 min** passe en `echec` et le bouton redevient disponible (run complet mesuré à 12 min sur 27 articles ; mapping seul à plus de 15 min sur 36 ; à revérifier avec les favoris du vrai compte).
+- **RG-83 — Coche à l'ajout et idempotence** : chaque article ajouté au panier est **coché dans OMQ juste après son ajout**. Une relance ne traite donc que les articles restants (l'ajout Chronodrive incrémente les quantités : sans cette règle, une relance doublerait le panier). Un ajout se **confirme en comparant la quantité du produit dans le panier avant et après l'ajout**, pas au seul code de retour (Chronodrive peut ajouter le produit en renvoyant `NO_STOCK_AFTER`, constaté au spike #307). Une seule demande active par foyer ; une demande `en_cours` au-delà de **30 min** passe en `echec` et le bouton redevient disponible (run complet mesuré à 12 min sur 27 articles ; mapping seul à plus de 15 min sur 36 ; à revérifier avec les favoris du vrai compte). Une demande `en_attente` au-delà de **5 min** passe en `echec` (« l'exécuteur n'a pas pris la demande ») : un exécuteur éteint ne bloque pas le bouton. L'expiration est **paresseuse** : chaque RPC du cycle de vie (créer, prendre, rapporter, lire l'état) passe d'abord en `echec` les demandes périmées du foyer, avec leur motif (pas de tâche planifiée). Pas d'annulation en v1 : annuler côté OMQ n'arrêterait pas un run en cours.
 - **RG-84 — Compte-rendu** : en fin de run, l'exécuteur rapporte à OMQ (`rapporter_panier`) trois listes — ajoutés (produit, quantité), à choisir, introuvables — affichées sur `/courses` (dernier rapport). Le compte-rendu part aussi sur la messagerie de l'exécuteur (Telegram pour Hermes) ; une notification OMQ native est hors périmètre (#309).
+  - **Schéma** (validé à l'entrée) : `ajoutes[] {article, produit, marque, quantite}`, `a_choisir[] {article, raison, candidats[]}` (3 libellés « produit · marque · contenance » au plus), `introuvables[] {article}`, statut final `terminee` ou `echec` avec `motif` (login refusé, API changée…). **Ni identifiant de produit ni prix** : OMQ ne garde que ce que l'utilisateur doit lire (ADR-12, CGV art. 19).
+  - **Rapport tardif** : `rapporter_panier` accepte une demande `en_cours`, ou une demande passée en `echec` par expiration ; elle devient alors `terminee`, avec la mention « rapport tardif » (les articles ont bien été ajoutés et cochés). Refusé si une demande plus récente existe pour le foyer.
+  - **Affichage** : bouton désactivé pendant une demande active (« Panier en cours… » et heure de lancement), motif affiché en cas d'`echec`, rafraîchissement toutes les 10 s **seulement** pendant une demande active, plus au retour sur l'onglet. Dernier rapport en résumé (« 30 ajoutés · 5 à choisir · 1 introuvable »), « à choisir » et « introuvables » dépliés, « ajoutés » repliés.
+
+### RG-85 et RG-86 — Préparer son cycle avec son assistant (US-54, #320)
+
+- **RG-85 — Outils MCP du parcours** : en plus de RG-73→79 :
+  - `lire_planning` et `lire_liste_courses` acceptent `ancre` (AAAA-MM-JJ) : le cycle qui contient cette date. L'assistant enchaîne `lire_planning()` → `generer_cycle(ancre = au + 1 jour)` → lectures avec la même `ancre`, sans dépendre du jour ni de l'heure.
+  - Chaque repas de `lire_planning` porte aussi `accompagnement` (`feculents` | `legumes` | null).
+  - `marquer_restes(date, creneau)` : même règle que l'UI (RG-22).
+  - `chercher_recettes(filtres)` : `temps_preparation`, `vegetarien`, `accompagnement`, `saison`, texte ; 10 candidats au plus (nom, attributs, recette du foyer ou du catalogue), recettes masquées exclues. Aucune écriture : l'assistant applique ensuite par `remplacer_repas(recette)` (RG-75).
+  - `lancer_demande_panier` : crée une demande de panier et la passe directement `en_cours` (l'appelant est l'exécuteur : pas de webhook), renvoie l'ancre ; refuse si une demande est active. Même cycle de vie que le bouton (RG-81→84).
+- **RG-86 — Garde-fous du parcours** (consignes de la skill de l'exécuteur, versionnée dans `integrations/`) :
+  - **Découverte** sur 8 semaines d'historique (repli sur l'historique disponible, signalé). Les pistes du prompt ne sont pas limitatives. Chaque tendance s'énonce par une règle, ses preuves (dates, taux) et une action possible avec les outils ; seuil de **75 % des occurrences possibles**. Une tendance sans action possible est une **observation** : montrée, jamais appliquée.
+  - **Confirmation** : une tendance nouvelle est proposée avant d'être utilisée ; confirmées et rejetées sont mémorisées par l'exécuteur, pas par OMQ. Une tendance confirmée qui disparaît des données est proposée à l'oubli.
+  - **Volume** : un tiers des repas du cycle modifié au plus ; au-delà, l'assistant propose sans appliquer.
+  - **Deux validations explicites** : « repas OK » (après la liste des repas, chaque modification expliquée par sa tendance), puis « panier OK » (après la vérification du placard dans OMQ). Après toute correction, l'assistant relit le planning avant de continuer. Il n'enchaîne jamais seul.
+  - **Partage** à un proche (WhatsApp pour Hermes) **sur ordre explicite seulement**, au format défini par l'utilisateur ; « panier prêt à valider » seulement si la dernière demande est `terminee` (sinon, mention des articles à choisir) ; lien OMQ si le destinataire est membre du foyer.
+  - Déclenchement à la demande en v1 ; un déclenchement proactif viendra une fois le parcours fiable.
 
 ### RG-22 — Repas en « restes » (US-12)
 
