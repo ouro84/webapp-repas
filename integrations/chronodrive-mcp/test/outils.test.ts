@@ -219,23 +219,58 @@ test("chercher_produits : favori trouvé → pas de recherche", async () => {
   assert.equal(sim.compter(FAVORIS), 1);
 });
 
-test("favoris : mots significatifs du terme dans libellé + marque, 5 au plus, disponibles d'abord", () => {
+test("favoris : mots significatifs du terme dans le libellé, 5 au plus, disponibles d'abord", () => {
   const favoris = [
     versProduit(produit("1", "Pâte à tartiner", {}, "Nutella")),
     versProduit(produit("2", "Coulis de tomates")),
     versProduit(produit("3", "Tomates cerises", { stock: 0 })),
     ...["4", "5", "6", "7", "8"].map((id) => versProduit(produit(id, `Tomates grappe ${id}`))),
   ];
-  // « de » est un mot vide, « tomate » s'accorde avec « tomates ».
+  // « de » est un mot vide, « tomate » s'accorde avec « tomates » ; « tomate » suit « de » dans le
+  // terme comme dans le libellé : le complément est demandé, il compte.
   assert.deepEqual(favorisPour("coulis de tomate", favoris).map((p) => p.id), ["2"]);
-  // Marque comprise dans le texte comparé.
-  assert.deepEqual(favorisPour("nutella", favoris).map((p) => p.id), ["1"]);
+  // La marque ne compte plus : seul le libellé est comparé.
+  assert.deepEqual(favorisPour("nutella", favoris), []);
   // Tous les mots significatifs doivent figurer : « cerises » écarte les grappes.
   assert.deepEqual(favorisPour("tomates cerises", favoris).map((p) => p.id), ["3"]);
   const tomates = favorisPour("tomates", favoris);
   assert.equal(tomates.length, 5);
   assert.ok(tomates.every((p) => p.disponible), "les indisponibles passent après les disponibles");
   assert.deepEqual(favorisPour("  ", favoris), []);
+});
+
+test("favoris : un mot qui ne figure qu'après une préposition (« au », « aux », « de »…) ne compte pas", () => {
+  // Libellés réels du run du 2026-10-31 : « lait » ajouté en « Feuilles de lasagnes aux oeufs ».
+  const lasagnes = versProduit(produit("1697", "Feuilles de lasagnes aux oeufs N°199", {}, "BARILLA"));
+  const oeufs = versProduit(produit("2001", "Oeufs gros de poules élevées en plein air"));
+  const chocolat = versProduit(produit("2002", "Oeufs en chocolat au lait"));
+  const feta = versProduit(produit("2003", "Feta AOP au lait de brebis"));
+  const lait = versProduit(produit("146939", "Lait demi-écrémé 1,5% M.G UHT bio", {}, "LACTEL"));
+  const favoris = [lasagnes, oeufs, chocolat, feta, lait];
+
+  assert.deepEqual(favorisPour("œufs", favoris).map((p) => p.id), ["2001", "2002"]);
+  assert.deepEqual(favorisPour("lait", favoris).map((p) => p.id), ["146939"]);
+  // La marque n'est pas nécessaire au lait, et ne suffit pas seule.
+  assert.deepEqual(favorisPour("lactel", favoris), []);
+  // « à », « à la », « d' », « du », « des », « en » : même règle.
+  const autres = [
+    versProduit(produit("3001", "Yaourt à la fraise")),
+    versProduit(produit("3002", "Jus d'orange")),
+    versProduit(produit("3003", "Sucre en poudre")),
+    versProduit(produit("3004", "Pâte à crêpes")),
+    versProduit(produit("3005", "Coulis du jardin des tomates")),
+  ];
+  for (const terme of ["fraise", "orange", "poudre", "crêpes", "jardin", "tomates"]) {
+    assert.deepEqual(favorisPour(terme, autres), [], terme);
+  }
+  // Le complément demandé par le terme lui-même reste trouvé.
+  assert.deepEqual(favorisPour("yaourt à la fraise", autres).map((p) => p.id), ["3001"]);
+  assert.deepEqual(favorisPour("jus d'orange", autres).map((p) => p.id), ["3002"]);
+  assert.deepEqual(favorisPour("sucre en poudre", autres).map((p) => p.id), ["3003"]);
+  assert.deepEqual(
+    favorisPour("pommes de terre", [versProduit(produit("3006", "Pommes de terre de consommation"))]).map((p) => p.id),
+    ["3006"],
+  );
 });
 
 test("chercher_produits marque l'indisponible", async () => {

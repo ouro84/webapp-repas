@@ -56,27 +56,40 @@ export function messagePourLeLlm(e: unknown): string {
 // --- Correspondance terme ↔ favori -------------------------------------------------------------
 
 const MOTS_VIDES = new Set(["de", "du", "des", "la", "le", "les", "en", "au", "aux", "et", "a"]);
+// Prépositions qui introduisent un complément (« à » et « d' » une fois normalisés : « a », « d ») ;
+// « à la » est traité à part.
+const PREPOSITIONS = new Set(["au", "aux", "a", "de", "du", "des", "d", "en"]);
 
-// Pluriel replié (« tomates » ↔ « tomate », « choux » ↔ « chou ») sur les mots de plus de 3 lettres.
-function mots(texte: string): string[] {
-  return normaliserTerme(texte)
+type Mot = { mot: string; complement: boolean };
+
+// Mots normalisés, pluriel replié (« tomates » ↔ « tomate », « choux » ↔ « chou ») sur les mots de
+// plus de 3 lettres. `complement` : le mot suit une préposition (« au lait », « aux oeufs », « à la fraise »).
+function mots(texte: string): Mot[] {
+  const bruts = normaliserTerme(texte)
     .split(/[^\p{L}\p{N}]+/u)
-    .filter((m) => m !== "")
-    .map((m) => (m.length > 3 && /[sx]$/.test(m) ? m.slice(0, -1) : m));
+    .filter((m) => m !== "");
+  return bruts.map((m, i) => ({
+    mot: m.length > 3 && /[sx]$/.test(m) ? m.slice(0, -1) : m,
+    complement: i > 0 && (PREPOSITIONS.has(bruts[i - 1]) || (bruts[i - 1] === "la" && bruts[i - 2] === "a")),
+  }));
 }
 
 // Un favori correspond au terme quand chaque mot significatif du terme (3 lettres ou plus, hors mots
-// vides) figure parmi les mots de son libellé et de sa marque. Un terme sans mot significatif est
-// comparé sur tous ses mots. 5 favoris au plus, les disponibles d'abord. Un favori manqué n'a pas
-// de coût grave : la recherche prend le relais.
+// vides) figure dans son libellé (la marque ne compte pas). Un mot qui, dans le libellé, ne figure
+// qu'en complément (juste après « au », « aux », « à », « à la », « de », « du », « des », « d' »,
+// « en ») ne compte que s'il est aussi complément dans le terme : « lait » ne trouve ni « Oeufs en
+// chocolat au lait » ni « Feta au lait de brebis », « œufs » ne trouve pas « Feuilles de lasagnes
+// aux oeufs », mais « coulis de tomate » trouve « Coulis de tomates ». Un terme sans mot significatif
+// est comparé sur tous ses mots. 5 favoris au plus, les disponibles d'abord. Un favori manqué n'a
+// pas de coût grave : la recherche prend le relais.
 export function favorisPour(terme: string, favoris: Produit[]): Produit[] {
   const tous = mots(terme);
-  const significatifs = tous.filter((m) => m.length >= 3 && !MOTS_VIDES.has(m));
+  const significatifs = tous.filter(({ mot }) => mot.length >= 3 && !MOTS_VIDES.has(mot));
   const requis = significatifs.length > 0 ? significatifs : tous;
   if (requis.length === 0) return [];
   const trouves = favoris.filter((p) => {
-    const disponibles = new Set(mots(`${p.libelle} ${p.marque ?? ""}`));
-    return requis.every((m) => disponibles.has(m));
+    const libelle = mots(p.libelle);
+    return requis.every((r) => libelle.some((l) => l.mot === r.mot && (r.complement || !l.complement)));
   });
   return [...trouves.filter((p) => p.disponible), ...trouves.filter((p) => !p.disponible)].slice(0, FAVORIS_MAX);
 }
