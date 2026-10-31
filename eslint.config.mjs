@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Dossier local d'understand-anything, hors de Git.
+    ".understand-anything/**",
   ]),
 ]);
 
