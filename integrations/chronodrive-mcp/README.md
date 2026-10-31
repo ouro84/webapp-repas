@@ -124,7 +124,19 @@ Dans `/opt/data/config.yaml`, sous `mcp_servers`, remplacer l'entrée `chronodri
 - Les outils apparaissent dans Hermes sous `mcp__chronodrive__<outil>`. Les outils OMQ apparaissent sous `mcp__On_Mange_Quoi____<outil>`.
 - Vérifier aussi que `platforms.webhook.extra.host` vaut `127.0.0.1`. Sinon le webhook est exposé au réseau local.
 
-### 5. Redémarrer la gateway
+### 5. Installer la skill
+
+À faire avant le redémarrage, pour que la gateway la trouve au démarrage (sa prise en compte à chaud n'est pas vérifiée).
+
+```sh
+tar -C integrations/chronodrive-mcp/hermes/skills -cf - omq \
+  | ssh nas-hermes '/share/CACHEDEV1_DATA/.qpkg/container-station/bin/docker exec -i -u 1000 hermes \
+      sh -c "mkdir -p /opt/data/skills && tar -C /opt/data/skills -xf -"'
+```
+
+Chemin final : `/opt/data/skills/omq/panier-chronodrive/SKILL.md`. La skill se lance aussi à la main par `/panier-chronodrive` (mode mesure : `hermes/prompt-mesure.md`).
+
+### 6. Redémarrer la gateway
 
 Un changement de `mcp_servers` exige un redémarrage. La gateway porte aussi Telegram, WhatsApp, Home Assistant et le cron : **prévenir Arnaud et attendre son feu vert**. Puis :
 
@@ -145,16 +157,6 @@ Contrôle de fumée, en lecture seule, depuis Hermes :
 - `chercher_produits` sur `["lait demi-écrémé", "œufs"]` ;
 - `lire_panier` ;
 - `ajouter_au_panier` doit être refusé (« lecture seule »).
-
-### 6. Installer la skill
-
-```sh
-tar -C integrations/chronodrive-mcp/hermes/skills -cf - omq \
-  | ssh nas-hermes '/share/CACHEDEV1_DATA/.qpkg/container-station/bin/docker exec -i -u 1000 hermes \
-      sh -c "mkdir -p /opt/data/skills && tar -C /opt/data/skills -xf -"'
-```
-
-Chemin final : `/opt/data/skills/omq/panier-chronodrive/SKILL.md`. La skill se lance aussi à la main par `/panier-chronodrive` (mode mesure : `hermes/prompt-mesure.md`).
 
 ### 7. Route webhook et Funnel
 
