@@ -19,7 +19,7 @@ import { createHmac, randomBytes } from "node:crypto";
 import { createServer, type IncomingHttpHeaders, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
-import type { APIRequestContext, BrowserContext, Locator, Page } from "@playwright/test";
+import type { APIRequestContext, BrowserContext, Locator, Page, Request } from "@playwright/test";
 import { test, expect } from "./fixtures";
 import { appelerOutilMcp, autoriser, connecter, inscrire, jetonMotDePasse } from "./oauth";
 import {
@@ -251,14 +251,39 @@ function carteDe(page: Page): Locator {
   return page.getByRole("region", { name: "Panier Chronodrive" });
 }
 
-// /courses dans son état CHARGÉ (le compteur « n coché(s) sur m » n'existe
-// qu'avec une liste) : la carte n'est montée que là. Sans cette attente, une
-// assertion d'absence passerait sur l'état de chargement ou l'état vide.
+// /courses dans son état CHARGÉ, carte rendue avec ses deux lectures. La carte
+// n'est montée que dans l'état chargé (le compteur « n coché(s) sur m »
+// n'existe qu'avec une liste), puis décide de s'afficher avec `etat_panier` ET
+// le jour de courses du foyer (`foyers?select=jour_courses`, cycle courant).
+// On attend donc la liste, la réception COMPLÈTE des deux réponses (corps
+// compris : `waitForResponse` résout dès les en-têtes), puis deux frames pour
+// laisser React rendre. Après ce helper, la présence ou l'absence de la carte
+// se lit sans attente : c'est ce qui rend l'assertion d'absence probante.
 async function ouvrirCourses(page: Page): Promise<void> {
-  const etatLu = page.waitForResponse((r) => r.url().includes("/rpc/etat_panier"));
-  await page.goto("/courses");
-  await expect(page.getByText(/^\d+ cochés? sur \d+/)).toBeVisible();
-  expect((await etatLu).ok()).toBe(true);
+  const lecturesJour: Request[] = [];
+  const noterLecture = (req: Request) => {
+    if (req.url().includes("/rest/v1/foyers") && req.url().includes("jour_courses")) lecturesJour.push(req);
+  };
+  page.on("request", noterLecture);
+  try {
+    const etatLu = page.waitForResponse((r) => r.url().includes("/rpc/etat_panier"));
+    await page.goto("/courses");
+    await expect(page.getByText(/^\d+ cochés? sur \d+/)).toBeVisible();
+    const reponseEtat = await etatLu;
+    expect(reponseEtat.ok()).toBe(true);
+    await reponseEtat.finished();
+    // La carte lance ses deux lectures dans le même effet : une fois l'état
+    // reçu, sa lecture du jour de courses est partie (celle de la page aussi).
+    expect(lecturesJour.length).toBeGreaterThan(0);
+    for (const req of lecturesJour) {
+      const reponse = await req.response();
+      expect(reponse?.ok()).toBe(true);
+      await reponse!.finished();
+    }
+    await page.evaluate(() => new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok))));
+  } finally {
+    page.off("request", noterLecture);
+  }
 }
 
 // Captures de contrôle visuel, HORS CI : `CAPTURES_PANIER=<dossier>` active le
@@ -481,6 +506,9 @@ test("isolation foyer : un autre compte ne prend ni ne rapporte la demande (RG-7
 test("UI : bouton visible, clic → « Panier en cours… », webhook reçu (RG-81, RG-83)", async () => {
   await ouvrirCourses(pageA);
   const carte = carteDe(pageA);
+  // Témoin positif de la séquence d'ouvrirCourses : lue SANS attente, la carte
+  // est déjà là (même lecture instantanée que le test « aucun exécuteur »).
+  expect(await carte.count()).toBe(1);
   const bouton = carte.getByRole("button", { name: "Constituer mon panier Chronodrive" });
   await expect(bouton).toBeEnabled();
 
@@ -536,10 +564,12 @@ test("UI : échec affiché quand l’exécuteur répond 500, bouton réactivé (
 
 test("UI : aucun exécuteur → pas de carte (RG-81)", async ({ request }) => {
   expect((await etatPanier(request, EMAIL_B)).executeur).toBe(false);
-  // B a un planning sur le cycle courant : la liste est chargée et l'état du
-  // panier est lu, la carte aurait donc eu sa chance d'apparaître.
+  // B a un planning sur le cycle courant. Après ouvrirCourses, la liste est
+  // chargée, les deux lectures de la carte sont reçues et React a rendu : la
+  // même séquence montre la carte à A (témoin du premier test UI). Lecture
+  // instantanée, sans poll, comme pour A.
   await ouvrirCourses(pageB);
-  await expect(carteDe(pageB)).toHaveCount(0);
-  await expect(pageB.getByRole("button", { name: "Constituer mon panier Chronodrive" })).toHaveCount(0);
-  await expect(pageB.getByText("Panier Chronodrive")).toHaveCount(0);
+  expect(await carteDe(pageB).count()).toBe(0);
+  expect(await pageB.getByRole("button", { name: "Constituer mon panier Chronodrive" }).count()).toBe(0);
+  expect(await pageB.getByText("Panier Chronodrive").count()).toBe(0);
 });
