@@ -17,10 +17,29 @@ export async function chargerEtatPanier(
 ): Promise<EtatPanier> {
   const { data, error } = await supabase.rpc("etat_panier")
   if (error) throw new Error(`Lecture de l’état du panier impossible : ${error.message}`)
+  if (!data) throw new Error("Lecture de l’état du panier impossible : aucune donnée renvoyée.")
   return data as EtatPanier
 }
 
-export type ResultatLancement = { ok: true } | { ok: false; message: string }
+/**
+ * Jour de courses du foyer, lu directement et SANS repli : jumeau de la route
+ * `POST /api/panier/demande`. `chargerJourCoursesFoyer` retombe sur lundi en
+ * cas d'erreur, ce qui ferait croire que le cycle courant est un autre cycle
+ * (bouton montré ou masqué à tort). Lève sur erreur ; la RLS borne la ligne.
+ */
+export async function chargerJourCoursesPanier(
+  supabase: ClientSupabase = clientParDefaut()
+): Promise<number> {
+  const { data, error } = await supabase.from("foyers").select("jour_courses").maybeSingle()
+  if (error) throw new Error(`Lecture du jour de courses impossible : ${error.message}`)
+  if (!data) throw new Error("Lecture du jour de courses impossible : foyer introuvable.")
+  return (data as { jour_courses: number }).jour_courses
+}
+
+/** `statut` : code HTTP de la route, `null` si la requête n'a pas abouti (réseau). */
+export type ResultatLancement =
+  | { ok: true }
+  | { ok: false; statut: number | null; message: string }
 
 /**
  * `POST /api/panier/demande`, sans corps : la route vise toujours le cycle
@@ -34,9 +53,13 @@ export async function lancerDemandePanier(
   try {
     const reponse = await appeler("/api/panier/demande", { method: "POST" })
     if (reponse.status === 202) return { ok: true }
-    return { ok: false, message: await parseApiError(reponse) }
+    return { ok: false, statut: reponse.status, message: await parseApiError(reponse) }
   } catch (err) {
     console.error("Lancement du panier impossible :", err)
-    return { ok: false, message: "Connexion impossible : vérifie ton réseau, puis réessaie." }
+    return {
+      ok: false,
+      statut: null,
+      message: "Connexion impossible : vérifie ton réseau, puis réessaie.",
+    }
   }
 }

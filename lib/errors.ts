@@ -38,7 +38,9 @@ const HTTP_ERROR_MESSAGES: Record<number, string> = {
 export async function parseApiError(response: Response): Promise<string> {
   try {
     const body = await response.json()
-    if (body?.error) return body.error
+    // Seule une chaîne non vide est un message affichable : un objet ou un
+    // nombre retomberait en « [object Object] » dans un toast.
+    if (typeof body?.error === "string" && body.error) return body.error
   } catch {
     // Le corps n'est pas du JSON valide — on tombe sur le fallback
   }

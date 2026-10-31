@@ -3,7 +3,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import { chargerEtatPanier, lancerDemandePanier } from "@/lib/panier-client"
+import { chargerEtatPanier, chargerJourCoursesPanier, lancerDemandePanier } from "@/lib/panier-client"
 import type { EtatPanier } from "@/lib/panier-affichage"
 import { creerSupabaseMock } from "@/tests/fixtures/supabase-mock"
 
@@ -23,6 +23,33 @@ describe("chargerEtatPanier", () => {
       rpc: { etat_panier: { data: null, error: { message: "boom" } } },
     })
     await expect(chargerEtatPanier(client)).rejects.toThrow(/boom/)
+  })
+
+  it("lève si la RPC ne renvoie rien (B4)", async () => {
+    const { client } = creerSupabaseMock({ rpc: { etat_panier: { data: null, error: null } } })
+    await expect(chargerEtatPanier(client)).rejects.toThrow(/aucune donnée/)
+  })
+})
+
+describe("chargerJourCoursesPanier", () => {
+  it("renvoie jour_courses du foyer", async () => {
+    const { client, appels } = creerSupabaseMock({
+      tables: { foyers: { data: { jour_courses: 5 }, error: null } },
+    })
+    await expect(chargerJourCoursesPanier(client)).resolves.toBe(5)
+    expect(appels[0]).toMatchObject({ table: "foyers" })
+  })
+
+  it("lève sur erreur, SANS repli sur lundi (B13)", async () => {
+    const { client } = creerSupabaseMock({
+      tables: { foyers: { data: null, error: { message: "boom" } } },
+    })
+    await expect(chargerJourCoursesPanier(client)).rejects.toThrow(/boom/)
+  })
+
+  it("lève si aucun foyer n'est lu", async () => {
+    const { client } = creerSupabaseMock({ tables: { foyers: { data: null, error: null } } })
+    await expect(chargerJourCoursesPanier(client)).rejects.toThrow(/foyer introuvable/)
   })
 })
 
@@ -47,7 +74,19 @@ describe("lancerDemandePanier", () => {
     )
     await expect(lancerDemandePanier({ fetch: fetchMock })).resolves.toEqual({
       ok: false,
+      statut: 409,
       message: "Une demande est déjà en cours.",
+    })
+  })
+
+  it("502 → statut transmis (la carte porte le message, C3)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ error: "Ton exécuteur est injoignable." }), { status: 502 })
+    )
+    await expect(lancerDemandePanier({ fetch: fetchMock })).resolves.toEqual({
+      ok: false,
+      statut: 502,
+      message: "Ton exécuteur est injoignable.",
     })
   })
 
@@ -56,6 +95,7 @@ describe("lancerDemandePanier", () => {
     const fetchMock = vi.fn().mockRejectedValue(new TypeError("Failed to fetch"))
     await expect(lancerDemandePanier({ fetch: fetchMock })).resolves.toEqual({
       ok: false,
+      statut: null,
       message: "Connexion impossible : vérifie ton réseau, puis réessaie.",
     })
     expect(spy).toHaveBeenCalled()
