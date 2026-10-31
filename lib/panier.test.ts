@@ -34,6 +34,18 @@ describe("envoyerWebhook (RG-81)", () => {
     expect(init.method).toBe("POST")
     expect(init.body).toBe(ENVOI.corps)
     expect(init.headers).toMatchObject({ "content-type": "application/json", ...ENVOI.entetes })
+    // Une redirection est un échec, pas un second POST vers une autre URL.
+    expect(init.redirect).toBe("error")
+  })
+
+  it("annule le corps de la réponse, sans lever si l'annulation échoue", async () => {
+    const annuler = vi.fn().mockRejectedValue(new Error("flux déjà fermé"))
+    const reponse = { ok: true, status: 202, body: { cancel: annuler } }
+    const fetchMock = vi.fn().mockResolvedValue(reponse)
+    await expect(
+      envoyerWebhook(ENVOI, { fetch: fetchMock as unknown as typeof fetch }),
+    ).resolves.toEqual({ ok: true })
+    expect(annuler).toHaveBeenCalledTimes(1)
   })
 
   it("2xx → ok", async () => {
@@ -43,10 +55,10 @@ describe("envoyerWebhook (RG-81)", () => {
     ).resolves.toEqual({ ok: true })
   })
 
-  it("non 2xx → échec avec le statut dans le motif", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 500 }))
+  it("non 2xx → motif lisible « réponse HTTP 500 » (§5.8)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response("panne", { status: 500 }))
     const r = await envoyerWebhook(ENVOI, { fetch: fetchMock as unknown as typeof fetch })
-    expect(r).toEqual({ ok: false, motif: expect.stringContaining("500") })
+    expect(r).toEqual({ ok: false, motif: "réponse HTTP 500" })
   })
 
   it("délai dépassé → échec sans lever", async () => {
@@ -58,13 +70,21 @@ describe("envoyerWebhook (RG-81)", () => {
         }),
     )
     const r = await envoyerWebhook(ENVOI, { fetch: fetchMock as unknown as typeof fetch, delaiMs: 20 })
-    expect(r.ok).toBe(false)
+    // Motif français, non vide ; la cause brute (DOMException) ne va qu'au log.
+    expect(r).toEqual({ ok: false, motif: "délai de 0,02 s dépassé" })
   })
 
-  it("erreur réseau → échec sans lever", async () => {
+  it("délai par défaut → « délai de 10 s dépassé »", async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new DOMException("signal timed out", "TimeoutError"))
+    const r = await envoyerWebhook(ENVOI, { fetch: fetchMock as unknown as typeof fetch })
+    expect(r).toEqual({ ok: false, motif: "délai de 10 s dépassé" })
+  })
+
+  it("erreur réseau → motif « erreur réseau », cause brute loggée seulement", async () => {
     const fetchMock = vi.fn().mockRejectedValue(new TypeError("fetch failed"))
     const r = await envoyerWebhook(ENVOI, { fetch: fetchMock as unknown as typeof fetch })
-    expect(r).toEqual({ ok: false, motif: expect.stringContaining("fetch failed") })
+    expect(r).toEqual({ ok: false, motif: "erreur réseau" })
+    expect(console.error).toHaveBeenCalledWith(expect.any(String), expect.any(TypeError))
   })
 })
 
@@ -79,14 +99,28 @@ describe("schemaRapport (RG-84)", () => {
     expect(schemaRapport.safeParse(rapportValide).success).toBe(true)
   })
 
-  it("refuse productId et prix", () => {
-    const avecId = structuredClone(rapportValide) as Record<string, unknown[]>
-    Object.assign(avecId.ajoutes[0] as object, { productId: "p-1" })
-    expect(schemaRapport.safeParse(avecId).success).toBe(false)
+  // RG-80, RG-84 : ni identifiant de produit ni prix, à aucun niveau.
+  it.each([
+    ["racine", "productId"],
+    ["racine", "prix"],
+    ["ajoutes", "productId"],
+    ["ajoutes", "prix"],
+    ["a_choisir", "productId"],
+    ["a_choisir", "prix"],
+    ["introuvables", "productId"],
+    ["introuvables", "prix"],
+  ] as const)("refuse %s.%s", (niveau, cle) => {
+    const r = structuredClone(rapportValide) as Record<string, unknown>
+    const cible = niveau === "racine" ? r : (r[niveau] as object[])[0]
+    Object.assign(cible, { [cle]: cle === "prix" ? 1.99 : "p-1" })
+    expect(schemaRapport.safeParse(r).success).toBe(false)
+  })
 
-    const avecPrix = structuredClone(rapportValide) as Record<string, unknown[]>
-    Object.assign(avecPrix.ajoutes[0] as object, { prix: 1.99 })
-    expect(schemaRapport.safeParse(avecPrix).success).toBe(false)
+  it.each(["ajoutes", "a_choisir", "introuvables"] as const)("refuse plus de 200 éléments dans %s", (liste) => {
+    const r = structuredClone(rapportValide)
+    const element = r[liste][0]
+    ;(r as Record<string, unknown[]>)[liste] = Array.from({ length: 201 }, () => element)
+    expect(schemaRapport.safeParse(r).success).toBe(false)
   })
 
   it("refuse 4 candidats", () => {

@@ -51,13 +51,23 @@ create table demande_panier (
     check (statut in ('en_attente', 'en_cours', 'terminee', 'echec')),
   cause_echec text
     check (cause_echec in ('injoignable', 'non_prise', 'delai_depasse', 'executeur')),
-  motif_echec text,
+  -- Texte lisible par le foyer (§5.8) : plafonné comme `motif` de l'outil MCP.
+  motif_echec text check (char_length(motif_echec) <= 500),
   -- Compte-rendu de l'exécuteur (RG-84) : ajoutés, à choisir, introuvables.
-  rapport jsonb,
+  -- Le contenu est validé par zod (`schemaRapport`) ; la base ne garde que la
+  -- forme et un plafond de taille, contre un appel direct à la RPC.
+  rapport jsonb check (
+    rapport is null
+    or (jsonb_typeof(rapport) = 'object'
+        and rapport ?& array['ajoutes', 'a_choisir', 'introuvables']
+        and octet_length(rapport::text) <= 65536)),
   rapport_tardif boolean not null default false,
   cree_le timestamptz not null default now(),
   pris_le timestamptz,
-  termine_le timestamptz
+  termine_le timestamptz,
+  -- Une cause si et seulement si la demande est en échec : un rapport tardif
+  -- `terminee` remet donc `cause_echec` à null (RG-83).
+  check ((statut = 'echec') = (cause_echec is not null))
 );
 
 -- Une seule demande active par foyer (RG-83).
@@ -70,8 +80,8 @@ create index demande_panier_foyer_cree_idx
 
 -- Lecture seule pour le foyer ; toute écriture passe par les RPC ci-dessous.
 alter table demande_panier enable row level security;
-revoke all on demande_panier from anon;
-revoke insert, update, delete on demande_panier from authenticated;
+revoke all on demande_panier from anon, authenticated;
+grant select on demande_panier to authenticated;
 
 create policy "demande_panier : lecture par le foyer"
   on demande_panier for select
@@ -86,7 +96,7 @@ create or replace function supprimer_secret_executeur_panier()
 returns trigger
 language plpgsql
 security definer
-set search_path = public, vault
+set search_path = public, extensions, vault
 as $$
 begin
   delete from vault.secrets where id = old.secret_id;
@@ -259,6 +269,16 @@ begin
     raise exception 'Aucun foyer rattaché à l''utilisateur courant';
   end if;
 
+  if p_ancre is null then
+    raise exception 'Ancre du cycle de courses obligatoire'
+      using errcode = '22023';
+  end if;
+
+  -- Sérialise création et rapport d'un même foyer (verrou relâché en fin de
+  -- transaction) : un rapport tardif ne peut pas être accepté pendant qu'une
+  -- demande plus récente se crée (RG-84).
+  perform pg_advisory_xact_lock(hashtext('panier:' || v_foyer::text));
+
   perform expirer_demandes_panier(v_foyer);
 
   select url_webhook, secret_id into v_url, v_secret_id
@@ -273,11 +293,15 @@ begin
     from vault.decrypted_secrets
    where id = v_secret_id;
   if v_secret is null then
-    raise exception 'Secret de l''exécuteur de panier introuvable';
+    -- Panne de configuration (secret supprimé de Vault à la main) : la route
+    -- répond 500 ; ré-enregistrer l'exécuteur recrée le secret.
+    raise exception 'Secret Vault % de l''exécuteur de panier introuvable : ré-enregistrer l''exécuteur avec enregistrer_executeur_panier', v_secret_id;
   end if;
 
-  -- Une seule demande active : l'index unique partiel tranche les courses
-  -- (deux clics simultanés), le contrôle préalable donne le cas courant.
+  -- Une seule demande active : l'index unique partiel en est la garantie. Le
+  -- verrou ci-dessus sérialise déjà deux clics simultanés, si bien que le
+  -- second voit le premier ici ; le rattrapage de `unique_violation` reste
+  -- le filet de dernier recours.
   if exists (select 1 from demande_panier
               where foyer_id = v_foyer and statut in ('en_attente', 'en_cours')) then
     raise exception 'Une demande de panier est déjà en cours pour ce foyer'
@@ -319,10 +343,12 @@ grant execute on function creer_demande_panier(date) to authenticated;
 -- ─── Échec d'envoi du webhook (RG-81) ──────────────────────────────────────
 
 -- La route n'a pas pu joindre l'exécuteur (délai de 10 s dépassé, réponse
--- non 2xx) : la demande `en_attente` passe en `echec` / `injoignable`, et le
--- bouton redevient disponible aussitôt. No-op pour toute autre demande.
+-- non 2xx) : la demande `en_attente` passe en `echec` / `injoignable`, et une
+-- nouvelle demande est possible aussitôt. Renvoie true si la demande a été
+-- fermée ; false si elle n'était plus `en_attente` (l'exécuteur l'a prise
+-- malgré le délai, ou elle a déjà expiré).
 create or replace function echouer_envoi_demande_panier(p_demande uuid, p_motif text)
-returns void
+returns boolean
 language plpgsql
 security definer
 set search_path = public
@@ -344,6 +370,8 @@ begin
    where id = p_demande
      and foyer_id = v_foyer
      and statut = 'en_attente';
+
+  return found;
 end;
 $$;
 
@@ -423,6 +451,10 @@ begin
     raise exception 'Statut de rapport invalide : %', p_statut
       using errcode = '22023';
   end if;
+
+  -- Même verrou que creer_demande_panier : la vérification « aucune demande
+  -- plus récente » ne peut pas croiser une création concurrente (RG-84).
+  perform pg_advisory_xact_lock(hashtext('panier:' || v_foyer::text));
 
   perform expirer_demandes_panier(v_foyer);
 

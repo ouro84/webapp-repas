@@ -229,7 +229,7 @@ export function enregistrerOutilsEcriture(server: McpServer): void {
     {
       title: "Prendre la demande de panier",
       description:
-        "À appeler au réveil, dès réception du webhook « demande_panier » d'OMQ, avant toute autre action. Prend la demande de panier en attente du foyer et la marque en cours. Si la réponse est `demande: null`, il n'y a rien à faire : arrête-toi sans rien faire d'autre (webhook rejoué, demande expirée ou déjà prise). Sinon, `demande.id` sert à rapporter_panier, et `demande.ancre` (AAAA-MM-JJ) désigne le cycle de courses à traiter : c'est le cycle en cours, celui que lit lire_liste_courses.",
+        "Réservé à l’exécuteur de panier du foyer, réveillé par le webhook : ne l’appelle jamais pour consulter l’état d’un panier. À appeler au réveil, dès réception du webhook « demande_panier » d'OMQ, avant toute autre action. Prend la demande de panier en attente du foyer et la marque en cours. Si la réponse est `demande: null`, il n'y a rien à faire : arrête-toi sans rien faire d'autre (webhook rejoué, demande expirée ou déjà prise). Sinon, `demande.id` sert à rapporter_panier, et `demande.ancre` (AAAA-MM-JJ) désigne le cycle de courses à traiter : c'est le cycle en cours, celui que lit lire_liste_courses.",
       inputSchema: z.object({}),
     },
     async (_args, ctx) => executer(ctx, (supabase) => prendreDemandePanier(supabase))
@@ -240,13 +240,18 @@ export function enregistrerOutilsEcriture(server: McpServer): void {
     {
       title: "Rapporter le panier préparé",
       description:
-        "À appeler une seule fois, en fin de run, pour la demande prise par prendre_demande_panier. Avant de rapporter, coche chaque article dans OMQ avec cocher_article juste après l'avoir ajouté au panier de l'enseigne, pas en fin de run. `ajoutes` : articles mis au panier (produit, marque, quantité). `a_choisir` : articles à trancher par le foyer, avec la raison et 3 candidats au plus. `introuvables` : articles absents de l'enseigne. N'envoie aucun identifiant de produit ni aucun prix : ils sont refusés. `statut: \"echec\"` exige `motif`, une phrase lisible par le foyer. Si l'outil répond que la demande ne peut plus recevoir de rapport, arrête-toi sans réessayer.",
+        "Réservé à l’exécuteur de panier du foyer, réveillé par le webhook : ne l’appelle jamais pour consulter l’état d’un panier. À appeler une seule fois, en fin de run, pour la demande prise par prendre_demande_panier. Avant de rapporter, coche chaque article dans OMQ avec cocher_article juste après l'avoir ajouté au panier de l'enseigne, pas en fin de run. `ajoutes` : articles mis au panier (produit, marque, quantité). `a_choisir` : articles à trancher par le foyer, avec la raison et 3 candidats au plus. `introuvables` : articles absents de l'enseigne. Les trois listes sont requises, même en échec : envoie des listes vides si rien n'a été fait. N'envoie aucun identifiant de produit ni aucun prix : ils sont refusés. `statut: \"echec\"` exige `motif`, une phrase lisible par le foyer. Si l'outil répond que la demande ne peut plus recevoir de rapport, arrête-toi sans réessayer.",
       inputSchema: schemaRapport.extend({
         demande_id: z.uuid().describe("Identifiant renvoyé par prendre_demande_panier (`demande.id`)."),
         statut: z
           .enum(["terminee", "echec"])
           .describe("terminee : panier préparé, même partiellement ; echec : run interrompu."),
-        motif: z.string().optional().describe("Obligatoire si statut = echec : pourquoi le panier n'a pas pu être fait."),
+        motif: z
+          .string()
+          .min(1)
+          .max(500)
+          .optional()
+          .describe("Obligatoire si statut = echec : pourquoi le panier n'a pas pu être fait (500 caractères au plus)."),
       }),
     },
     async (args, ctx) => executer(ctx, (supabase) => rapporterPanier(supabase, args))

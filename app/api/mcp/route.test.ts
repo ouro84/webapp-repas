@@ -294,7 +294,7 @@ describe("POST /api/mcp — outils de l'exécuteur de panier (#308, RG-81→84)"
     expect(result?.structuredContent).toEqual({ statut: "terminee", rapport_tardif: false })
   })
 
-  it("rapporter_panier : un prix ou plus de 3 candidats sont refusés avant l'outil (RG-84)", async () => {
+  it("rapporter_panier : un prix, plus de 3 candidats ou un motif de plus de 500 caractères sont refusés avant l'outil (RG-84)", async () => {
     const avecPrix = {
       demande_id: DEMANDE,
       statut: "terminee",
@@ -307,22 +307,28 @@ describe("POST /api/mcp — outils de l'exécuteur de panier (#308, RG-81→84)"
       ...RAPPORT,
       a_choisir: [{ article: "farine", raison: "formats", candidats: ["a", "b", "c", "d"] }],
     }
-    for (const args of [avecPrix, tropDeCandidats]) {
+    const motifTropLong = { demande_id: DEMANDE, statut: "echec", motif: "x".repeat(501), ...RAPPORT }
+    for (const args of [avecPrix, tropDeCandidats, motifTropLong]) {
       const { result, error } = await lire(await appeler("tools/call", { name: "rapporter_panier", arguments: args }))
       expect(result?.isError === true || error !== undefined).toBe(true)
     }
     expect(m.rapporterPanier).not.toHaveBeenCalled()
   })
 
-  it("les descriptions guident l'exécuteur : arrêt sur null, ancre, une fois, 3 candidats, cocher avant", async () => {
+  it("les descriptions guident l'exécuteur : réservé, arrêt sur null, ancre, une fois, listes requises, 3 candidats, cocher avant", async () => {
     const { result } = await lire(await appeler("tools/list"))
     const description = (nom: string) =>
       (result?.tools as Array<{ name: string; description: string }>).find((t) => t.name === nom)!.description
+    for (const nom of ["prendre_demande_panier", "rapporter_panier"]) {
+      expect(description(nom).startsWith("Réservé à l’exécuteur de panier du foyer, réveillé par le webhook")).toBe(true)
+      expect(description(nom)).toContain("ne l’appelle jamais pour consulter l’état d’un panier")
+    }
     expect(description("prendre_demande_panier")).toContain("`demande: null`")
     expect(description("prendre_demande_panier")).toContain("lire_liste_courses")
     expect(description("rapporter_panier")).toContain("une seule fois")
     expect(description("rapporter_panier")).toContain("3 candidats au plus")
     expect(description("rapporter_panier")).toContain("cocher_article")
     expect(description("rapporter_panier")).toContain("ni aucun prix")
+    expect(description("rapporter_panier")).toContain("même en échec")
   })
 })
