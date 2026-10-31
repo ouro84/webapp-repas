@@ -93,7 +93,7 @@ test("favoris paginés jusqu'à hasNext=false", async () => {
   );
   assert.ok(appels.every((a) => a.service === "FAVOURITE_PRODUCTS"));
 
-  // Chargés une seule fois par processus : le second appel reprend la mémoire.
+  // Gardés en mémoire (30 min) : le second appel reprend la mémoire.
   assert.equal(await chargerFavoris(sim.client), favoris);
   assert.equal(sim.compter("GET /v1/favourite-products"), 3);
 });

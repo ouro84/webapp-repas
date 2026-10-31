@@ -3,12 +3,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { rechercher } from "../src/catalogue.ts";
+import { chargerFavoris, DUREE_FAVORIS_MS, rechercher } from "../src/catalogue.ts";
 import { ErreurChronodrive } from "../src/client.ts";
 import { ajouterLignes, lirePanierCourant } from "../src/panier.ts";
 import { clientSimule, fiche, panierSimule } from "./simulation.ts";
 
 const AJOUTS = "POST /v1/carts/p1/items";
+// Valeur envoyée par le spike lors des ajouts qui ont réussi (docs/etudes/chronodrive.md, « Protocole relevé »).
+const ORIGINE = "WEB|SEARCH|TG|/promotions";
 
 test("panier courant relu à chaque appel de session", async () => {
   // Après une commande validée, l'identifiant du panier change : jamais de cache de panierId.
@@ -54,7 +56,7 @@ test("ajout confirmé par écart de quantité, produit déjà présent", async (
   );
   const post = sim.appels.find((a) => a.methode === "POST");
   assert.equal(post?.service, "CARTS");
-  assert.deepEqual(post?.corps, { content: [{ clientOrigin: "WEB", productId: "10", quantity: 1 }], optimizedMode: true });
+  assert.deepEqual(post?.corps, { content: [{ clientOrigin: ORIGINE, productId: "10", quantity: 1 }], optimizedMode: true });
 });
 
 test("NO_STOCK_AFTER avec écart → confirmé", async () => {
@@ -128,9 +130,9 @@ test("quantité bornée à 1..20 et à maxCartQuantity, doublon refusé", async 
   ]);
   const quantites = sim.appels.filter((a) => a.methode === "POST").map((a) => (a.corps as { content: unknown[] }).content[0]);
   assert.deepEqual(quantites, [
-    { clientOrigin: "WEB", productId: "50", quantity: 20 },
-    { clientOrigin: "WEB", productId: "51", quantity: 3 }, // déjà 1 au panier, plafond 4
-    { clientOrigin: "WEB", productId: "52", quantity: 1 },
+    { clientOrigin: ORIGINE, productId: "50", quantity: 20 },
+    { clientOrigin: ORIGINE, productId: "51", quantity: 3 }, // déjà 1 au panier, plafond 4
+    { clientOrigin: ORIGINE, productId: "52", quantity: 1 },
   ]);
   assert.equal(resultats[0].confirme, true);
   assert.match(resultats[0].erreur ?? "", /20 sur 35/);
@@ -174,4 +176,46 @@ test("panier non relu après ajout : rien de confirmé, consigne de vérifier", 
   assert.equal(resultat.confirme, false);
   assert.equal(resultat.returnType, "SUCCESS");
   assert.match(resultat.erreur ?? "", /vérifier le panier/);
+});
+
+test("favoris expirés après 30 min : un produit revenu en stock redevient ajoutable", async () => {
+  const h = { t: 1_800_000_000_000 };
+  const maintenant = () => h.t;
+  const panier = panierSimule("p1", {});
+  const sim = clientSimule({
+    ...panier.routes,
+    // 1er chargement : en rupture ; rechargement : revenu en stock.
+    "GET /v1/favourite-products": (_a, n) => ({ content: [fiche("80", { stock: n === 1 ? 0 : 5 })], page: { hasNext: false } }),
+  });
+
+  assert.equal((await chargerFavoris(sim.client, { maintenant }))[0].disponible, false);
+  const [bloque] = await ajouterLignes(sim.client, [{ productId: "80", quantite: 1 }], { maintenant });
+  assert.equal(bloque.confirme, false);
+  assert.equal(sim.compter(AJOUTS), 0);
+
+  // Encore en mémoire juste avant 30 min : pas de rechargement.
+  h.t += DUREE_FAVORIS_MS;
+  await chargerFavoris(sim.client, { maintenant });
+  assert.equal(sim.compter("GET /v1/favourite-products"), 1);
+
+  // Au-delà de 30 min : rechargement, et la fiche fraîche rend le produit ajoutable.
+  h.t += 1;
+  assert.equal((await chargerFavoris(sim.client, { maintenant }))[0].disponible, true);
+  assert.equal(sim.compter("GET /v1/favourite-products"), 2);
+  const [ajoute] = await ajouterLignes(sim.client, [{ productId: "80", quantite: 1 }], { maintenant });
+  assert.equal(ajoute.confirme, true);
+  assert.equal(sim.compter(AJOUTS), 1);
+});
+
+test("fiche vue périmée (plus de 30 min) : ignorée, l'écart de quantité tranche", async () => {
+  const h = { t: 1_800_000_000_000 };
+  const maintenant = () => h.t;
+  const panier = panierSimule("p1", {});
+  const sim = clientSimule({ ...panier.routes, "GET /v1/products": () => ({ content: [fiche("81", { remainingStock: 0 })] }) });
+  await rechercher(sim.client, "crème", 20, { maintenant });
+
+  h.t += DUREE_FAVORIS_MS + 1;
+  const [r] = await ajouterLignes(sim.client, [{ productId: "81", quantite: 1 }], { maintenant });
+  assert.equal(sim.compter(AJOUTS), 1);
+  assert.equal(r.confirme, true);
 });

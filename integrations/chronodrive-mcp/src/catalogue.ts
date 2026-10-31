@@ -74,18 +74,28 @@ export function versProduit(brut: unknown): Produit {
   };
 }
 
-// Dernière fiche vue par client (favoris, recherche) : `ajouterLignes` y lit la
-// disponibilité et le plafond d'un produit avant de l'envoyer. La fiche la plus récente l'emporte.
-const fichesVues = new WeakMap<object, Map<string, Produit>>();
+// Le processus MCP vit aussi longtemps que la gateway Hermes (des jours) : favoris et fiches vues
+// expirent après 30 min, pour qu'une rupture levée depuis ne bloque pas un produit revenu en stock.
+export const DUREE_FAVORIS_MS = 30 * 60_000;
 
-export function noterProduits(client: object, produits: Iterable<Produit>): void {
+// Horloge injectable (tests) ; `Date.now` par défaut.
+export type OptionsHorloge = { maintenant?: () => number };
+
+// Dernière fiche vue par client (favoris, recherche) : `ajouterLignes` y lit la
+// disponibilité et le plafond d'un produit avant de l'envoyer. La fiche la plus récente l'emporte ;
+// une fiche de plus de 30 min est ignorée.
+const fichesVues = new WeakMap<object, Map<string, { produit: Produit; vueA: number }>>();
+
+export function noterProduits(client: object, produits: Iterable<Produit>, { maintenant = Date.now }: OptionsHorloge = {}): void {
   let vus = fichesVues.get(client);
   if (!vus) fichesVues.set(client, (vus = new Map()));
-  for (const p of produits) if (p.id) vus.set(p.id, p);
+  const vueA = maintenant();
+  for (const produit of produits) if (produit.id) vus.set(produit.id, { produit, vueA });
 }
 
-export function produitVu(client: object, productId: string): Produit | undefined {
-  return fichesVues.get(client)?.get(productId);
+export function produitVu(client: object, productId: string, { maintenant = Date.now }: OptionsHorloge = {}): Produit | undefined {
+  const vue = fichesVues.get(client)?.get(productId);
+  return vue && maintenant() - vue.vueA <= DUREE_FAVORIS_MS ? vue.produit : undefined;
 }
 
 function produitsDe(corps: unknown): Produit[] {
@@ -93,21 +103,23 @@ function produitsDe(corps: unknown): Produit[] {
   return (Array.isArray(contenu) ? contenu : []).map(versProduit).filter((p) => p.id !== "");
 }
 
-// Favoris chargés une seule fois par client (donc par processus) et gardés en mémoire pour le run.
+// Favoris gardés en mémoire par client pendant 30 min (DUREE_FAVORIS_MS), puis rechargés.
 // Un échec n'est pas mémorisé : l'appel suivant recharge.
-const favorisCharges = new WeakMap<object, Promise<Produit[]>>();
+const favorisCharges = new WeakMap<object, { promesse: Promise<Produit[]>; chargeA: number }>();
 
-export function chargerFavoris(client: Appelant): Promise<Produit[]> {
-  let favoris = favorisCharges.get(client);
-  if (!favoris) {
-    favoris = toutesLesPagesDeFavoris(client);
-    favorisCharges.set(client, favoris);
-    favoris.catch(() => favorisCharges.delete(client));
-  }
-  return favoris;
+export function chargerFavoris(client: Appelant, options: OptionsHorloge = {}): Promise<Produit[]> {
+  const maintenant = options.maintenant ?? Date.now;
+  const memoire = favorisCharges.get(client);
+  if (memoire && maintenant() - memoire.chargeA <= DUREE_FAVORIS_MS) return memoire.promesse;
+  const entree = { promesse: toutesLesPagesDeFavoris(client, options), chargeA: maintenant() };
+  favorisCharges.set(client, entree);
+  entree.promesse.catch(() => {
+    if (favorisCharges.get(client) === entree) favorisCharges.delete(client);
+  });
+  return entree.promesse;
 }
 
-async function toutesLesPagesDeFavoris(client: Appelant): Promise<Produit[]> {
+async function toutesLesPagesDeFavoris(client: Appelant, options: OptionsHorloge): Promise<Produit[]> {
   const produits: Produit[] = [];
   for (let page = 1; page <= PAGES_FAVORIS_MAX; page++) {
     const corps = await client.appeler<unknown>("GET", "/v1/favourite-products", {
@@ -117,18 +129,18 @@ async function toutesLesPagesDeFavoris(client: Appelant): Promise<Produit[]> {
     produits.push(...produitsDe(corps));
     if (objet(objet(corps).page).hasNext !== true) break;
   }
-  noterProduits(client, produits);
+  noterProduits(client, produits, options);
   return produits;
 }
 
 // Recherche Kamino : l'identifiant client part en en-tête `X-Kamino-User-Id`.
-export async function rechercher(client: AppelantRecherche, terme: string, taille = 20): Promise<Produit[]> {
+export async function rechercher(client: AppelantRecherche, terme: string, taille = 20, options: OptionsHorloge = {}): Promise<Produit[]> {
   const corps = await client.appeler<unknown>("GET", "/v1/products", {
     service: "PRODUCTS",
     params: { searchTerm: terme, page: "1", size: String(taille), withKamino: "true", kaminoMode: "ADVANCED" },
     entetes: { "X-Kamino-User-Consent": "true", "X-Kamino-User-Id": await client.idClient() },
   });
   const produits = produitsDe(corps);
-  noterProduits(client, produits);
+  noterProduits(client, produits, options);
   return produits;
 }

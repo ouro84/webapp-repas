@@ -1,7 +1,7 @@
 // Panier de l'exécuteur Chronodrive (#308) : panier courant et ajouts confirmés (RG-83).
 // Protocole : docs/etudes/chronodrive.md, « Protocole relevé ». Pièges : .claude/rules/chronodrive.md.
 // Aucun outil de retrait ni de commande ici (RG-82) : `POST v1/carts/{id}/items` seulement.
-import { produitVu, versProduit, type Appelant, type Produit } from "./catalogue.ts";
+import { produitVu, versProduit, type Appelant, type OptionsHorloge, type Produit } from "./catalogue.ts";
 import { ErreurChronodrive } from "./client.ts";
 
 export type LigneAjout = { productId: string; quantite: number };
@@ -19,6 +19,9 @@ export type ResultatAjout = {
 export type PanierCourant = { id: string; lignes: Map<string, number>; produits: Map<string, Produit> };
 
 const QUANTITE_MAX = 20;
+// Origine d'ajout envoyée telle quelle par le spike, dont les ajouts ont réussi
+// (docs/etudes/chronodrive.md, « Protocole relevé », ligne « Ajouter »).
+const CLIENT_ORIGIN = "WEB|SEARCH|TG|/promotions";
 
 type Brut = Record<string, unknown>;
 
@@ -65,7 +68,7 @@ type Envoi = { index: number; quantite: number; plafond: string | null; returnTy
 // Un produit dont la fiche connue est indisponible n'est jamais envoyé. La quantité est
 // bornée à 1..20, puis à `maxCartQuantity` moins la quantité déjà au panier (lu comme un plafond
 // total : prudent si c'est en fait un plafond par ajout, l'écart signale alors le manque).
-export async function ajouterLignes(client: Appelant, lignes: LigneAjout[]): Promise<ResultatAjout[]> {
+export async function ajouterLignes(client: Appelant, lignes: LigneAjout[], options: OptionsHorloge = {}): Promise<ResultatAjout[]> {
   const avant = await lirePanierCourant(client);
   const resultats: ResultatAjout[] = [];
   const envois: Envoi[] = [];
@@ -100,7 +103,7 @@ export async function ajouterLignes(client: Appelant, lignes: LigneAjout[]): Pro
     }
     // Fiche vue en recherche ou en favoris (celle que le LLM a choisie), sinon celle du panier :
     // la fiche du panier peut omettre des champs (maxCartQuantity) qu'elle effacerait.
-    const fiche = produitVu(client, productId) ?? avant.produits.get(productId);
+    const fiche = produitVu(client, productId, options) ?? avant.produits.get(productId);
     if (fiche && !fiche.disponible) {
       resultat.erreur = `indisponible : ${fiche.raison}`;
       continue;
@@ -130,7 +133,7 @@ export async function ajouterLignes(client: Appelant, lignes: LigneAjout[]): Pro
     try {
       const reponse = await client.appeler<unknown>("POST", chemin, {
         service: "CARTS",
-        corps: { content: [{ clientOrigin: "WEB", productId, quantity: envoi.quantite }], optimizedMode: true },
+        corps: { content: [{ clientOrigin: CLIENT_ORIGIN, productId, quantity: envoi.quantite }], optimizedMode: true },
       });
       const contenu = objet(reponse).content;
       const returnType = Array.isArray(contenu) ? objet(contenu[0]).returnType : undefined;

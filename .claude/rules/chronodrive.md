@@ -26,6 +26,8 @@ Protocole et mesures : `docs/etudes/chronodrive.md`. PoC du spike #307 : `integr
 - **`node --test "test/*.test.ts"`, pas `node --test test/`**. Pourquoi : Node 24 prend un dossier pour un fichier et échoue (`Cannot find module`).
 - **Aucun message d'erreur ni log ne porte de secret** : `ClientChronodrive` caviarde identifiants, jetons, `tkn`, `code`, cookies, e-mails et JWT dans l'extrait de réponse, et réécrit une erreur réseau sans sa cause. Pourquoi : les erreurs remontent au LLM puis sur Telegram (RG-80).
 - **Disponibilité (`src/catalogue.ts`) : un champ absent est une inconnue qui ne bloque pas.** Bloquent seulement `isEligible === false`, un stock ≤ 0 (`remainingStock` s'il est numérique, sinon `stock`) et un `maxCartQuantity` < 1 ; sinon `maxCartQuantity` plafonne la quantité, lu comme un total au panier. Pourquoi : aucun produit hors stock n'a été observé au spike, et l'écart de quantité confirme de toute façon l'ajout (RG-83).
+- **Favoris et fiches vues expirent après 30 min** (`DUREE_FAVORIS_MS`, horloge injectable), pas « une fois par processus ». Pourquoi : le MCP vit aussi longtemps que la gateway Hermes (des jours) ; une rupture mémorisée bloquerait un produit revenu en stock.
+- **`clientOrigin` d'ajout = `"WEB|SEARCH|TG|/promotions"`**, la valeur littérale du spike. Pourquoi : c'est la seule envoyée lors d'ajouts réussis ; `"WEB"` seul n'a jamais été essayé.
 - **`ajouterLignes` refuse un même `productId` deux fois dans un lot.** Pourquoi : avec une seule relecture avant et après, l'écart de quantité ne serait plus attribuable à une ligne.
 - Le mode `600` du fichier de session ne se vérifie pas sous Windows (seul le bit lecture seule existe) ; le test ne l'affirme que sur POSIX. Pourquoi : le NAS est sous Linux.
 
