@@ -88,6 +88,7 @@ import { accorderNom } from "@/lib/pluriels";
 import { formaterQuantite } from "@/lib/unites";
 import { LIBELLES_CATEGORIES } from "@/lib/courses";
 import { FormulaireArticleManuel } from "@/components/courses/formulaire-article-manuel";
+import { PanierChronodrive } from "@/components/courses/panier-chronodrive";
 import type { SaisieArticleManuel } from "@/lib/persistance";
 import type {
   ArticleManuel,
@@ -641,6 +642,11 @@ function ContenuCourses() {
           </Link>
         </div>
       </header>
+
+      {/* Panier Chronodrive (#308, US-53) : HORS du <header> et des <section>
+          de catégories (markup verrouillé par e2e/courses.spec.ts). Ne rend
+          rien sans exécuteur (RG-81) ni hors du cycle courant. */}
+      {cycle && <PanierChronodrive ancreAffichee={cycle.ancre} />}
 
       {/* Une section par catégorie présente, dans l'ordre canonique (RG-05).
           Articles non cochés d'abord, cochés en fin de catégorie (RG-11).
