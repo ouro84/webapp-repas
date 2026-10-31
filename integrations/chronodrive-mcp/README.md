@@ -16,7 +16,7 @@ Protocole de l'API et mesures : `docs/etudes/chronodrive.md`. Pièges : `.claude
 | `src/catalogue.ts` | Favoris (paginés, gardés 30 min), recherche, disponibilité d'un produit. |
 | `src/panier.ts` | Panier courant relu à chaque run, ajout par lot (90 s au plus) confirmé par l'écart de quantité. |
 | `src/correspondances.ts` | Cache SQLite `terme → productId` (`node:sqlite`), écrit seulement après un ajout confirmé. |
-| `src/outils.ts` | Les 5 outils MCP : `chercher_produits`, `ajouter_au_panier`, `lire_panier`, `correspondances_connues`, `memoriser_correspondances`. |
+| `src/outils.ts` | Les 5 outils MCP : `chercher_produits`, `ajouter_au_panier`, `lire_panier`, `correspondances_connues`, `memoriser_correspondances`. `ajouter_au_panier` n'accepte, pour chaque ligne, qu'un produit proposé par `chercher_produits` pour le terme de cette ligne (`terme`, ou `terme_recherche` après une reformulation) depuis moins de 30 min. |
 | `src/mcp.ts` | Point d'entrée stdio (`node src/mcp.ts`), en lecture seule sauf si `CHRONODRIVE_LECTURE_SEULE` vaut `'0'`. |
 | `test/` | Tests `node --test`, Chronodrive simulé (`test/simulation.ts`). |
 | `hermes/skills/omq/panier-chronodrive/SKILL.md` | Skill Hermes : procédure du run et du mode mesure. |
@@ -254,6 +254,7 @@ Les messages d'erreur remontent au LLM puis sur Telegram. Ils sont caviardés : 
 | `délai dépassé (20 s sans réponse)` | Chronodrive ne répond pas. Réessayer plus tard ; si cela dure, vérifier la connexion du NAS. |
 | `aucun panier courant … CHRONODRIVE_SITE_ID et CHRONODRIVE_MODE` | Le compte n'a pas de panier pour ce drive et ce mode. Vérifier ces deux variables dans `chronodrive.env` : le mode n'est jamais deviné (pas de repli `DRIVE` → `HOME_DELIVERY`). |
 | `produit inconnu ou vu il y a plus de 30 min` | Ligne refusée sans envoi : le produit n'a pas été renvoyé par `chercher_produits` depuis moins de 30 min (identifiant inventé, ou run trop long). Rien n'est ajouté. |
+| `produit non proposé pour cet article : relance chercher_produits pour ce terme` | Ligne refusée sans envoi : le produit a bien été vu, mais pas dans le résultat du terme de la ligne (identifiant recopié depuis un autre article, ou vu seulement dans le panier). Si le produit vient d'une reformulation, la ligne doit porter `terme_recherche`. La skill classe l'article « à choisir » sans relance. Rien n'est ajouté. |
 | `non tenté : délai du lot dépassé` | Le lot d'ajout a dépassé 90 s : les lignes restantes n'ont pas été envoyées. Rien n'est ajouté pour elles. |
 | `ajout peut-être appliqué (délai dépassé)` | L'ajout est parti mais Chronodrive n'a pas répondu en 20 s, et le panier relu ne le montre pas encore : Chronodrive a pu l'appliquer en retard. Vérifier le panier dans l'appli avant toute relance. |
 | `login : réponse sans tkn (captcha ou 2FA ?)` | Chronodrive demande un captcha ou une double authentification. Se connecter une fois dans un navigateur depuis le même réseau, puis réessayer. |

@@ -27,7 +27,7 @@ Serveur OMQ « On Mange Quoi ? » (noms Hermes `mcp__On_Mange_Quoi____<outil>`) 
 | OMQ `cocher_article` | `libelle`, `quantite` (toujours passée, même vide) | après chaque lot d'ajout | **interdit** |
 | OMQ `rapporter_panier` | `demande_id`, `statut`, `motif`, `ajoutes`, `a_choisir`, `introuvables` | une seule fois, à la fin (une correction permise après une erreur de validation) | **interdit** |
 | Chronodrive `chercher_produits` | `termes` (liste de textes) | par lots de 10 termes | par lots de 10 termes |
-| Chronodrive `ajouter_au_panier` | `lignes` : `[{terme, productId, quantite}]` | par lots, articles « haute » seulement | **interdit** |
+| Chronodrive `ajouter_au_panier` | `lignes` : `[{terme, terme_recherche, productId, quantite}]` (`terme_recherche` seulement après une reformulation) | par lots, articles « haute » seulement | **interdit** |
 | Chronodrive `lire_panier` | aucun | une fois, au début (étape 2) ; ensuite facultatif, pour diagnostiquer | facultatif |
 | Chronodrive `correspondances_connues` | `termes` | facultatif (`chercher_produits` lit déjà le cache) | facultatif |
 | Chronodrive `memoriser_correspondances` | `entrees` | **interdit** | **interdit** |
@@ -74,7 +74,7 @@ Pour chaque terme, la réponse donne :
 
 Chaque produit porte `id`, `libelle`, `marque`, `contenance`, `prix`, `bio`, `disponible` et `raison`. Un champ `avertissement` (cache indisponible) n'est pas bloquant. Si tout l'appel échoue (connexion impossible, par exemple), c'est un « Échec technique ».
 
-Si aucun candidat ne convient pour un article (par exemple, des favoris d'une autre nature), ou si le terme ne donne aucun produit, tu peux relancer `chercher_produits` avec **une** reformulation de l'article (2 termes essayés au plus par article). Regroupe ces reformulations dans un même appel. Pour un terme au pluriel resté sans résultat, la reformulation est d'abord le **singulier** (« poireaux » → « poireau ») : la recherche du catalogue y est sensible. Ne classe « introuvable » qu'après cette reformulation.
+Si aucun candidat ne convient pour un article (par exemple, des favoris d'une autre nature), ou si le terme ne donne aucun produit, tu peux relancer `chercher_produits` avec **une** reformulation de l'article (2 termes essayés au plus par article). Regroupe ces reformulations dans un même appel. Pour un terme au pluriel resté sans résultat, la reformulation est d'abord le **singulier** (« poireaux » → « poireau ») : la recherche du catalogue y est sensible. Ne classe « introuvable » qu'après cette reformulation. Retiens, pour chaque article, le terme dont le résultat contient le produit choisi : si c'est la reformulation, tu la passeras en `terme_recherche` à l'étape 5.
 
 ### 4. Classer
 
@@ -86,7 +86,9 @@ Classe chaque article « haute », « à choisir » ou « introuvable », selon 
 
 ### 5. Ajouter et cocher, lot par lot
 
-Appelle `ajouter_au_panier` par lots de **10 lignes au plus**, pour les seuls articles « haute ». Chaque ligne : `terme` = le `nom` OMQ de l'article (jamais la reformulation : c'est la clé du cache), `productId` = l'`id` du produit choisi, `quantite` = un entier de 1 à 20. Un même `productId` ne figure qu'une fois dans tout le run : les articles qui visent le même produit ont été fusionnés à l'étape 4 (une seule ligne, `terme` = le `nom` du premier article).
+Appelle `ajouter_au_panier` par lots de **10 lignes au plus**, pour les seuls articles « haute ». Chaque ligne : `terme` = le `nom` OMQ de l'article (jamais la reformulation : c'est la clé du cache), `terme_recherche` = la reformulation passée à `chercher_produits`, **seulement** si le produit choisi vient du résultat de cette reformulation (sinon omets-le), `productId` = l'`id` du produit choisi, `quantite` = un entier de 1 à 20. Un même `productId` ne figure qu'une fois dans tout le run : les articles qui visent le même produit ont été fusionnés à l'étape 4 (une seule ligne, `terme` = le `nom` du premier article, et son `terme_recherche` s'il en a un).
+
+**Pour chaque ligne, copie l'`id` depuis le bloc de résultat du terme de CET article** (son `nom`, ou sa reformulation), jamais depuis le bloc d'un autre article, puis vérifie que le `libelle` de cet `id` est bien le produit que tu as choisi pour cet article. Pourquoi : un même produit peut apparaître pour plusieurs termes (des lasagnes « aux oeufs » parmi les œufs) ; l'outil refuse un `id` qui n'a pas été proposé pour le terme de la ligne.
 
 La quantité **s'ajoute** à celle déjà présente dans le panier. Chaque résultat porte `confirme`, `avant`, `apres` et `erreur`.
 
@@ -99,6 +101,7 @@ La quantité **s'ajoute** à celle déjà présente dans le panier. Chaque résu
   - **Erreur** (l'outil échoue, ce n'est pas une réponse avec `candidats`) : n'ajoute plus aucun lot. Finis de cocher les autres lignes confirmées du lot, puis passe à « Échec technique » avec le motif « coche OMQ impossible ». Pourquoi : un article ajouté mais non coché serait ajouté une seconde fois à la relance (RG-83).
 - Une ligne dont l'`erreur` commence par « ajout envoyé mais panier non relu » ou par « ajout peut-être appliqué » est un **Échec technique** : l'ajout a peut-être eu lieu, sans preuve (Chronodrive a pu l'appliquer en retard). Ne lance plus aucun lot, finis de cocher les lignes confirmées du lot, puis suis « Échec technique » avec le motif « ajout Chronodrive non confirmé, à vérifier dans le panier ». Ces lignes vont dans `a_choisir`, avec la raison « ajout non confirmé, à vérifier dans le panier ».
 - Toute autre ligne `confirme: false` passe « à choisir », avec la raison « ajout non confirmé » suivie de son `erreur` s'il y en a une, et le produit choisi comme seul candidat. Ne la relance **jamais** et ne la coche pas. C'est aussi le cas de « non tenté : délai du lot dépassé » et de « produit inconnu ou vu il y a plus de 30 min » : rien n'a été envoyé pour elles.
+- Une ligne dont l'`erreur` commence par « produit non proposé pour cet article » n'a pas été envoyée : l'`id` ne venait pas du résultat de son terme. Elle passe « à choisir », avec la raison « ajout non confirmé : produit non proposé pour cet article » et le produit choisi comme seul candidat. Ne la relance **jamais** dans ce run, ni avec un autre `id`, ni après un nouvel appel à `chercher_produits`.
 
 ### 6. Rapporter
 
