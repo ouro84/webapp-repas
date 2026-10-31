@@ -12,12 +12,12 @@ Protocole de l'API et mesures : `docs/etudes/chronodrive.md`. Pièges : `.claude
 
 | Chemin | Rôle |
 |--------|------|
-| `src/client.ts` | Connexion (mot de passe → PKCE → jeton, sans refresh token), clés `x-api-key` par service, rejeu unique sur 401 de jeton, caviardage des erreurs. |
+| `src/client.ts` | Connexion (mot de passe → PKCE → jeton, sans refresh token), clés `x-api-key` par service, rejeu unique sur 401, délai de 20 s par requête, caviardage des erreurs. Config et session relues quand leur fichier change. |
 | `src/catalogue.ts` | Favoris (paginés, gardés 30 min), recherche, disponibilité d'un produit. |
-| `src/panier.ts` | Panier courant relu à chaque run, ajout par lot confirmé par l'écart de quantité. |
+| `src/panier.ts` | Panier courant relu à chaque run, ajout par lot (90 s au plus) confirmé par l'écart de quantité. |
 | `src/correspondances.ts` | Cache SQLite `terme → productId` (`node:sqlite`), écrit seulement après un ajout confirmé. |
 | `src/outils.ts` | Les 5 outils MCP : `chercher_produits`, `ajouter_au_panier`, `lire_panier`, `correspondances_connues`, `memoriser_correspondances`. |
-| `src/mcp.ts` | Point d'entrée stdio (`node src/mcp.ts`), lecture seule si `CHRONODRIVE_LECTURE_SEULE=1`. |
+| `src/mcp.ts` | Point d'entrée stdio (`node src/mcp.ts`), en lecture seule sauf si `CHRONODRIVE_LECTURE_SEULE` vaut `'0'`. |
 | `test/` | Tests `node --test`, Chronodrive simulé (`test/simulation.ts`). |
 | `hermes/skills/omq/panier-chronodrive/SKILL.md` | Skill Hermes : procédure du run et du mode mesure. |
 | `hermes/route-webhook.md` | Route webhook `panier-omq`, secret, Funnel. |
@@ -72,10 +72,12 @@ tar -C integrations/chronodrive-mcp \
 Puis, sur le NAS :
 
 ```sh
-$D exec -u 1000 -w /opt/data/chronodrive-mcp hermes npm install --omit=dev
+$D exec -u 1000 -w /opt/data/chronodrive-mcp hermes npm ci --omit=dev
 ```
 
-Le code TypeScript est exécuté tel quel par Node 26, sans build. La copie en utilisateur 1000 donne les bons propriétaires aux fichiers.
+`npm ci` installe exactement les versions de `package-lock.json`. Le code TypeScript est exécuté tel quel par Node 26, sans build. La copie en utilisateur 1000 donne les bons propriétaires aux fichiers.
+
+**Après une mise à jour du code, redémarrer la gateway** (étape 6, avec Arnaud) : le MCP est un processus qui vit aussi longtemps qu'elle. En revanche, un changement de `chronodrive.env` ou du fichier de session est pris en compte au prochain appel d'outil, sans redémarrage.
 
 ### 3. Identifiants : `chronodrive.env`
 
@@ -87,23 +89,23 @@ Le code TypeScript est exécuté tel quel par Node 26, sans build. La copie en u
 | `CHRONODRIVE_MOT_DE_PASSE` | oui | Mot de passe du compte. |
 | `CHRONODRIVE_SITE_ID` | oui | Identifiant du drive (lu dans `GET v1/sites?size=500`, cf. `docs/etudes/chronodrive.md`). |
 | `CHRONODRIVE_MODE` | non | `DRIVE` (défaut) ou `HOME_DELIVERY`. |
-| `CHRONODRIVE_SESSION` | non | Fichier de session, par défaut `/opt/data/chronodrive-session.json` (mode `600`, réécrit à chaque connexion). |
+| `CHRONODRIVE_SESSION` | non | Fichier de session, par défaut `/opt/data/chronodrive-session.json` (mode `600`, réécrit à chaque connexion). Il est lié à l'e-mail et au drive : une session d'un autre compte est ignorée. |
 | `OMQ_WEBHOOK_SECRET` | pour la route | Secret de la route webhook, partagé à l'identique avec OMQ. Un secret brut convient. Il n'est pas lu par le MCP mais rangé ici (cf. `hermes/route-webhook.md`). |
 
-Ces variables peuvent aussi venir de l'environnement du processus, mais le fichier l'emporte.
+Ces variables peuvent aussi venir de l'environnement du processus, mais le fichier l'emporte. Le fichier est relu dès qu'il change (sa date de modification est vérifiée à chaque appel d'outil).
 
 D'autres variables ne se lisent **que** dans l'environnement du processus, donc dans l'entrée `env` de `config.yaml`, jamais dans `chronodrive.env` :
 
 | Variable | Rôle |
 |----------|------|
-| `CHRONODRIVE_LECTURE_SEULE` | `'1'` : `ajouter_au_panier` est refusé sans aucun appel à Chronodrive. |
+| `CHRONODRIVE_LECTURE_SEULE` | **Lecture seule par défaut** : `ajouter_au_panier` est refusé sans aucun appel à Chronodrive, sauf si la variable vaut exactement `'0'`. Absente, vide ou `'1'` : lecture seule. |
 | `CHRONODRIVE_CACHE` | Base du cache, par défaut `/opt/data/chronodrive-correspondances.sqlite`. |
 | `CHRONODRIVE_ENV` | Chemin du fichier d'identifiants, par défaut `/opt/data/chronodrive.env`. |
 
-Après un changement de compte, supprimer la session et le cache. Sinon la session de l'ancien compte servirait jusqu'à expiration, et le cache garderait ses correspondances :
+Après un changement de compte ou de drive, la session de l'ancien compte est ignorée d'elle-même (elle est liée à l'e-mail et au drive). Supprimer le cache, qui garderait les correspondances de l'ancien compte :
 
 ```sh
-$D exec -u 1000 hermes rm -f /opt/data/chronodrive-session.json /opt/data/chronodrive-correspondances.sqlite
+$D exec -u 1000 hermes rm -f /opt/data/chronodrive-correspondances.sqlite
 ```
 
 ### 4. Déclarer le MCP dans `config.yaml`
@@ -115,12 +117,11 @@ Dans `/opt/data/config.yaml`, sous `mcp_servers`, remplacer l'entrée `chronodri
     command: node
     args:
       - /opt/data/chronodrive-mcp/src/mcp.ts
-    env:
-      CHRONODRIVE_LECTURE_SEULE: '1'
     enabled: true
 ```
 
-- Garder `'1'` pendant le déploiement à blanc et la mesure. Passer à `'0'` seulement pour le premier run réel, avec Arnaud.
+- Sans `env`, le MCP est en **lecture seule** : c'est l'état voulu pour le déploiement à blanc et la mesure.
+- Le passage en écriture se fait en ajoutant `env: {CHRONODRIVE_LECTURE_SEULE: '0'}`, seulement pour le premier run réel, avec Arnaud, et **seulement après l'étape 8** (outils du run webhook restreints).
 - Les outils apparaissent dans Hermes sous `mcp__chronodrive__<outil>`. Les outils OMQ apparaissent sous `mcp__On_Mange_Quoi____<outil>`.
 - Vérifier aussi que `platforms.webhook.extra.host` vaut `127.0.0.1`. Sinon le webhook est exposé au réseau local.
 
@@ -166,10 +167,35 @@ Suivre `hermes/route-webhook.md` :
 - `hermes webhook subscribe panier-omq …`, sans redémarrage ;
 - Funnel sur le port **10000**, chemin `/webhooks/panier-omq`.
 
-**À vérifier en Task 6 et Task 8 : limiter les outils du run webhook.** Par défaut, un run webhook voit `web_search`, `web_extract`, `vision_analyze`, `clarify` et **tous** les serveurs MCP activés : linkedin, camofox-browser, dodojo, en plus de `chronodrive` et OMQ. La skill interdit les autres outils, mais le contenu de la liste et les libellés Chronodrive sont des données non fiables. Il faut donc vérifier si la route peut se limiter aux deux toolsets MCP `chronodrive` et « On Mange Quoi ? ». Une route dynamique ne prend pas `toolsets`. Les pistes :
+### 8. Restreindre les outils du run webhook (obligatoire avant l'écriture)
 
-- une route statique dans `platforms.webhook.extra.routes.panier-omq` avec `toolsets`, qui demande un redémarrage ;
-- ou `platform_toolsets.webhook`, qui s'applique à toutes les routes.
+**Tant que cette étape n'est pas faite et vérifiée, `CHRONODRIVE_LECTURE_SEULE` ne passe pas à `'0'`.**
+
+Par défaut, un run webhook voit `web_search`, `web_extract`, `vision_analyze`, `clarify` et **tous** les serveurs MCP activés : linkedin, camofox-browser, dodojo, en plus de `chronodrive` et OMQ. La skill interdit les autres outils, mais le contenu de la liste et les libellés Chronodrive sont des données non fiables : une consigne glissée dans un libellé ne doit trouver aucun autre outil à appeler. Le run de `panier-omq` doit donc ne voir **que** les deux serveurs MCP `chronodrive` et « On Mange Quoi ? ».
+
+Une route dynamique ne prend pas `toolsets`. Pistes, selon ce que Hermes v0.21.5 accepte (à lire dans sa documentation ou `hermes webhook --help`) :
+
+- une route **statique** `platforms.webhook.extra.routes.panier-omq` dans `config.yaml`, avec `toolsets` limité aux deux MCP, à la place de la route dynamique ; elle demande un redémarrage ;
+- ou `platform_toolsets.webhook` limité aux deux MCP : il s'applique à toutes les routes webhook, ce qui convient tant que `panier-omq` est la seule.
+
+Exclure aussi `chronodrive` des plateformes Telegram et WhatsApp si Hermes le permet (même mécanisme, `platform_toolsets.telegram` et `platform_toolsets.whatsapp`) : le panier ne doit être rempli que par le run webhook ou par une mesure lancée à la main. Si Hermes ne le permet pas, le noter dans `mesures/run-<date>.md`.
+
+Sauvegarder `config.yaml` avant (`config.yaml.bak-avant-308-toolsets`), puis redémarrer la gateway avec Arnaud (étape 6).
+
+**Vérifier ce que le run voit réellement**, avec une route de contrôle soumise à la même restriction (même `platform_toolsets.webhook`, ou route statique avec les mêmes `toolsets`), dont le prompt demande la liste des outils sans en appeler aucun :
+
+```sh
+$D exec -u 1000 hermes sh -c '
+  SECRET=$(sed -n "s/^OMQ_WEBHOOK_SECRET=//p" /opt/data/chronodrive.env)
+  hermes webhook subscribe controle-outils \
+    --prompt "Liste les noms exacts de tous les outils dont tu disposes, un par ligne. N’en appelle aucun." \
+    --deliver telegram --deliver-chat-id 8985917282 \
+    --secret "$SECRET"
+  node /opt/data/chronodrive-spike/envoyer-webhook.mjs http://127.0.0.1:8644/webhooks/controle-outils "$SECRET"
+'
+```
+
+Le script `envoyer-webhook.mjs` signe comme OMQ ; s'il n'est plus dans `/opt/data/chronodrive-spike/`, le copier depuis `spike/` du dépôt. La réponse sur Telegram ne doit lister que des outils `mcp__chronodrive__*` et `mcp__On_Mange_Quoi____*`. Supprimer ensuite la route `controle-outils` (`hermes webhook --help` donne la sous-commande). Si la restriction passe par une route statique, faire le même contrôle avec une route statique de contrôle aux mêmes `toolsets`.
 
 ## Enregistrer l'exécuteur dans OMQ
 
@@ -223,12 +249,16 @@ Les messages d'erreur remontent au LLM puis sur Telegram. Ils sont caviardés : 
 | Symptôme | Cause et remède |
 |----------|-----------------|
 | `config : variable CHRONODRIVE_… absente` | Variable manquante dans `chronodrive.env`, ou fichier illisible pour l'utilisateur 1000 (`chown 1000`, `chmod 600`). |
-| `HTTP 401 … API Key is not valid` | **Erreur de clé de service**, pas de jeton : aucune reconnexion n'est tentée. Les clés `x-api-key` sont lues sur l'accueil de chronodrive.com à la connexion, puis gardées dans `chronodrive-session.json` jusqu'à l'expiration du jeton (2 h). Si Chronodrive a changé ses clés, supprimer ce fichier pour forcer une relecture. Une erreur qui persiste ensuite veut dire que Chronodrive a changé ses services ou leurs routes : comparer avec le « Protocole relevé » de `docs/etudes/chronodrive.md`. |
-| `HTTP 401` sans « API Key » | **Jeton refusé.** Le client a déjà refait une connexion complète et rejoué l'appel une fois. Un second 401 veut dire identifiants refusés ou compte bloqué. Vérifier le compte dans l'appli, puis supprimer `chronodrive-session.json`. |
+| `HTTP 401 … API Key is not valid` | **Erreur de clé de service**, pas de jeton : aucune reconnexion n'est tentée. Le client a déjà relu une fois les clés `x-api-key` sur l'accueil de chronodrive.com et rejoué l'appel. L'erreur qui persiste veut dire que Chronodrive a changé ses services ou leurs routes : comparer avec le « Protocole relevé » de `docs/etudes/chronodrive.md`. |
+| `HTTP 401` sans « API Key » | **Jeton refusé.** Le client a déjà refait une connexion complète et rejoué l'appel une fois (ou venait de se connecter pour cet appel). Un second 401 veut dire identifiants refusés ou compte bloqué. Vérifier le compte dans l'appli, puis supprimer `chronodrive-session.json` (pris en compte au prochain appel). |
+| `délai dépassé (20 s sans réponse)` | Chronodrive ne répond pas. Réessayer plus tard ; si cela dure, vérifier la connexion du NAS. |
+| `aucun panier courant … CHRONODRIVE_SITE_ID et CHRONODRIVE_MODE` | Le compte n'a pas de panier pour ce drive et ce mode. Vérifier ces deux variables dans `chronodrive.env` : le mode n'est jamais deviné (pas de repli `DRIVE` → `HOME_DELIVERY`). |
+| `produit inconnu ou vu il y a plus de 30 min` | Ligne refusée sans envoi : le produit n'a pas été renvoyé par `chercher_produits` depuis moins de 30 min (identifiant inventé, ou run trop long). Rien n'est ajouté. |
+| `non tenté : délai du lot dépassé` | Le lot d'ajout a dépassé 90 s : les lignes restantes n'ont pas été envoyées. Rien n'est ajouté pour elles. |
 | `login : réponse sans tkn (captcha ou 2FA ?)` | Chronodrive demande un captcha ou une double authentification. Se connecter une fois dans un navigateur depuis le même réseau, puis réessayer. |
 | `[cf-ray …, cf-mitigated …]` dans l'erreur | Blocage Cloudflare. Vérifier que le conteneur sort bien par l'IP résidentielle (réseau host). |
 | `avertissement` : cache des correspondances indisponible | Non bloquant : le run continue sans cache. Cause habituelle : `database is locked`, quand deux processus écrivent plus de 5 s (deux MCP lancés, ou le spike encore actif), ou fichier SQLite non inscriptible par l'utilisateur 1000. |
-| `lecture seule (CHRONODRIVE_LECTURE_SEULE=1)` | Mode voulu pour la mesure et le déploiement à blanc. Pour un run réel : `'0'` dans `config.yaml`, puis redémarrage avec Arnaud. Le run rapporte un échec « Exécuteur en lecture seule ». |
+| `lecture seule (CHRONODRIVE_LECTURE_SEULE n'est pas '0')` | Mode par défaut, voulu pour la mesure et le déploiement à blanc. Pour un run réel : `CHRONODRIVE_LECTURE_SEULE: '0'` dans l'entrée `env` de `config.yaml`, après l'étape 8, puis redémarrage avec Arnaud. Le run rapporte un échec « Exécuteur en lecture seule ». |
 | Webhook en 401 côté Hermes | Deux causes possibles. Le secret diffère entre la route et OMQ : ré-enregistrer l'exécuteur avec la chaîne exacte de `OMQ_WEBHOOK_SECRET` (sans espace ni retour à la ligne). Ou l'horodatage est périmé : Hermes refuse un `webhook-timestamp` à plus de 300 s ; vérifier l'heure du NAS. |
 | Demande « exécuteur injoignable » sur `/courses` | Funnel coupé (`tailscale funnel status`), gateway arrêtée, ou route absente. |
 | Aucun message Telegram | Normal si le run a trouvé `demande: null` : il répond `[SILENT]`. Sinon, vérifier `--deliver telegram` sur la route. |

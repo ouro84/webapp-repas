@@ -28,7 +28,7 @@ Serveur OMQ « On Mange Quoi ? » (noms Hermes `mcp__On_Mange_Quoi____<outil>`) 
 | OMQ `rapporter_panier` | `demande_id`, `statut`, `motif`, `ajoutes`, `a_choisir`, `introuvables` | une seule fois, à la fin (une correction permise après une erreur de validation) | **interdit** |
 | Chronodrive `chercher_produits` | `termes` (liste de textes) | par lots de 10 termes | par lots de 10 termes |
 | Chronodrive `ajouter_au_panier` | `lignes` : `[{terme, productId, quantite}]` | par lots, articles « haute » seulement | **interdit** |
-| Chronodrive `lire_panier` | aucun | facultatif, pour diagnostiquer | facultatif |
+| Chronodrive `lire_panier` | aucun | une fois, au début (étape 2) ; ensuite facultatif, pour diagnostiquer | facultatif |
 | Chronodrive `correspondances_connues` | `termes` | facultatif (`chercher_produits` lit déjà le cache) | facultatif |
 | Chronodrive `memoriser_correspondances` | `entrees` | **interdit** | **interdit** |
 
@@ -50,9 +50,11 @@ Appelle `prendre_demande_panier`, avant toute autre action.
 - Sinon, garde `demande.id` (pour `rapporter_panier`) et `demande.ancre` (AAAA-MM-JJ, début du cycle à traiter).
 - Erreur de l'outil : aucune demande n'est prise, il n'y a rien à rapporter. Arrête-toi et réponds « Panier Chronodrive : impossible de prendre la demande OMQ. », suivi du message d'erreur.
 
-### 2. Lire la liste
+### 2. Lire la liste et le panier
 
 Appelle `lire_liste_courses` sans argument. Elle renvoie les articles **non cochés** du cycle en cours : `cycle {du, au}`, `categories[].articles[]` et `a_verifier_au_placard[]`. Chaque article porte `nom`, `quantite` (texte, vide si non renseignée) et `manuel`.
+
+Puis appelle `lire_panier` une fois et retiens les `id` des produits déjà présents dans le panier (étape 4, « déjà au panier »).
 
 - Si `demande.ancre` n'est pas comprise entre `cycle.du` et `cycle.au` (bornes incluses) : appelle `rapporter_panier` avec `statut: "echec"`, `motif: "le cycle a changé"` et les trois listes vides, puis envoie le message d'échec. Arrête-toi.
 - Si la liste est vide (`nombre_articles: 0`) : appelle `rapporter_panier` avec `statut: "terminee"` et les trois listes vides, puis réponds « Rien à acheter : la liste OMQ est vide. Rien n'est commandé. ».
@@ -65,18 +67,20 @@ Appelle `chercher_produits` par lots de **10 termes au plus**, chaque terme éta
 
 Pour chaque terme, la réponse donne :
 
-- `cache` : le produit déjà acheté pour ce terme lors d'un run précédent, encore disponible ;
+- `cache` : le produit déjà acheté pour ce terme lors d'un run précédent, encore disponible ; quand il est retenu, `favoris` et `recherche` sont vides ;
 - `favoris` : les achats habituels du compte qui contiennent les mots du terme (5 au plus) ;
 - `recherche` : les résultats du catalogue (8 au plus), lancée seulement s'il n'y a ni cache ni favori disponible ;
-- `erreur` : la recherche de ce terme a échoué, les autres termes restent valables.
+- `erreur` : la recherche de ce terme a échoué, les autres termes restent valables. L'article passe « à choisir » avec la raison « recherche en échec », **jamais** « introuvable » : le produit existe peut-être.
 
-Chaque produit porte `id`, `libelle`, `marque`, `contenance`, `prixUnite`, `bio`, `disponible`, `raison` et `maxPanier`. Un champ `avertissement` (cache indisponible) n'est pas bloquant.
+Chaque produit porte `id`, `libelle`, `marque`, `contenance`, `prix`, `bio`, `disponible` et `raison`. Un champ `avertissement` (cache indisponible) n'est pas bloquant. Si tout l'appel échoue (connexion impossible, par exemple), c'est un « Échec technique ».
 
 Si aucun candidat ne convient pour un article (par exemple, des favoris d'une autre nature), tu peux relancer `chercher_produits` avec **une** reformulation de l'article (2 termes essayés au plus par article). Regroupe ces reformulations dans un même appel.
 
 ### 4. Classer
 
 Classe chaque article « haute », « à choisir » ou « introuvable », selon la section « Classement ». Retiens pour chaque « haute » le produit choisi (`id`) et la quantité.
+
+**Déjà au panier** : un article « haute » dont le produit choisi est déjà dans le panier (lu à l'étape 2) passe « à choisir », avec la raison « déjà au panier, vérifie la quantité » et ce produit comme seul candidat. Ne l'ajoute pas et ne le coche pas. Pourquoi : après un run interrompu entre un ajout et sa coche, une relance ne doit pas l'ajouter une seconde fois (RG-83) ; Arnaud vérifie la quantité lui-même.
 
 ### 5. Ajouter et cocher, lot par lot
 
@@ -86,12 +90,13 @@ La quantité **s'ajoute** à celle déjà présente dans le panier. Chaque résu
 
 **Après chaque lot**, avant le lot suivant :
 
-- Pour chaque ligne `confirme: true`, l'article passe dans `ajoutes`. Appelle `cocher_article` avec `libelle` = le `nom` OMQ de l'article et `quantite` = sa `quantite` OMQ, texte exact, **toujours**, même vide (`""`) : elle départage les homonymes.
+- Pour chaque ligne `confirme: true`, l'article passe dans `ajoutes`, avec la quantité réellement ajoutée : `apres - avant`. Si elle est inférieure à la quantité demandée (`erreur` commence par « ajout partiel »), l'article est quand même coché, et le message Telegram le signale. Appelle `cocher_article` avec `libelle` = le `nom` OMQ de l'article et `quantite` = sa `quantite` OMQ, texte exact, **toujours**, même vide (`""`) : elle départage les homonymes.
   - Réponse `modifie: true` : coché.
   - Réponse `modifie: false` avec `candidats` : rappelle `cocher_article` avec la `quantite` exacte du bon candidat.
   - Réponse `modifie: false` avec `article` : il était déjà coché, rien à faire.
   - **Erreur** (l'outil échoue, ce n'est pas une réponse avec `candidats`) : n'ajoute plus aucun lot. Finis de cocher les autres lignes confirmées du lot, puis passe à « Échec technique » avec le motif « coche OMQ impossible ». Pourquoi : un article ajouté mais non coché serait ajouté une seconde fois à la relance (RG-83).
-- Une ligne `confirme: false` passe « à choisir », avec la raison « ajout non confirmé » suivie de son `erreur` s'il y en a une, et le produit choisi comme seul candidat. Ne la relance **jamais** et ne la coche pas.
+- Une ligne dont l'`erreur` commence par « ajout envoyé mais panier non relu » est un **Échec technique** : l'ajout a peut-être eu lieu, sans preuve. Ne lance plus aucun lot, finis de cocher les lignes confirmées du lot, puis suis « Échec technique » avec le motif « panier Chronodrive non relu après un ajout ». Ces lignes vont dans `a_choisir`, avec la raison « ajout non confirmé, à vérifier dans le panier ».
+- Toute autre ligne `confirme: false` passe « à choisir », avec la raison « ajout non confirmé » suivie de son `erreur` s'il y en a une, et le produit choisi comme seul candidat. Ne la relance **jamais** et ne la coche pas. C'est aussi le cas de « non tenté : délai du lot dépassé » et de « produit inconnu ou vu il y a plus de 30 min » : rien n'a été envoyé pour elles.
 
 ### 6. Rapporter
 
@@ -108,7 +113,7 @@ Forme exacte des éléments, sans aucun champ en plus :
 - `article` : le `nom` OMQ ;
 - `produit` : libellé et contenance, par exemple « Lait demi-écrémé 1 L » ;
 - `marque` : la marque, ou « sans marque » si elle est absente ;
-- `quantite` : l'entier ajouté ;
+- `quantite` : l'entier réellement ajouté (`apres - avant`) ;
 - `raison` : une phrase courte ;
 - `candidats` : 3 textes au plus, chacun « libellé · marque · contenance », éventuellement vide ;
 - chaque texte fait 200 caractères au plus.
@@ -127,18 +132,20 @@ Dans les deux cas, si le rapport n'est pas accepté, indique le refus et son mes
 Ta réponse finale est le message envoyé sur Telegram. Il doit être court et lisible sur téléphone :
 
 1. Le résumé : « Panier Chronodrive prêt : N ajoutés · N à choisir · N introuvables. »
-2. **À choisir** : une ligne par article, « article : raison », puis les candidats.
-3. **Introuvables** : une ligne par article.
-4. S'il y en a, un rapport refusé par OMQ.
-5. Le rappel : « Rien n'est commandé : valide le panier dans l'appli Chronodrive. »
+2. **Ajouts partiels**, s'il y en a : une ligne par article, « article : ajout partiel, N sur M ».
+3. **À choisir** : une ligne par article, « article : raison », puis les candidats.
+4. **Introuvables** : une ligne par article.
+5. S'il y en a, un rapport refusé par OMQ.
+6. Le rappel : « Rien n'est commandé : valide le panier dans l'appli Chronodrive. »
 
-Ne liste pas les articles ajoutés un par un : ils sont sur `/courses`. Pas de durée, pas d'identifiant, pas de prix.
+Ne liste pas les autres articles ajoutés un par un : ils sont sur `/courses`. Pas de durée, pas d'identifiant, pas de prix.
 
 ### Échec technique
 
 Ces cas arrêtent le run, une fois la demande prise :
 
 - un outil Chronodrive renvoie une erreur sur tout l'appel : connexion impossible, captcha, API changée, exécuteur en lecture seule ;
+- une ligne d'ajout revient avec « ajout envoyé mais panier non relu » (étape 5) ;
 - `cocher_article` échoue (étape 5) ;
 - `lire_liste_courses` ou un autre outil OMQ échoue.
 
@@ -148,19 +155,22 @@ Ne relance pas l'appel en erreur : le client Chronodrive refait déjà lui-même
    - « Connexion à Chronodrive impossible » ;
    - « Chronodrive a changé son site » ;
    - « Exécuteur en lecture seule : rien n'a été ajouté » ;
+   - « panier Chronodrive non relu après un ajout » ;
    - « coche OMQ impossible » ;
    - « Liste de courses OMQ illisible ».
 
    Un refus suit la même règle qu’à l’étape 6. Si OMQ lui-même est injoignable, cet appel peut échouer aussi : la demande passera en échec seule après 30 min.
 2. Remplis les listes avec ce qui est déjà connu :
    - les articles déjà ajoutés (cochés ou non) dans `ajoutes` ;
-   - les articles d'un lot d'ajout en erreur dans `a_choisir`, avec la raison « ajout interrompu, à vérifier dans le panier » ;
+   - les lignes « ajout envoyé mais panier non relu » dans `a_choisir`, avec la raison « ajout non confirmé, à vérifier dans le panier » ;
+   - les articles d'un lot d'ajout dont tout l'appel est en erreur dans `a_choisir`, avec la raison « ajout interrompu, à vérifier dans le panier » ;
    - les articles déjà classés « à choisir » ou « introuvable » dans leur liste.
 3. Les articles pas encore traités ne figurent dans aucune liste : ils restent non cochés, et une relance les reprendra.
 4. Message Telegram :
    - « Panier Chronodrive en échec : <motif>. » ;
    - le message d'erreur de l'outil ;
    - ce qui a été ajouté ;
+   - **« peut-être ajoutés, à vérifier dans le panier »** : les articles des lignes « ajout envoyé mais panier non relu » et d'un lot interrompu, un par ligne ;
    - **les articles ajoutés au panier mais non cochés dans OMQ**, un par ligne : Arnaud doit les cocher à la main avant toute relance, sinon ils seraient ajoutés une seconde fois (RG-83) ;
    - le rappel « Rien n'est commandé. ».
 
@@ -190,12 +200,12 @@ Un produit `disponible: false` n'est jamais ajouté ; sa `raison` dit pourquoi.
 
 **4. Introuvable.** Aucun produit pertinent après tes recherches.
 
-**5. Quantité.** Un entier de 1 à 20, sans dépasser `maxPanier` quand il est indiqué (c'est un total au panier).
+**5. Quantité.** Un entier de 1 à 20. Le plafond de commande du produit est appliqué par l'outil : s'il réduit la quantité, la ligne revient en « ajout partiel ».
 
 - Quantité OMQ vide (fréquent au placard) : 1 unité du format standard. Classe « haute » si la nature du produit est claire : une quantité vide n'est pas une quantité impossible à conclure.
 - Unité libre (gousse, pincée, botte, feuille, « un peu ») : 1 unité au plus. Classe « haute » seulement si la contenance couvre clairement le besoin, par exemple 1 tête d'ail pour 3 gousses.
 
-**6. Entre deux produits équivalents.** Préfère le favori, sinon la marque nationale, sinon le moins cher au kilo (`prixUnite`). Ne force jamais une correspondance pour remplir la case.
+**6. Entre deux produits équivalents.** Préfère le favori, sinon la marque nationale, sinon le moins cher (`prix`, à contenance comparable). Ne force jamais une correspondance pour remplir la case.
 
 ## Mesure
 

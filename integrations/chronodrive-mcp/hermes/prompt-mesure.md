@@ -4,7 +4,7 @@ Message à envoyer à Hermes (Telegram ou CLI), tel quel, pour une **mesure en l
 
 Conditions :
 
-- le MCP `chronodrive` tourne avec `CHRONODRIVE_LECTURE_SEULE: '1'` : un ajout serait refusé de toute façon ;
+- le MCP `chronodrive` tourne en lecture seule (`CHRONODRIVE_LECTURE_SEULE` absente ou différente de `'0'`, l'état par défaut) : un ajout serait refusé de toute façon ;
 - la liste OMQ est **différente** de celle de la mesure précédente, pour éviter le biais relevé au spike.
 
 Consigner le résultat dans `integrations/chronodrive-mcp/mesures/mapping-<date>.md` : le tableau, les taux, les verdicts d'Arnaud sur chaque « haute », la durée, l'usage du cache et des favoris.

@@ -52,6 +52,7 @@ $D exec -u 1000 hermes sh -c '
 - **Skill** : `--skills` prend une liste séparée par des virgules ; ici une seule skill, `panier-chronodrive`.
 - **Livraison** : `telegram`, chat `8985917282` (canal maison d'Arnaud). Une réponse `[SILENT]` (aucune demande à traiter) n'est pas livrée.
 - **Secret** : pendant l'exécution de la commande, `--secret "$SECRET"` est visible un court instant dans `/proc/*/cmdline` du conteneur. C'est accepté : seul l'utilisateur du conteneur y a accès.
+- **Outils du run** : une route dynamique ne restreint pas les outils, et le run voit tous les MCP activés. Avant de passer `CHRONODRIVE_LECTURE_SEULE` à `'0'`, restreindre le run aux deux MCP `chronodrive` et « On Mange Quoi ? » et le vérifier : `README.md`, étape 8 (route statique avec `toolsets`, ou `platform_toolsets.webhook`).
 
 ### Contrôle
 
