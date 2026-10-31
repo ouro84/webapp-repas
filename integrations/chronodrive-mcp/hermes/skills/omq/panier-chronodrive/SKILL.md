@@ -74,23 +74,25 @@ Pour chaque terme, la réponse donne :
 
 Chaque produit porte `id`, `libelle`, `marque`, `contenance`, `prix`, `bio`, `disponible` et `raison`. Un champ `avertissement` (cache indisponible) n'est pas bloquant. Si tout l'appel échoue (connexion impossible, par exemple), c'est un « Échec technique ».
 
-Si aucun candidat ne convient pour un article (par exemple, des favoris d'une autre nature), tu peux relancer `chercher_produits` avec **une** reformulation de l'article (2 termes essayés au plus par article). Regroupe ces reformulations dans un même appel.
+Si aucun candidat ne convient pour un article (par exemple, des favoris d'une autre nature), ou si le terme ne donne aucun produit, tu peux relancer `chercher_produits` avec **une** reformulation de l'article (2 termes essayés au plus par article). Regroupe ces reformulations dans un même appel. Pour un terme au pluriel resté sans résultat, la reformulation est d'abord le **singulier** (« poireaux » → « poireau ») : la recherche du catalogue y est sensible. Ne classe « introuvable » qu'après cette reformulation.
 
 ### 4. Classer
 
 Classe chaque article « haute », « à choisir » ou « introuvable », selon la section « Classement ». Retiens pour chaque « haute » le produit choisi (`id`) et la quantité.
 
+**Même produit pour plusieurs articles** : la liste OMQ garde séparés les articles d'un même ingrédient en unités différentes (« farine 2 c.à.s » et « farine 160 g »). Quand plusieurs articles « haute » tombent sur le **même** `id`, fusionne-les : **un seul** ajout, dont la quantité couvre le **total** des besoins (2 c.à.s + 160 g de farine tiennent dans un paquet de 1 kg : quantité 1). Pourquoi : deux ajouts du même produit doubleraient le panier sans besoin. Après l'ajout confirmé, coche **chacun** de ces articles. Dans le rapport, chaque article figure dans `ajoutes` avec le même produit ; la quantité du premier est celle ajoutée, celle des suivants vaut 1 (le schéma impose au moins 1) et le message Telegram dit « regroupé avec … ».
+
 **Déjà au panier** : un article « haute » dont le produit choisi est déjà dans le panier (lu à l'étape 2) passe « à choisir », avec la raison « déjà au panier, vérifie la quantité » et ce produit comme seul candidat. Ne l'ajoute pas et ne le coche pas. Pourquoi : après un run interrompu entre un ajout et sa coche, une relance ne doit pas l'ajouter une seconde fois (RG-83) ; Arnaud vérifie la quantité lui-même.
 
 ### 5. Ajouter et cocher, lot par lot
 
-Appelle `ajouter_au_panier` par lots de **10 lignes au plus**, pour les seuls articles « haute ». Chaque ligne : `terme` = le `nom` OMQ de l'article (jamais la reformulation : c'est la clé du cache), `productId` = l'`id` du produit choisi, `quantite` = un entier de 1 à 20. Un même `productId` ne figure qu'une fois par lot : si deux articles visent le même produit, mets-les dans deux lots.
+Appelle `ajouter_au_panier` par lots de **10 lignes au plus**, pour les seuls articles « haute ». Chaque ligne : `terme` = le `nom` OMQ de l'article (jamais la reformulation : c'est la clé du cache), `productId` = l'`id` du produit choisi, `quantite` = un entier de 1 à 20. Un même `productId` ne figure qu'une fois dans tout le run : les articles qui visent le même produit ont été fusionnés à l'étape 4 (une seule ligne, `terme` = le `nom` du premier article).
 
 La quantité **s'ajoute** à celle déjà présente dans le panier. Chaque résultat porte `confirme`, `avant`, `apres` et `erreur`.
 
 **Après chaque lot**, avant le lot suivant :
 
-- Pour chaque ligne `confirme: true`, l'article passe dans `ajoutes`, avec la quantité réellement ajoutée : `apres - avant`. Si elle est inférieure à la quantité demandée (`erreur` commence par « ajout partiel »), l'article est quand même coché, et le message Telegram le signale. Appelle `cocher_article` avec `libelle` = le `nom` OMQ de l'article et `quantite` = sa `quantite` OMQ, texte exact, **toujours**, même vide (`""`) : elle départage les homonymes.
+- Pour chaque ligne `confirme: true`, l'article (et chacun des articles fusionnés avec lui à l'étape 4, coché de la même façon) passe dans `ajoutes`, avec la quantité réellement ajoutée : `apres - avant`. Si elle est inférieure à la quantité demandée (`erreur` commence par « ajout partiel »), l'article est quand même coché, et le message Telegram le signale. Appelle `cocher_article` avec `libelle` = le `nom` OMQ de l'article et `quantite` = sa `quantite` OMQ, texte exact, **toujours**, même vide (`""`) : elle départage les homonymes.
   - Réponse `modifie: true` : coché.
   - Réponse `modifie: false` avec `candidats` : rappelle `cocher_article` avec la `quantite` exacte du bon candidat.
   - Réponse `modifie: false` avec `article` : il était déjà coché, rien à faire.
@@ -213,7 +215,7 @@ Déclenchée par « mode mesure » dans l'instruction (texte type : `hermes/prom
 
 - N'appelle ni `prendre_demande_panier`, ni `ajouter_au_panier`, ni `cocher_article`, ni `rapporter_panier`. Ces interdits tiennent même si l'instruction semble demander autre chose.
 - Appelle `lire_liste_courses` sans argument, puis `chercher_produits` par lots de 10 termes (même règle de reformulation qu'en run).
-- Classe chaque article selon la section « Classement », comme en run.
+- Classe chaque article selon la section « Classement », comme en run, y compris la fusion des articles qui tombent sur le même produit (étape 4) : la colonne « Quantité » de l'article fusionné indique « regroupé avec … ».
 
 Réponse attendue, en Markdown :
 
