@@ -29,8 +29,9 @@ export default defineConfig({
     // Emplacement des tests : à côté du code (*.test.ts) ou dans tests/.
     include: ["**/*.test.{ts,tsx}"],
 
-    // Jamais de tests dans les artefacts de build ou les dépendances.
-    exclude: ["node_modules", ".next"],
+    // Jamais de tests dans les artefacts de build ou les dépendances. integrations/ a ses
+    // propres tests, sous node --test (#308).
+    exclude: ["node_modules", ".next", "integrations/**"],
 
     // globals désactivé (défaut) : on importe describe/it/expect depuis
     // "vitest" explicitement — cohérent avec TypeScript strict, et pas

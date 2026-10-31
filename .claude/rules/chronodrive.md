@@ -19,6 +19,14 @@ Protocole et mesures : `docs/etudes/chronodrive.md`. PoC du spike #307 : `integr
 - L'identifiant du drive se lit dans `GET v1/sites?size=500` (clé `SITES`, sans authentification). Pourquoi : il n'apparaît pas dans les URL du site.
 - **Relire le panier courant (`v1/customers/me/carts`) à chaque run.** Pourquoi : après une commande validée, l'identifiant du panier peut changer ; le PoC le gardait en cache.
 
+## Code de l'exécuteur (`integrations/chronodrive-mcp/`)
+
+- **Hors de l'outillage de l'app** : exclu du `tsconfig.json` racine, de l'ESLint racine, de Vitest et de la CI (`paths-ignore`). Vérifier à la main : `npm test` (`node --test`) et `npm run typecheck` dans le dossier. Pourquoi : code du NAS, jamais déployé par Vercel ; la CI de l'app ne le voit pas.
+- **TypeScript à syntaxe effaçable, imports en `.ts`, sans build** (`erasableSyntaxOnly`). Pourquoi : Node l'exécute tel quel (type stripping), sur Node 24 en local et 26 sur le NAS.
+- **`node --test "test/*.test.ts"`, pas `node --test test/`**. Pourquoi : Node 24 prend un dossier pour un fichier et échoue (`Cannot find module`).
+- **Aucun message d'erreur ni log ne porte de secret** : `ClientChronodrive` caviarde identifiants, jetons, `tkn`, `code`, cookies, e-mails et JWT dans l'extrait de réponse, et réécrit une erreur réseau sans sa cause. Pourquoi : les erreurs remontent au LLM puis sur Telegram (RG-80).
+- Le mode `600` du fichier de session ne se vérifie pas sous Windows (seul le bit lecture seule existe) ; le test ne l'affirme que sur POSIX. Pourquoi : le NAS est sous Linux.
+
 ## Exécution sur le NAS
 
 - Tout tourne dans le conteneur `hermes`, identifiants dans `/opt/data/chronodrive.env`, jamais dans Git ni dans `config.yaml`. Pourquoi : réseau host = IP résidentielle (Cloudflare), et les identifiants ne quittent pas l'exécuteur (ADR-12, CGV art. 3).

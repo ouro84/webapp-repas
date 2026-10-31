@@ -1,0 +1,21 @@
+{
+  "name": "chronodrive-mcp",
+  "private": true,
+  "type": "module",
+  "description": "Exécuteur Chronodrive de OMQ (#308) : MCP stdio lancé par Hermes sur le NAS, TypeScript exécuté par Node sans build",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "test": "node --test \"test/*.test.ts\"",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "typescript": "6.0.3"
+  }
+}
