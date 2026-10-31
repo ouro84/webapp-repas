@@ -418,6 +418,11 @@ Respecte les CGV et le RGPD par construction, évite le blocage Cloudflare, ne c
 - L'intégration reste **personnelle** (exécuteur auto-hébergé). L'ouvrir à tous passe par un partenariat officiel (#310, épopée Go public).
 - L'API privée peut changer sans préavis : l'exécuteur doit échouer proprement et le rapporter.
 - Précisions du spike #307 : Chronodrive ne délivre **pas de refresh token**, l'exécuteur se reconnecte avec ses identifiants quand le jeton (2 h) a expiré ; le webhook se signe au format **Standard Webhooks** (`webhook-id`, `webhook-timestamp`, `webhook-signature`), celui que vérifie Hermes ; Funnel tourne sur le port **10000** du NAS (443 et 8443 déjà pris), l'URL enregistrée dans `executeur_panier` porte donc un port.
+- Précisions du grilling de #308 (2026-10-31) :
+  - **Secret HMAC dans Supabase Vault** (`executeur_panier.secret_id`), et **signature calculée dans Postgres** par la RPC `SECURITY DEFINER` qui crée la demande : elle renvoie URL, en-têtes et corps, jamais le secret. Vercel n'a ni le secret ni besoin de `service_role` pour ce flux. Écarté : lire le secret en `service_role` et signer en Node, qui met plus de privilèges côté Vercel.
+  - **Expiration paresseuse** dans les RPC (`en_attente` 5 min, `en_cours` 30 min) : `pg_cron` n'est pas installé, et une tâche planifiée n'apporterait rien tant que personne ne lit l'état.
+  - **Exécuteur en TypeScript exécuté directement par Node 26** (type stripping, conteneur `hermes`), sans étape de build ; cache des correspondances dans `node:sqlite`, sans dépendance native.
+  - Découpage : PR1 socle (tables, RPC, outils MCP, route webhook), PR2 UI `/courses`, PR3 exécuteur. Le parcours « préparer mon cycle » (#320) réutilise ce socle via `lancer_demande_panier` (RG-85).
 
 ---
 
