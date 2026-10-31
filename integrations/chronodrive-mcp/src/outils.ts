@@ -68,7 +68,7 @@ export function messagePourLeLlm(e: unknown): string {
 
 const MOTS_VIDES = new Set(["de", "du", "des", "la", "le", "les", "en", "au", "aux", "et", "a"]);
 // Prépositions qui introduisent un complément (« à » et « d' » une fois normalisés : « a », « d ») ;
-// « à la » est traité à part.
+// « à la » et « à l' » (« a la », « a l ») sont traités à part.
 const PREPOSITIONS = new Set(["au", "aux", "a", "de", "du", "des", "d", "en"]);
 
 type Mot = { mot: string; complement: boolean };
@@ -81,13 +81,13 @@ function mots(texte: string): Mot[] {
     .filter((m) => m !== "");
   return bruts.map((m, i) => ({
     mot: m.length > 3 && /[sx]$/.test(m) ? m.slice(0, -1) : m,
-    complement: i > 0 && (PREPOSITIONS.has(bruts[i - 1]) || (bruts[i - 1] === "la" && bruts[i - 2] === "a")),
+    complement: i > 0 && (PREPOSITIONS.has(bruts[i - 1]) || ((bruts[i - 1] === "la" || bruts[i - 1] === "l") && bruts[i - 2] === "a")),
   }));
 }
 
 // Un favori correspond au terme quand chaque mot significatif du terme (3 lettres ou plus, hors mots
 // vides) figure dans son libellé (la marque ne compte pas). Un mot qui, dans le libellé, ne figure
-// qu'en complément (juste après « au », « aux », « à », « à la », « de », « du », « des », « d' »,
+// qu'en complément (juste après « au », « aux », « à », « à la », « à l' », « de », « du », « des », « d' »,
 // « en ») ne compte que s'il est aussi complément dans le terme : « lait » ne trouve ni « Oeufs en
 // chocolat au lait » ni « Feta au lait de brebis », « œufs » ne trouve pas « Feuilles de lasagnes
 // aux oeufs », mais « coulis de tomate » trouve « Coulis de tomates ». Un terme sans mot significatif

@@ -271,6 +271,14 @@ test("favoris : un mot qui ne figure qu'après une préposition (« au », « au
     favorisPour("pommes de terre", [versProduit(produit("3006", "Pommes de terre de consommation"))]).map((p) => p.id),
     ["3006"],
   );
+  // « à l' » : même règle que « à la ».
+  const thon = versProduit(produit("3007", "Thon à l'huile d'olive"));
+  const yaourt = versProduit(produit("3008", "Yaourt à l'orange"));
+  assert.deepEqual(favorisPour("huile", [thon, yaourt]), []);
+  assert.deepEqual(favorisPour("huile d'olive", [thon, yaourt]), []);
+  assert.deepEqual(favorisPour("orange", [thon, yaourt]), []);
+  assert.deepEqual(favorisPour("thon à l'huile", [thon, yaourt]).map((p) => p.id), ["3007"]);
+  assert.deepEqual(favorisPour("yaourt", [thon, yaourt]).map((p) => p.id), ["3008"]);
 });
 
 test("chercher_produits marque l'indisponible", async () => {
