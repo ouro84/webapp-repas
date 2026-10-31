@@ -81,8 +81,21 @@ function signatureAttendue(id: string, horodatage: string, corps: string): strin
   return `v1,${createHmac("sha256", cle).update(`${id}.${horodatage}.${corps}`).digest("base64")}`;
 }
 
+// Un seul login par mot de passe et par compte, réutilisé par les lectures
+// REST : l'Auth de staging limite les connexions (429 en CI avec 4 workers).
+const sessions = new Map<string, string>();
+
+async function sessionDe(request: APIRequestContext, email: string): Promise<string> {
+  let jeton = sessions.get(email);
+  if (!jeton) {
+    jeton = await jetonMotDePasse(request, email);
+    sessions.set(email, jeton);
+  }
+  return jeton;
+}
+
 async function foyerDe(request: APIRequestContext, email: string): Promise<string> {
-  const jeton = await jetonMotDePasse(request, email);
+  const jeton = await sessionDe(request, email);
   const r = await request.get(`${lireEnvLocal("NEXT_PUBLIC_SUPABASE_URL")}/rest/v1/profiles?select=foyer_id`, {
     headers: { apikey: lireEnvLocal("NEXT_PUBLIC_SUPABASE_ANON_KEY"), Authorization: `Bearer ${jeton}` },
   });
@@ -103,7 +116,7 @@ type Derniere = {
 } | null;
 
 async function etatPanier(request: APIRequestContext, email: string): Promise<{ executeur: boolean; derniere: Derniere }> {
-  const jeton = await jetonMotDePasse(request, email);
+  const jeton = await sessionDe(request, email);
   const r = await request.post(`${lireEnvLocal("NEXT_PUBLIC_SUPABASE_URL")}/rest/v1/rpc/etat_panier`, {
     headers: {
       apikey: lireEnvLocal("NEXT_PUBLIC_SUPABASE_ANON_KEY"),
@@ -118,7 +131,7 @@ async function etatPanier(request: APIRequestContext, email: string): Promise<{ 
 
 // Une demande précise, lue sous RLS (lecture seule pour le foyer).
 async function lireDemande(request: APIRequestContext, email: string, id: string): Promise<Derniere> {
-  const jeton = await jetonMotDePasse(request, email);
+  const jeton = await sessionDe(request, email);
   const r = await request.get(
     `${lireEnvLocal("NEXT_PUBLIC_SUPABASE_URL")}/rest/v1/demande_panier?id=eq.${id}&select=id,ancre,statut,cause_echec,motif_echec,rapport,rapport_tardif`,
     { headers: { apikey: lireEnvLocal("NEXT_PUBLIC_SUPABASE_ANON_KEY"), Authorization: `Bearer ${jeton}` } }

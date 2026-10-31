@@ -25,6 +25,7 @@ paths:
 - **`panier-demande.spec`** (#308, dans `SPECS_JETABLE`) : un récepteur HTTP local joue l'exécuteur, enregistré par `enregistrerExecuteurPanier` avec son URL.
   - Le récepteur appelle **`closeAllConnections()` avant `close()`**. Pourquoi : le `fetch` de Next garde ses connexions ouvertes, `close()` seul attend leur expiration.
   - Toute écriture sur `demande_panier` / `executeur_panier` passe par un helper `service_role` (`vieillirDemandePanier`, `enregistrerExecuteurPanier`, `supprimerExecuteurPanier` en `afterAll`). Pourquoi : les rôles client n'ont aucun droit d'écriture. `vieillirDemandePanier` recule `cree_le` ou `pris_le` depuis la valeur en base, pour simuler l'expiration (RG-83) sans attendre.
+  - **Une seule connexion par mot de passe et par compte** (`sessionDe`, jeton mis en cache), jamais un `jetonMotDePasse` par lecture. Pourquoi : l'Auth de staging limite les connexions ; avec 4 workers jetables en parallèle, la CI prenait des 429 jusque dans le `beforeAll` des relances.
   - **Relire une demande par son id, pas via `etat_panier().derniere`.** Pourquoi : vieillir `cree_le` change l'ordre du tri `cree_le desc`, la « dernière » n'est plus celle qu'on croit.
 
 ## Le compte partagé : chaque spec restaure ce qu'elle touche
