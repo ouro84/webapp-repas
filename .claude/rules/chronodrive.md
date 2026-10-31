@@ -2,6 +2,8 @@
 paths:
   - "integrations/chronodrive-mcp/**"
   - "docs/etudes/chronodrive.md"
+  - "app/api/panier/**"
+  - "lib/panier.ts"
 ---
 
 # Exécuteur Chronodrive (#303, ADR-12)
@@ -25,3 +27,10 @@ Protocole et mesures : `docs/etudes/chronodrive.md`. PoC du spike #307 : `integr
 - **OMQ signe le webhook au format Standard Webhooks** (`webhook-id`, `webhook-timestamp`, `webhook-signature: v1,<base64>`). Pourquoi : c'est le format que vérifie Hermes, avec anti-rejeu et dédoublonnage par id.
 - **Secret `whsec_<base64>` : la clé HMAC est le base64 décodé**, pas la chaîne entière (un secret sans préfixe est pris brut). Pourquoi : la signature calculée côté OMQ (Postgres) doit décoder exactement comme Hermes, sinon tout webhook est rejeté en 401.
 - **Le prompt de l'exécuteur doit dire explicitement d'acheter les articles « à vérifier au placard » non cochés** (les prompts du spike ne le disent pas). Pourquoi : sans consigne, le LLM les écarte de lui-même (RG-82).
+
+## Côté OMQ : demande de panier (#308)
+
+- **L'exécuteur se déclare par `select enregistrer_executeur_panier('<foyer_id>', '<url>', '<secret>')`, en `service_role`** (SQL via `scripts/query-supabase.mjs`, jamais depuis le client). L'URL porte le port du Funnel (10000). Pourquoi : pas d'UI en v1, et le secret entre dans Vault sans passer par une table lisible.
+- **`POST /api/panier/demande` ne lit aucun corps et vise toujours le cycle courant** (`ancreParDefaut(aujourdhuiParis(), jour_courses)`). Pourquoi : `cocher_article` et `lire_liste_courses` n'agissent que sur le cycle courant tant que #320 n'ajoute pas `ancre` ; une ancre libre ferait traiter un cycle que l'exécuteur ne peut pas cocher.
+- **Un webhook refusé ou injoignable ferme la demande** (`echouer_envoi_demande_panier`, cause `injoignable`) **puis la route répond 502** ; si la fermeture échoue, elle est loggée et le 502 part quand même (l'expiration à 5 min prend le relais). Pourquoi : le bouton doit redevenir disponible sans attendre.
+- **Le webhook s'envoie avec le corps signé par Postgres, tel quel** (`envoyerWebhook`, 10 s, aucune relance). Pourquoi : re-sérialiser le corps invaliderait la signature, et une relance rejouerait un réveil à vide.

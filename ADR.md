@@ -198,7 +198,7 @@ webapp-repas/
 │   ├── auth/                     # reinitialiser/ (page) + signout/ (route)
 │   ├── oauth/consent/            # écran de consentement OAuth 2.1 (#305)
 │   ├── .well-known/              # oauth-protected-resource (metadata RFC 9728 du MCP, #305)
-│   └── api/                      # planning/generer (adaptateur HTTP de lib/generation.ts), compte/supprimer, mcp (serveur MCP, #305)
+│   └── api/                      # planning/generer (adaptateur HTTP de lib/generation.ts), compte/supprimer, mcp (serveur MCP, #305), panier/demande (webhook signé vers l'exécuteur, #308)
 │
 ├── components/
 │   ├── ui/                       # Génériques (logo, nav, badges, confirmation, avatar, thème…)
@@ -217,8 +217,9 @@ webapp-repas/
 │   ├── liste-courses.ts (pur) / liste-courses-cycle.ts (service serveur à client injecté, #304)
 │   ├── stockage.ts  sync.ts  persistance.ts  recettes.ts  reglages-data.ts  profil.ts  foyer.ts  invitation.ts  theme.ts
 │   ├── mcp/                      # Serveur MCP (#305, #306) : auth (jeton OAuth), serveur (outils), lecture,
-│   │                             # ecriture-planning / ecriture-recettes / ecriture-courses, repas, erreurs
+│   │                             # ecriture-planning / ecriture-recettes / ecriture-courses, panier (#308), repas, erreurs
 │   ├── validation-recette.ts     # Validation de recette partagée formulaire + MCP (#306)
+│   ├── panier.ts                 # Panier d'enseigne : envoi du webhook, schéma du rapport, messages OMQ01-03 (#308)
 │   ├── redirection.ts            # cheminDeRetour (retour après login, anti open-redirect)
 │   ├── adapters.ts               # Conversion DB → domaine
 │   ├── errors.ts  messages-auth.ts

@@ -52,6 +52,16 @@ Les FK vers `foyers(id)` ne sont **pas** `ON DELETE CASCADE`. Toute nouvelle tab
 3. `supprimer_mon_compte()` : la purger dans la branche solo.
 Un renommage ou une suppression de colonne référencée par ces fonctions impose aussi de les recréer.
 
+**Exception : `executeur_panier` et `demande_panier` sont en `on delete cascade`** vers `foyers`. Rien à recréer dans `rejoindre_foyer`, `quitter_foyer` ni `supprimer_mon_compte`, et rien n'est cloné à la sortie. Pourquoi : l'exécuteur appartient à l'installation du foyer, pas à la personne qui part ; la cascade (et le trigger Vault ci-dessous) nettoie tout quand le foyer disparaît.
+
+## Demandes de panier (`demande_panier`, `executeur_panier`)
+
+- **Codes d'erreur applicatifs en SQLSTATE `OMQ0x`** : `OMQ01` aucun exécuteur, `OMQ02` demande déjà active, `OMQ03` demande non rapportable. La route et le MCP les lisent par `error.code` ; les messages vivent dans `MESSAGES_PANIER` (`lib/panier.ts`). Pourquoi : un code stable évite de filtrer sur un message français que PostgREST peut reformuler.
+- **Secret du webhook dans Supabase Vault, `name` unique** (`executeur_panier:<foyer>:chronodrive`) : `enregistrer_executeur_panier` met à jour le secret existant au lieu d'en créer un second, et un trigger `after delete` sur `executeur_panier` supprime le secret (y compris par la cascade du foyer). Pourquoi : Vault n'a pas de FK vers la table, un secret orphelin y resterait.
+- **`enregistrer_executeur_panier` n'est exécutable que par `service_role`** (`revoke` de `public`, `anon` et `authenticated`), et les tables n'ont aucun droit d'écriture pour les rôles client : tout passe par les RPC. Pourquoi : un client authentifié ne doit jamais pouvoir poser l'URL ni le secret d'un webhook.
+- **« Une seule demande active » repose sur l'index unique partiel** (`demande_panier_active_idx`) ; le `exists` préalable ne sert que le cas courant. Pourquoi : deux clics simultanés passent tous les deux le select.
+- **Chaque RPC du cycle de vie appelle d'abord `expirer_demandes_panier(foyer)`** (expiration paresseuse, pas de `pg_cron`) ; une nouvelle RPC qui lit ou écrit une demande doit faire de même. Pourquoi : sans tâche planifiée, c'est le seul moment où une demande périmée se ferme.
+
 ## Clonage à la sortie (`quitter_foyer`, RG-34)
 
 On **clone**, on ne déplace pas : le foyer quitté garde tout. Remap d'ids via des tables temporaires (`_map_recette`, `_map_planning`, `on commit drop`). Un slot pointe vers la recette clonée si elle appartenait au foyer, et garde l'id d'origine pour une globale (`coalesce(mr.nouvelle, ps.recette_id)`). Les recettes clonées prennent `user_id = auth.uid()`. Le profil est détaché **en dernier**.
