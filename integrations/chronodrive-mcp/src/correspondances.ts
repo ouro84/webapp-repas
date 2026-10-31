@@ -26,6 +26,11 @@ export function normaliserTerme(terme: string): string {
     .trim();
 }
 
+// Le cache peut être partagé par deux processus (deux MCP stdio, deux runs webhook) : sans délai d'attente,
+// toute écriture concurrente lève « database is locked » aussitôt. Pas de WAL : `-shm` est peu fiable sur
+// les montages Docker/réseau. La couche MCP (Task 4) traite une erreur de cache comme non fatale.
+const DELAI_ATTENTE_MS = 5000;
+
 // Limite historique de SQLite : 999 paramètres liés par requête.
 const TAILLE_LOT = 500;
 
@@ -33,7 +38,7 @@ export class Correspondances {
   #base: DatabaseSync;
 
   constructor(chemin: string) {
-    this.#base = new DatabaseSync(chemin);
+    this.#base = new DatabaseSync(chemin, { timeout: DELAI_ATTENTE_MS });
     this.#base.exec(
       `create table if not exists correspondance (
          terme text primary key,

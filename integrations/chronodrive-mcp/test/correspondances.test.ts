@@ -1,5 +1,6 @@
 // Cache des correspondances terme → produit (#308, Task 3) : base `node:sqlite` temporaire, aucun appel réseau.
 import { test } from "node:test";
+import { spawn } from "node:child_process";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -107,4 +108,43 @@ test("beaucoup de termes en une lecture", () => {
       cache.fermer();
     }
   });
+});
+
+test("écriture concurrente : memoriser attend le verrou au lieu de lever", async () => {
+  const dossier = mkdtempSync(join(tmpdir(), "chronodrive-cache-"));
+  const chemin = join(dossier, "correspondances.sqlite");
+  const cache = new Correspondances(chemin);
+  // Un autre processus prend le verrou d'écriture, le garde 400 ms puis valide. DatabaseSync est synchrone :
+  // un second processus est le seul moyen de libérer le verrou pendant que memoriser attend.
+  const autre = spawn(
+    process.execPath,
+    [
+      "--input-type=module",
+      "-e",
+      `import { DatabaseSync } from "node:sqlite";
+       const base = new DatabaseSync(process.argv[1]);
+       base.exec("begin immediate");
+       process.stdout.write("verrou\\n");
+       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 400);
+       base.exec("commit");
+       base.close();`,
+      chemin,
+    ],
+    { stdio: ["ignore", "pipe", "ignore"] },
+  );
+  try {
+    await new Promise<void>((resolve, reject) => {
+      autre.once("error", reject);
+      autre.once("exit", () => reject(new Error("le verrou n'a pas été pris")));
+      autre.stdout.once("data", () => resolve());
+    });
+    const debut = Date.now();
+    cache.memoriser([{ terme: "lait", productId: "11", libelle: "Lait" }]);
+    assert.ok(Date.now() - debut >= 100, "memoriser aurait dû attendre la libération du verrou");
+    assert.equal(cache.connues(["lait"]).get("lait")?.productId, "11");
+  } finally {
+    autre.kill();
+    cache.fermer();
+    rmSync(dossier, { recursive: true, force: true });
+  }
 });
