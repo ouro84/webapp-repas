@@ -13,6 +13,7 @@ paths:
   - "lib/sync*.ts"
   - "lib/persistance.ts"
   - "lib/foyer.ts"
+  - "lib/panier-*.ts"
   - "app/globals.css"
 ---
 
@@ -57,6 +58,18 @@ paths:
 - **Intégration à l'affichage sans dupliquer le tri** (`lib/articles-manuels.ts`) : `articleManuelVersIngredient` mappe vers `Ingredient` avec le discriminant `source: "manuel"`. `estCoche` a une branche dédiée, ce qui suffit à `trierAvecCoches` / `categorieTerminee` / `trierCategoriesAvecCoches` / `compterProgression` sur des listes mêlées. `fusionnerArticlesManuels` insère les sections au rang de `ORDRE_CATEGORIES`, exporté depuis `lib/courses.ts` (source unique).
 - Quantité optionnelle (RG-43) : le mapper neutralise à `0` / `"piece"`. L'affichage passe par `aQuantiteRenseignee(ingredient)` (un `formaterQuantite` nu afficherait « 0 »).
 - Édition en place (id et coche conservés) dans le bottom sheet partagé `components/courses/formulaire-article-manuel.tsx`. Écritures directes sous RLS + temps réel par ancre (`REPLICA IDENTITY FULL`), store **en mémoire** `useArticlesManuels()`. Rétention alignée sur `purgerCyclesAvant`.
+
+## Carte « Panier Chronodrive » (#308, `components/courses/panier-chronodrive.tsx`)
+
+- **Montée après la liste des catégories (après « Fond de placard », en fin de `<main>` chargé), hors des `<section>` de catégories, sans place réservée.** Pourquoi : elle arrive après deux lectures réseau ; en haut, elle poussait toute la liste sous le doigt en magasin, et la plupart des foyers n'ont pas d'exécuteur.
+- **Bouton sur le cycle courant seulement ; ailleurs, lecture seule.** Rendue (sinon `null`) seulement si `etat_panier().executeur`. Le cycle courant est `ancreParDefaut(aujourdhuiParis(), jour_courses)`, avec `jour_courses` lu **sans repli** (`chargerJourCoursesPanier`, `lib/panier-client.ts`, pas `chargerJourCoursesFoyer` qui retombe sur lundi) et recalculé au retour sur l'onglet. Sur un autre cycle, la carte montre sans bouton l'état en cours, l'échec ou le rapport de la demande de CE cycle (`derniere.ancre === ancreAffichee`), et rien sinon. Logique pure dans `affichagePanier` (`lib/panier-affichage.ts`). Pourquoi : `POST /api/panier/demande` ne lit aucun corps et vise toujours le cycle courant (jumeau de la route), alors que #320 préparera le cycle suivant, dont le rapport doit rester visible.
+- **Échec et compte-rendu montrés seulement sur le cycle de la demande ; une demande active désactive le bouton quelle que soit son ancre.** Un `echec` dont le rapport a au moins une liste non vide montre le message **puis** le résumé, le rappel et le détail. Pourquoi : une seule demande active par foyer (RG-83) ; `rapporter_panier` stocke le rapport même en échec, et ce qui a été ajouté avant la panne doit se lire.
+- **Après un `terminee` du cycle courant, le bouton devient secondaire** (ghost : `bg-surface`, `text-brand-700`, `border-brand-200`) : « Relancer pour les articles restants ». Sans demande ou après un échec, il reste le CTA principal. Pourquoi : les articles ajoutés sont cochés (RG-83), relancer n'est plus l'action attendue.
+- **Bouton désactivé par `aria-disabled` + garde dans `onClick`, jamais `disabled`** ; garde synchrone du double tap par ref ; `try/finally` autour du lancement ; « Envoi en cours… » annoncé dans la région `aria-live`. Pourquoi : `disabled` fait perdre le focus clavier pendant l'envoi, et deux clics d'un même lot passent avant que React ne re-rende.
+- **502 au lancement : pas de toast, la carte porte le message** (« Ton exécuteur n’a pas répondu… », sans « HTTP 500 », motif brut en base) ; toast de repli seulement si la relecture échoue. Les autres échecs (409, 429, 500, réseau) gardent le toast. Pourquoi : un toast et la carte disaient deux fois la même chose, en deux formulations.
+- **`etat_panier` relu par une chaîne de `setTimeout` (10 s après la FIN de la lecture précédente), seulement pendant une demande active, carte et onglet visibles ; plus au retour sur l'onglet (aussi après un premier chargement raté). Un compteur `numeroLecture` ignore tout résultat plus ancien que la dernière lecture lancée.** Pourquoi : la demande peut venir d'un autre membre ou de l'assistant (#320) ; un `setInterval` empilait des lectures sur un réseau lent, et une lecture lente pouvait écraser un état plus récent.
+- **État en mémoire du composant**, ni localStorage ni store partagé. Une lecture échouée garde le dernier état connu et ne logge qu'une fois par série d'échecs, sans toast (le toast est réservé au clic). Pourquoi : réseau coupé en magasin, l'interrogation ne doit ni crasher ni toaster à chaque tick.
+- **Le compte partagé des e2e n'a jamais d'exécuteur** ; les e2e de la carte vivent dans `panier-demande.spec` (comptes jetables). Les sélecteurs de liste de `courses.spec` / `cycle-courses.spec` sont bornés à `getByTestId("categories-courses")` (conteneur des catégories). Pourquoi : la carte est une `<section>` avec `<h2>` et `<ul>`/`<li>` dans `main` ; `main section h2` ou `main li` l'attraperaient.
 
 ## Catégories terminées et animation de descente (RG-11, RG-39)
 

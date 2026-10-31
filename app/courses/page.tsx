@@ -88,6 +88,7 @@ import { accorderNom } from "@/lib/pluriels";
 import { formaterQuantite } from "@/lib/unites";
 import { LIBELLES_CATEGORIES } from "@/lib/courses";
 import { FormulaireArticleManuel } from "@/components/courses/formulaire-article-manuel";
+import { PanierChronodrive } from "@/components/courses/panier-chronodrive";
 import type { SaisieArticleManuel } from "@/lib/persistance";
 import type {
   ArticleManuel,
@@ -645,8 +646,9 @@ function ContenuCourses() {
       {/* Une section par catégorie présente, dans l'ordre canonique (RG-05).
           Articles non cochés d'abord, cochés en fin de catégorie (RG-11).
           Les catégories entièrement cochées glissent en bas de liste, titre
-          rayé, en restant ouvertes (RG-39, #111). */}
-      <div className="space-y-6">
+          rayé, en restant ouvertes (RG-39, #111). Le data-testid borne les
+          sélecteurs de e2e/courses.spec.ts à la liste (hors carte panier). */}
+      <div className="space-y-6" data-testid="categories-courses">
         {trierCategoriesAvecCoches(liste.normal, coches).map((ligne) => {
           const repliee = replies.has(ligne.categorie);
           const terminee = categorieTerminee(ligne, coches);
@@ -793,6 +795,13 @@ function ContenuCourses() {
           </section>
         )}
       </div>
+
+      {/* Panier Chronodrive (#308, US-53) : APRÈS la liste, hors des <section>
+          de catégories. Elle arrive après deux lectures réseau : en haut, elle
+          pousserait la liste sous le doigt en magasin. Ne rend rien sans
+          exécuteur (RG-81), ni sur un autre cycle que le courant sans demande
+          de ce cycle (lecture seule sinon). */}
+      {cycle && <PanierChronodrive ancreAffichee={cycle.ancre} />}
 
       {dialogueArticle && (
         <FormulaireArticleManuel

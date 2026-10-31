@@ -18,17 +18,21 @@
 import { createHmac, randomBytes } from "node:crypto";
 import { createServer, type IncomingHttpHeaders, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import type { APIRequestContext, BrowserContext, Page } from "@playwright/test";
+import { isAbsolute, join, relative, resolve } from "node:path";
+import type { APIRequestContext, BrowserContext, Locator, Page, Request } from "@playwright/test";
 import { test, expect } from "./fixtures";
 import { appelerOutilMcp, autoriser, connecter, inscrire, jetonMotDePasse } from "./oauth";
 import {
   demandesPanierActives,
+  deplacerDemandePanier,
   enregistrerExecuteurPanier,
   lireEnvLocal,
+  supprimerDemandesPanier,
   supprimerExecuteurPanier,
   vieillirDemandePanier,
 } from "./helpers";
 import { MESSAGE_INJOIGNABLE, MESSAGES_PANIER } from "../lib/panier";
+import { cycleDecale } from "../lib/cycles";
 
 const RUN = Date.now();
 const EMAIL_A = `claude-e2e-panier-a-${RUN}@example.com`;
@@ -36,6 +40,10 @@ const EMAIL_B = `claude-e2e-panier-b-${RUN}@example.com`;
 const CORPS_WEBHOOK = '{"evenement":"demande_panier"}';
 // Secret au format Standard Webhooks : la clé HMAC est le base64 décodé (RG-81).
 const SECRET = `whsec_${randomBytes(32).toString("base64")}`;
+
+// Message de la carte quand l'exécuteur ne répond pas (RG-81), sans le motif
+// technique (« réponse HTTP 500 ») qui reste en base.
+const MESSAGE_CARTE_INJOIGNABLE = "Ton exécuteur n’a pas répondu. Vérifie qu’il est allumé, puis réessaie.";
 
 const RAPPORT = {
   ajoutes: [{ article: "lait", produit: "Lait demi-écrémé 1 L", marque: "Lactel", quantite: 2 }],
@@ -55,6 +63,7 @@ let serveur: Server;
 // --- Comptes : A (foyer avec exécuteur), B (autre foyer) ---
 
 let pageA: Page;
+let pageB: Page;
 let jetonA = "";
 let jetonB = "";
 let foyerA = "";
@@ -182,6 +191,27 @@ function rapporter(request: APIRequestContext, jeton: string, demandeId: string,
   });
 }
 
+/** Une demande prise puis rapportée « terminee » ; renvoie son id et son ancre. */
+async function demandeTerminee(request: APIRequestContext): Promise<{ id: string; ancre: string }> {
+  const id = await demanderOk();
+  const { demande } = await prendre(request, jetonA);
+  expect(demande?.id).toBe(id);
+  expect((await rapporter(request, jetonA, id)).resultat?.isError).toBeFalsy();
+  return { id, ancre: demande!.ancre };
+}
+
+/**
+ * Déplace la demande sur le cycle SUIVANT et y génère un planning (sans liste,
+ * la carte n'est pas montée). Renvoie l'ancre du cycle suivant.
+ */
+async function demandeDuCycleSuivant(request: APIRequestContext, demande: { id: string; ancre: string }): Promise<string> {
+  const suivant = cycleDecale(demande.ancre, 1);
+  await deplacerDemandePanier(request, demande.id, suivant);
+  const generation = await appelerOutilMcp(request, jetonA, "generer_cycle", { ancre: suivant, remplacer: true });
+  expect(generation.resultat?.isError).toBeFalsy();
+  return suivant;
+}
+
 test.beforeAll(async ({ browser, request }) => {
   const urlWebhook = await demarrerRecepteur();
   await Promise.all([inscrire(request, EMAIL_A), inscrire(request, EMAIL_B)]);
@@ -196,8 +226,17 @@ test.beforeAll(async ({ browser, request }) => {
       pageA = page;
       jetonA = access_token;
     } else {
+      pageB = page;
       jetonB = access_token;
     }
+  }
+
+  // Un planning sur le cycle courant pour chaque compte : sans lui, /courses
+  // montre l’état vide et la carte n’est jamais montée (le test « aucun
+  // exécuteur » passerait alors à vide).
+  for (const jeton of [jetonA, jetonB]) {
+    const generation = await appelerOutilMcp(request, jeton, "generer_cycle");
+    expect(generation.resultat?.isError).toBeFalsy();
   }
 
   foyerA = await foyerDe(request, EMAIL_A);
@@ -232,6 +271,194 @@ test.afterAll(async ({ request }) => {
   // Supprimer l'exécuteur nettoie staging et exerce le trigger qui supprime
   // son secret Vault.
   expect(await supprimerExecuteurPanier(request, foyerA)).toBe(0);
+});
+
+// --- Carte « Panier Chronodrive » sur /courses (#308, US-53) ---
+
+function carteDe(page: Page): Locator {
+  return page.getByRole("region", { name: "Panier Chronodrive" });
+}
+
+// /courses dans son état CHARGÉ, carte rendue avec ses deux lectures. La carte
+// n'est montée que dans l'état chargé (le compteur « n coché(s) sur m »
+// n'existe qu'avec une liste), puis décide de s'afficher avec `etat_panier` ET
+// le jour de courses du foyer (`foyers?select=jour_courses`, cycle courant).
+// On attend donc la liste, la réception COMPLÈTE des deux réponses (corps
+// compris : `waitForResponse` résout dès les en-têtes), puis deux frames pour
+// laisser React rendre. Après ce helper, la présence ou l'absence de la carte
+// se lit sans attente : c'est ce qui rend l'assertion d'absence probante.
+async function ouvrirCourses(page: Page): Promise<void> {
+  const lecturesJour: Request[] = [];
+  const noterLecture = (req: Request) => {
+    if (req.url().includes("/rest/v1/foyers") && req.url().includes("jour_courses")) lecturesJour.push(req);
+  };
+  page.on("request", noterLecture);
+  try {
+    const etatLu = page.waitForResponse((r) => r.url().includes("/rpc/etat_panier"), { timeout: 30_000 });
+    await page.goto("/courses");
+    await expect(page.getByText(/^\d+ cochés? sur \d+/)).toBeVisible();
+    const reponseEtat = await etatLu;
+    expect(reponseEtat.ok()).toBe(true);
+    await reponseEtat.finished();
+    // La carte lance ses deux lectures dans le même effet : une fois l'état
+    // reçu, sa lecture du jour de courses est partie (celle de la page aussi).
+    expect(lecturesJour.length).toBeGreaterThan(0);
+    for (const req of lecturesJour) {
+      const reponse = await req.response();
+      expect(reponse?.ok()).toBe(true);
+      await reponse!.finished();
+    }
+    await page.evaluate(() => new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok))));
+  } finally {
+    page.off("request", noterLecture);
+  }
+}
+
+// Captures de contrôle visuel, HORS CI : `CAPTURES_PANIER=<dossier absolu hors
+// du dépôt>` active le test et donne le dossier de sortie (jamais
+// test-results/, publié en CI). Le test crée l'état dont il a besoin (aucune
+// demande au départ) et nettoie derrière lui : il ne dépend pas de l'ordre.
+const CAPTURES_PANIER = process.env.CAPTURES_PANIER ?? "";
+const FORMATS = [
+  { width: 320, height: 800 },
+  { width: 390, height: 844 },
+] as const;
+
+/** Dossier de sortie validé : absolu et hors du dépôt, sinon refusé. */
+function dossierCaptures(): string {
+  if (!isAbsolute(CAPTURES_PANIER)) {
+    throw new Error(`CAPTURES_PANIER doit être un chemin absolu : « ${CAPTURES_PANIER} »`);
+  }
+  const depuisDepot = relative(process.cwd(), resolve(CAPTURES_PANIER));
+  if (!depuisDepot.startsWith("..") && !isAbsolute(depuisDepot)) {
+    throw new Error(`CAPTURES_PANIER ne doit pas être dans le dépôt : « ${CAPTURES_PANIER} »`);
+  }
+  return CAPTURES_PANIER;
+}
+
+/**
+ * Ramène la page sur le cycle courant par le relais `?ancre=` (#279) : le
+ * cycle affiché est mémorisé (localStorage), et un rechargement montrerait
+ * d'abord le cycle suivant, le temps de l'hydratation.
+ */
+async function revenirAuCycle(page: Page, ancre: string): Promise<void> {
+  await page.goto(`/courses?ancre=${ancre}`);
+  await expect(page).toHaveURL(/\/courses$/);
+  await expect(
+    carteDe(page).getByRole("button", { name: /^(Constituer mon panier Chronodrive|Relancer pour les articles restants|Panier en cours…)$/ })
+  ).toBeVisible();
+}
+
+async function capturer(
+  dossier: string,
+  etat: string,
+  attendre: (carte: Locator) => Promise<void>
+): Promise<void> {
+  for (const taille of FORMATS) {
+    for (const theme of ["light", "dark"] as const) {
+      await pageA.setViewportSize(taille);
+      // Le thème par défaut est « système » : il suit prefers-color-scheme.
+      await pageA.emulateMedia({ colorScheme: theme });
+      await ouvrirCourses(pageA);
+      const carte = carteDe(pageA);
+      await attendre(carte);
+      // Aucun débordement horizontal, même à 320 px.
+      expect(await pageA.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(taille.width);
+      // Le bouton, s'il existe, tient sur une ligne (libellé non tronqué).
+      const boutons = carte.getByRole("button", { name: /panier|Relancer/i });
+      if ((await boutons.count()) > 0) {
+        // Le contenu (spinner compris, ou la place qu'il prendra pendant
+        // l'envoi : 14 px + 6 px d'écart sous `sm:`) tient dans la pilule, sans
+        // retour à la ligne. Mesure par Range : `scrollWidth` compterait la
+        // zone tactile `after:-inset-1`.
+        const mesure = await boutons.first().evaluate((b) => {
+          const plage = document.createRange();
+          plage.selectNodeContents(b);
+          const style = getComputedStyle(b);
+          const spinner = b.querySelector("svg") ? 0 : 20;
+          return {
+            contenu: Math.ceil(plage.getBoundingClientRect().width) + spinner,
+            disponible: b.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight),
+            hauteur: Math.round(b.getBoundingClientRect().height),
+          };
+        });
+        expect(
+          mesure.contenu <= mesure.disponible && mesure.hauteur < 50,
+          `bouton sur une ligne (${etat}, ${taille.width} px) : ${JSON.stringify(mesure)}`
+        ).toBe(true);
+      }
+      await carte.screenshot({
+        path: join(dossier, `${etat}-${taille.width}-${theme}.png`),
+        animations: "disabled",
+      });
+    }
+  }
+}
+
+test("captures de la carte (hors CI, CAPTURES_PANIER)", async ({ request }) => {
+  test.skip(!CAPTURES_PANIER, "contrôle visuel manuel : CAPTURES_PANIER=<dossier>");
+  test.setTimeout(480_000);
+  const dossier = dossierCaptures();
+  await supprimerDemandesPanier(request, foyerA);
+  let courant = "";
+  try {
+    await capturer(dossier, "disponible", async (carte) => {
+      await expect(carte.getByRole("button", { name: "Constituer mon panier Chronodrive" })).toBeEnabled();
+    });
+
+    // Vraiment `en_cours` : prise par l'exécuteur.
+    const enCours = await demanderOk();
+    const prise = (await prendre(request, jetonA)).demande;
+    expect(prise?.id).toBe(enCours);
+    courant = prise!.ancre;
+    await capturer(dossier, "en-cours", async (carte) => {
+      await expect(carte.getByRole("button", { name: "Panier en cours…" })).toBeDisabled();
+    });
+
+    expect((await rapporter(request, jetonA, enCours)).resultat?.isError).toBeFalsy();
+    await capturer(dossier, "rapport", async (carte) => {
+      await expect(carte.getByText("1 ajouté · 1 à choisir · 1 introuvable")).toBeVisible();
+      await expect(carte.getByRole("button", { name: "Relancer pour les articles restants" })).toBeEnabled();
+    });
+    await capturer(dossier, "rapport-deplie", async (carte) => {
+      await carte.getByText("Ajoutés au panier").click();
+      await expect(carte.getByText("Lait demi-écrémé 1 L · Lactel × 2")).toBeVisible();
+    });
+
+    modeReponse = 500;
+    expect((await demander()).statut).toBe(502);
+    modeReponse = 202;
+    await capturer(dossier, "echec", async (carte) => {
+      await expect(carte.getByText(MESSAGE_CARTE_INJOIGNABLE)).toBeVisible();
+    });
+
+    // Échec rapporté par l'exécuteur, avec ce qu'il a ajouté avant la panne.
+    const partielle = await demanderOk();
+    expect((await prendre(request, jetonA)).demande?.id).toBe(partielle);
+    const motif = "Session Chronodrive expirée, connexion impossible.";
+    expect((await rapporter(request, jetonA, partielle, "echec", motif)).resultat?.isError).toBeFalsy();
+    await capturer(dossier, "echec-rapport-partiel", async (carte) => {
+      await expect(carte.getByText(`Ton exécuteur a signalé un problème : ${motif}`)).toBeVisible();
+      await expect(carte.getByText("1 ajouté · 1 à choisir · 1 introuvable")).toBeVisible();
+    });
+
+    const suivant = await demandeDuCycleSuivant(request, await demandeTerminee(request));
+    await capturer(dossier, "lecture-seule-cycle-suivant", async (carte) => {
+      // Relais `?ancre=` plutôt que « Cycle suivant » : un clic pendant
+      // l'hydratation d'un rechargement partirait du cycle mémorisé.
+      await pageA.goto(`/courses?ancre=${suivant}`);
+      await expect(carte.getByText("1 ajouté · 1 à choisir · 1 introuvable")).toBeVisible();
+      await expect(carte.getByRole("button", { name: /panier|Relancer/i })).toHaveCount(0);
+    });
+  } finally {
+    modeReponse = 202;
+    if (courant) await revenirAuCycle(pageA, courant);
+    await pageA.setViewportSize({ width: 390, height: 844 });
+    await pageA.emulateMedia({ colorScheme: null });
+    // Les demandes actives sont d'abord vieillies par afterEach ; ici, on
+    // repart d'un foyer sans historique pour les tests suivants.
+    await supprimerDemandesPanier(request, foyerA);
+  }
 });
 
 test("clic → webhook signé reçu, corps sans donnée (RG-81)", async () => {
@@ -387,4 +614,103 @@ test("isolation foyer : un autre compte ne prend ni ne rapporte la demande (RG-7
 
   // La demande de A est intacte : A la prend toujours.
   expect((await prendre(request, jetonA)).demande?.id).toBe(demandeId);
+});
+
+test("UI : bouton visible, clic → « Panier en cours… », webhook reçu (RG-81, RG-83)", async () => {
+  await ouvrirCourses(pageA);
+  const carte = carteDe(pageA);
+  // Témoin positif de la séquence d'ouvrirCourses : lue SANS attente, la carte
+  // est déjà là (même lecture instantanée que le test « aucun exécuteur »).
+  expect(await carte.count()).toBe(1);
+  const bouton = carte.getByRole("button", { name: "Constituer mon panier Chronodrive" });
+  await expect(bouton).toBeEnabled();
+
+  await bouton.click();
+  await expect(pageA.getByText("C’est parti : ton panier se remplit.")).toBeVisible();
+  // La demande est active : le bouton reste désactivé, avec l'heure de lancement.
+  await expect(carte.getByRole("button", { name: "Panier en cours…" })).toBeDisabled();
+  await expect(carte.getByText(/^Lancé à \d{2} h \d{2}$/)).toBeVisible();
+  // La route répond après l'envoi du webhook : il est déjà reçu.
+  expect(recues).toHaveLength(1);
+  expect(recues[0].corps).toBe(CORPS_WEBHOOK);
+});
+
+test("UI : compte-rendu affiché après rapporter_panier (RG-82, RG-84)", async ({ request }) => {
+  const demandeId = await demanderOk();
+  expect((await prendre(request, jetonA)).demande?.id).toBe(demandeId);
+  expect((await rapporter(request, jetonA, demandeId)).resultat?.isError).toBeFalsy();
+
+  await ouvrirCourses(pageA);
+  const carte = carteDe(pageA);
+  await expect(carte.getByText("1 ajouté · 1 à choisir · 1 introuvable")).toBeVisible();
+  await expect(
+    carte.getByText("Rappel : rien n’est commandé. Relis et valide ton panier dans l’appli Chronodrive.")
+  ).toBeVisible();
+  // Ce qui demande une action est déplié.
+  await expect(carte.getByRole("heading", { name: "À choisir toi-même" })).toBeVisible();
+  await expect(carte.getByText("farine", { exact: true })).toBeVisible();
+  await expect(carte.getByText("T45 1 kg", { exact: true })).toBeVisible();
+  await expect(carte.getByRole("heading", { name: "Introuvables" })).toBeVisible();
+  await expect(carte.getByText("estragon", { exact: true })).toBeVisible();
+  // Les articles ajoutés sont repliés par défaut.
+  const ajoute = carte.getByText("Lait demi-écrémé 1 L · Lactel × 2");
+  await expect(ajoute).toBeHidden();
+  await carte.getByText("Ajoutés au panier").click();
+  await expect(ajoute).toBeVisible();
+  await expect(carte.getByText(/^Terminé à \d{2} h \d{2}$/)).toBeVisible();
+  // Demande close : relancer pour les articles restants est possible, en
+  // action secondaire (RG-83).
+  await expect(carte.getByRole("button", { name: "Relancer pour les articles restants" })).toBeEnabled();
+  expect(await carte.getByRole("button", { name: "Constituer mon panier Chronodrive" }).count()).toBe(0);
+});
+
+test("UI : cycle suivant avec sa demande → carte en lecture seule, sans bouton (RG-84)", async ({ request }) => {
+  const terminee = await demandeTerminee(request);
+  await demandeDuCycleSuivant(request, terminee);
+
+  // Cycle courant : aucune demande de ce cycle, bouton principal sans rapport.
+  await ouvrirCourses(pageA);
+  const carte = carteDe(pageA);
+  await expect(carte.getByRole("button", { name: "Constituer mon panier Chronodrive" })).toBeEnabled();
+  expect(await carte.getByText("1 ajouté · 1 à choisir · 1 introuvable").count()).toBe(0);
+
+  // Cycle suivant : le rapport de CE cycle, sans bouton (la route vise
+  // toujours le cycle courant).
+  await pageA.getByRole("button", { name: "Cycle suivant" }).click();
+  await expect(carte.getByText("1 ajouté · 1 à choisir · 1 introuvable")).toBeVisible();
+  await expect(carte.getByRole("button", { name: /panier|Relancer/i })).toHaveCount(0);
+
+  // Retour au cycle courant : les tests suivants ouvrent /courses sur le
+  // cycle mémorisé, qui doit être le courant.
+  await revenirAuCycle(pageA, terminee.ancre);
+});
+
+test("UI : échec affiché quand l’exécuteur répond 500, bouton réactivé (RG-81)", async () => {
+  modeReponse = 500;
+  await ouvrirCourses(pageA);
+  const carte = carteDe(pageA);
+  // Libellé de départ selon l'historique laissé par les tests précédents
+  // (relance après un compte-rendu) ; après l'échec, toujours le principal.
+  await carte.getByRole("button", { name: /^(Constituer mon panier Chronodrive|Relancer pour les articles restants)$/ }).click();
+  const bouton = carte.getByRole("button", { name: "Constituer mon panier Chronodrive" });
+  // 502 : c'est la carte qui porte le message, en mots simples (le motif brut
+  // « réponse HTTP 500 » reste en base). Le toast aurait été émis AVANT la
+  // relecture qui affiche ce message : son absence ici est probante.
+  await expect(carte.getByText(MESSAGE_CARTE_INJOIGNABLE)).toBeVisible();
+  await expect(carte.getByText(/^Terminé à \d{2} h \d{2}$/)).toBeVisible();
+  expect(await pageA.getByText(MESSAGE_INJOIGNABLE).count()).toBe(0);
+  await expect(bouton).toBeEnabled();
+  expect(recues).toHaveLength(1);
+});
+
+test("UI : aucun exécuteur → pas de carte (RG-81)", async ({ request }) => {
+  expect((await etatPanier(request, EMAIL_B)).executeur).toBe(false);
+  // B a un planning sur le cycle courant. Après ouvrirCourses, la liste est
+  // chargée, les deux lectures de la carte sont reçues et React a rendu : la
+  // même séquence montre la carte à A (témoin du premier test UI). Lecture
+  // instantanée, sans poll, comme pour A.
+  await ouvrirCourses(pageB);
+  expect(await carteDe(pageB).count()).toBe(0);
+  expect(await pageB.getByRole("button", { name: "Constituer mon panier Chronodrive" }).count()).toBe(0);
+  expect(await pageB.getByText("Panier Chronodrive").count()).toBe(0);
 });
