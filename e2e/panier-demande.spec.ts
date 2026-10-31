@@ -18,7 +18,8 @@
 import { createHmac, randomBytes } from "node:crypto";
 import { createServer, type IncomingHttpHeaders, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import type { APIRequestContext, BrowserContext, Page } from "@playwright/test";
+import { join } from "node:path";
+import type { APIRequestContext, BrowserContext, Locator, Page } from "@playwright/test";
 import { test, expect } from "./fixtures";
 import { appelerOutilMcp, autoriser, connecter, inscrire, jetonMotDePasse } from "./oauth";
 import {
@@ -55,6 +56,7 @@ let serveur: Server;
 // --- Comptes : A (foyer avec exécuteur), B (autre foyer) ---
 
 let pageA: Page;
+let pageB: Page;
 let jetonA = "";
 let jetonB = "";
 let foyerA = "";
@@ -196,8 +198,17 @@ test.beforeAll(async ({ browser, request }) => {
       pageA = page;
       jetonA = access_token;
     } else {
+      pageB = page;
       jetonB = access_token;
     }
+  }
+
+  // Un planning sur le cycle courant pour chaque compte : sans lui, /courses
+  // montre l’état vide et la carte n’est jamais montée (le test « aucun
+  // exécuteur » passerait alors à vide).
+  for (const jeton of [jetonA, jetonB]) {
+    const generation = await appelerOutilMcp(request, jeton, "generer_cycle");
+    expect(generation.resultat?.isError).toBeFalsy();
   }
 
   foyerA = await foyerDe(request, EMAIL_A);
@@ -232,6 +243,84 @@ test.afterAll(async ({ request }) => {
   // Supprimer l'exécuteur nettoie staging et exerce le trigger qui supprime
   // son secret Vault.
   expect(await supprimerExecuteurPanier(request, foyerA)).toBe(0);
+});
+
+// --- Carte « Panier Chronodrive » sur /courses (#308, US-53) ---
+
+function carteDe(page: Page): Locator {
+  return page.getByRole("region", { name: "Panier Chronodrive" });
+}
+
+// /courses dans son état CHARGÉ (le compteur « n coché(s) sur m » n'existe
+// qu'avec une liste) : la carte n'est montée que là. Sans cette attente, une
+// assertion d'absence passerait sur l'état de chargement ou l'état vide.
+async function ouvrirCourses(page: Page): Promise<void> {
+  const etatLu = page.waitForResponse((r) => r.url().includes("/rpc/etat_panier"));
+  await page.goto("/courses");
+  await expect(page.getByText(/^\d+ cochés? sur \d+/)).toBeVisible();
+  expect((await etatLu).ok()).toBe(true);
+}
+
+// Captures de contrôle visuel, HORS CI : `CAPTURES_PANIER=<dossier>` active le
+// test et donne le dossier de sortie (jamais test-results/, publié en CI).
+// Premier test du fichier : l'état « disponible » est vierge (aucune demande).
+const DOSSIER_CAPTURES = process.env.CAPTURES_PANIER ?? "";
+const FORMATS = [
+  { width: 320, height: 800 },
+  { width: 390, height: 844 },
+] as const;
+
+async function capturer(etat: string, attendre: (carte: Locator) => Promise<void>): Promise<void> {
+  for (const taille of FORMATS) {
+    for (const theme of ["light", "dark"] as const) {
+      await pageA.setViewportSize(taille);
+      // Le thème par défaut est « système » : il suit prefers-color-scheme.
+      await pageA.emulateMedia({ colorScheme: theme });
+      await ouvrirCourses(pageA);
+      const carte = carteDe(pageA);
+      await attendre(carte);
+      // Aucun débordement horizontal, même à 320 px.
+      expect(await pageA.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(taille.width);
+      await carte.screenshot({
+        path: join(DOSSIER_CAPTURES, `${etat}-${taille.width}-${theme}.png`),
+        animations: "disabled",
+      });
+    }
+  }
+}
+
+test("captures de la carte (hors CI, CAPTURES_PANIER)", async ({ request }) => {
+  test.skip(!DOSSIER_CAPTURES, "contrôle visuel manuel : CAPTURES_PANIER=<dossier>");
+  test.setTimeout(240_000);
+  try {
+    await capturer("disponible", async (carte) => {
+      await expect(carte.getByRole("button", { name: "Constituer mon panier Chronodrive" })).toBeEnabled();
+    });
+
+    const demandeId = await demanderOk();
+    await capturer("en-cours", async (carte) => {
+      await expect(carte.getByRole("button", { name: "Panier en cours…" })).toBeDisabled();
+    });
+
+    expect((await prendre(request, jetonA)).demande?.id).toBe(demandeId);
+    expect((await rapporter(request, jetonA, demandeId)).resultat?.isError).toBeFalsy();
+    await capturer("rapport", async (carte) => {
+      await expect(carte.getByText("1 ajouté · 1 à choisir · 1 introuvable")).toBeVisible();
+    });
+    await capturer("rapport-deplie", async (carte) => {
+      await carte.getByText("Ajoutés au panier").click();
+      await expect(carte.getByText("Lait demi-écrémé 1 L · Lactel × 2")).toBeVisible();
+    });
+
+    modeReponse = 500;
+    expect((await demander()).statut).toBe(502);
+    await capturer("echec", async (carte) => {
+      await expect(carte.getByText("Ton exécuteur n’a pas répondu (réponse HTTP 500).")).toBeVisible();
+    });
+  } finally {
+    await pageA.setViewportSize({ width: 390, height: 844 });
+    await pageA.emulateMedia({ colorScheme: null });
+  }
 });
 
 test("clic → webhook signé reçu, corps sans donnée (RG-81)", async () => {
@@ -387,4 +476,70 @@ test("isolation foyer : un autre compte ne prend ni ne rapporte la demande (RG-7
 
   // La demande de A est intacte : A la prend toujours.
   expect((await prendre(request, jetonA)).demande?.id).toBe(demandeId);
+});
+
+test("UI : bouton visible, clic → « Panier en cours… », webhook reçu (RG-81, RG-83)", async () => {
+  await ouvrirCourses(pageA);
+  const carte = carteDe(pageA);
+  const bouton = carte.getByRole("button", { name: "Constituer mon panier Chronodrive" });
+  await expect(bouton).toBeEnabled();
+
+  await bouton.click();
+  await expect(pageA.getByText("C’est parti : ton panier se remplit.")).toBeVisible();
+  // La demande est active : le bouton reste désactivé, avec l'heure de lancement.
+  await expect(carte.getByRole("button", { name: "Panier en cours…" })).toBeDisabled();
+  await expect(carte.getByText(/^Lancé à \d{2} h \d{2}$/)).toBeVisible();
+  // La route répond après l'envoi du webhook : il est déjà reçu.
+  expect(recues).toHaveLength(1);
+  expect(recues[0].corps).toBe(CORPS_WEBHOOK);
+});
+
+test("UI : compte-rendu affiché après rapporter_panier (RG-82, RG-84)", async ({ request }) => {
+  const demandeId = await demanderOk();
+  expect((await prendre(request, jetonA)).demande?.id).toBe(demandeId);
+  expect((await rapporter(request, jetonA, demandeId)).resultat?.isError).toBeFalsy();
+
+  await ouvrirCourses(pageA);
+  const carte = carteDe(pageA);
+  await expect(carte.getByText("1 ajouté · 1 à choisir · 1 introuvable")).toBeVisible();
+  await expect(
+    carte.getByText("Rappel : rien n’est commandé. Relis et valide ton panier dans l’appli Chronodrive.")
+  ).toBeVisible();
+  // Ce qui demande une action est déplié.
+  await expect(carte.getByRole("heading", { name: "À choisir toi-même" })).toBeVisible();
+  await expect(carte.getByText("farine", { exact: true })).toBeVisible();
+  await expect(carte.getByText("T45 1 kg", { exact: true })).toBeVisible();
+  await expect(carte.getByRole("heading", { name: "Introuvables" })).toBeVisible();
+  await expect(carte.getByText("estragon", { exact: true })).toBeVisible();
+  // Les articles ajoutés sont repliés par défaut.
+  const ajoute = carte.getByText("Lait demi-écrémé 1 L · Lactel × 2");
+  await expect(ajoute).toBeHidden();
+  await carte.getByText("Ajoutés au panier").click();
+  await expect(ajoute).toBeVisible();
+  // Demande close : une nouvelle est possible.
+  await expect(carte.getByRole("button", { name: "Constituer mon panier Chronodrive" })).toBeEnabled();
+});
+
+test("UI : échec affiché quand l’exécuteur répond 500, bouton réactivé (RG-81)", async () => {
+  modeReponse = 500;
+  await ouvrirCourses(pageA);
+  const carte = carteDe(pageA);
+  const bouton = carte.getByRole("button", { name: "Constituer mon panier Chronodrive" });
+
+  await bouton.click();
+  // Le toast reprend le message de la route ; la carte, le motif de la demande.
+  await expect(pageA.getByText(MESSAGE_INJOIGNABLE)).toBeVisible();
+  await expect(carte.getByText("Ton exécuteur n’a pas répondu (réponse HTTP 500).")).toBeVisible();
+  await expect(bouton).toBeEnabled();
+  expect(recues).toHaveLength(1);
+});
+
+test("UI : aucun exécuteur → pas de carte (RG-81)", async ({ request }) => {
+  expect((await etatPanier(request, EMAIL_B)).executeur).toBe(false);
+  // B a un planning sur le cycle courant : la liste est chargée et l'état du
+  // panier est lu, la carte aurait donc eu sa chance d'apparaître.
+  await ouvrirCourses(pageB);
+  await expect(carteDe(pageB)).toHaveCount(0);
+  await expect(pageB.getByRole("button", { name: "Constituer mon panier Chronodrive" })).toHaveCount(0);
+  await expect(pageB.getByText("Panier Chronodrive")).toHaveCount(0);
 });
