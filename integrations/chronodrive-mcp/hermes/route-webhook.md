@@ -52,7 +52,7 @@ $D exec -u 1000 hermes sh -c '
 - **Skill** : `--skills` prend une liste séparée par des virgules ; ici une seule skill, `panier-chronodrive`.
 - **Livraison** : `telegram`, chat `8985917282` (canal maison d'Arnaud). Limite connue : un run sans demande à traiter répond `[SILENT]`, mais Hermes refuse ce marqueur sur un tour webhook (« silence marker rejected on a user turn ») et un court message part quand même sur Telegram.
 - **Secret** : pendant l'exécution de la commande, `--secret "$SECRET"` est visible un court instant dans `/proc/*/cmdline` du conteneur. C'est accepté : seul l'utilisateur du conteneur y a accès.
-- **Outils du run** : une route dynamique ne restreint pas les outils, et le run voit tous les MCP activés. Avant de passer `CHRONODRIVE_LECTURE_SEULE` à `'0'`, restreindre le run aux deux MCP `chronodrive` et « On Mange Quoi ? » et le vérifier : `README.md`, étape 8 (route statique avec `toolsets`, ou `platform_toolsets.webhook`).
+- **Outils du run** : sans `toolsets`, le run voit tous les MCP activés. La clé `toolsets: ["chronodrive", "On Mange Quoi ?"]` s'ajoute **à la main** à la route `panier-omq` dans `/opt/data/webhook_subscriptions.json` (sauvegarde `webhook_subscriptions.json.bak-<motif>` avant), avec les **noms** des serveurs : `mcp-<nom>` est ignoré sans erreur. Rechargée à chaud, sans redémarrage. À faire et à vérifier avant de passer `CHRONODRIVE_LECTURE_SEULE` à `'0'` : `README.md`, étape 8.
 
 ### Contrôle
 
