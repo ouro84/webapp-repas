@@ -65,7 +65,7 @@ Appelle `chercher_produits` par lots de **10 termes au plus**, chaque terme éta
 
 Pour chaque terme, la réponse donne :
 
-- `cache` : le produit déjà acheté pour ce terme lors d'un run précédent, encore disponible ; quand il est retenu, `favoris` et `recherche` sont vides ;
+- `cache` : le produit déjà acheté pour ce terme lors d'un run précédent, encore disponible, ou bien indisponible mais encore au panier (`disponible: false`, `dansPanier: true`), et alors non retenu ; quand il est retenu, `favoris` et `recherche` sont vides ;
 - `favoris` : les achats habituels du compte qui contiennent les mots du terme (5 au plus) ;
 - `recherche` : les résultats du catalogue (8 au plus), lancée seulement s'il n'y a ni cache ni favori disponible ;
 - `erreur` : la recherche de ce terme a échoué, les autres termes restent valables. L'article passe « à choisir » avec la raison « recherche en échec », **jamais** « introuvable » : le produit existe peut-être.
@@ -87,7 +87,7 @@ Classe chaque article « haute », « à choisir » ou « introuvable », selon 
 
 **Même produit pour plusieurs articles** : la liste OMQ garde séparés les articles d'un même ingrédient en unités différentes (« farine 2 c.à.s » et « farine 160 g »). Quand plusieurs articles « haute » tombent sur le **même** `id`, fusionne-les : **un seul** ajout, dont la quantité couvre le **total** des besoins (2 c.à.s + 160 g de farine tiennent dans un paquet de 1 kg : quantité 1). Pourquoi : deux ajouts du même produit doubleraient le panier sans besoin. Après l'ajout confirmé, coche **chacun** de ces articles. Dans le rapport, chaque article figure dans `ajoutes` avec le même produit ; la quantité du premier est celle ajoutée, celle des suivants vaut 1 (le schéma impose au moins 1) et le message Telegram dit « regroupé avec … ».
 
-**Déjà au panier**, à vérifier pour chaque article **avant** de choisir un produit : si **un seul** des produits proposés pour l'article porte `dansPanier: true` (dans `cache`, `favoris` ou `recherche`, pour son `nom` comme pour ses reformulations, disponible ou non), l'article passe « à choisir », avec la raison « déjà au panier, vérifie la quantité » et ce produit comme seul candidat. Ne l'ajoute pas, ne le coche pas, et n'ajoute pas non plus un autre produit à sa place. Pourquoi : après un run interrompu entre un ajout et sa coche, une relance ne doit pas l'ajouter une seconde fois (RG-83), même si le produit resté au panier est devenu indisponible et qu'un autre conviendrait (relance du 2026-11-01 : Lactel au panier passé hors stock, lait Auchan ajouté en plus) ; Arnaud vérifie la quantité lui-même.
+**Déjà au panier**, à vérifier pour chaque article **avant** de choisir un produit : si **au moins un** des produits proposés pour l'article (cache, favoris ou recherche, terme d'origine et reformulations, disponible ou non) porte `dansPanier: true`, l'article passe « à choisir », raison « déjà au panier, vérifie la quantité », avec **le ou les produits** `dansPanier: true` comme candidats (3 au plus) ; ne l'ajoute pas et ne le coche pas. N'ajoute pas non plus un autre produit à sa place. Pourquoi : après un run interrompu entre un ajout et sa coche, une relance ne doit pas l'ajouter une seconde fois (RG-83), même si le produit resté au panier est devenu indisponible et qu'un autre conviendrait (relance du 2026-11-01 : Lactel au panier passé hors stock, lait Auchan ajouté en plus) ; Arnaud vérifie la quantité lui-même.
 
 ### 5. Ajouter et cocher, lot par lot
 
@@ -105,7 +105,7 @@ La quantité **s'ajoute** à celle déjà présente dans le panier. Chaque résu
   - Réponse `modifie: true` : coché.
   - Réponse `modifie: false` avec `candidats` : rappelle `cocher_article` avec la `quantite` exacte du bon candidat.
   - Réponse `modifie: false` avec `article` : il était déjà coché, rien à faire.
-  - **Erreur** (l'outil échoue, ce n'est pas une réponse avec `candidats`) : n'ajoute plus aucun lot. Finis de cocher les autres lignes confirmées du lot, puis passe à « Échec technique » avec le motif « coche OMQ impossible ». Pourquoi : un article ajouté mais non coché serait ajouté une seconde fois à la relance (RG-83).
+  - **Erreur** (l'outil échoue, ce n'est pas une réponse avec `candidats`) : n'ajoute plus aucun lot. Finis de cocher les autres lignes confirmées du lot, puis passe à « Échec technique » avec le motif « coche OMQ impossible ». Pourquoi : un article ajouté mais non coché reviendrait « à choisir » (déjà au panier) à la relance (RG-83).
 - Une ligne dont l'`erreur` commence par « ajout envoyé mais panier non relu » ou par « ajout peut-être appliqué » est un **Échec technique** : l'ajout a peut-être eu lieu, sans preuve (Chronodrive a pu l'appliquer en retard). Ne lance plus aucun lot, finis de cocher les lignes confirmées du lot, puis suis « Échec technique » avec le motif « ajout Chronodrive non confirmé, à vérifier dans le panier ». Ces lignes vont dans `a_choisir`, avec la raison « ajout non confirmé, à vérifier dans le panier ».
 - Toute autre ligne `confirme: false` passe « à choisir », avec la raison « ajout non confirmé » suivie de son `erreur` s'il y en a une, et le produit choisi comme seul candidat. Ne la relance **jamais** et ne la coche pas. C'est aussi le cas de « non tenté : délai du lot dépassé » et de « produit inconnu ou vu il y a plus de 30 min » : rien n'a été envoyé pour elles.
 - Une ligne dont l'`erreur` commence par « produit non proposé pour cet article » n'a pas été envoyée : l'`id` ne venait pas du résultat de son terme. Elle passe « à choisir », avec la raison « ajout non confirmé : produit non proposé pour cet article » et le produit choisi comme seul candidat. Ne la relance **jamais** dans ce run, ni avec un autre `id`, ni après un nouvel appel à `chercher_produits`.
@@ -186,12 +186,12 @@ Ne relance pas l'appel en erreur : le client Chronodrive refait déjà lui-même
    - le message d'erreur de l'outil ;
    - ce qui a été ajouté ;
    - **« peut-être ajoutés, à vérifier dans le panier »** : les articles des lignes « ajout envoyé mais panier non relu » et « ajout peut-être appliqué », et ceux d'un lot interrompu, un par ligne ;
-   - **les articles ajoutés au panier mais non cochés dans OMQ**, un par ligne : Arnaud doit les cocher à la main avant toute relance, sinon ils seraient ajoutés une seconde fois (RG-83) ;
+   - **les articles ajoutés au panier mais non cochés dans OMQ**, un par ligne : Arnaud doit les cocher à la main avant toute relance, sinon ils reviendraient « à choisir » (déjà au panier) à la relance (RG-83) ;
    - le rappel « Rien n'est commandé. ».
 
 ## Classement
 
-Ces règles valent pour les deux modes.
+Ces règles valent pour les deux modes. La règle « Déjà au panier » (`dansPanier`, étape 4) vaut en run seulement : la mesure l'ignore, puisqu'elle n'ajoute rien.
 
 **1. Sources.** Prends-les dans cet ordre :
 
