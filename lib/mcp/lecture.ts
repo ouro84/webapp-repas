@@ -17,6 +17,7 @@ import { semaineDansPlage } from "@/lib/generation"
 import {
   ancreCourante,
   ancreParDefaut,
+  cycleDecale,
   dateVersSemaineJour,
   joursDuCycle,
   libelleCycle,
@@ -152,7 +153,8 @@ export const CYCLE_HORS_PLAGE =
 
 /**
  * Ancre du cycle qui contient `ancre` (une date quelconque, AAAA-MM-JJ) : même
- * résolution pour `generer_cycle` et les lectures (#320, RG-85). Lève
+ * résolution pour `generer_cycle` et les lectures (#320, RG-85). Une date entre
+ * deux cycles (cycle raccourci) désigne le cycle suivant. Lève
  * `ErreurOutil` si la date est invalide ou le cycle hors plage −12/+6 semaines.
  */
 export async function ancreDemandee(
@@ -162,7 +164,12 @@ export async function ancreDemandee(
 ): Promise<string> {
   const invalide = validerDate(ancre)
   if (invalide) throw new ErreurOutil(invalide)
-  const resolue = ancreCourante(depuisISO(ancre), await chargerJourCoursesFoyer(supabase))
+  let resolue = ancreCourante(depuisISO(ancre), await chargerJourCoursesFoyer(supabase))
+  // Cycle raccourci (longueur < 7) : la date peut tomber dans le trou avant le
+  // prochain jour de courses ; ancreCourante la ramènerait au cycle courant.
+  // Une date après le dernier jour du cycle désigne le cycle suivant.
+  const jours = joursDuCycle(resolue, await chargerLongueurCycle(resolue, supabase))
+  if (ancre > jours[jours.length - 1]) resolue = cycleDecale(resolue, 1)
   if (!semaineDansPlage(semaineISO(aujourdhui), dateVersSemaineJour(resolue).semaine)) {
     throw new ErreurOutil(CYCLE_HORS_PLAGE)
   }

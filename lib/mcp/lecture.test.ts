@@ -16,6 +16,7 @@ import { CYCLE_HORS_PLAGE, lireListeCourses, lirePlanning, lireRecette } from "@
 import {
   creerSupabaseMock,
   filtre,
+  type AppelTable,
   type ConfigMock,
   type ReponseMock,
 } from "@/tests/fixtures/supabase-mock"
@@ -93,6 +94,15 @@ function mock(tables: ConfigMock["tables"] = {}) {
       etat_courses_article: { data: [{ cle: "tomate|g", quantite: 400 }], error: null },
       ...tables,
     },
+  })
+}
+
+// Le cycle du 29/10 dure `longueur` jours (5 par défaut : raccourci) ; les autres
+// cycles gardent la longueur par défaut (7).
+function cycleCourtDu29(longueur = 5) {
+  return (appel: AppelTable): ReponseMock => ({
+    data: filtre(appel, "eq", "ancre") === "2026-10-29" ? { longueur } : null,
+    error: null,
   })
 }
 
@@ -184,11 +194,27 @@ describe("lirePlanning — ancre (#320, RG-85)", () => {
     expect(suivant.periode).toMatchObject({ du: "2026-11-05", au: "2026-11-11" })
   })
 
+  it("cycle raccourci (5 jours) : la date du lendemain de periode.au désigne le cycle suivant (I1)", async () => {
+    const { client } = mock({ cycle_courses: cycleCourtDu29() })
+    const courant = await lirePlanning(client, {}, JEUDI)
+    expect(courant.periode).toMatchObject({ du: "2026-10-29", au: "2026-11-02" })
+    const suivant = await lirePlanning(client, { ancre: "2026-11-03" }, JEUDI)
+    expect(suivant.periode).toMatchObject({ du: "2026-11-05", au: "2026-11-11" })
+  })
+
+  it("cycle long (9 jours) : une date à l'intérieur reste dans ce cycle (I1)", async () => {
+    const { client } = mock({ cycle_courses: cycleCourtDu29(9) })
+    const resultat = await lirePlanning(client, { ancre: "2026-11-03" }, JEUDI)
+    expect(resultat.periode).toMatchObject({ du: "2026-10-29", au: "2026-11-06" })
+  })
+
   it("semaine et ancre ensemble → ErreurOutil, aucune lecture", async () => {
-    const { client } = mock()
+    const { client, appels, rpcs } = mock()
     await expect(lirePlanning(client, { semaine: "2026-W44", ancre: "2026-10-29" }, JEUDI)).rejects.toThrow(
       new ErreurOutil("Choisis soit semaine, soit ancre, pas les deux.")
     )
+    expect(appels).toEqual([])
+    expect(rpcs).toEqual([])
   })
 
   it("ancre impossible (2026-02-30) ou mal formée → ErreurOutil (message de validerDate)", async () => {
@@ -282,6 +308,13 @@ describe("lireListeCourses — ancre (#320, RG-85)", () => {
     const resultat = await lireListeCourses(client, { ancre: "2026-11-04" }, JEUDI)
     expect(espion).toHaveBeenCalledWith(client, { ancre: "2026-10-29", aujourdhui: JEUDI })
     expect(resultat.cycle).toMatchObject({ du: "2026-10-29", au: "2026-11-04" })
+  })
+
+  it("cycle raccourci : la date du lendemain du dernier jour désigne le cycle suivant (I1)", async () => {
+    const espion = vi.spyOn(listeCoursesCycle, "chargerListeCoursesCycle")
+    const { client } = mock({ cycle_courses: cycleCourtDu29() })
+    await lireListeCourses(client, { ancre: "2026-11-03" }, JEUDI)
+    expect(espion).toHaveBeenCalledWith(client, { ancre: "2026-11-05", aujourdhui: JEUDI })
   })
 
   it("ancre impossible ou hors plage → ErreurOutil, rien n'est lu", async () => {

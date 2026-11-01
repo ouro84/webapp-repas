@@ -1248,7 +1248,7 @@ Un foyer peut exprimer une préférence explicite pour une recette, sans jamais 
 ### RG-85 à RG-87 — Préparer son cycle avec son assistant (US-54, #320)
 
 - **RG-85 — Outils MCP du parcours** : en plus de RG-73→79 :
-  - `lire_planning` et `lire_liste_courses` acceptent `ancre` (AAAA-MM-JJ) : le cycle qui contient cette date. **Cycle préparé** : le cycle courant s'il n'a aucun repas, sinon le suivant (`ancre = au + 1 jour` du courant) ; l'assistant annonce ses dates dès son premier message, et demande avant d'écraser un cycle qui a déjà des repas (`remplacer: true`). Toutes les lectures et écritures suivantes portent la même `ancre`, sans dépendre du jour ni de l'heure.
+  - `lire_planning` et `lire_liste_courses` acceptent `ancre` (AAAA-MM-JJ) : le cycle qui contient cette date ; une date située entre deux cycles (cycle raccourci, dernier jour du cycle < jour de courses suivant) désigne le cycle suivant. **Cycle préparé** : le cycle courant s'il n'a aucun repas, sinon le suivant (`ancre = au + 1 jour` du courant) ; l'assistant annonce ses dates dès son premier message, et demande avant d'écraser un cycle qui a déjà des repas (`remplacer: true`). Toutes les lectures et écritures suivantes portent la même `ancre`, sans dépendre du jour ni de l'heure.
   - Chaque repas de `lire_planning` porte aussi `accompagnement` (`feculents` | `legumes` | null).
   - `marquer_restes(date, creneau)` : même règle que l'UI (RG-22).
   - `chercher_recettes(filtres)` : `temps_preparation`, `vegetarien`, `accompagnement`, `saison`, texte ; 10 candidats au plus (nom, attributs, recette du foyer ou du catalogue), recettes masquées exclues. Aucune écriture : l'assistant applique ensuite par `remplacer_repas(recette)` (RG-75).

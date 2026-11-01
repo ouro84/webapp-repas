@@ -175,6 +175,31 @@ describe("genererCycle (RG-74)", () => {
     expect((rpcs[0].args as { p_ancre: string }).p_ancre).toBe("2026-10-29")
   })
 
+  it("cycle raccourci : une date du trou entre deux cycles vise le cycle suivant, pas le courant (I1)", async () => {
+    vi.mocked(genererPourUtilisateur).mockResolvedValue(cycleGenere("2026-11-05"))
+    const { client, rpcs } = mock({
+      cycle_courses: (appel): ReponseMock => ({
+        data: filtre(appel, "eq", "ancre") === "2026-10-29" ? { longueur: 5 } : null,
+        error: null,
+      }),
+    })
+    // Le cycle du 29/10 dure 5 jours (au 02/11) : le 03/11 tombe dans le trou.
+    await genererCycle(client, { ancre: "2026-11-03", remplacer: true }, JEUDI)
+    expect(genererPourUtilisateur).toHaveBeenCalledWith(client, { ancre: "2026-11-05", longueur: 7 }, { aujourdhui: JEUDI })
+    expect((rpcs[0].args as { p_ancre: string }).p_ancre).toBe("2026-11-05")
+  })
+
+  it("cycle long : une date à l'intérieur reste dans le cycle qui la contient (I1)", async () => {
+    const { client, rpcs } = mock({
+      cycle_courses: (appel): ReponseMock => ({
+        data: filtre(appel, "eq", "ancre") === "2026-10-29" ? { longueur: 9 } : null,
+        error: null,
+      }),
+    })
+    await genererCycle(client, { ancre: "2026-11-03", remplacer: true }, JEUDI)
+    expect((rpcs[0].args as { p_ancre: string }).p_ancre).toBe("2026-10-29")
+  })
+
   it("ancre au calendrier impossible : ErreurOutil, rien généré", async () => {
     const { client, rpcs } = mock()
     await expect(genererCycle(client, { ancre: "2026-02-30" }, JEUDI)).rejects.toThrow("Date invalide")
