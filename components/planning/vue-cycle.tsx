@@ -60,6 +60,9 @@ import {
 import { modifierPersonnes, personnesDuSlot } from "@/lib/personnes";
 import { estRestes, marquerRestes } from "@/lib/restes";
 import { chargerJourCoursesFoyer } from "@/lib/foyer";
+import { resoudreAncreCycle } from "@/lib/ancre-cycle";
+import { clientParDefaut } from "@/lib/supabase/par-defaut";
+import { aujourdhuiParis } from "@/lib/semaines";
 import { chargerLongueurCycle, chargerPlanningDistant } from "@/lib/persistance";
 import {
   creneauActif,
@@ -123,11 +126,17 @@ function slotsDuJour(
 
 export function VuePlanningCycle({
   idsModifiables,
+  lienCycle,
 }: {
   // Ids des recettes du catalogue chargé (#137) : pour ceux-là, la fiche propose
   // « Modifier » (deep-link /recettes?edition). Fourni par la page (déjà chargé).
   idsModifiables: ReadonlySet<string>;
+  // Date AAAA-MM-JJ du lien profond `/planning?cycle=` (#320, RG-87) : ouvre la
+  // vue sur le cycle qui la contient. Lue UNE fois au montage : une modification
+  // ultérieure de la prop (bascule, retrait du lien) ne relance pas le chargement.
+  lienCycle?: string;
 }) {
+  const [lienInitial] = useState(lienCycle);
   const [ancre, setAncre] = useState<string | null>(null);
   const [longueur, setLongueur] = useState<number>(LONGUEUR_DEFAUT);
   // Plannings des semaines ISO touchées, indexés par semaine.
@@ -494,19 +503,34 @@ export function VuePlanningCycle({
     }
   }, []);
 
-  // Montage : ancre par défaut dérivée du jour de courses du foyer (même règle
-  // que /courses, ancreParDefaut → décalage week-end inclus).
+  // Montage : un SEUL chargement initial (jamais le cycle par défaut affiché
+  // puis remplacé). Avec un lien profond (#320, RG-87) : ancre résolue par
+  // `resoudreAncreCycle` (même résolution que le MCP et la route panier) ;
+  // hors plage / invalide / lecture échouée → ancre par défaut. Sans lien :
+  // ancre par défaut dérivée du jour de courses du foyer (même règle que
+  // /courses, ancreParDefaut → décalage week-end inclus).
   useEffect(() => {
     let actif = true;
-    chargerJourCoursesFoyer()
-      .catch(() => 1)
-      .then((jour) => {
-        if (actif) void chargerCycle(ancreParDefaut(new Date(), jour));
-      });
+    async function ancreInitiale(): Promise<string> {
+      if (lienInitial !== undefined) {
+        try {
+          const res = await resoudreAncreCycle(clientParDefaut(), lienInitial, aujourdhuiParis());
+          if (res.ok) return res.ancre;
+          // hors_plage / invalide : repli silencieux sur le cycle par défaut.
+        } catch (erreur) {
+          console.error("Résolution du cycle du lien échouée (cycle par défaut).", erreur);
+        }
+      }
+      const jour = await chargerJourCoursesFoyer().catch(() => 1);
+      return ancreParDefaut(new Date(), jour);
+    }
+    void ancreInitiale().then((cible) => {
+      if (actif) void chargerCycle(cible);
+    });
     return () => {
       actif = false;
     };
-  }, [chargerCycle]);
+  }, [chargerCycle, lienInitial]);
 
   if (chargement || ancre === null) {
     return (

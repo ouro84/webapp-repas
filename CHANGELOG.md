@@ -19,6 +19,7 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ### Ajouté
 
+- Lien vers un cycle : `/planning?cycle=AAAA-MM-JJ` ouvre la vue Cycle sur ce cycle, sans changer ta vue préférée, y compris après connexion (#320).
 - Assistant connecté (MCP) : lancer le remplissage du panier d’un cycle, cocher un article dans un cycle précis (#320).
 - Assistant connecté (MCP) : lire le planning et la liste d'un cycle précis, voir l'accompagnement des repas, marquer un repas en restes, chercher des recettes par temps, végé, accompagnement, saison ou nom (#320).
 - Exécuteur Chronodrive : script pour vider le panier hors run, avec un mode simulation (#320).
