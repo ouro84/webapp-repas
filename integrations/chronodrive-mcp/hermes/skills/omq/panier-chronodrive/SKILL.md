@@ -86,13 +86,13 @@ Classe chaque article « haute », « à choisir » ou « introuvable », selon 
 
 ### 5. Ajouter et cocher, lot par lot
 
-Appelle `ajouter_au_panier` par lots de **10 lignes au plus**, pour les seuls articles « haute ». Chaque ligne : `terme` = le `nom` OMQ de l'article (jamais la reformulation : c'est la clé du cache), `terme_recherche` = la reformulation passée à `chercher_produits`, **seulement** si le produit choisi vient du résultat de cette reformulation (sinon omets-le), `productId` = l'`id` du produit choisi, `quantite` = un entier de 1 à 20. `quantite_omq` = la `quantite` OMQ de l'article, texte exact, **toujours**, même vide (`""`). Un même `productId` ne figure qu'une fois dans tout le run : les articles qui visent le même produit ont été fusionnés à l'étape 4 (une seule ligne, `terme` = le `nom` du premier article, et son `terme_recherche` s'il en a un ; `quantite_omq` = les `quantite` OMQ de **tous** les articles fusionnés, dans l'ordre, jointes par « + », par exemple « 2 c.à.s + 160 g »).
+Appelle `ajouter_au_panier` par lots de **10 lignes au plus**, pour les seuls articles « haute ». Chaque ligne : `terme` = le `nom` OMQ de l'article (jamais la reformulation : c'est la clé du cache), `terme_recherche` = la reformulation passée à `chercher_produits`, **seulement** si le produit choisi vient du résultat de cette reformulation (sinon omets-le), `productId` = l'`id` du produit choisi, `quantite` = un entier de 1 à 20. `quantite_omq` = la `quantite` OMQ de l'article, texte exact, **toujours**, même vide (`""`). Un même `productId` ne figure qu'une fois dans tout le run : les articles qui visent le même produit ont été fusionnés à l'étape 4 (une seule ligne, `terme` = le `nom` du premier article, et son `terme_recherche` s'il en a un ; `quantite_omq` = les `quantite` OMQ de **tous** les articles fusionnés, dans l'ordre, jointes par « + », par exemple « 2 c.à.s + 160 g »). Garde `quantite_omq` court : le texte OMQ exact, rien d'autre (pas d'explication) ; au-delà de 100 caractères, **tout** l'appel est refusé.
 
 **Plafond de quantité** : l'outil compare `quantite_omq` à la `contenance` du produit. Quand les deux se lisent dans la même dimension (masse, volume ou nombre d'unités ; une quantité OMQ sans unité est un nombre d'unités), il plafonne `quantite` au nombre de produits qui couvre le besoin : « 800 g » de haricots verts avec un paquet de « 1 kg » → 1, même si tu demandes 2. Il n'augmente jamais une quantité. Sinon (cuillères, sachet, botte, quantité vide, dimensions différentes), ta quantité passe telle quelle. Pourquoi : au run réel #2, 800 g de haricots verts sont partis en 2 paquets de 1 kg.
 
 **Pour chaque ligne, copie l'`id` depuis le bloc de résultat du terme de CET article** (son `nom`, ou sa reformulation), jamais depuis le bloc d'un autre article, puis vérifie que le `libelle` de cet `id` est bien le produit que tu as choisi pour cet article. Pourquoi : un même produit peut apparaître pour plusieurs termes (des lasagnes « aux oeufs » parmi les œufs) ; l'outil refuse un `id` qui n'a pas été proposé pour le terme de la ligne.
 
-La quantité **s'ajoute** à celle déjà présente dans le panier. Chaque résultat porte `confirme`, `avant`, `apres`, `erreur`, `demande` (la quantité réellement envoyée) et `quantiteAjustee` : non nul (`{demandee, envoyee}`), l'outil a baissé ta quantité ; retiens la ligne pour le message Telegram (« quantités ajustées »). Ce n'est ni une erreur ni un ajout partiel.
+La quantité **s'ajoute** à celle déjà présente dans le panier. Chaque résultat porte `confirme`, `avant`, `apres`, `erreur`, `demande` (la quantité retenue après le plafond OMQ, avant les plafonds 20 / maxCartQuantity) et `quantiteAjustee` : non nul (`{demandee, envoyee}`, seulement sur une ligne `confirme: true`), l'outil a baissé ta quantité ; retiens la ligne pour le message Telegram (« quantités ajustées »). Ce n'est ni une erreur ni un ajout partiel.
 
 **Après chaque lot**, avant le lot suivant :
 
@@ -140,7 +140,7 @@ Ta réponse finale est le message envoyé sur Telegram. Il doit être court et l
 
 1. Le résumé : « Panier Chronodrive prêt : N ajoutés · N à choisir · N introuvables. »
 2. **Ajouts partiels**, s'il y en a : une ligne par article, « article : ajout partiel, N sur M ».
-3. **Quantités ajustées**, s'il y en a (`quantiteAjustee` non nul) : une ligne par article, « article (quantité OMQ) : M demandés, N ajoutés ».
+3. **Quantités ajustées**, s'il y en a (lignes `confirme: true` dont `quantiteAjustee` est non nul) : une ligne par article, « article (quantité OMQ) : M demandés, N retenus », où M = `quantiteAjustee.demandee` et N = `apres - avant`.
 4. **À choisir** : une ligne par article, « article : raison », puis les candidats.
 5. **Introuvables** : une ligne par article.
 6. S'il y en a, un rapport refusé par OMQ.

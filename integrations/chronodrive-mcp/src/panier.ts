@@ -11,8 +11,9 @@ import { plafonnerQuantite, type QuantiteAjustee } from "./quantites.ts";
 // plafonne la quantité avec la contenance du produit (src/quantites.ts).
 export type LigneAjout = { productId: string; quantite: number; quantiteOmq?: string | null; refus?: string | null };
 
-// `demande` : quantité réellement demandée à Chronodrive, après le plafond OMQ ; `quantiteAjustee`
-// n'est renseignée que si ce plafond l'a baissée.
+// `demande` : quantité retenue après le plafond OMQ, avant les plafonds 20 / maxCartQuantity ;
+// `quantiteAjustee` n'est renseignée que si ce plafond l'a baissée ET que l'ajout est confirmé
+// (null sur une ligne non envoyée ou non confirmée : rien n'a été ajouté).
 export type ResultatAjout = {
   productId: string;
   demande: number;
@@ -81,7 +82,15 @@ function messageErreur(e: unknown): string {
   return e instanceof ErreurChronodrive ? e.message : `erreur inattendue (${e instanceof Error ? e.name : "inconnue"})`;
 }
 
-type Envoi = { index: number; quantite: number; plafond: string | null; tente: boolean; returnType: string | null; erreurPost: string | null };
+type Envoi = {
+  index: number;
+  quantite: number;
+  plafond: string | null;
+  ajustee: QuantiteAjustee | null;
+  tente: boolean;
+  returnType: string | null;
+  erreurPost: string | null;
+};
 
 // Ajout par lot. Le panier est relu avant, un POST par ligne (le POST incrémente), puis le panier
 // est relu une fois (une seconde tentative si cette relecture échoue). Un ajout n'est confirmé que
@@ -148,10 +157,10 @@ export async function ajouterLignes(client: Appelant, lignes: LigneAjout[], opti
     }
 
     // Plafond OMQ (run réel #2 : 800 g de haricots verts ajoutés en 2 paquets de 1 kg) : jamais
-    // d'augmentation ; `demande` devient ce qui est demandé, l'ajustement est rapporté à part.
+    // d'augmentation ; `demande` devient la quantité retenue, l'ajustement n'est rapporté qu'après
+    // confirmation.
     const { envoyee, ajustee } = plafonnerQuantite(ligne.quantite, ligne.quantiteOmq, fiche.contenance);
     resultat.demande = envoyee;
-    resultat.quantiteAjustee = ajustee;
 
     let quantite = Math.min(QUANTITE_MAX, envoyee);
     let plafond = envoyee > QUANTITE_MAX ? `plafonné à ${QUANTITE_MAX} par ajout` : null;
@@ -166,7 +175,7 @@ export async function ajouterLignes(client: Appelant, lignes: LigneAjout[], opti
         plafond = `plafonné par maxCartQuantity (${fiche.maxPanier}, déjà ${quantiteAvant} au panier)`;
       }
     }
-    envois.push({ index: resultats.length - 1, quantite, plafond, tente: false, returnType: null, erreurPost: null });
+    envois.push({ index: resultats.length - 1, quantite, plafond, ajustee, tente: false, returnType: null, erreurPost: null });
   }
 
   if (envois.length === 0) return { resultats, produits: new Map() };
@@ -218,6 +227,7 @@ export async function ajouterLignes(client: Appelant, lignes: LigneAjout[], opti
     r.apres = apres.lignes.get(r.productId) ?? 0;
     const ecart = r.apres - r.avant;
     r.confirme = ecart >= 1;
+    if (r.confirme) r.quantiteAjustee = envoi.ajustee;
     if (ecart < 1) {
       r.erreur = envoi.erreurPost ?? `ajout non constaté : quantité inchangée au panier (${r.avant}), returnType ${envoi.returnType ?? "absent"}`;
     } else if (ecart < r.demande) {

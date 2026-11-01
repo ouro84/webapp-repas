@@ -233,6 +233,55 @@ test("quantité plafonnée par la quantité OMQ et la contenance : jamais augmen
   );
 });
 
+test("quantiteAjustee remise à null quand la ligne n'est pas envoyée ou pas confirmée", async () => {
+  // 70 : maxCartQuantity déjà atteint (continue sans POST) ; 71 : SUCCESS sans écart ; 72 : confirmé.
+  const panier = panierSimule("p1", { "70": 2 }, (productId, q) => ({ returnType: "SUCCESS", increment: productId === "71" ? 0 : q }));
+  const sim = clientSimule({
+    ...panier.routes,
+    "GET /v1/products": () => ({ content: [fiche("70", { maxCartQuantity: 2 }), fiche("71"), fiche("72")] }),
+  });
+  await rechercher(sim.client, "haricots");
+  const { resultats } = await ajouterLignes(sim.client, [
+    { productId: "70", quantite: 2, quantiteOmq: "800 g" },
+    { productId: "71", quantite: 2, quantiteOmq: "800 g" },
+    { productId: "72", quantite: 2, quantiteOmq: "800 g" },
+  ]);
+  assert.deepEqual(
+    resultats.map((r) => [r.productId, r.confirme, r.quantiteAjustee]),
+    [
+      ["70", false, null],
+      ["71", false, null],
+      ["72", true, { demandee: 2, envoyee: 1 }],
+    ],
+  );
+});
+
+test("quantiteAjustee remise à null sur une ligne « non tenté » (budget du lot dépassé)", async () => {
+  const h = { t: 1_800_000_000_000 };
+  const maintenant = () => h.t;
+  const panier = panierSimule("p1", {});
+  // Le POST « prend » 100 s sur l'horloge simulée : la seconde ligne n'est pas tentée.
+  const lent: Route = (appel, n) => {
+    h.t += 100_000;
+    return panier.routes[AJOUTS](appel, n);
+  };
+  const sim = clientSimule({ ...panier.routes, [AJOUTS]: lent });
+  voir(sim.client, ["80", "81"], { maintenant }); // contenance « 1 kg »
+
+  const { resultats } = await ajouterLignes(
+    sim.client,
+    ["80", "81"].map((productId) => ({ productId, quantite: 2, quantiteOmq: "800 g" })),
+    { maintenant },
+  );
+  assert.deepEqual(
+    resultats.map((r) => [r.productId, r.confirme, r.erreur, r.quantiteAjustee]),
+    [
+      ["80", true, null, { demandee: 2, envoyee: 1 }],
+      ["81", false, "non tenté : délai du lot dépassé", null],
+    ],
+  );
+});
+
 test("productId vide répété : « vide » à chaque ligne, jamais « doublon »", async () => {
   const sim = clientSimule(panierSimule("p1", {}).routes);
   const { resultats } = await ajouterLignes(sim.client, [

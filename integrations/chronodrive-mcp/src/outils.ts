@@ -327,7 +327,7 @@ export function creerServeur(deps: Dependances): McpServer {
       "et passer `terme_recherche` quand le produit vient d'une reformulation, cherchée dans un appel de chercher_produits POSTÉRIEUR à celui du terme.",
       "Sinon la ligne est refusée sans envoi (« produit non proposé pour cet article »).",
       "Passer `quantite_omq` (quantité OMQ de l'article, texte exact) : quand elle et la contenance du produit se comparent (masse, volume ou nombre),",
-      "la quantité est plafonnée au nombre d'unités qui couvre le besoin, jamais augmentée ; `demande` = quantité envoyée, `quantiteAjustee` {demandee, envoyee} signale le plafond.",
+      "la quantité est plafonnée au nombre d'unités qui couvre le besoin, jamais augmentée ; `demande` = quantité retenue après le plafond OMQ, avant les plafonds 20 / maxCartQuantity ; `quantiteAjustee` {demandee, envoyee} signale le plafond sur une ligne confirmée.",
       "Ne jamais relancer une ligne non confirmée sans relire le panier (`lire_panier`) : l'ajout a pu passer.",
       "Les lignes confirmées sont retenues pour le terme (cache des correspondances). Ne commande rien.",
     ].join(" "),
