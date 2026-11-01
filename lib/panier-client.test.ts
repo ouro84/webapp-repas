@@ -14,20 +14,28 @@ describe("chargerEtatPanier", () => {
     const { client, rpcs } = creerSupabaseMock({
       rpc: { etat_panier: { data: ETAT, error: null } },
     })
-    await expect(chargerEtatPanier(client)).resolves.toEqual(ETAT)
-    expect(rpcs).toEqual([{ nom: "etat_panier", args: undefined }])
+    await expect(chargerEtatPanier(null, client)).resolves.toEqual(ETAT)
+    expect(rpcs).toEqual([{ nom: "etat_panier", args: { p_ancre: null } }])
+  })
+
+  it("transmet l'ancre du cycle affiché (p_ancre)", async () => {
+    const { client, rpcs } = creerSupabaseMock({
+      rpc: { etat_panier: { data: ETAT, error: null } },
+    })
+    await expect(chargerEtatPanier("2026-11-05", client)).resolves.toEqual(ETAT)
+    expect(rpcs).toEqual([{ nom: "etat_panier", args: { p_ancre: "2026-11-05" } }])
   })
 
   it("lève si la RPC échoue", async () => {
     const { client } = creerSupabaseMock({
       rpc: { etat_panier: { data: null, error: { message: "boom" } } },
     })
-    await expect(chargerEtatPanier(client)).rejects.toThrow(/boom/)
+    await expect(chargerEtatPanier(null, client)).rejects.toThrow(/boom/)
   })
 
   it("lève si la RPC ne renvoie rien (B4)", async () => {
     const { client } = creerSupabaseMock({ rpc: { etat_panier: { data: null, error: null } } })
-    await expect(chargerEtatPanier(client)).rejects.toThrow(/aucune donnée/)
+    await expect(chargerEtatPanier(null, client)).rejects.toThrow(/aucune donnée/)
   })
 })
 
@@ -56,23 +64,26 @@ describe("chargerJourCoursesPanier", () => {
 describe("lancerDemandePanier", () => {
   afterEach(() => vi.restoreAllMocks())
 
-  it("202 → ok, POST sans corps", async () => {
+  it("202 → ok, POST avec corps JSON { ancre }", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ demande_id: "d1" }), { status: 202 })
     )
-    await expect(lancerDemandePanier({ fetch: fetchMock })).resolves.toEqual({ ok: true })
+    await expect(lancerDemandePanier("2026-11-05", { fetch: fetchMock })).resolves.toEqual({
+      ok: true,
+    })
     expect(fetchMock).toHaveBeenCalledTimes(1)
     const [url, init] = fetchMock.mock.calls[0]
     expect(url).toBe("/api/panier/demande")
     expect(init).toMatchObject({ method: "POST" })
-    expect(init.body).toBeUndefined()
+    expect(init.headers).toMatchObject({ "content-type": "application/json" })
+    expect(JSON.parse(init.body)).toEqual({ ancre: "2026-11-05" })
   })
 
   it("409 → message de la route", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ error: "Une demande est déjà en cours." }), { status: 409 })
     )
-    await expect(lancerDemandePanier({ fetch: fetchMock })).resolves.toEqual({
+    await expect(lancerDemandePanier("2026-11-05", { fetch: fetchMock })).resolves.toEqual({
       ok: false,
       statut: 409,
       message: "Une demande est déjà en cours.",
@@ -83,7 +94,7 @@ describe("lancerDemandePanier", () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ error: "Ton exécuteur est injoignable." }), { status: 502 })
     )
-    await expect(lancerDemandePanier({ fetch: fetchMock })).resolves.toEqual({
+    await expect(lancerDemandePanier("2026-11-05", { fetch: fetchMock })).resolves.toEqual({
       ok: false,
       statut: 502,
       message: "Ton exécuteur est injoignable.",
@@ -93,7 +104,7 @@ describe("lancerDemandePanier", () => {
   it("réseau coupé → message français, ne lève pas", async () => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => {})
     const fetchMock = vi.fn().mockRejectedValue(new TypeError("Failed to fetch"))
-    await expect(lancerDemandePanier({ fetch: fetchMock })).resolves.toEqual({
+    await expect(lancerDemandePanier("2026-11-05", { fetch: fetchMock })).resolves.toEqual({
       ok: false,
       statut: null,
       message: "Connexion impossible : vérifie ton réseau, puis réessaie.",

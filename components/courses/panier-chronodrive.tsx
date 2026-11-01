@@ -74,7 +74,7 @@ export function PanierChronodrive({ ancreAffichee }: { ancreAffichee: string }) 
   // Résout `false` si la lecture a échoué.
   const relire = useCallback((): Promise<boolean> => {
     const numero = ++numeroLecture.current;
-    return chargerEtatPanier().then(
+    return chargerEtatPanier(ancreAffichee).then(
       (nouvelEtat) => {
         if (numero !== numeroLecture.current) return true;
         enEchec.current = false;
@@ -90,7 +90,7 @@ export function PanierChronodrive({ ancreAffichee }: { ancreAffichee: string }) 
         return false;
       }
     );
-  }, []);
+  }, [ancreAffichee]);
 
   // Jour de courses lu SANS repli (jumeau de la route) ; ancre calculée à
   // l'heure de Paris, comme la route. Une erreur : log, carte non rendue.
@@ -164,7 +164,7 @@ export function PanierChronodrive({ ancreAffichee }: { ancreAffichee: string }) 
     envoiEnVol.current = true;
     setEnvoi(true);
     try {
-      const resultat = await lancerDemandePanier();
+      const resultat = await lancerDemandePanier(ancreAffichee);
       // 502 : l'exécuteur n'a pas répondu, la demande est passée en échec et
       // c'est la carte qui porte le message, pas un toast.
       const injoignable = !resultat.ok && resultat.statut === 502;

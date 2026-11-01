@@ -1,8 +1,9 @@
 // @vitest-environment node
 //
 // POST /api/panier/demande — adaptateur HTTP de la demande de panier (#308,
-// RG-81) : crée la demande (RPC), envoie le webhook signé à l'exécuteur, ferme
-// la demande en échec si l'envoi échoue.
+// #320, RG-81) : authentification, rate-limit, ancre (corps optionnel, sinon
+// cycle courant), puis `creerEtEnvoyerDemande` (cas détaillés dans
+// `lib/panier-demande.test.ts`) ; la route ne fait que traduire le résultat.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
@@ -27,6 +28,18 @@ vi.mock("@/lib/panier", async (importOriginal) => ({
 
 import { POST, maxDuration } from "@/app/api/panier/demande/route"
 import { MESSAGE_INJOIGNABLE, MESSAGES_PANIER } from "@/lib/panier"
+
+// Requête avec ou sans corps JSON (le corps est optionnel).
+function requete(corps?: unknown, brut?: string) {
+  return new Request("http://localhost/api/panier/demande", {
+    method: "POST",
+    ...(brut !== undefined
+      ? { body: brut }
+      : corps !== undefined
+        ? { body: JSON.stringify(corps), headers: { "content-type": "application/json" } }
+        : {}),
+  })
+}
 
 const ENVOI = {
   demande_id: "d1",
@@ -66,7 +79,7 @@ describe("POST /api/panier/demande", () => {
   it("401 sans session", async () => {
     serveur.getUser.mockResolvedValue({ data: { user: null }, error: null })
 
-    const reponse = await POST()
+    const reponse = await POST(requete())
 
     expect(reponse.status).toBe(401)
     expect(serveur.rpc).not.toHaveBeenCalled()
@@ -76,7 +89,7 @@ describe("POST /api/panier/demande", () => {
   it("429 quand limitePanier refuse", async () => {
     rateLimit.limitePanier.mockResolvedValue({ autorise: false })
 
-    const reponse = await POST()
+    const reponse = await POST(requete())
 
     expect(reponse.status).toBe(429)
     expect(rateLimit.limitePanier).toHaveBeenCalledWith("u1")
@@ -88,7 +101,7 @@ describe("POST /api/panier/demande", () => {
     vi.useFakeTimers({ toFake: ["Date"] })
     vi.setSystemTime(new Date("2026-10-28T11:00:00Z")) // mercredi, 12 h à Paris
 
-    const reponse = await POST()
+    const reponse = await POST(requete())
 
     expect(reponse.status).toBe(202)
     expect(await reponse.json()).toEqual({ demande_id: "d1" })
@@ -96,14 +109,14 @@ describe("POST /api/panier/demande", () => {
     expect(serveur.rpc).toHaveBeenCalledTimes(1)
     // Jour de courses = jeudi : dernier jeudi ≤ mercredi 28 octobre.
     expect(serveur.rpc).toHaveBeenCalledWith("creer_demande_panier", { p_ancre: "2026-10-22" })
-    expect(panier.envoyerWebhook).toHaveBeenCalledWith(ENVOI)
+    expect(panier.envoyerWebhook).toHaveBeenCalledWith(ENVOI, {})
   })
 
   it("le week-end : demande sur le cycle suivant, comme /courses (ancreParDefaut)", async () => {
     vi.useFakeTimers({ toFake: ["Date"] })
     vi.setSystemTime(new Date("2026-10-31T11:00:00Z")) // samedi, 12 h à Paris
 
-    const reponse = await POST()
+    const reponse = await POST(requete())
 
     expect(reponse.status).toBe(202)
     // Ancre courante = jeudi 29 octobre ; le week-end, un cycle plus loin.
@@ -113,7 +126,7 @@ describe("POST /api/panier/demande", () => {
   it("500 si la lecture du jour de courses échoue, sans créer de demande", async () => {
     serveur.lireFoyer.mockResolvedValue({ data: null, error: { code: "XX000", message: "boum" } })
 
-    const reponse = await POST()
+    const reponse = await POST(requete())
 
     expect(reponse.status).toBe(500)
     expect(serveur.rpc).not.toHaveBeenCalled()
@@ -122,54 +135,87 @@ describe("POST /api/panier/demande", () => {
   it("500 si le foyer est introuvable, sans retomber sur un jour par défaut", async () => {
     serveur.lireFoyer.mockResolvedValue({ data: null, error: null })
 
-    const reponse = await POST()
+    const reponse = await POST(requete())
 
     expect(reponse.status).toBe(500)
     expect(serveur.rpc).not.toHaveBeenCalled()
   })
 
-  it("409 avec le message OMQ01 si aucun exécuteur", async () => {
-    rpcs({ creer_demande_panier: { data: null, error: { code: "OMQ01", message: "x" } } })
+  it("corps { ancre } : creer_demande_panier reçoit cette ancre, sans lire le foyer", async () => {
+    const reponse = await POST(requete({ ancre: "2026-11-12" }))
 
-    const reponse = await POST()
+    expect(reponse.status).toBe(202)
+    expect(await reponse.json()).toEqual({ demande_id: "d1" })
+    expect(serveur.from).not.toHaveBeenCalled()
+    expect(serveur.rpc).toHaveBeenCalledTimes(1)
+    expect(serveur.rpc).toHaveBeenCalledWith("creer_demande_panier", { p_ancre: "2026-11-12" })
+  })
+
+  it("corps vide ou objet sans ancre : ancre du cycle courant", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] })
+    vi.setSystemTime(new Date("2026-10-28T11:00:00Z"))
+
+    expect((await POST(requete({}))).status).toBe(202)
+    expect(serveur.rpc).toHaveBeenLastCalledWith("creer_demande_panier", { p_ancre: "2026-10-22" })
+    expect((await POST(requete(undefined, "  "))).status).toBe(202)
+    expect(serveur.rpc).toHaveBeenLastCalledWith("creer_demande_panier", { p_ancre: "2026-10-22" })
+  })
+
+  it.each([
+    ["format invalide", { ancre: "demain" }],
+    ["date inexistante", { ancre: "2026-02-30" }],
+    ["ancre non textuelle", { ancre: 20261105 }],
+    ["ancre nulle", { ancre: null }],
+  ])("ancre mal formée (%s) → 400 « Cycle invalide. », aucune RPC", async (_cas, corps) => {
+    const reponse = await POST(requete(corps))
+
+    expect(reponse.status).toBe(400)
+    expect(await reponse.json()).toEqual({ error: "Cycle invalide." })
+    expect(serveur.rpc).not.toHaveBeenCalled()
+    expect(serveur.from).not.toHaveBeenCalled()
+    expect(panier.envoyerWebhook).not.toHaveBeenCalled()
+  })
+
+  it("corps qui n'est pas du JSON objet → 400, aucune RPC", async () => {
+    for (const brut of ["{pas du json", "[]", '"2026-11-05"']) {
+      const reponse = await POST(requete(undefined, brut))
+      expect(reponse.status).toBe(400)
+    }
+    expect(serveur.rpc).not.toHaveBeenCalled()
+  })
+
+  it("409 avec le message OMQ04 pour un cycle terminé, sans webhook", async () => {
+    rpcs({ creer_demande_panier: { data: null, error: { code: "OMQ04", message: "x" } } })
+
+    const reponse = await POST(requete({ ancre: "2026-09-03" }))
 
     expect(reponse.status).toBe(409)
-    expect(await reponse.json()).toEqual({ error: MESSAGES_PANIER.OMQ01 })
+    expect(await reponse.json()).toEqual({ error: MESSAGES_PANIER.OMQ04 })
     expect(panier.envoyerWebhook).not.toHaveBeenCalled()
   })
 
   it("409 avec le message OMQ02 si une demande est active", async () => {
     rpcs({ creer_demande_panier: { data: null, error: { code: "OMQ02", message: "x" } } })
 
-    const reponse = await POST()
+    const reponse = await POST(requete())
 
     expect(reponse.status).toBe(409)
     expect(await reponse.json()).toEqual({ error: MESSAGES_PANIER.OMQ02 })
-    expect(panier.envoyerWebhook).not.toHaveBeenCalled()
   })
 
   it("500 générique sur une erreur RPC inconnue", async () => {
     rpcs({ creer_demande_panier: { data: null, error: { code: "XX000", message: "boum" } } })
 
-    const reponse = await POST()
+    const reponse = await POST(requete())
 
     expect(reponse.status).toBe(500)
     expect(panier.envoyerWebhook).not.toHaveBeenCalled()
   })
 
-  it("500 générique si la RPC ne renvoie rien", async () => {
-    rpcs({ creer_demande_panier: { data: null, error: null } })
-
-    const reponse = await POST()
-
-    expect(reponse.status).toBe(500)
-    expect(panier.envoyerWebhook).not.toHaveBeenCalled()
-  })
-
-  it("webhook en échec → echouer_envoi_demande_panier puis 502", async () => {
+  it("webhook en échec → fermeture de la demande puis 502", async () => {
     panier.envoyerWebhook.mockResolvedValue({ ok: false, motif: "réponse HTTP 500" })
 
-    const reponse = await POST()
+    const reponse = await POST(requete())
 
     expect(reponse.status).toBe(502)
     expect(await reponse.json()).toEqual({ error: MESSAGE_INJOIGNABLE })
@@ -186,26 +232,9 @@ describe("POST /api/panier/demande", () => {
       echouer_envoi_demande_panier: { data: false, error: null },
     })
 
-    const reponse = await POST()
+    const reponse = await POST(requete())
 
     expect(reponse.status).toBe(202)
     expect(await reponse.json()).toEqual({ demande_id: "d1" })
-  })
-
-  it("502 même si la fermeture de la demande échoue (expiration paresseuse), échec loggé", async () => {
-    panier.envoyerWebhook.mockResolvedValue({ ok: false, motif: "erreur réseau" })
-    const erreurFermeture = { code: "XX000", message: "boum" }
-    rpcs({
-      creer_demande_panier: { data: ENVOI, error: null },
-      echouer_envoi_demande_panier: { data: null, error: erreurFermeture },
-    })
-
-    const reponse = await POST()
-
-    expect(reponse.status).toBe(502)
-    expect(console.error).toHaveBeenCalledWith(
-      expect.stringContaining("fermeture de la demande impossible"),
-      erreurFermeture
-    )
   })
 })
