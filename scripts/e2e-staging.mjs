@@ -15,7 +15,7 @@
 //  4. Lance `playwright test <args>` (NODE_OPTIONS=--use-system-ca pour Avast).
 //  5. RESTAURE toujours .env.local en sortie (succès, échec, Ctrl-C).
 //
-// Garde-fous : refuse si le port 3000 est déjà occupé (sinon Playwright
+// Garde-fous : refuse si le port e2e (3000, ou `E2E_PORT`) est déjà occupé (sinon Playwright
 // réutiliserait un serveur prod via reuseExistingServer) ou si un backup
 // résiduel traîne (restauration précédente échouée → intervention manuelle).
 //
@@ -23,6 +23,7 @@
 //   node scripts/e2e-staging.mjs                       # toute la suite
 //   node scripts/e2e-staging.mjs courses.spec.ts --retries=2
 //   node scripts/e2e-staging.mjs -g "restes"
+//   E2E_PORT=3001 node scripts/e2e-staging.mjs …       # si le port 3000 est pris
 // Astuce : passer --retries=2 reproduit les conditions CI (flakiness latence).
 
 import { readFileSync, writeFileSync, copyFileSync, existsSync, rmSync } from "node:fs"
@@ -61,8 +62,9 @@ async function main() {
   const token = lireVar(prod, "SUPABASE_ACCESS_TOKEN")
   if (!token) throw new Error(`SUPABASE_ACCESS_TOKEN absent de ${ENV}`)
 
-  if (await portOccupe(3000)) {
-    throw new Error("Port 3000 occupé — arrête le serveur dev (sinon Playwright réutiliserait un serveur PROD).")
+  const port = Number(process.env.E2E_PORT ?? 3000)
+  if (await portOccupe(port)) {
+    throw new Error(`Port ${port} occupé — arrête le serveur qui l'occupe ou choisis un autre port avec E2E_PORT (sinon Playwright réutiliserait un serveur PROD).`)
   }
 
   await assurerProjetActif(STAGING_REF, token)

@@ -168,6 +168,33 @@ describe("cocherArticle (RG-77, RG-10, RG-12)", () => {
     expect(appels.filter((a) => a.table === "article_manuel")).toEqual([])
   })
 
+  it("avec ancre : coche dans ce cycle, même libellé du cycle courant non touché (#320, RG-85)", async () => {
+    // Le cycle courant (29/10) et le suivant (05/11) portent « carottes » ; seul
+    // le suivant est visé : la lecture est faite sur son ancre et la coche y est écrite.
+    const lire = vi.spyOn(listeCoursesCycle, "chargerListeCoursesCycle").mockImplementation(async (_s, options) => {
+      const ancre = options?.ancre ?? "2026-10-29"
+      const quantite = ancre === "2026-11-05" ? 600 : 400
+      return {
+        ancre,
+        longueur: 7,
+        liste: { normal: [{ categorie: "legumes-fruits", ingredients: [ing("carottes", quantite, "g")] }], fondDePlacard: [] },
+        coches: {},
+      }
+    })
+    const { client, appels } = mock()
+    const resultat = await cocherArticle(client, { libelle: "carottes", ancre: "2026-11-07" }, JEUDI)
+    expect(lire).toHaveBeenCalledTimes(1)
+    expect(lire.mock.calls[0][1]).toMatchObject({ ancre: "2026-11-05" })
+    const ecritures = appels.filter((a) => a.table === "etat_courses_article")
+    expect(ecritures).toHaveLength(1)
+    expect(ecritures[0].ops[0]).toEqual([
+      "upsert",
+      { ancre: "2026-11-05", cle: "carottes|g", quantite: 600 },
+      { onConflict: "foyer_id,ancre,cle" },
+    ])
+    expect(resultat).toMatchObject({ modifie: true, article: { quantite: "600 g", coche: true } })
+  })
+
   it("introuvable : ErreurOutil qui cite lire_liste_courses", async () => {
     liste([ing("carottes", 400, "g")])
     const { client } = mock()

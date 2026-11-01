@@ -20,6 +20,8 @@ const m = vi.hoisted(() => ({
   ajouterArticleCourses: vi.fn(),
   cocherArticle: vi.fn(),
   prendreDemandePanier: vi.fn(),
+  lancerDemandePanierMcp: vi.fn(),
+  limitePanier: vi.fn(),
   rapporterPanier: vi.fn(),
   creerClientParJeton: vi.fn((jeton: string) => ({ jeton })),
 }))
@@ -28,7 +30,11 @@ vi.mock("@/lib/mcp/auth", () => ({
   verifierJetonMcp: m.verifierJetonMcp,
   emetteurOAuth: () => "https://ref.supabase.co/auth/v1",
 }))
-vi.mock("@/lib/rate-limit", () => ({ limiteMcp: m.limiteMcp, limiteGeneration: m.limiteGeneration }))
+vi.mock("@/lib/rate-limit", () => ({
+  limiteMcp: m.limiteMcp,
+  limiteGeneration: m.limiteGeneration,
+  limitePanier: m.limitePanier,
+}))
 vi.mock("@/lib/mcp/ecriture-planning", () => ({
   genererCycle: m.genererCycle,
   remplacerRepas: m.remplacerRepas,
@@ -43,6 +49,7 @@ vi.mock("@/lib/mcp/ecriture-courses", () => ({
 vi.mock("@/lib/mcp/recherche-recettes", () => ({ chercherRecettes: m.chercherRecettes }))
 vi.mock("@/lib/mcp/panier", () => ({
   prendreDemandePanier: m.prendreDemandePanier,
+  lancerDemandePanierMcp: m.lancerDemandePanierMcp,
   rapporterPanier: m.rapporterPanier,
 }))
 vi.mock("@/lib/mcp/lecture", () => ({
@@ -121,7 +128,7 @@ describe("POST /api/mcp — authentification (RG-71)", () => {
 })
 
 describe("POST /api/mcp — outils (US-51, RG-78)", () => {
-  it("jeton valide : tools/list expose exactement les 4 lectures, les 7 écritures (#306, #320) et les 2 outils de panier (#308)", async () => {
+  it("jeton valide : tools/list expose exactement les 4 lectures, les 8 écritures (#306, #320) et les 2 outils de l’exécuteur de panier (#308)", async () => {
     const reponse = await appeler("tools/list")
     expect(reponse.status).toBe(200)
     const { result } = await lire(reponse)
@@ -133,6 +140,7 @@ describe("POST /api/mcp — outils (US-51, RG-78)", () => {
       "chercher_recettes",
       "cocher_article",
       "generer_cycle",
+      "lancer_demande_panier",
       "lire_liste_courses",
       "lire_planning",
       "lire_recette",
@@ -359,6 +367,42 @@ describe("POST /api/mcp — outils de l'exécuteur de panier (#308, RG-81→84)"
     const { result } = await lire(await appeler("tools/call", { name: "prendre_demande_panier", arguments: {} }))
     expect(m.prendreDemandePanier).toHaveBeenCalledWith({ jeton: "jwt-oauth" })
     expect(result?.structuredContent).toEqual({ demande: null })
+  })
+
+  it("lancer_demande_panier : client par jeton, utilisateur, arguments et date de Paris transmis (#320, RG-85)", async () => {
+    m.lancerDemandePanierMcp.mockResolvedValue({ demande_id: DEMANDE, ancre: "2026-11-05" })
+    const { result } = await lire(
+      await appeler("tools/call", { name: "lancer_demande_panier", arguments: { ancre: "2026-11-07" } })
+    )
+    expect(m.lancerDemandePanierMcp).toHaveBeenCalledWith(
+      { jeton: "jwt-oauth" },
+      "user-1",
+      { ancre: "2026-11-07" },
+      expect.any(Date)
+    )
+    expect(result?.structuredContent).toEqual({ demande_id: DEMANDE, ancre: "2026-11-05" })
+  })
+
+  it("lancer_demande_panier : sans ancre, ErreurOutil relayée en isError", async () => {
+    m.lancerDemandePanierMcp.mockRejectedValue(new ErreurOutil("Une demande de panier est déjà en cours : attends qu’elle se termine."))
+    const { result } = await lire(await appeler("tools/call", { name: "lancer_demande_panier", arguments: {} }))
+    expect(m.lancerDemandePanierMcp).toHaveBeenCalledWith({ jeton: "jwt-oauth" }, "user-1", {}, expect.any(Date))
+    expect(result?.isError).toBe(true)
+    expect(result?.content).toEqual([
+      { type: "text", text: "Une demande de panier est déjà en cours : attends qu’elle se termine." },
+    ])
+  })
+
+  it("cocher_article transmet `ancre` ; sa description et celle de prendre_demande_panier la citent (#320, RG-85)", async () => {
+    m.cocherArticle.mockResolvedValue({ modifie: true, article: {} })
+    await appeler("tools/call", { name: "cocher_article", arguments: { libelle: "lait", ancre: "2026-11-05" } })
+    expect(m.cocherArticle).toHaveBeenCalledWith({ jeton: "jwt-oauth" }, { libelle: "lait", ancre: "2026-11-05" }, expect.any(Date))
+    const { result } = await lire(await appeler("tools/list"))
+    const description = (nom: string) =>
+      (result?.tools as Array<{ name: string; description: string }>).find((t) => t.name === nom)!.description
+    expect(description("cocher_article")).toContain("`ancre`")
+    expect(description("prendre_demande_panier")).toContain("`ancre` à lire_liste_courses et à cocher_article")
+    expect(description("lancer_demande_panier")).toContain("accord explicite")
   })
 
   it("rapporter_panier : arguments transmis tels quels", async () => {

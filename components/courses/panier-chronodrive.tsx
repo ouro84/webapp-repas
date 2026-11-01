@@ -1,80 +1,89 @@
 "use client";
 
-// Carte « Panier Chronodrive » de /courses (#308, US-53).
+// Carte « Panier Chronodrive » de /courses (#308, #320, US-53).
 //
-// - RG-81 : la carte n'existe que si le foyer a un exécuteur. Le BOUTON n'existe
-//   que sur le cycle COURANT (la demande vise toujours le cycle courant : la
-//   route POST /api/panier/demande ne lit aucun corps). Sur un autre cycle, la
-//   carte est en lecture seule si une demande le concerne, absente sinon.
+// - RG-81 : la carte n'existe que si le foyer a un exécuteur. Elle s'affiche
+//   sur le cycle AFFICHÉ, courant, à venir ou terminé ; sur un cycle terminé, le
+//   bouton est grisé et un texte sous le bouton en donne le motif (le serveur
+//   refuse de toute façon : OMQ04).
 // - RG-83 : une demande active (`en_attente` / `en_cours`) désactive le
-//   bouton, quelle que soit son ancre (une seule demande active par foyer).
-//   Après un compte-rendu, le bouton devient secondaire : « Relancer pour les
-//   articles restants » (les articles ajoutés ont été cochés).
-// - RG-84 : le compte-rendu affiché est celui de la dernière demande,
-//   seulement si elle porte sur le cycle affiché. RG-82 : rien n'est commandé,
-//   d'où le rappel sous le résumé.
+//   bouton, quel que soit son cycle (une seule demande active par foyer).
+//   « Compléter mon panier » (secondaire) remplace « Remplir mon panier »
+//   seulement si la dernière demande du cycle est `terminee` ET qu'un article
+//   est coché (les articles ajoutés l'ont été).
+// - RG-84 : le compte-rendu affiché est celui de la dernière demande du cycle
+//   affiché (la RPC filtre par ancre). RG-82 : rien n'est commandé, d'où le
+//   rappel sous le résumé.
 //
 // L'état vit en mémoire du composant (aucun localStorage, aucun store
-// partagé). Il est relu toutes les 10 s SEULEMENT pendant une demande active
-// et tant que l'onglet est visible, plus au retour sur l'onglet (une demande
-// peut venir d'un autre membre ou de l'assistant). Une lecture qui échoue
-// garde le dernier état connu et logge une seule fois par série d'échecs ; le
-// toast est réservé au clic.
+// partagé). Il est relu au changement de cycle affiché, toutes les 10 s
+// SEULEMENT pendant une demande active et tant que l'onglet est visible, plus
+// au retour sur l'onglet (une demande peut venir d'un autre membre ou de
+// l'assistant). Une lecture qui échoue garde le dernier état connu et logge
+// une seule fois par série d'échecs ; le toast est réservé au clic.
 
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { toast } from "sonner";
-import { ChevronDown, Loader2, ShoppingBasket, TriangleAlert } from "lucide-react";
-import { ancreParDefaut } from "@/lib/cycles";
+import { ChevronDown, Loader2, TriangleAlert } from "lucide-react";
+import { LogoChronodrive } from "@/components/ui/logo-chronodrive";
+import { cycleTermine } from "@/lib/cycles";
 import { aujourdhuiParis } from "@/lib/semaines";
 import { affichagePanier, resumeRapport, type EtatPanier } from "@/lib/panier-affichage";
-import {
-  chargerEtatPanier,
-  chargerJourCoursesPanier,
-  lancerDemandePanier,
-} from "@/lib/panier-client";
+import { chargerEtatPanier, lancerDemandePanier } from "@/lib/panier-client";
 import type { RapportPanier } from "@/lib/panier";
 
 /** Période d'interrogation pendant une demande active. */
 const INTERVALLE_INTERROGATION_MS = 10_000;
 
 // Pilule plus étroite et texte à 13 px sous `sm:` : à 320 px, le libellé le
-// plus long (208 px) tient sur une ligne, spinner compris (+20 px), avec
-// 4 px de marge ; vérifié par le test de captures (`panier-demande.spec`).
+// plus long (« Panier en cours… » + spinner, ou « Compléter mon panier ») tient
+// sur une ligne ; vérifié par le test de captures (`panier-demande.spec`).
 const BOUTON_BASE =
   "relative mt-3 inline-flex w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-2.5 text-center text-[13px] font-semibold transition after:absolute after:-inset-1 after:content-[''] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 sm:w-auto sm:gap-2 sm:px-5 sm:text-sm";
 const BOUTON_PRINCIPAL =
   "border-transparent bg-primary text-white hover:bg-primary-hover active:scale-[0.97] motion-reduce:active:scale-100";
-// Ghost du DESIGN : après un compte-rendu, relancer n'est plus l'action principale.
+// Ghost du DESIGN : après un compte-rendu, compléter n'est plus l'action principale.
 const BOUTON_SECONDAIRE =
   "border-brand-200 bg-surface text-brand-700 hover:bg-brand-50 active:scale-[0.97] motion-reduce:active:scale-100";
 // Désactivé : teinte claire plutôt qu'une opacité, car « Panier en cours… »
-// reste affiché plusieurs minutes et doit garder un contraste ≥ 4.5:1
-// (brand-700 sur brand-50, clair et sombre).
+// reste affiché plusieurs minutes et le motif d'un cycle terminé en permanence :
+// le libellé garde un contraste ≥ 4.5:1 (brand-700 sur brand-50, clair et sombre).
 const BOUTON_DESACTIVE = "cursor-not-allowed border-brand-200 bg-brand-50 text-brand-700";
 
-export function PanierChronodrive({ ancreAffichee }: { ancreAffichee: string }) {
+export function PanierChronodrive({
+  ancreAffichee,
+  longueur,
+  aDesCoches,
+}: {
+  ancreAffichee: string;
+  /** Longueur du cycle affiché (jours) : décide s'il est terminé. */
+  longueur: number;
+  /** Au moins un article du cycle affiché est coché. */
+  aDesCoches: boolean;
+}) {
   const idTitre = useId();
+  const idMotif = useId();
   const [etat, setEtat] = useState<EtatPanier | null>(null);
-  const [ancreCourante, setAncreCourante] = useState<string | null>(null);
   const [envoi, setEnvoi] = useState(false);
   // Incrémenté à chaque changement de visibilité de l'onglet : relance (ou
-  // coupe) la chaîne d'interrogation.
+  // coupe) la chaîne d'interrogation, et recalcule « cycle terminé » au rendu
+  // (l'onglet a pu dormir au-delà de minuit).
   const [reprise, setReprise] = useState(0);
   // Garde synchrone du double tap : l'état React n'est relu qu'au rendu suivant.
   const envoiEnVol = useRef(false);
   // Une série d'échecs de lecture ne logge qu'une fois (réseau coupé en magasin).
   const enEchec = useRef(false);
   // Numéro de la dernière lecture lancée : un résultat plus ancien est ignoré
-  // (une lecture lente ne doit pas écraser une plus récente).
+  // (une lecture lente ne doit pas écraser une plus récente, ni la réponse d'un
+  // cycle quitté écraser celle du cycle affiché).
   const numeroLecture = useRef(0);
-  const jourCourses = useRef<number | null>(null);
 
   // Chaîne de promesses plutôt qu'async/await : le setState reste dans un
   // callback, ce que la règle `react-hooks/set-state-in-effect` reconnaît.
   // Résout `false` si la lecture a échoué.
   const relire = useCallback((): Promise<boolean> => {
     const numero = ++numeroLecture.current;
-    return chargerEtatPanier().then(
+    return chargerEtatPanier(ancreAffichee).then(
       (nouvelEtat) => {
         if (numero !== numeroLecture.current) return true;
         enEchec.current = false;
@@ -90,35 +99,26 @@ export function PanierChronodrive({ ancreAffichee }: { ancreAffichee: string }) 
         return false;
       }
     );
-  }, []);
+  }, [ancreAffichee]);
 
-  // Jour de courses lu SANS repli (jumeau de la route) ; ancre calculée à
-  // l'heure de Paris, comme la route. Une erreur : log, carte non rendue.
-  const chargerJour = useCallback(
-    (): Promise<void> =>
-      chargerJourCoursesPanier().then(
-        (jour) => {
-          jourCourses.current = jour;
-          setAncreCourante(ancreParDefaut(aujourdhuiParis(), jour));
-        },
-        (err: unknown) => {
-          console.error("Lecture du jour de courses échouée.", err);
-        }
-      ),
-    []
-  );
-
-  // Chargement initial, en parallèle : état du panier et jour de courses du
-  // foyer (pour savoir si le cycle affiché est le cycle courant).
+  // Chargement initial et à chaque changement de cycle affiché.
   useEffect(() => {
     void relire();
-    void chargerJour();
-  }, [relire, chargerJour]);
+  }, [relire]);
 
+  // `lancer()` attend le POST : le cycle affiché a pu changer entre-temps, et sa
+  // fermeture ne voit que le `relire` du rendu où le clic a eu lieu. La ref donne
+  // toujours le dernier (l'ancre du cycle affiché maintenant).
+  const relireRef = useRef(relire);
+  useEffect(() => {
+    relireRef.current = relire;
+  });
+
+  // « Cycle terminé » est dérivé à chaque rendu (heure de Paris, comme la RPC) ;
+  // le changement de `reprise` provoque le rendu au retour sur l’onglet.
+  const termine = cycleTermine(ancreAffichee, longueur, aujourdhuiParis());
   const affichage =
-    etat !== null && ancreCourante !== null
-      ? affichagePanier(etat, ancreAffichee, ancreCourante)
-      : null;
+    etat !== null ? affichagePanier(etat, { ancre: ancreAffichee, termine }, aDesCoches) : null;
   const interroger = affichage?.visible === true && affichage.actif;
 
   // Interrogation seulement pendant une demande active, carte et onglet
@@ -143,8 +143,7 @@ export function PanierChronodrive({ ancreAffichee }: { ancreAffichee: string }) 
   }, [interroger, reprise, relire]);
 
   // Retour sur l'onglet : relecture de l'état (aussi après un premier
-  // chargement raté) et recalcul du cycle courant (l'onglet a pu dormir
-  // au-delà du jour de courses). Rien à écouter pour un foyer sans exécuteur.
+  // chargement raté). Rien à écouter pour un foyer sans exécuteur.
   const ecouter = etat === null || etat.executeur;
   useEffect(() => {
     if (!ecouter) return;
@@ -152,19 +151,17 @@ export function PanierChronodrive({ ancreAffichee }: { ancreAffichee: string }) 
       setReprise((n) => n + 1);
       if (document.visibilityState !== "visible") return;
       void relire();
-      if (jourCourses.current === null) void chargerJour();
-      else setAncreCourante(ancreParDefaut(aujourdhuiParis(), jourCourses.current));
     };
     document.addEventListener("visibilitychange", surChangement);
     return () => document.removeEventListener("visibilitychange", surChangement);
-  }, [ecouter, relire, chargerJour]);
+  }, [ecouter, relire]);
 
   async function lancer() {
     if (envoiEnVol.current) return;
     envoiEnVol.current = true;
     setEnvoi(true);
     try {
-      const resultat = await lancerDemandePanier();
+      const resultat = await lancerDemandePanier(ancreAffichee);
       // 502 : l'exécuteur n'a pas répondu, la demande est passée en échec et
       // c'est la carte qui porte le message, pas un toast.
       const injoignable = !resultat.ok && resultat.statut === 502;
@@ -172,7 +169,7 @@ export function PanierChronodrive({ ancreAffichee }: { ancreAffichee: string }) 
       else if (!injoignable) toast.error(resultat.message);
       // Relire AVANT de réactiver : le bouton passe directement à « Panier en
       // cours… » sans repasser par l'état disponible.
-      const relu = await relire();
+      const relu = await relireRef.current();
       // Sans relecture, la carte ne montrerait pas l'échec : le toast prend le relais.
       if (injoignable && !relu) toast.error(resultat.message);
     } finally {
@@ -184,18 +181,20 @@ export function PanierChronodrive({ ancreAffichee }: { ancreAffichee: string }) 
   if (affichage === null || !affichage.visible) return null;
 
   const occupe = envoi || affichage.actif;
+  const motif = affichage.motifIndisponible;
+  const indisponible = occupe || motif !== null;
   const rapport = affichage.rapport;
   const termineA = affichage.termineA ? `Terminé à ${affichage.termineA}` : null;
-  const styleBouton = occupe
+  const styleBouton = indisponible
     ? BOUTON_DESACTIVE
-    : affichage.relance
+    : affichage.bouton === "completer"
       ? BOUTON_SECONDAIRE
       : BOUTON_PRINCIPAL;
   const libelleBouton = affichage.actif
     ? "Panier en cours…"
-    : affichage.relance
-      ? "Relancer pour les articles restants"
-      : "Constituer mon panier Chronodrive";
+    : affichage.bouton === "completer"
+      ? "Compléter mon panier"
+      : "Remplir mon panier";
 
   return (
     <section
@@ -203,46 +202,42 @@ export function PanierChronodrive({ ancreAffichee }: { ancreAffichee: string }) 
       className="mt-6 rounded-lg border border-brand-100 bg-surface p-4 shadow-sm"
     >
       <h2 id={idTitre} className="flex items-center gap-2 text-lg font-bold text-brand-900">
-        <ShoppingBasket aria-hidden="true" className="size-5 shrink-0 text-brand-600" />
+        <LogoChronodrive className="size-5 shrink-0 text-brand-600" />
         Panier Chronodrive
       </h2>
 
       {/* Pleine largeur sous `sm:`. `aria-disabled` plutôt que `disabled` :
           le bouton garde le focus clavier pendant l'envoi ; le clic est gardé
-          dans le gestionnaire. */}
-      {affichage.boutonDisponible && (
-        <button
-          type="button"
-          onClick={() => {
-            if (!occupe) void lancer();
-          }}
-          aria-disabled={occupe}
-          className={`${BOUTON_BASE} ${styleBouton}`}
-        >
-          {occupe && (
-            <Loader2
-              aria-hidden="true"
-              className="size-3.5 shrink-0 motion-safe:animate-spin sm:size-4"
-            />
-          )}
-          {libelleBouton}
-        </button>
+          dans le gestionnaire. Toujours rendu (RG-81) : sur un cycle terminé,
+          le motif en dessous dit pourquoi il est grisé. */}
+      <button
+        type="button"
+        onClick={() => {
+          if (!indisponible) void lancer();
+        }}
+        aria-disabled={indisponible}
+        aria-describedby={motif !== null ? idMotif : undefined}
+        className={`${BOUTON_BASE} ${styleBouton}`}
+      >
+        {occupe && (
+          <Loader2
+            aria-hidden="true"
+            className="size-3.5 shrink-0 motion-safe:animate-spin sm:size-4"
+          />
+        )}
+        {libelleBouton}
+      </button>
+      {motif !== null && (
+        <p id={idMotif} className="mt-2 text-sm text-brand-700/85">
+          {motif}
+        </p>
       )}
 
       {/* Toujours monté : une région aria-live insérée avec son contenu n'est
           pas annoncée par la plupart des lecteurs d'écran. */}
       <div aria-live="polite" className="text-sm">
         {envoi && !affichage.actif && <p className="sr-only">Envoi en cours…</p>}
-        {affichage.actif &&
-          (affichage.boutonDisponible ? (
-            <p className="sr-only">Panier en cours…</p>
-          ) : (
-            // Lecture seule (autre cycle) : pas de bouton, l'état s'affiche en texte.
-            <p className="mt-3 flex items-center gap-2 font-semibold text-brand-900">
-              <Loader2 aria-hidden="true" className="size-4 shrink-0 motion-safe:animate-spin" />
-              Panier en cours…
-            </p>
-          ))}
+        {affichage.actif && <p className="sr-only">Panier en cours…</p>}
         {affichage.actif && affichage.lanceA && (
           <p className="mt-2 text-brand-700/85">{`Lancé à ${affichage.lanceA}`}</p>
         )}

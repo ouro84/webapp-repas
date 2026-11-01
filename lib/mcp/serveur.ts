@@ -15,7 +15,7 @@ import { chercherRecettes } from "@/lib/mcp/recherche-recettes"
 import { changerPersonnes, genererCycle, marquerRestesRepas, remplacerRepas } from "@/lib/mcp/ecriture-planning"
 import { ajouterRecette } from "@/lib/mcp/ecriture-recettes"
 import { ajouterArticleCourses, cocherArticle } from "@/lib/mcp/ecriture-courses"
-import { prendreDemandePanier, rapporterPanier } from "@/lib/mcp/panier"
+import { lancerDemandePanierMcp, prendreDemandePanier, rapporterPanier } from "@/lib/mcp/panier"
 import { schemaRapport } from "@/lib/panier"
 import { limiteGeneration } from "@/lib/rate-limit"
 import { aujourdhuiParis } from "@/lib/semaines"
@@ -259,14 +259,37 @@ export function enregistrerOutilsEcriture(server: McpServer): void {
     {
       title: "Cocher un article de la liste de courses",
       description:
-        "Coche (ou décoche avec `coche: false`) un article de la liste de courses du cycle en cours, désigné par son libellé tel que renvoyé par lire_liste_courses. Si plusieurs articles correspondent (même nom en deux unités, par exemple), rien n'est coché : `modifie: false` et `candidats` ; rappelle avec `quantite` (texte exact du candidat) pour départager.",
+        "Coche (ou décoche avec `coche: false`) un article de la liste de courses du cycle en cours, ou de celui qui contient `ancre` (AAAA-MM-JJ), désigné par son libellé tel que renvoyé par lire_liste_courses. Si plusieurs articles correspondent (même nom en deux unités, par exemple), rien n'est coché : `modifie: false` et `candidats` ; rappelle avec `quantite` (texte exact du candidat) pour départager.",
       inputSchema: z.object({
         libelle: z.string().describe("Libellé de l'article."),
         coche: z.boolean().optional().describe("false pour décocher. Par défaut : cocher."),
         quantite: z.string().optional().describe("Quantité exacte du candidat voulu, ex. « 200 g »."),
+        ancre: z
+          .string()
+          .optional()
+          .describe("Une date quelconque (AAAA-MM-JJ) du cycle visé. Par défaut : le cycle en cours."),
       }),
     },
     async (args, ctx) => executer(ctx, (supabase) => cocherArticle(supabase, args, aujourdhuiParis()))
+  )
+
+  // Lancement du panier (#320, RG-85) : appelé par l'assistant de l'utilisateur,
+  // comme le bouton « Remplir mon panier ». OMQ ne parle jamais à l'enseigne (RG-80).
+  server.registerTool(
+    "lancer_demande_panier",
+    {
+      title: "Lancer le remplissage du panier Chronodrive",
+      description:
+        "Lance le remplissage du panier Chronodrive pour le cycle en cours, ou celui qui contient `ancre` (AAAA-MM-JJ, cycle en cours ou à venir), exactement comme le bouton « Remplir mon panier » de l'app : l'exécuteur du foyer est réveillé et remplit le panier de son côté ; le compte-rendu arrive sur sa messagerie et sur /courses. N'appelle cet outil qu'après l'accord explicite de l'utilisateur. Refusé si une demande est déjà en cours, si le cycle est terminé ou si aucun exécuteur n'est enregistré.",
+      inputSchema: z.object({
+        ancre: z
+          .string()
+          .optional()
+          .describe("Une date quelconque (AAAA-MM-JJ) du cycle visé. Par défaut : le cycle en cours."),
+      }),
+    },
+    async (args, ctx) =>
+      executer(ctx, (supabase, userId) => lancerDemandePanierMcp(supabase, userId, args, aujourdhuiParis()))
   )
 
   // Outils de l'exécuteur de panier (#308, RG-81→84) : appelés par Hermes, pas
@@ -276,7 +299,7 @@ export function enregistrerOutilsEcriture(server: McpServer): void {
     {
       title: "Prendre la demande de panier",
       description:
-        "Réservé à l’exécuteur de panier du foyer, réveillé par le webhook : ne l’appelle jamais pour consulter l’état d’un panier. À appeler au réveil, dès réception du webhook « demande_panier » d'OMQ, avant toute autre action. Prend la demande de panier en attente du foyer et la marque en cours. Si la réponse est `demande: null`, il n'y a rien à faire : arrête-toi sans rien faire d'autre (webhook rejoué, demande expirée ou déjà prise). Sinon, `demande.id` sert à rapporter_panier, et `demande.ancre` (AAAA-MM-JJ) désigne le cycle de courses à traiter : c'est le cycle en cours, celui que lit lire_liste_courses.",
+        "Réservé à l’exécuteur de panier du foyer, réveillé par le webhook : ne l’appelle jamais pour consulter l’état d’un panier. À appeler au réveil, dès réception du webhook « demande_panier » d'OMQ, avant toute autre action. Prend la demande de panier en attente du foyer et la marque en cours. Si la réponse est `demande: null`, il n'y a rien à faire : arrête-toi sans rien faire d'autre (webhook rejoué, demande expirée ou déjà prise). Sinon, `demande.id` sert à rapporter_panier, et `demande.ancre` (AAAA-MM-JJ) désigne le cycle de courses à traiter : passe-la en `ancre` à lire_liste_courses et à cocher_article.",
       inputSchema: z.object({}),
     },
     async (_args, ctx) => executer(ctx, (supabase) => prendreDemandePanier(supabase))

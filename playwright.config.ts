@@ -1,5 +1,12 @@
 import { defineConfig } from "@playwright/test";
 
+// Port du serveur e2e : 3000 par défaut (CI, `site_url` de staging). En local,
+// `E2E_PORT` permet de tourner à côté d'un autre serveur déjà sur 3000 ; le
+// consentement OAuth, qui atterrit sur localhost:3000, est alors réécrit vers ce
+// port par `e2e/oauth.ts`.
+const PORT = Number(process.env.E2E_PORT ?? 3000);
+const ORIGINE = `http://localhost:${PORT}`;
+
 // Specs à comptes JETABLES (emails uniques par run, disjoints du compte de test
 // partagé) → parallélisables sans course de données. Tout le reste écrit le
 // compte partagé et reste sérialisé (cf. `workers` + projets ci-dessous).
@@ -41,7 +48,7 @@ export default defineConfig({
   // (défaut 5 s → 10 s) ; les vrais bugs échouent toujours, juste un peu plus tard.
   expect: { timeout: 10_000 },
   use: {
-    baseURL: "http://localhost:3000",
+    baseURL: ORIGINE,
     // L'antivirus du poste de dev (Avast) intercepte le TLS : les requêtes
     // API du setup d'auth passeraient par sa CA non reconnue de Node.
     ignoreHTTPSErrors: true,
@@ -81,8 +88,8 @@ export default defineConfig({
     // En CI : build de PROD + `next start` (pas de compilation à la demande ni de
     // runtime dev → e2e nettement plus rapides). En local : `next dev` pour garder
     // l'itération rapide (les e2e ne se lancent pas en local — .env.local = prod).
-    command: process.env.CI ? "npm run build && npm run start" : "npm run dev",
-    url: "http://localhost:3000",
+    command: process.env.CI ? "npm run build && npm run start" : `npm run dev -- -p ${PORT}`,
+    url: ORIGINE,
     reuseExistingServer: !process.env.CI,
     // Marge pour le `next build` à froid en CI (compilation complète avant start).
     timeout: 180_000,

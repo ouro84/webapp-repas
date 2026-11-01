@@ -1,8 +1,9 @@
 // Logique pure d'affichage de la carte « panier Chronodrive » de /courses
-// (#308, RG-81 à RG-84). Aucune E/S ni horloge : le cycle courant est passé en
-// argument, pour rester testable et utilisable dans un composant client.
+// (#308, #320, RG-81 à RG-84). Aucune E/S ni horloge : le fait que le cycle
+// affiché soit terminé est passé en argument, pour rester testable et
+// utilisable dans un composant client.
 
-import type { RapportPanier } from "@/lib/panier"
+import { MESSAGES_PANIER, type RapportPanier } from "@/lib/panier"
 
 /** Dernière demande de panier du foyer, telle que renvoyée par `etat_panier()`. */
 export type DemandePanier = {
@@ -18,20 +19,29 @@ export type DemandePanier = {
   termine_le: string | null
 }
 
-/** Forme de la RPC `etat_panier()`. */
+/**
+ * Forme de la RPC `etat_panier(p_ancre)` : `derniere` = dernière demande du
+ * cycle demandé (ou du foyer sans ancre), `active` = la demande en attente ou
+ * en cours du foyer, quel que soit son cycle (RG-83).
+ */
 export type EtatPanier = {
   executeur: boolean
   derniere: DemandePanier | null
+  active: DemandePanier | null
 }
+
+/** Bouton de la carte : « Remplir mon panier » ou, après un compte-rendu, « Compléter mon panier ». */
+export type BoutonPanier = "remplir" | "completer"
 
 export type AffichagePanier =
   | { visible: false }
   | {
       visible: true
-      /** Bouton de lancement : sur le cycle courant seulement (RG-81). Ailleurs, lecture seule. */
-      boutonDisponible: boolean
-      /** Après un `terminee` du cycle courant : bouton secondaire « Relancer… » (RG-83). */
-      relance: boolean
+      /** `completer` : dernière demande du cycle `terminee` ET articles cochés (RG-83). */
+      bouton: BoutonPanier
+      /** Pourquoi le bouton est grisé (cycle terminé, RG-81), sinon `null`. */
+      motifIndisponible: string | null
+      /** Une demande est active pour le foyer, quel que soit son cycle (RG-83). */
       actif: boolean
       lanceA: string | null
       echec: string | null
@@ -107,53 +117,46 @@ function rapportNonVide(rapport: RapportPanier | null): rapport is RapportPanier
 
 /**
  * Ce que la carte doit montrer. La carte n'existe que pour un membre dont le
- * foyer a un exécuteur (RG-81). Le bouton n'existe que sur le cycle courant :
- * la demande vise toujours le cycle courant. Une demande active le bloque
- * quelle que soit son ancre (une seule par foyer, RG-83). État en cours,
- * échec et rapport ne sont montrés que sur le cycle auquel ils appartiennent :
- * sur un autre cycle, la carte est en lecture seule, et absente si aucune
- * demande ne le concerne (RG-84).
+ * foyer a un exécuteur (RG-81) ; elle est alors toujours visible, sur le cycle
+ * affiché, y compris terminé (bouton grisé avec son motif, rapport conservé).
+ * Une demande active, de n'importe quel cycle, désactive le bouton (une seule
+ * par foyer, RG-83) : `etat.active` est indépendante du cycle affiché.
+ * Échec et rapport viennent de `etat.derniere`, la dernière demande du cycle
+ * affiché (RG-84) ; une `derniere` d'un autre cycle (réponse périmée pendant
+ * un changement de cycle) est ignorée.
  */
 export function affichagePanier(
   etat: EtatPanier,
-  ancreAffichee: string,
-  ancreCourante: string
+  cycle: { ancre: string; termine: boolean },
+  aDesCoches: boolean
 ): AffichagePanier {
   if (!etat.executeur) return { visible: false }
 
-  const derniere = etat.derniere
-  const courant = ancreAffichee === ancreCourante
-  const duCycle = derniere !== null && derniere.ancre === ancreAffichee
-  if (!courant && !duCycle) return { visible: false }
-
-  // Hors cycle courant, `derniere` est forcément de ce cycle (duCycle).
-  const actif = estActive(derniere)
+  const derniere = etat.derniere?.ancre === cycle.ancre ? etat.derniere : null
   const echec =
-    duCycle && derniere.statut === "echec"
-      ? messageEchec(derniere.cause_echec, derniere.motif_echec)
-      : null
+    derniere?.statut === "echec" ? messageEchec(derniere.cause_echec, derniere.motif_echec) : null
   // `rapporter_panier` stocke le rapport même en `echec` : un rapport partiel
   // (ce qui a été ajouté avant la panne) se montre avec le message d'échec.
   const rapport =
-    duCycle &&
+    derniere !== null &&
     (derniere.statut === "terminee" ||
       (derniere.statut === "echec" && rapportNonVide(derniere.rapport)))
       ? derniere.rapport
       : null
 
-  if (!courant && !actif && echec === null && rapport === null) return { visible: false }
-
-  const lanceA = actif && derniere ? heureLancement(derniere.cree_le) : ""
+  const lanceA = etat.active ? heureLancement(etat.active.cree_le) : ""
   const termineA =
-    duCycle && (echec !== null || rapport !== null) && derniere.termine_le
+    derniere !== null && (echec !== null || rapport !== null) && derniere.termine_le
       ? heureLancement(derniere.termine_le)
       : ""
 
   return {
     visible: true,
-    boutonDisponible: courant,
-    relance: courant && duCycle && derniere.statut === "terminee",
-    actif,
+    // Les articles ajoutés ont été cochés (RG-83) : sans coche (« Tout
+    // décocher »), il n'y a plus rien à compléter.
+    bouton: derniere?.statut === "terminee" && aDesCoches ? "completer" : "remplir",
+    motifIndisponible: cycle.termine ? MESSAGES_PANIER.OMQ04 : null,
+    actif: etat.active !== null,
     lanceA: lanceA || null,
     echec,
     rapport,

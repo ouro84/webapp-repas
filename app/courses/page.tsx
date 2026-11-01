@@ -796,12 +796,19 @@ function ContenuCourses() {
         )}
       </div>
 
-      {/* Panier Chronodrive (#308, US-53) : APRÈS la liste, hors des <section>
-          de catégories. Elle arrive après deux lectures réseau : en haut, elle
-          pousserait la liste sous le doigt en magasin. Ne rend rien sans
-          exécuteur (RG-81), ni sur un autre cycle que le courant sans demande
-          de ce cycle (lecture seule sinon). */}
-      {cycle && <PanierChronodrive ancreAffichee={cycle.ancre} />}
+      {/* Panier Chronodrive (#308, #320, US-53) : APRÈS la liste, hors des
+          <section> de catégories. Elle arrive après une lecture réseau : en
+          haut, elle pousserait la liste sous le doigt en magasin. Ne rend rien
+          sans exécuteur (RG-81) ; sinon elle suit le cycle affiché (courant, à
+          venir, ou terminé : bouton grisé). `aDesCoches` choisit « Compléter »
+          plutôt que « Remplir » après un compte-rendu. */}
+      {cycle && (
+        <PanierChronodrive
+          ancreAffichee={cycle.ancre}
+          longueur={cycle.longueur}
+          aDesCoches={liste !== null && aDesCoches(liste, coches)}
+        />
+      )}
 
       {dialogueArticle && (
         <FormulaireArticleManuel

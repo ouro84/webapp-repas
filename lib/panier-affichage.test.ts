@@ -8,6 +8,7 @@ import {
   type DemandePanier,
   type EtatPanier,
 } from "@/lib/panier-affichage"
+import { MESSAGES_PANIER } from "@/lib/panier"
 import type { RapportPanier } from "@/lib/panier"
 
 const CYCLE = "2026-10-31"
@@ -35,73 +36,33 @@ function demande(surcharge: Partial<DemandePanier> = {}): DemandePanier {
   }
 }
 
-const etat = (derniere: DemandePanier | null, executeur = true): EtatPanier => ({
-  executeur,
+/** `active` suit `derniere` quand elle est active, sauf précision (RPC `etat_panier`). */
+const etat = (
+  derniere: DemandePanier | null,
+  options: { executeur?: boolean; active?: DemandePanier | null } = {}
+): EtatPanier => ({
+  executeur: options.executeur ?? true,
   derniere,
+  active: options.active !== undefined ? options.active : estActive(derniere) ? derniere : null,
 })
+
+const cycle = (termine = false, ancre = CYCLE) => ({ ancre, termine })
 
 describe("affichagePanier", () => {
   it("sans exécuteur → invisible", () => {
-    expect(affichagePanier(etat(null, false), CYCLE, CYCLE)).toEqual({ visible: false })
-    expect(affichagePanier(etat(demande(), false), CYCLE, CYCLE)).toEqual({ visible: false })
-  })
-
-  it("cycle non courant sans demande de ce cycle → invisible", () => {
-    expect(affichagePanier(etat(null), AUTRE_CYCLE, CYCLE)).toEqual({ visible: false })
-    // Demande (même active) du cycle courant : rien à montrer sur un autre cycle.
-    expect(affichagePanier(etat(demande()), AUTRE_CYCLE, CYCLE)).toEqual({ visible: false })
-  })
-
-  it("cycle non courant avec rapport de ce cycle → lecture seule (A3)", () => {
-    const a = affichagePanier(
-      etat(
-        demande({
-          ancre: AUTRE_CYCLE,
-          statut: "terminee",
-          rapport: RAPPORT,
-          termine_le: "2026-10-31T17:32:00Z",
-        })
-      ),
-      AUTRE_CYCLE,
-      CYCLE
-    )
-    expect(a).toEqual({
-      visible: true,
-      boutonDisponible: false,
-      relance: false,
-      actif: false,
-      lanceA: null,
-      echec: null,
-      rapport: RAPPORT,
-      tardif: false,
-      termineA: "18 h 32",
+    expect(affichagePanier(etat(null, { executeur: false }), cycle(), false)).toEqual({
+      visible: false,
+    })
+    expect(affichagePanier(etat(demande(), { executeur: false }), cycle(), true)).toEqual({
+      visible: false,
     })
   })
 
-  it("cycle non courant avec demande active ou échec de ce cycle → lecture seule", () => {
-    expect(
-      affichagePanier(etat(demande({ ancre: AUTRE_CYCLE, statut: "en_cours" })), AUTRE_CYCLE, CYCLE)
-    ).toMatchObject({ visible: true, boutonDisponible: false, actif: true, lanceA: "18 h 05" })
-    expect(
-      affichagePanier(
-        etat(demande({ ancre: AUTRE_CYCLE, statut: "echec", cause_echec: "non_prise", motif_echec: "Pas pris." })),
-        AUTRE_CYCLE,
-        CYCLE
-      )
-    ).toMatchObject({ visible: true, boutonDisponible: false, echec: "Pas pris." })
-  })
-
-  it("cycle non courant, terminee sans rapport → invisible (rien à montrer)", () => {
-    expect(
-      affichagePanier(etat(demande({ ancre: AUTRE_CYCLE, statut: "terminee" })), AUTRE_CYCLE, CYCLE)
-    ).toEqual({ visible: false })
-  })
-
-  it("aucune demande → visible, bouton principal, sans rapport ni échec", () => {
-    expect(affichagePanier(etat(null), CYCLE, CYCLE)).toEqual({
+  it("aucune demande → visible, bouton « remplir », sans rapport ni échec ni motif", () => {
+    expect(affichagePanier(etat(null), cycle(), false)).toEqual({
       visible: true,
-      boutonDisponible: true,
-      relance: false,
+      bouton: "remplir",
+      motifIndisponible: null,
       actif: false,
       lanceA: null,
       echec: null,
@@ -111,24 +72,105 @@ describe("affichagePanier", () => {
     })
   })
 
+  it("cycle à venir sans demande → bouton « remplir », pas de motif", () => {
+    const a = affichagePanier(etat(null), cycle(false, "2026-11-07"), false)
+    expect(a).toMatchObject({ visible: true, bouton: "remplir", motifIndisponible: null })
+  })
+
+  it("cycle terminé → visible, motif OMQ04, rapport du cycle conservé", () => {
+    const a = affichagePanier(
+      etat(
+        demande({
+          ancre: AUTRE_CYCLE,
+          statut: "terminee",
+          rapport: RAPPORT,
+          termine_le: "2026-10-31T17:32:00Z",
+        })
+      ),
+      cycle(true, AUTRE_CYCLE),
+      true
+    )
+    expect(a).toEqual({
+      visible: true,
+      bouton: "completer",
+      motifIndisponible: MESSAGES_PANIER.OMQ04,
+      actif: false,
+      lanceA: null,
+      echec: null,
+      rapport: RAPPORT,
+      tardif: false,
+      termineA: "18 h 32",
+    })
+  })
+
+  it("cycle terminé sans demande → visible, motif OMQ04 mot pour mot, rien d'autre", () => {
+    const a = affichagePanier(etat(null), cycle(true, AUTRE_CYCLE), false)
+    expect(a).toMatchObject({
+      visible: true,
+      bouton: "remplir",
+      motifIndisponible:
+        "Cycle terminé : le panier ne se remplit que pour un cycle en cours ou à venir.",
+      rapport: null,
+      echec: null,
+    })
+  })
+
+  it("cycle non terminé → pas de motif", () => {
+    expect(affichagePanier(etat(null), cycle(false), false)).toMatchObject({
+      motifIndisponible: null,
+    })
+  })
+
   it("en_attente ou en_cours → actif, lanceA = heure de cree_le à Paris", () => {
     for (const statut of ["en_attente", "en_cours"] as const) {
-      const a = affichagePanier(etat(demande({ statut })), CYCLE, CYCLE)
-      expect(a).toMatchObject({ visible: true, boutonDisponible: true, actif: true, lanceA: "18 h 05" })
+      const a = affichagePanier(etat(demande({ statut })), cycle(), false)
+      expect(a).toMatchObject({ visible: true, actif: true, lanceA: "18 h 05" })
     }
   })
 
   it("cree_le invalide → lanceA null (pas de ligne d'heure)", () => {
-    const a = affichagePanier(etat(demande({ cree_le: "pas une date" })), CYCLE, CYCLE)
+    const a = affichagePanier(etat(demande({ cree_le: "pas une date" })), cycle(), false)
     expect(a).toMatchObject({ actif: true, lanceA: null })
   })
 
-  it("demande active d'un autre cycle → actif quand même (RG-83)", () => {
-    const a = affichagePanier(etat(demande({ ancre: AUTRE_CYCLE })), CYCLE, CYCLE)
-    expect(a).toMatchObject({ visible: true, actif: true, lanceA: "18 h 05", rapport: null, echec: null })
+  it("demande active d'un autre cycle → actif, pas de rapport ni d'échec de l'autre cycle (RG-83)", () => {
+    // `derniere` est celle du cycle demandé (RPC) : ici, aucune. La demande
+    // active, elle, vient d'un autre cycle.
+    const enCours = demande({ id: "d2", ancre: AUTRE_CYCLE, statut: "en_cours" })
+    const a = affichagePanier(etat(null, { active: enCours }), cycle(), false)
+    expect(a).toMatchObject({
+      visible: true,
+      actif: true,
+      lanceA: "18 h 05",
+      rapport: null,
+      echec: null,
+      termineA: null,
+    })
   })
 
-  it("terminee du cycle → rapport, tardif, heure de fin, bouton secondaire de relance (C5)", () => {
+  it("demande active d'un autre cycle + rapport du cycle affiché → actif ET rapport du cycle affiché", () => {
+    const enCours = demande({ id: "d2", ancre: AUTRE_CYCLE, statut: "en_cours" })
+    const terminee = demande({
+      statut: "terminee",
+      rapport: RAPPORT,
+      termine_le: "2026-10-31T17:32:00Z",
+    })
+    const a = affichagePanier(etat(terminee, { active: enCours }), cycle(), true)
+    expect(a).toMatchObject({ actif: true, rapport: RAPPORT, bouton: "completer" })
+  })
+
+  it("derniere d'un autre cycle (réponse périmée) → ignorée", () => {
+    const perimee = demande({
+      statut: "terminee",
+      ancre: AUTRE_CYCLE,
+      rapport: RAPPORT,
+      rapport_tardif: true,
+    })
+    const a = affichagePanier(etat(perimee), cycle(), true)
+    expect(a).toMatchObject({ rapport: null, tardif: false, termineA: null, bouton: "remplir" })
+  })
+
+  it("terminee du cycle → rapport, tardif, heure de fin", () => {
     const a = affichagePanier(
       etat(
         demande({
@@ -138,12 +180,10 @@ describe("affichagePanier", () => {
           termine_le: "2026-10-31T17:32:00Z",
         })
       ),
-      CYCLE,
-      CYCLE
+      cycle(),
+      true
     )
     expect(a).toMatchObject({
-      boutonDisponible: true,
-      relance: true,
       actif: false,
       lanceA: null,
       rapport: RAPPORT,
@@ -153,38 +193,40 @@ describe("affichagePanier", () => {
     })
   })
 
-  it("terminee du cycle sans rapport → rapport null, relance quand même (B3)", () => {
-    const a = affichagePanier(etat(demande({ statut: "terminee", rapport: null })), CYCLE, CYCLE)
-    expect(a).toMatchObject({ rapport: null, tardif: false, relance: true, echec: null })
+  it("terminee + articles cochés → « completer » ; terminee sans coche → « remplir » (tout décocher)", () => {
+    const terminee = etat(demande({ statut: "terminee", rapport: RAPPORT }))
+    expect(affichagePanier(terminee, cycle(), true)).toMatchObject({ bouton: "completer" })
+    expect(affichagePanier(terminee, cycle(), false)).toMatchObject({ bouton: "remplir" })
   })
 
-  it("rapport d'un autre cycle → rapport null, bouton principal", () => {
-    const a = affichagePanier(
-      etat(demande({ statut: "terminee", ancre: AUTRE_CYCLE, rapport: RAPPORT, rapport_tardif: true })),
-      CYCLE,
-      CYCLE
-    )
-    expect(a).toMatchObject({ rapport: null, tardif: false, relance: false, termineA: null })
+  it("terminee sans rapport + coches → « completer », rapport null", () => {
+    const a = affichagePanier(etat(demande({ statut: "terminee", rapport: null })), cycle(), true)
+    expect(a).toMatchObject({ rapport: null, tardif: false, bouton: "completer", echec: null })
   })
 
-  it("echec du cycle → message ; échec d'un autre cycle → null", () => {
+  it("echec ou aucune demande, même avec des coches → « remplir »", () => {
     const echec = demande({ statut: "echec", cause_echec: "non_prise", motif_echec: "Pas pris." })
-    expect(affichagePanier(etat(echec), CYCLE, CYCLE)).toMatchObject({
+    expect(affichagePanier(etat(echec), cycle(), true)).toMatchObject({ bouton: "remplir" })
+    expect(affichagePanier(etat(null), cycle(), true)).toMatchObject({ bouton: "remplir" })
+  })
+
+  it("echec du cycle → message ; echec d'un autre cycle → null", () => {
+    const echec = demande({ statut: "echec", cause_echec: "non_prise", motif_echec: "Pas pris." })
+    expect(affichagePanier(etat(echec), cycle(), false)).toMatchObject({
       actif: false,
-      relance: false,
       echec: "Pas pris.",
       rapport: null,
     })
-    expect(affichagePanier(etat({ ...echec, ancre: AUTRE_CYCLE }), CYCLE, CYCLE)).toMatchObject({
+    expect(affichagePanier(etat({ ...echec, ancre: AUTRE_CYCLE }), cycle(), false)).toMatchObject({
       echec: null,
     })
   })
 
-  it("echec cause executeur → message « problème signalé » câblé sur la cause (B2)", () => {
+  it("echec cause executeur → message « problème signalé » câblé sur la cause", () => {
     const a = affichagePanier(
       etat(demande({ statut: "echec", cause_echec: "executeur", motif_echec: "Session expirée" })),
-      CYCLE,
-      CYCLE
+      cycle(),
+      false
     )
     expect(a).toMatchObject({ echec: "Ton exécuteur a signalé un problème : Session expirée" })
   })
@@ -200,13 +242,13 @@ describe("affichagePanier", () => {
           termine_le: "2026-10-31T17:32:00Z",
         })
       ),
-      CYCLE,
-      CYCLE
+      cycle(),
+      false
     )
     expect(a).toMatchObject({
       echec: "Ton exécuteur a signalé un problème : Session expirée",
       rapport: RAPPORT,
-      relance: false,
+      bouton: "remplir",
       termineA: "18 h 32",
     })
   })
@@ -221,8 +263,8 @@ describe("affichagePanier", () => {
           rapport: { ajoutes: [], a_choisir: [], introuvables: [] },
         })
       ),
-      CYCLE,
-      CYCLE
+      cycle(),
+      false
     )
     expect(a).toMatchObject({ rapport: null })
   })
