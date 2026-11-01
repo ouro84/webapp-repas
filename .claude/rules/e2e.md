@@ -68,6 +68,7 @@ Les helpers filtrent `foyer_id=not.is.null`. Les recettes créées par `recettes
 
 - **Attendre l'état attendu avant de lire** (`await expect(locator).toHaveCount(…)` / `toBeVisible()` avant `innerText`), car le backend distant ajoute de la latence. Un test différent qui tombe à chaque run (~1/44) relève de cette latence, pas d'un bug produit.
 - **`addInitScript` rejoue à chaque chargement complet** : dans les specs qui purgent un état par init script, naviguer par les liens de l'app (navigation SPA) plutôt que par `page.goto()`.
+- **`getByRole("alert")` seul matche aussi le route-announcer de Next** (toujours monté, `role="alert"`) : scoper à `page.locator("main")` ou cibler le texte exact. Une assertion « aucune alerte » (`toHaveCount(0)`) attend d'abord un marqueur de page chargée. Pourquoi : sans scope, `toHaveCount(0)` échoue toujours (1 trouvé) ; sans marqueur, il passe avant que la page ait rendu.
 - **`getByLabel` matche par sous-chaîne** : `getByLabel("Mot de passe", { exact: true })`, car le bouton « Afficher le mot de passe » matcherait aussi.
 - **`browser.newContext()` hérite du `storageState` du projet** (déjà connecté au compte partagé). Pour un contexte vierge : `browser.newContext({ storageState: { cookies: [], origins: [] } })`. Les specs « deux appareils, même compte » (`coches-realtime`, `alerte-planning`) passent `{ storageState: "e2e/.auth/user.json" }` exprès.
 - **Actions de slot repliées** : cliquer d'abord le toggle « Plus d'actions pour le X » avant « Changer le… » / « Sélectionner le… » / « Marquer le… en restes ».

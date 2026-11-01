@@ -73,8 +73,13 @@ test("date invalide : ignorée sans message, vue préférée conservée", async 
   await expect(page).toHaveURL(/\/planning$/);
   await expect(bascule(page, "Semaine")).toHaveAttribute("aria-pressed", "true");
   await expect(bascule(page, "Cycle")).toHaveAttribute("aria-pressed", "false");
-  // Ni alerte ni toast d'erreur (sonner pose ses toasts en `li[data-sonner-toast]`).
-  await expect(page.getByRole("alert")).toHaveCount(0);
+  // Page chargée (titre rendu hors état de chargement) AVANT les assertions de
+  // comptage zéro, qui passeraient sinon dès le premier essai.
+  await expect(page.getByRole("heading", { name: "Mon planning de la semaine" })).toBeVisible();
+  // Ni alerte ni toast d'erreur. `alert` scopé à `main` : le route-announcer de
+  // Next (toujours monté, shadow DOM) porte lui aussi `role="alert"`. Les toasts
+  // sonner sont des `li[data-sonner-toast]`.
+  await expect(page.locator("main").getByRole("alert")).toHaveCount(0);
   await expect(page.locator("[data-sonner-toast]")).toHaveCount(0);
   expect(await vuePlanning(page)).toBe("semaine");
 });
