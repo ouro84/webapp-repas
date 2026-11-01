@@ -1,6 +1,6 @@
 // @vitest-environment node
 // Route /api/mcp (#305, RG-71, RG-78) : authentification OAuth, rate-limit
-// dédié et exposition des trois outils de lecture via mcp-handler v2.
+// dédié et exposition des outils (lecture, écriture, panier) via mcp-handler v2.
 
 import { beforeEach, describe, expect, it, vi } from "vitest"
 

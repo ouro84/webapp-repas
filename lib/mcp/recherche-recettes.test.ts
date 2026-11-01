@@ -11,7 +11,7 @@ vi.mock("@/lib/supabase/client", () => ({
 }))
 
 import { chercherRecettes, idsRecettesDuFoyer } from "@/lib/mcp/recherche-recettes"
-import { creerSupabaseMock, type AppelTable, type ReponseMock } from "@/tests/fixtures/supabase-mock"
+import { creerSupabaseMock, filtre, type AppelTable, type ReponseMock } from "@/tests/fixtures/supabase-mock"
 
 type Brut = {
   id: string
@@ -41,7 +41,7 @@ function mock(recettes: Brut[], idsFoyer: string[] = [], masquees: string[] = []
   return creerSupabaseMock({
     tables: {
       recette: (appel: AppelTable): ReponseMock =>
-        appel.ops.some(([op]) => op === "not")
+        filtre(appel, "not", "foyer_id") !== undefined
           ? { data: idsFoyer.map((id) => ({ id })), error: null }
           : { data: recettes.map(dbRecette), error: null },
       recette_masquee: { data: masquees.map((recette_id) => ({ recette_id })), error: null },
@@ -166,6 +166,13 @@ describe("chercherRecettes (#320, RG-85)", () => {
       expect(new Set(noms).size).toBe(10) // sans remise
     }
     expect(un.recettes.map((x) => x.nom)).not.toEqual(deux.recettes.map((x) => x.nom))
+  })
+
+  it("aleatoire() renvoyant 1 ne sort pas du tableau (tirage borné)", async () => {
+    const client = mock(Array.from({ length: 12 }, (_, i) => ({ id: `r${i}`, nom: `Plat ${String(i).padStart(2, "0")}` })))
+    const r = await chercherRecettes(client, {}, () => 1)
+    expect(r.recettes).toHaveLength(10)
+    expect(r.recettes.every((x) => typeof x.nom === "string")).toBe(true)
   })
 
   it("exactement 10 correspondances : toutes renvoyées", async () => {

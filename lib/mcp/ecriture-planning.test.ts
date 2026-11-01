@@ -445,30 +445,29 @@ describe("changerPersonnes (RG-77, RG-16)", () => {
   })
 })
 
+// Jeudi : salade au midi, gratin (4 personnes) au soir déjà en restes.
+function semaineAvecGratinEnRestes() {
+  plannings["2026-W44"] = {
+    semaine: "2026-W44",
+    updated_at: "t",
+    planning_slot: [slot("jeudi", "salade", "dejeuner"), { ...slot("jeudi", "gratin", "diner", 4), restes: true }],
+  }
+}
+
 describe("marquerRestesRepas (RG-85, RG-22)", () => {
   beforeEach(() => semaineJeudi())
 
   it("marque le seul créneau visé, via sauvegarder_slots", async () => {
     const { client, rpcs } = mock()
     const resultat = await marquerRestesRepas(client, { date: "2026-10-29", creneau: "soir" }, JEUDI)
-    const ecrits = rpcs.find((r) => r.nom === "sauvegarder_slots")?.args as {
-      p_slots: Array<Record<string, unknown>>
-    }
-    expect(ecrits.p_slots).toEqual([
+    expect(slotsEcrits(rpcs)).toEqual([
       { recette_id: "gratin", jour: "jeudi", type_repas: "diner", personnes: 4, restes: true },
     ])
     expect(resultat.repas).toMatchObject({ recette: "gratin", restes: true })
   })
 
   it("restes: false restitue la recette d’origine", async () => {
-    plannings["2026-W44"] = {
-      semaine: "2026-W44",
-      updated_at: "t",
-      planning_slot: [
-        slot("jeudi", "salade", "dejeuner"),
-        { ...slot("jeudi", "gratin", "diner", 4), restes: true },
-      ],
-    }
+    semaineAvecGratinEnRestes()
     const { client, rpcs } = mock()
     const resultat = await marquerRestesRepas(client, { date: "2026-10-29", creneau: "soir", restes: false }, JEUDI)
     expect(slotsEcrits(rpcs)).toEqual([
@@ -478,11 +477,7 @@ describe("marquerRestesRepas (RG-85, RG-22)", () => {
   })
 
   it("idempotent : marquer un repas déjà en restes le laisse en restes", async () => {
-    plannings["2026-W44"] = {
-      semaine: "2026-W44",
-      updated_at: "t",
-      planning_slot: [{ ...slot("jeudi", "gratin", "diner", 4), restes: true }],
-    }
+    semaineAvecGratinEnRestes()
     const { client, rpcs } = mock()
     const resultat = await marquerRestesRepas(client, { date: "2026-10-29", creneau: "soir", restes: true }, JEUDI)
     expect(slotsEcrits(rpcs)).toEqual([

@@ -50,7 +50,8 @@ function tirer<T>(elements: T[], n: number, aleatoire: () => number): T[] {
   const copie = [...elements]
   const m = Math.min(n, copie.length)
   for (let i = 0; i < m; i++) {
-    const j = i + Math.floor(aleatoire() * (copie.length - i))
+    // Borné : un `aleatoire` injecté qui renverrait 1 ne doit pas sortir du tableau.
+    const j = i + Math.min(Math.floor(aleatoire() * (copie.length - i)), copie.length - i - 1)
     ;[copie[i], copie[j]] = [copie[j], copie[i]]
   }
   return copie.slice(0, m)

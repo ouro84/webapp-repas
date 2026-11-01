@@ -279,6 +279,7 @@ export async function changerPersonnes(
   const n = args.personnes
   if (!Number.isInteger(n) || n < PERSONNES_MIN || n > PERSONNES_MAX) throw new ErreurOutil(MESSAGE_PERSONNES)
   const cible = await repasCible(supabase, args, aujourdhui)
+  // repasCible garantit que le slot existe : marquerRestes / modifierPersonnes ne renvoient pas null.
   const planning = modifierPersonnes(cible.planning, cible.jour, cible.type, n)!
   return { repas: await ecrireCreneau(supabase, cible, planning, args) }
 }
@@ -297,6 +298,7 @@ export async function marquerRestesRepas(
   aujourdhui: Date = new Date()
 ): Promise<{ repas: RepasMcp }> {
   const cible = await repasCible(supabase, args, aujourdhui)
+  // repasCible garantit que le slot existe : marquerRestes / modifierPersonnes ne renvoient pas null.
   const planning = marquerRestes(cible.planning, cible.jour, cible.type, args.restes ?? true)!
   return { repas: await ecrireCreneau(supabase, cible, planning, args) }
 }

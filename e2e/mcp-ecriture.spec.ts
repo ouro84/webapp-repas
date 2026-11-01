@@ -165,7 +165,7 @@ test("marquer_restes puis lire_planning : le repas est en restes, puis restitué
   expect(restitue?.recette).toBe(recette);
 });
 
-test("lire_planning avec ancre du cycle suivant, chercher_recettes par attributs (RG-85)", async ({ request }) => {
+test("lire_planning avec ancre du cycle suivant (RG-85)", async ({ request }) => {
   const courant = await lirePlanningMcp(request);
   const ancre = lendemain(courant.periode.au);
 
@@ -173,7 +173,9 @@ test("lire_planning avec ancre du cycle suivant, chercher_recettes par attributs
   // Le cycle suivant commence ce lendemain-là, ou au jour de courses qui le précède.
   expect(suivant.periode.du > courant.periode.du).toBe(true);
   expect(suivant.periode.du <= ancre).toBe(true);
+});
 
+test("chercher_recettes par attributs (RG-85)", async ({ request }) => {
   const recherche = await appelerOutilMcp(request, jeton, "chercher_recettes", { vegetarien: true });
   expect(recherche.resultat?.isError).toBeFalsy();
   const { recettes, total } = recherche.resultat?.structuredContent as unknown as {

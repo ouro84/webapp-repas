@@ -109,7 +109,7 @@ export function enregistrerOutilsLecture(server: McpServer): void {
     {
       title: "Chercher des recettes",
       description:
-        "Cherche des recettes par attributs, sans rien modifier : `temps_preparation`, `vegetarien`, `accompagnement`, `saison`, `texte` (dans le nom). Renvoie 10 recettes au plus, tirées au hasard parmi les correspondances (`total`), avec leurs attributs et leur origine (recette du foyer ou du catalogue). Pour en mettre une au planning, appelle remplacer_repas avec son nom exact.",
+        "Cherche des recettes par attributs, sans rien modifier : `temps_preparation`, `vegetarien`, `accompagnement`, `saison`, `texte` (dans le nom). Renvoie 10 recettes au plus, tirées au hasard parmi les correspondances (`total`), avec leurs attributs et leur origine (recette du foyer ou du catalogue). Pour en mettre une au planning, appelle remplacer_repas avec son nom exact. Entre deux recettes de même nom, remplacer_repas prend celle du foyer. Rappelle l'outil pour d'autres propositions.",
       inputSchema: z.object({
         texte: z.string().optional().describe("Mot ou fragment du nom de la recette (casse et accents ignorés)."),
         temps_preparation: z.enum(["rapide", "normal", "long"]).optional().describe("Temps de préparation exact."),
@@ -192,7 +192,7 @@ export function enregistrerOutilsEcriture(server: McpServer): void {
     {
       title: "Marquer un repas en restes",
       description:
-        "Marque le repas désigné par date et créneau comme restes : on finit ce qu'il y a au frigo, rien à cuisiner, et ses ingrédients sortent de la liste de courses (RG-22). `restes: false` annule et restitue la recette d'origine. remplacer_repas efface aussi le marquage.",
+        "Marque le repas désigné par date et créneau comme restes : on finit ce qu'il y a au frigo, rien à cuisiner, et ses ingrédients sortent de la liste de courses (RG-22). `restes: false` annule et restitue la recette d'origine. remplacer_repas efface aussi le marquage. Rejouer l'appel ne change rien : ce n'est pas une bascule.",
       inputSchema: z.object({
         date: DATE,
         creneau: CRENEAU,
