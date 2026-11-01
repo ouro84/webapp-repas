@@ -336,7 +336,9 @@ function ContenuPlanning() {
   // Lien profond `/planning?cycle=AAAA-MM-JJ` (#320, RG-87) : lu UNE fois, à
   // l'initialisation (les états lazy ignorent le retrait du paramètre par
   // `router.replace` ci-dessous). Une date mal formée donne `lienCycle = null`
-  // (ignorée sans message), mais le paramètre est retiré quand même.
+  // (ignorée sans message), mais le paramètre est retiré quand même. Le lien
+  // n'est donc pas relu par une navigation client depuis /planning : un lien
+  // interne devrait faire une navigation pleine page (cf. courses-cycle.md).
   const router = useRouter();
   const paramsUrl = useSearchParams();
   const [lienCycle] = useState(() => lireLienCycle(paramsUrl.get(PARAM_LIEN_CYCLE)));
@@ -1054,7 +1056,6 @@ function ContenuPlanning() {
     </main>
   );
 }
-
 
 export default function PagePlanning() {
   // Frontière Suspense exigée par useSearchParams (Next 16, cf. app/courses/page.tsx).

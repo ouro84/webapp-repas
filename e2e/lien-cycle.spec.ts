@@ -73,9 +73,12 @@ test("date invalide : ignorée sans message, vue préférée conservée", async 
   await expect(page).toHaveURL(/\/planning$/);
   await expect(bascule(page, "Semaine")).toHaveAttribute("aria-pressed", "true");
   await expect(bascule(page, "Cycle")).toHaveAttribute("aria-pressed", "false");
-  // Page chargée (titre rendu hors état de chargement) AVANT les assertions de
-  // comptage zéro, qui passeraient sinon dès le premier essai.
-  await expect(page.getByRole("heading", { name: "Mon planning de la semaine" })).toBeVisible();
+  // Page hydratée et semaine connue AVANT les assertions de comptage zéro, qui
+  // passeraient sinon dès le premier essai (le titre est déjà rendu par l'état
+  // vide). La navigation entre semaines n'apparaît qu'une fois la page prête.
+  // Une date invalide ne déclenche aucun appel asynchrone (seulement
+  // `router.replace`) : pas de toast tardif possible côté lien.
+  await expect(page.getByRole("button", { name: "Semaine suivante" })).toBeVisible();
   // Ni alerte ni toast d'erreur. `alert` scopé à `main` : le route-announcer de
   // Next (toujours monté, shadow DOM) porte lui aussi `role="alert"`. Les toasts
   // sonner sont des `li[data-sonner-toast]`.

@@ -524,9 +524,9 @@ export function VuePlanningCycle({
       const jour = await chargerJourCoursesFoyer().catch(() => 1);
       return ancreParDefaut(new Date(), jour);
     }
-    void ancreInitiale().then((cible) => {
-      if (actif) void chargerCycle(cible);
-    });
+    void ancreInitiale()
+      .then((cible) => (actif ? chargerCycle(cible) : undefined))
+      .catch((erreur) => console.error("Chargement initial du cycle échoué.", erreur));
     return () => {
       actif = false;
     };
