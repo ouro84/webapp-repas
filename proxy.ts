@@ -5,6 +5,7 @@
 import { createServerClient } from '@supabase/ssr'
 import type { User } from '@supabase/supabase-js'
 import { NextResponse, type NextRequest } from 'next/server'
+import { estLienProfondCycle } from '@/lib/lien-cycle'
 import { cheminDeRetour, estCheminOAuth } from '@/lib/redirection'
 
 // Construit une URL de redirection en PRÉSERVANT le code d'invitation présent
@@ -89,9 +90,10 @@ export async function proxy(request: NextRequest) {
 
   if (isProtectedRoute && !user) {
     const login = urlPreservantCode("/login", request)
-    // Consentement OAuth : on revient sur la demande après connexion (le
-    // formulaire d'auth lit `suivant`, filtré par cheminDeRetour).
-    if (estCheminOAuth(pathname)) {
+    // Consentement OAuth (RG-72) et lien profond /planning?cycle= (#320, RG-87) :
+    // on revient sur la demande après connexion (le formulaire d'auth lit
+    // `suivant`, filtré par cheminDeRetour).
+    if (estCheminOAuth(pathname) || estLienProfondCycle(pathname, request.nextUrl.searchParams)) {
       login.searchParams.set("suivant", pathname + request.nextUrl.search)
     }
     return NextResponse.redirect(login)
