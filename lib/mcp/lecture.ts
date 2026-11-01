@@ -7,7 +7,7 @@
 // retirerCreneauxDesactives, ingredientsAEchelle, formaterQuantite.
 
 import { chargerLongueurCycle, chargerPlanningDistant } from "@/lib/persistance"
-import { chargerJourCoursesFoyer } from "@/lib/foyer"
+import { chargerJourCoursesFoyer, chargerJourCoursesStrict } from "@/lib/foyer"
 import { chargerReglages } from "@/lib/reglages-data"
 import { REGLAGES_DEFAUT } from "@/lib/reglages"
 import { chargerListeCoursesCycle } from "@/lib/liste-courses-cycle"
@@ -164,7 +164,7 @@ export async function ancreDemandee(
 ): Promise<string> {
   const invalide = validerDate(ancre)
   if (invalide) throw new ErreurOutil(invalide)
-  let resolue = ancreCourante(depuisISO(ancre), await chargerJourCoursesFoyer(supabase))
+  let resolue = ancreCourante(depuisISO(ancre), await chargerJourCoursesStrict(supabase))
   // Cycle raccourci (longueur < 7) : la date peut tomber dans le trou avant le
   // prochain jour de courses ; ancreCourante la ramènerait au cycle courant.
   // Une date après le dernier jour du cycle désigne le cycle suivant.

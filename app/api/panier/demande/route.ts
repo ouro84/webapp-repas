@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server"
 import { apiError } from "@/lib/errors"
 import { aujourdhuiParis } from "@/lib/semaines"
 import { ancreParDefaut, estDateISO } from "@/lib/cycles"
+import { chargerJourCoursesStrict } from "@/lib/foyer"
 import { limitePanier } from "@/lib/rate-limit"
 import { creerEtEnvoyerDemande, ERREUR_GENERIQUE, MESSAGE_TROP_DE_DEMANDES } from "@/lib/panier-demande"
 
@@ -66,17 +67,14 @@ export async function POST(request: Request) {
 
   let ancre = corps.ancre
   if (ancre === undefined) {
-    // Lecture directe plutôt que `chargerJourCoursesFoyer`, qui retombe sur
+    // Lecture stricte plutôt que `chargerJourCoursesFoyer`, qui retombe sur
     // lundi en cas d'erreur : une ancre fausse viserait un autre cycle que
     // celui que l'exécuteur lit et coche. La RLS (`id = mon_foyer()`) borne la ligne.
-    const { data: foyer, error: erreurFoyer } = await supabase
-      .from("foyers")
-      .select("jour_courses")
-      .maybeSingle()
-    if (erreurFoyer || !foyer) {
-      return apiError(ROUTE, erreurFoyer ?? "foyer introuvable", ERREUR_GENERIQUE, 500)
+    try {
+      ancre = ancreParDefaut(aujourdhuiParis(), await chargerJourCoursesStrict(supabase))
+    } catch (erreurFoyer) {
+      return apiError(ROUTE, erreurFoyer, ERREUR_GENERIQUE, 500)
     }
-    ancre = ancreParDefaut(aujourdhuiParis(), foyer.jour_courses)
   }
 
   const resultat = await creerEtEnvoyerDemande(supabase, ancre, { contexte: ROUTE })

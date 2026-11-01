@@ -205,6 +205,23 @@ describe("lancerDemandePanierMcp (#320, RG-85)", () => {
     expect((erreur as Error).message).not.toMatch(/HTTP/)
   })
 
+  it("lancer sans ancre : lecture du foyer en erreur ou foyer absent → rejet, aucune RPC ni webhook (pas de repli sur lundi, #320)", async () => {
+    for (const foyers of [
+      { data: null, error: { message: "réseau coupé" } },
+      { data: null, error: null },
+    ]) {
+      const { client, rpcs } = creerSupabaseMock({
+        tables: { foyers },
+        rpc: { creer_demande_panier: { data: ENVOI, error: null } },
+      })
+      const promesse = lancerDemandePanierMcp(client, "user-1", {}, JEUDI)
+      await expect(promesse).rejects.toThrow()
+      await expect(promesse).rejects.not.toBeInstanceOf(ErreurOutil)
+      expect(rpcs).toEqual([])
+      expect(m.envoyerWebhook).not.toHaveBeenCalled()
+    }
+  })
+
   it("lancer : erreur inattendue de la RPC → exception masquée par le serveur (pas ErreurOutil)", async () => {
     const { client } = mock({ creer_demande_panier: { data: null, error: { message: "boom", code: "XX000" } } })
     await expect(lancerDemandePanierMcp(client, "user-1", {}, JEUDI)).rejects.not.toBeInstanceOf(ErreurOutil)

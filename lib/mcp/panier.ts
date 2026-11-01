@@ -10,7 +10,7 @@
 
 import { ErreurOutil } from "@/lib/mcp/erreurs"
 import { ancreDemandee } from "@/lib/mcp/lecture"
-import { chargerJourCoursesFoyer } from "@/lib/foyer"
+import { chargerJourCoursesStrict } from "@/lib/foyer"
 import { ancreParDefaut } from "@/lib/cycles"
 import { MESSAGES_PANIER, type RapportPanier } from "@/lib/panier"
 import { creerEtEnvoyerDemande, MESSAGE_TROP_DE_DEMANDES } from "@/lib/panier-demande"
@@ -99,7 +99,7 @@ export async function lancerDemandePanierMcp(
   const ancre =
     args.ancre !== undefined
       ? await ancreDemandee(supabase, args.ancre, aujourdhui)
-      : ancreParDefaut(aujourdhui, await chargerJourCoursesFoyer(supabase))
+      : ancreParDefaut(aujourdhui, await chargerJourCoursesStrict(supabase))
 
   const resultat = await creerEtEnvoyerDemande(supabase, ancre, { contexte: "mcp lancer_demande_panier" })
   if (resultat.ok) return { demande_id: resultat.demandeId, ancre }

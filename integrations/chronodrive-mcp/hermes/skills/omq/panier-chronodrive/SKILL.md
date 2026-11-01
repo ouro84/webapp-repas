@@ -1,7 +1,7 @@
 ---
 name: panier-chronodrive
 description: Remplit le panier Chronodrive d'Arnaud à partir de la liste de courses On Mange Quoi ? (OMQ), quand le webhook panier-omq signale une demande de panier. Prend la demande dans OMQ, cherche chaque article non coché, ajoute au panier les seuls articles sûrs, les coche dans OMQ, rapporte le résultat à OMQ et l'envoie sur Telegram. Ne passe jamais commande. Mode mesure (« mode mesure » dans l'instruction) - même classement, sans rien ajouter ni écrire.
-version: 1.0.0
+version: 1.1.0
 metadata:
   hermes:
     tags: [omq, chronodrive]

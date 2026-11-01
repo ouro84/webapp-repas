@@ -68,6 +68,22 @@ export async function chargerJourCoursesFoyer(
 }
 
 /**
+ * Jour de courses du foyer, **sans repli** : lève une `Error` si la lecture
+ * échoue ou si le foyer est absent, au lieu de retomber sur lundi comme
+ * `chargerJourCoursesFoyer`. Pour les chemins où une ancre fausse viserait un
+ * autre cycle que celui voulu et aurait un effet réel (demande de panier,
+ * résolution d'une ancre demandée par le MCP, #320). Client injectable.
+ */
+export async function chargerJourCoursesStrict(
+  supabase: ClientSupabase = clientParDefaut()
+): Promise<number> {
+  const { data, error } = await supabase.from("foyers").select("jour_courses").maybeSingle()
+  if (error) throw new Error(`Lecture du jour de courses impossible : ${error.message}`)
+  if (!data) throw new Error("Lecture du jour de courses impossible : foyer introuvable")
+  return data.jour_courses
+}
+
+/**
  * Écrit le jour de courses du foyer. Le grant-colonne posé par la migration
  * (#257, même pattern que `profiles` en #22 PR1) restreint le client à cette
  * seule colonne — `code_invitation`/`expire_le` restent hors de portée. Comme

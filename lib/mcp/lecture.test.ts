@@ -12,7 +12,7 @@ vi.mock("@/lib/supabase/client", () => ({
 
 import * as listeCoursesCycle from "@/lib/liste-courses-cycle"
 import { ErreurOutil } from "@/lib/mcp/erreurs"
-import { CYCLE_HORS_PLAGE, lireListeCourses, lirePlanning, lireRecette } from "@/lib/mcp/lecture"
+import { ancreDemandee, CYCLE_HORS_PLAGE, lireListeCourses, lirePlanning, lireRecette } from "@/lib/mcp/lecture"
 import {
   creerSupabaseMock,
   filtre,
@@ -222,6 +222,19 @@ describe("lirePlanning — ancre (#320, RG-85)", () => {
     const message = "Date invalide : utilise le format AAAA-MM-JJ (ex. 2026-10-29)."
     await expect(lirePlanning(client, { ancre: "2026-02-30" }, JEUDI)).rejects.toThrow(new ErreurOutil(message))
     await expect(lirePlanning(client, { ancre: "29/10/2026" }, JEUDI)).rejects.toThrow(new ErreurOutil(message))
+  })
+
+  it("lecture du foyer en erreur ou foyer absent → rejet, jamais de repli sur lundi (#320)", async () => {
+    for (const foyers of [
+      { data: null, error: { message: "réseau coupé" } },
+      { data: null, error: null },
+    ]) {
+      const { client, appels, rpcs } = mock({ foyers })
+      await expect(ancreDemandee(client, "2026-11-04", JEUDI)).rejects.toThrow()
+      await expect(ancreDemandee(client, "2026-11-04", JEUDI)).rejects.not.toBeInstanceOf(ErreurOutil)
+      expect(appels.map((a) => a.table).filter((t) => t !== "foyers")).toEqual([])
+      expect(rpcs).toEqual([])
+    }
   })
 
   it("ancre hors plage → CYCLE_HORS_PLAGE", async () => {
