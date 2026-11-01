@@ -19,6 +19,7 @@ Protocole de l'API et mesures : `docs/etudes/chronodrive.md`. Pièges : `.claude
 | `src/outils.ts` | Les 5 outils MCP : `chercher_produits`, `ajouter_au_panier`, `lire_panier`, `correspondances_connues`, `memoriser_correspondances`. `ajouter_au_panier` n'accepte, pour chaque ligne, qu'un produit proposé par `chercher_produits` pour le terme de cette ligne (`terme`, ou `terme_recherche` pour une reformulation cherchée dans un appel postérieur à celui de l'article) depuis moins de 30 min. Avec `quantite_omq` (quantité OMQ de l'article), la quantité est plafonnée au besoin calculé, jamais augmentée (`quantiteAjustee`). `chercher_produits` lit le panier courant une fois par appel et marque chaque produit renvoyé de `dansPanier` (indisponibles compris) : la skill reconnaît ainsi un article déjà au panier, quel que soit le produit qu'elle choisirait. |
 | `src/quantites.ts` | Lecture de la quantité OMQ et de la contenance (masse, volume, nombre) et plafond `min(demande, besoin)`. |
 | `src/mcp.ts` | Point d'entrée stdio (`node src/mcp.ts`), en lecture seule sauf si `CHRONODRIVE_LECTURE_SEULE` vaut `'0'`. |
+| `src/vider-panier.ts` | Script manuel qui vide le panier courant (hors run, jamais exposé à un LLM, RG-82) ; `--simulation` pour voir sans rien retirer. |
 | `test/` | Tests `node --test`, Chronodrive simulé (`test/simulation.ts`). |
 | `hermes/skills/omq/panier-chronodrive/SKILL.md` | Skill Hermes : procédure du run et du mode mesure. |
 | `hermes/route-webhook.md` | Route webhook `panier-omq`, secret, Funnel. |
@@ -223,6 +224,27 @@ Notes :
 - L'URL porte le port du Funnel (`10000`).
 - Le secret transite dans le corps de la requête HTTPS vers l'API de management.
 - Rotation : ré-enregistrer avec le nouveau secret. Le secret Vault existant est mis à jour.
+
+## Vider le panier (hors run)
+
+`src/vider-panier.ts` retire du panier Chronodrive courant toutes les lignes, une par une, puis relit le panier : un retrait n'est confirmé que par cette relecture. Il se lance à la main sur le NAS, ou par Claude Code via `ssh nas-hermes`. **Jamais par un LLM** : le MCP n'expose aucun outil de retrait (RG-82), et le script ne passe ni commande, ni créneau, ni paiement.
+
+Toujours commencer par la simulation, qui liste ce qui serait retiré sans rien modifier. Sur le NAS (`$D` est défini plus haut) :
+
+```sh
+$D exec -u 1000 -w /opt/data/chronodrive-mcp hermes node src/vider-panier.ts --simulation
+$D exec -u 1000 -w /opt/data/chronodrive-mcp hermes node src/vider-panier.ts
+```
+
+Codes de sortie :
+
+| Code | Sens |
+|------|------|
+| `0` | Simulation, ou panier vidé et relu vide (un panier déjà vide compte aussi). |
+| `1` | Panier pas entièrement vidé, panier non relu, ou erreur (connexion, configuration). Le bilan dit quoi vérifier dans l'appli Chronodrive. |
+| `2` | Argument inconnu : seul `--simulation` est accepté, et rien n'est lancé. |
+
+Le code se copie comme à l'étape 2. Le script lit le nouveau code à chaque lancement : **pas de redémarrage de la gateway pour lui**. Le MCP en cours garde l'ancien code jusqu'au prochain redémarrage, ce qui est compatible : le vidage n'y touche pas.
 
 ## Spike désinstallé
 
