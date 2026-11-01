@@ -37,6 +37,7 @@ import {
 } from "@/lib/cycles"
 import { semaineISO } from "@/lib/semaines"
 import { ErreurOutil } from "@/lib/mcp/erreurs"
+import { idsRecettesDuFoyer } from "@/lib/mcp/recherche-recettes"
 import { localiserRepas, repasAuxDates, TYPE_REPAS, type Creneau } from "@/lib/mcp/repas"
 import {
   ancreDemandee,
@@ -183,9 +184,7 @@ async function ecrireCreneau(
 // catalogues fusionnés, RG-33) : la recette du foyer l'emporte, c'est celle que
 // l'utilisateur a ajoutée ou personnalisée. RLS : foyer_id non nul = du foyer.
 async function homonymeDuFoyer(supabase: ClientSupabase, homonymes: Recette[]): Promise<Recette> {
-  const { data, error } = await supabase.from("recette").select("id").not("foyer_id", "is", null)
-  if (error) throw new Error(`Lecture des recettes du foyer impossible : ${error.message}`)
-  const idsFoyer = new Set(((data ?? []) as Array<{ id: string }>).map((r) => r.id))
+  const idsFoyer = await idsRecettesDuFoyer(supabase)
   return homonymes.find((r) => idsFoyer.has(r.id)) ?? homonymes[0]
 }
 

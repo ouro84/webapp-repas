@@ -11,6 +11,7 @@ import { z } from "zod"
 import { creerClientParJeton } from "@/lib/supabase/par-jeton"
 import { ErreurOutil } from "@/lib/mcp/erreurs"
 import { lireListeCourses, lirePlanning, lireRecette } from "@/lib/mcp/lecture"
+import { chercherRecettes } from "@/lib/mcp/recherche-recettes"
 import { changerPersonnes, genererCycle, marquerRestesRepas, remplacerRepas } from "@/lib/mcp/ecriture-planning"
 import { ajouterRecette } from "@/lib/mcp/ecriture-recettes"
 import { ajouterArticleCourses, cocherArticle } from "@/lib/mcp/ecriture-courses"
@@ -101,6 +102,26 @@ export function enregistrerOutilsLecture(server: McpServer): void {
       }),
     },
     async (args, ctx) => executer(ctx, (supabase) => lireRecette(supabase, args, aujourdhuiParis()))
+  )
+
+  server.registerTool(
+    "chercher_recettes",
+    {
+      title: "Chercher des recettes",
+      description:
+        "Cherche des recettes par attributs, sans rien modifier : `temps_preparation`, `vegetarien`, `accompagnement`, `saison`, `texte` (dans le nom). Renvoie 10 recettes au plus, tirées au hasard parmi les correspondances (`total`), avec leurs attributs et leur origine (recette du foyer ou du catalogue). Pour en mettre une au planning, appelle remplacer_repas avec son nom exact.",
+      inputSchema: z.object({
+        texte: z.string().optional().describe("Mot ou fragment du nom de la recette (casse et accents ignorés)."),
+        temps_preparation: z.enum(["rapide", "normal", "long"]).optional().describe("Temps de préparation exact."),
+        vegetarien: z.boolean().optional().describe("true : végétariennes seulement ; false : non végétariennes."),
+        accompagnement: z.enum(["feculents", "legumes"]).optional().describe("Accompagnement de la recette."),
+        saison: z
+          .enum(SAISONS as [Saison, ...Saison[]])
+          .optional()
+          .describe("Saison visée : inclut les recettes sans saison déclarée (toute l'année)."),
+      }),
+    },
+    async (args, ctx) => executer(ctx, (supabase) => chercherRecettes(supabase, args))
   )
 }
 

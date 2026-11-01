@@ -10,6 +10,7 @@ const m = vi.hoisted(() => ({
   lireRecette: vi.fn(),
   lirePlanning: vi.fn(),
   lireListeCourses: vi.fn(),
+  chercherRecettes: vi.fn(),
   limiteGeneration: vi.fn(),
   genererCycle: vi.fn(),
   remplacerRepas: vi.fn(),
@@ -39,6 +40,7 @@ vi.mock("@/lib/mcp/ecriture-courses", () => ({
   ajouterArticleCourses: m.ajouterArticleCourses,
   cocherArticle: m.cocherArticle,
 }))
+vi.mock("@/lib/mcp/recherche-recettes", () => ({ chercherRecettes: m.chercherRecettes }))
 vi.mock("@/lib/mcp/panier", () => ({
   prendreDemandePanier: m.prendreDemandePanier,
   rapporterPanier: m.rapporterPanier,
@@ -119,7 +121,7 @@ describe("POST /api/mcp — authentification (RG-71)", () => {
 })
 
 describe("POST /api/mcp — outils (US-51, RG-78)", () => {
-  it("jeton valide : tools/list expose exactement les 3 lectures, les 7 écritures (#306, #320) et les 2 outils de panier (#308)", async () => {
+  it("jeton valide : tools/list expose exactement les 4 lectures, les 7 écritures (#306, #320) et les 2 outils de panier (#308)", async () => {
     const reponse = await appeler("tools/list")
     expect(reponse.status).toBe(200)
     const { result } = await lire(reponse)
@@ -128,6 +130,7 @@ describe("POST /api/mcp — outils (US-51, RG-78)", () => {
       "ajouter_article_courses",
       "ajouter_recette",
       "changer_personnes",
+      "chercher_recettes",
       "cocher_article",
       "generer_cycle",
       "lire_liste_courses",
@@ -307,6 +310,39 @@ describe("POST /api/mcp — outils d'écriture (#306, US-52)", () => {
       { date: "2026-10-31", creneau: "soir" },
       expect.any(Date)
     )
+  })
+})
+
+describe("POST /api/mcp — chercher_recettes (#320, RG-85)", () => {
+  it("transmet les filtres au client par jeton, sans générateur aléatoire imposé", async () => {
+    m.chercherRecettes.mockResolvedValue({ recettes: [], total: 0 })
+    const { result } = await lire(
+      await appeler("tools/call", {
+        name: "chercher_recettes",
+        arguments: { temps_preparation: "rapide", vegetarien: true, saison: "hiver" },
+      })
+    )
+    expect(m.chercherRecettes).toHaveBeenCalledWith(
+      { jeton: "jwt-oauth" },
+      { temps_preparation: "rapide", vegetarien: true, saison: "hiver" }
+    )
+    expect(result?.structuredContent).toEqual({ recettes: [], total: 0 })
+  })
+
+  it("rejette une valeur de filtre inconnue", async () => {
+    const { result } = await lire(
+      await appeler("tools/call", { name: "chercher_recettes", arguments: { saison: "mousson" } })
+    )
+    expect(m.chercherRecettes).not.toHaveBeenCalled()
+    expect(result?.isError).toBe(true)
+  })
+
+  it("sa description annonce le tirage au hasard et renvoie vers remplacer_repas", async () => {
+    const { result } = await lire(await appeler("tools/list"))
+    const outils = result?.tools as Array<{ name: string; description: string }>
+    const description = outils.find((o) => o.name === "chercher_recettes")!.description
+    expect(description).toContain("tirées au hasard")
+    expect(description).toContain("remplacer_repas")
   })
 })
 
