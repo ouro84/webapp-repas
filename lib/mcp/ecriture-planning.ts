@@ -30,7 +30,6 @@ import {
   retirerCreneauxDesactives,
 } from "@/lib/generateur"
 import {
-  ancreCourante,
   ancreParDefaut,
   dateVersSemaineJour,
   joursDuCycle,
@@ -38,9 +37,10 @@ import {
 } from "@/lib/cycles"
 import { semaineISO } from "@/lib/semaines"
 import { ErreurOutil } from "@/lib/mcp/erreurs"
-import { localiserRepas, repasAuxDates, TYPE_REPAS, validerDate, type Creneau } from "@/lib/mcp/repas"
+import { localiserRepas, repasAuxDates, TYPE_REPAS, type Creneau } from "@/lib/mcp/repas"
 import {
-  depuisISO,
+  ancreDemandee,
+  CYCLE_HORS_PLAGE,
   libellePeriode,
   libelleRepas,
   planningsAffiches,
@@ -50,9 +50,6 @@ import {
 } from "@/lib/mcp/lecture"
 import type { ClientSupabase } from "@/lib/supabase/types"
 import type { Jour, JourPlanning, Planning, Recette, ReglagesGeneration } from "@/types"
-
-const CYCLE_HORS_PLAGE =
-  "Ce cycle est hors de la plage autorisée (12 semaines en arrière, 6 en avant). Choisis une date plus proche."
 
 export type CycleGenereMcp = {
   periode: { du: string; au: string; libelle: string }
@@ -76,17 +73,14 @@ export async function genererCycle(
   aujourdhui: Date = new Date(),
   verifierQuota: () => Promise<void> = async () => {}
 ): Promise<CycleGenereMcp> {
-  const jourCourses = await chargerJourCoursesFoyer(supabase)
   let ancre: string
   if (args.ancre !== undefined) {
-    const invalide = validerDate(args.ancre)
-    if (invalide) throw new ErreurOutil(invalide)
-    ancre = ancreCourante(depuisISO(args.ancre), jourCourses)
+    ancre = await ancreDemandee(supabase, args.ancre, aujourdhui)
   } else {
-    ancre = ancreParDefaut(aujourdhui, jourCourses)
-  }
-  if (!semaineDansPlage(semaineISO(aujourdhui), dateVersSemaineJour(ancre).semaine)) {
-    throw new ErreurOutil(CYCLE_HORS_PLAGE)
+    ancre = ancreParDefaut(aujourdhui, await chargerJourCoursesFoyer(supabase))
+    if (!semaineDansPlage(semaineISO(aujourdhui), dateVersSemaineJour(ancre).semaine)) {
+      throw new ErreurOutil(CYCLE_HORS_PLAGE)
+    }
   }
 
   const longueur = await chargerLongueurCycle(ancre, supabase)

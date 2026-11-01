@@ -60,9 +60,13 @@ export function enregistrerOutilsLecture(server: McpServer): void {
     {
       title: "Lire le planning des repas",
       description:
-        "Repas prévus, chacun désigné par date (AAAA-MM-JJ) et créneau (midi | soir), avec la recette et le nombre de personnes. Sans argument : le cycle de courses en cours. Avec `semaine` (AAAA-Www) : cette semaine ISO. Une liste vide signifie qu'aucun repas n'est prévu : propose generer_cycle. Un repas `restes: true` ne se cuisine pas : on finit les restes du plat indiqué.",
+        "Repas prévus, chacun désigné par date (AAAA-MM-JJ) et créneau (midi | soir), avec la recette et le nombre de personnes. Sans argument : le cycle de courses en cours. Avec `semaine` (AAAA-Www) : cette semaine ISO. Une liste vide signifie qu'aucun repas n'est prévu : propose generer_cycle. Un repas `restes: true` ne se cuisine pas : on finit les restes du plat indiqué. Avec `ancre` (AAAA-MM-JJ, une date quelconque du cycle) : ce cycle-là, par exemple le suivant (`ancre` = lendemain de `periode.au`). `semaine` et `ancre` s'excluent. Chaque repas porte `accompagnement` (`feculents`, `legumes` ou null).",
       inputSchema: z.object({
         semaine: z.string().optional().describe("Semaine ISO, ex. 2026-W44. Par défaut : le cycle en cours."),
+        ancre: z
+          .string()
+          .optional()
+          .describe("Une date quelconque (AAAA-MM-JJ) du cycle voulu, ex. le lendemain de periode.au pour le cycle suivant. Exclusif avec semaine."),
       }),
     },
     async (args, ctx) => executer(ctx, (supabase) => lirePlanning(supabase, args, aujourdhuiParis()))
@@ -73,9 +77,13 @@ export function enregistrerOutilsLecture(server: McpServer): void {
     {
       title: "Lire la liste de courses",
       description:
-        "Liste de courses du cycle en cours, groupée par rayon, articles ajoutés à la main compris. Par défaut, seulement ce qu'il reste à acheter (articles non cochés) ; `inclure_coches: true` renvoie aussi les articles cochés. `a_verifier_au_placard` liste les produits à vérifier avant d'acheter.",
+        "Liste de courses du cycle en cours, ou de celui qui contient `ancre` (AAAA-MM-JJ), groupée par rayon, articles ajoutés à la main compris. Par défaut, seulement ce qu'il reste à acheter (articles non cochés) ; `inclure_coches: true` renvoie aussi les articles cochés. `a_verifier_au_placard` liste les produits à vérifier avant d'acheter.",
       inputSchema: z.object({
         inclure_coches: z.boolean().optional().describe("Inclure les articles déjà cochés (défaut : non)."),
+        ancre: z
+          .string()
+          .optional()
+          .describe("Une date quelconque (AAAA-MM-JJ) du cycle voulu. Par défaut : le cycle en cours."),
       }),
     },
     async (args, ctx) => executer(ctx, (supabase) => lireListeCourses(supabase, args, aujourdhuiParis()))

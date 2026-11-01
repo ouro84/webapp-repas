@@ -194,6 +194,33 @@ describe("POST /api/mcp — descriptions des outils", () => {
   })
 })
 
+describe("POST /api/mcp — ancre et accompagnement (#320, RG-85)", () => {
+  it("lire_planning documente ancre et accompagnement", async () => {
+    const { result } = await lire(await appeler("tools/list"))
+    const outils = result?.tools as Array<{ name: string; description: string }>
+    const description = outils.find((o) => o.name === "lire_planning")!.description
+    expect(description).toContain("`ancre`")
+    expect(description).toContain("`accompagnement`")
+  })
+
+  it("lire_planning et lire_liste_courses exposent ancre dans leur inputSchema", async () => {
+    const { result } = await lire(await appeler("tools/list"))
+    const outils = result?.tools as Array<{
+      name: string
+      inputSchema: { properties: Record<string, unknown> }
+    }>
+    for (const nom of ["lire_planning", "lire_liste_courses"]) {
+      expect(Object.keys(outils.find((o) => o.name === nom)!.inputSchema.properties)).toContain("ancre")
+    }
+  })
+
+  it("lire_liste_courses transmet ancre à la lecture", async () => {
+    m.lireListeCourses.mockResolvedValue({ categories: [], a_verifier_au_placard: [], nombre_articles: 0 })
+    await lire(await appeler("tools/call", { name: "lire_liste_courses", arguments: { ancre: "2026-11-05" } }))
+    expect(m.lireListeCourses).toHaveBeenCalledWith({ jeton: "jwt-oauth" }, { ancre: "2026-11-05" }, expect.any(Date))
+  })
+})
+
 describe("POST /api/mcp — rate-limit (RG-78)", () => {
   it("quota dépassé → 429 JSON-RPC et Retry-After", async () => {
     m.limiteMcp.mockResolvedValue({ autorise: false })
