@@ -4,7 +4,7 @@ import { apiError } from "@/lib/errors"
 import { aujourdhuiParis } from "@/lib/semaines"
 import { ancreParDefaut, estDateISO } from "@/lib/cycles"
 import { limitePanier } from "@/lib/rate-limit"
-import { creerEtEnvoyerDemande, ERREUR_GENERIQUE } from "@/lib/panier-demande"
+import { creerEtEnvoyerDemande, ERREUR_GENERIQUE, MESSAGE_TROP_DE_DEMANDES } from "@/lib/panier-demande"
 
 const ROUTE = "POST /api/panier/demande"
 
@@ -56,12 +56,7 @@ export async function POST(request: Request) {
   // Rate-limit par utilisateur (clé = user.id), no-op sans Upstash, fail-open.
   const { autorise } = await limitePanier(user.id)
   if (!autorise) {
-    return apiError(
-      ROUTE,
-      null,
-      "Trop de demandes de panier en peu de temps. Patiente une minute puis réessaie.",
-      429
-    )
+    return apiError(ROUTE, null, MESSAGE_TROP_DE_DEMANDES, 429)
   }
 
   const corps = await lireCorps(request)

@@ -21,7 +21,7 @@ import { estCoche } from "@/lib/coches"
 import { accorderNom } from "@/lib/pluriels"
 import { normaliser } from "@/lib/recherche"
 import { ErreurOutil } from "@/lib/mcp/erreurs"
-import { libellePeriode, versArticle, type ArticleMcp } from "@/lib/mcp/lecture"
+import { ancreDemandee, libellePeriode, versArticle, type ArticleMcp } from "@/lib/mcp/lecture"
 import type { ClientSupabase } from "@/lib/supabase/types"
 import type { CategorieIngredient, Ingredient, Unite } from "@/types"
 
@@ -90,15 +90,18 @@ function trouverArticles(articles: Ingredient[], libelle: string): Ingredient[] 
 /**
  * `cocher_article` (RG-77) : met l'article désigné par son libellé dans l'état
  * `coche` (défaut : coché ; idempotent). Ambiguïté → candidats, rien coché ;
- * `quantite` (texte exact de lire_liste_courses) départage des homonymes.
+ * `quantite` (texte exact de lire_liste_courses) départage des homonymes. Sans
+ * `ancre`, le cycle courant ; avec, le cycle qui la contient (#320, RG-85) :
+ * la liste lue et la coche écrite sont celles de CE cycle, jamais du courant.
  */
 export async function cocherArticle(
   supabase: ClientSupabase,
-  args: { libelle: string; coche?: boolean; quantite?: string },
+  args: { libelle: string; coche?: boolean; quantite?: string; ancre?: string },
   aujourdhui: Date = new Date()
 ): Promise<CochageMcp> {
   const coche = args.coche !== false
-  const { ancre, liste, coches } = await chargerListeCoursesCycle(supabase, { aujourdhui })
+  const cycle = args.ancre !== undefined ? await ancreDemandee(supabase, args.ancre, aujourdhui) : undefined
+  const { ancre, liste, coches } = await chargerListeCoursesCycle(supabase, { aujourdhui, ancre: cycle })
   let articles = [...liste.normal.flatMap((l) => l.ingredients), ...liste.fondDePlacard]
   if (args.quantite !== undefined) {
     const voulue = args.quantite.trim()

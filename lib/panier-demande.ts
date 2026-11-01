@@ -10,6 +10,10 @@ import type { ClientSupabase } from "@/lib/supabase/types"
 
 export const ERREUR_GENERIQUE = "La demande de panier a échoué. Réessaie dans quelques instants."
 
+/** Réponse au dépassement du quota `limitePanier` : route (429) et MCP (règle du jumeau). */
+export const MESSAGE_TROP_DE_DEMANDES =
+  "Trop de demandes de panier en peu de temps. Patiente une minute puis réessaie."
+
 export type ResultatDemande =
   | { ok: true; demandeId: string }
   | {

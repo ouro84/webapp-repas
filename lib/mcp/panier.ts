@@ -1,14 +1,20 @@
-// Outils MCP de l'exécuteur de panier : prendre_demande_panier et
-// rapporter_panier (#308, US-53, RG-81→84).
+// Outils MCP du panier : prendre_demande_panier et rapporter_panier (#308, US-53,
+// RG-81→84), appelés par l'exécuteur du foyer (Hermes), et lancer_demande_panier
+// (#320, RG-85), appelé par l'assistant de l'utilisateur.
 //
-// Appelés par l'exécuteur du foyer (Hermes) sous son propre jeton OAuth : RLS
+// Sous le propre jeton OAuth de l'appelant : RLS
 // mon_foyer() (RG-71), jamais `service_role`. Toute la logique (expiration
 // paresseuse, une seule demande active, rapport tardif) vit dans les RPC
 // `prendre_demande_panier` et `rapporter_panier` ; ce module ne fait que
 // traduire leurs réponses et leurs codes d'erreur pour l'assistant.
 
 import { ErreurOutil } from "@/lib/mcp/erreurs"
+import { ancreDemandee } from "@/lib/mcp/lecture"
+import { chargerJourCoursesFoyer } from "@/lib/foyer"
+import { ancreParDefaut } from "@/lib/cycles"
 import { MESSAGES_PANIER, type RapportPanier } from "@/lib/panier"
+import { creerEtEnvoyerDemande, MESSAGE_TROP_DE_DEMANDES } from "@/lib/panier-demande"
+import { limitePanier } from "@/lib/rate-limit"
 import type { ClientSupabase } from "@/lib/supabase/types"
 
 export type DemandePrise = { id: string; ancre: string }
@@ -68,4 +74,39 @@ export async function rapporterPanier(
   }
   const { statut, rapport_tardif } = data as { statut: "terminee" | "echec"; rapport_tardif: boolean }
   return { statut, rapport_tardif }
+}
+
+const MESSAGE_EXECUTEUR_SANS_REPONSE =
+  "L’exécuteur du foyer n’a pas répondu : la demande est annulée, tu peux réessayer plus tard."
+
+/**
+ * `lancer_demande_panier` (RG-85) : lance le remplissage du panier pour le
+ * cycle courant, ou celui qui contient `ancre`, par la même séquence que le
+ * bouton « Remplir mon panier » (`creerEtEnvoyerDemande`, jumeau de
+ * `POST /api/panier/demande`). Même quota (`limitePanier`). Les refus de la
+ * base (demande active, exécuteur absent, cycle terminé) deviennent des
+ * `ErreurOutil` ; la cause brute d'un échec va au log, jamais à l'assistant.
+ * Renvoie l'ancre de cycle effectivement visée.
+ */
+export async function lancerDemandePanierMcp(
+  supabase: ClientSupabase,
+  userId: string,
+  args: { ancre?: string },
+  aujourdhui: Date
+): Promise<{ demande_id: string; ancre: string }> {
+  if (!(await limitePanier(userId)).autorise) throw new ErreurOutil(MESSAGE_TROP_DE_DEMANDES)
+
+  const ancre =
+    args.ancre !== undefined
+      ? await ancreDemandee(supabase, args.ancre, aujourdhui)
+      : ancreParDefaut(aujourdhui, await chargerJourCoursesFoyer(supabase))
+
+  const resultat = await creerEtEnvoyerDemande(supabase, ancre, { contexte: "mcp lancer_demande_panier" })
+  if (resultat.ok) return { demande_id: resultat.demandeId, ancre }
+
+  if (resultat.statut === 409) throw new ErreurOutil(resultat.message)
+  console.error("[mcp lancer_demande_panier] échec", resultat.cause ?? resultat.message)
+  if (resultat.statut === 502) throw new ErreurOutil(MESSAGE_EXECUTEUR_SANS_REPONSE)
+  // 500 : message générique, masqué derrière l'erreur interne par `executer`.
+  throw new Error(resultat.message)
 }
