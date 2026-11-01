@@ -9,6 +9,7 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ### Corrigé
 
+- Panier Chronodrive : une date en milieu de cycle envoyée directement à l’API est désormais résolue sur le bon cycle, donc un cycle terminé reste refusé et un cycle hors plage donne une erreur (#320).
 - Un planning ne peut plus contenir une recette d'un autre foyer, même par un appel direct à l'API (#306). Une date de début de cycle impossible (comme le 30 février) est désormais refusée.
 - Premier planning de l'onboarding : s'il est généré le samedi entre minuit et 1 h (2 h en été), il porte bien sur la semaine suivante, comme le reste de l'app, et non plus sur la semaine en cours (le serveur calculait la date en heure UTC).
 
@@ -43,6 +44,7 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ### Modifié
 
+- Écran de consentement de l’assistant : il annonce aussi que l’assistant pourra lancer le remplissage de ton panier Chronodrive si ton foyer en a un (#320).
 - Panier Chronodrive : le bouton remplit le panier du cycle affiché (en cours ou à venir), il est grisé sur un cycle terminé, s’intitule « Remplir mon panier » ou « Compléter mon panier », et la carte porte le logo Chronodrive (#320).
 - « Générer mon cycle » est désormais enregistré en une seule opération atomique (#304) : en cas de coupure pendant l'enregistrement, le cycle n'est plus jamais écrit à moitié, et les coches ne sont réinitialisées que si l'enregistrement réussit.
 - Liste de courses — on voit désormais **où part** un article coché : quand tu coches un article, il glisse en fin de catégorie puis **s'éclaire brièvement à sa nouvelle place** ; quand tu termines une catégorie entière, c'est son en-tête qui s'éclaire en bas de liste, marqué d'un **✓**. Et parce qu'une catégorie terminée descend souvent **hors de l'écran** sur mobile, l'en-tête de la page indique en permanence combien de catégories sont déjà descendues — plus de « où est passé mon rayon ? ». Le glissement lui-même a été ralenti et adouci pour qu'on puisse le suivre du regard. Si tu as activé « réduire les animations », le réordonnancement reste immédiat, sans aucune animation.

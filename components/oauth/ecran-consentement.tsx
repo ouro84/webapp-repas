@@ -152,7 +152,10 @@ export function EcranConsentement({ authorizationId }: { authorizationId: string
           </li>
           <li className="flex gap-3">
             <PenLine aria-hidden className="mt-0.5 size-4 shrink-0 text-brand-600" />
-            <span>générer ou modifier ton planning et ta liste de courses, et ajouter des recettes.</span>
+            <span>
+              générer ou modifier ton planning et ta liste de courses, ajouter des recettes, et lancer
+              le remplissage de ton panier Chronodrive si ton foyer en a un.
+            </span>
           </li>
         </ul>
       </div>

@@ -54,6 +54,7 @@ begin
       order by d.cree_le desc
       limit 1),
     -- Demande active du foyer, quel que soit son cycle (RG-83).
+    -- Même forme que 'derniere' : la carte et le MCP lisent les deux pareil.
     'active', (
       select jsonb_build_object(
         'id', d.id,

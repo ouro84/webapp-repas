@@ -106,6 +106,14 @@ export function PanierChronodrive({
     void relire();
   }, [relire]);
 
+  // `lancer()` attend le POST : le cycle affiché a pu changer entre-temps, et sa
+  // fermeture ne voit que le `relire` du rendu où le clic a eu lieu. La ref donne
+  // toujours le dernier (l'ancre du cycle affiché maintenant).
+  const relireRef = useRef(relire);
+  useEffect(() => {
+    relireRef.current = relire;
+  });
+
   // « Cycle terminé » est dérivé à chaque rendu (heure de Paris, comme la RPC) ;
   // le changement de `reprise` provoque le rendu au retour sur l’onglet.
   const termine = cycleTermine(ancreAffichee, longueur, aujourdhuiParis());
@@ -161,7 +169,7 @@ export function PanierChronodrive({
       else if (!injoignable) toast.error(resultat.message);
       // Relire AVANT de réactiver : le bouton passe directement à « Panier en
       // cours… » sans repasser par l'état disponible.
-      const relu = await relire();
+      const relu = await relireRef.current();
       // Sans relecture, la carte ne montrerait pas l'échec : le toast prend le relais.
       if (injoignable && !relu) toast.error(resultat.message);
     } finally {

@@ -174,17 +174,35 @@ describe("PanierChronodrive (#308, #320, US-53)", () => {
     expect(client.chargerEtatPanier).toHaveBeenLastCalledWith(SUIVANT)
   })
 
-  it("réponse d’un ancien cycle arrivée après un changement de cycle → ignorée", async () => {
+  // Les deux tests ci-dessous résolvent la lecture périmée avec une demande
+  // ACTIVE, que `affichagePanier` ne filtre pas par ancre (RG-83) : seule la
+  // garde `numeroLecture` l'empêche de griser le bouton.
+  it("réponse d’un ancien cycle arrivée après un changement de cycle → ignorée (garde numeroLecture)", async () => {
     const lente = differee<EtatPanier>()
     client.chargerEtatPanier.mockReturnValueOnce(lente.promesse)
     const { rerendre } = await rendre()
     await rerendre(SUIVANT)
-    expect(bouton()).toBeTruthy()
+    expect(desactive(bouton())).toBe(false)
     await act(async () => {
-      lente.resoudre(TERMINEE)
+      lente.resoudre(ACTIVE)
     })
-    expect(screen.queryByText("2 ajoutés · 1 à choisir · 1 introuvable")).toBeNull()
-    expect(bouton()).toBeTruthy()
+    expect(desactive(bouton(LIBELLE_BOUTON))).toBe(false)
+    expect(screen.queryByText(LIBELLE_EN_COURS)).toBeNull()
+  })
+
+  it("lecture lente du même cycle arrivée après une lecture plus récente → ignorée (garde numeroLecture)", async () => {
+    const lente = differee<EtatPanier>()
+    client.chargerEtatPanier.mockReturnValueOnce(lente.promesse)
+    await rendre()
+    // Retour sur l'onglet : une seconde lecture, plus récente, répond d'abord.
+    client.chargerEtatPanier.mockResolvedValueOnce(SANS_DEMANDE)
+    await onglet("visible")
+    expect(desactive(bouton())).toBe(false)
+    await act(async () => {
+      lente.resoudre(ACTIVE)
+    })
+    expect(desactive(bouton(LIBELLE_BOUTON))).toBe(false)
+    expect(screen.queryByText(LIBELLE_EN_COURS)).toBeNull()
   })
 
   it("le rapport du cycle quitté ne s’affiche pas sur le cycle affiché pendant la relecture", async () => {
@@ -325,6 +343,20 @@ describe("PanierChronodrive (#308, #320, US-53)", () => {
     reponse.resoudre({ ok: true })
     await vider()
     expect(screen.queryByText("Envoi en cours…")).toBeNull()
+  })
+
+  it("changement de cycle pendant le POST → la relecture finale vise le nouveau cycle (pas de fermeture périmée)", async () => {
+    const { rerendre } = await rendre()
+    const reponse = differee<{ ok: true }>()
+    client.lancerDemandePanier.mockReturnValue(reponse.promesse)
+    fireEvent.click(bouton())
+    expect(client.lancerDemandePanier).toHaveBeenCalledWith(ANCRE)
+    await rerendre(SUIVANT)
+    client.chargerEtatPanier.mockClear()
+    reponse.resoudre({ ok: true })
+    await vider()
+    expect(client.chargerEtatPanier).toHaveBeenCalledTimes(1)
+    expect(client.chargerEtatPanier).toHaveBeenLastCalledWith(SUIVANT)
   })
 
   it("double tap avant le rendu suivant → une seule requête (garde par ref)", async () => {
