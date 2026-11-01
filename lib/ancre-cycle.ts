@@ -6,7 +6,7 @@
 import { chargerLongueurCycle } from "@/lib/persistance"
 import { chargerJourCoursesStrict } from "@/lib/foyer"
 import { semaineDansPlage } from "@/lib/generation"
-import { ancreCourante, cycleDecale, dateVersSemaineJour, estDateISO, joursDuCycle } from "@/lib/cycles"
+import { ancreCourante, cycleDecale, dateVersSemaineJour, depuisISO, estDateISO, joursDuCycle } from "@/lib/cycles"
 import { semaineISO } from "@/lib/semaines"
 import type { ClientSupabase } from "@/lib/supabase/types"
 
@@ -37,9 +37,4 @@ export async function resoudreAncreCycle(
     return { ok: false, motif: "hors_plage" }
   }
   return { ok: true, ancre: resolue }
-}
-
-function depuisISO(date: string): Date {
-  const [a, m, j] = date.split("-").map(Number)
-  return new Date(a, m - 1, j)
 }

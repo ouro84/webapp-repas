@@ -28,7 +28,7 @@ function versISO(d: Date): string {
   return `${a}-${m}-${j}`
 }
 
-function depuisISO(dateISO: string): Date {
+export function depuisISO(dateISO: string): Date {
   const [a, m, j] = dateISO.split("-").map(Number)
   return new Date(a, m - 1, j)
 }
