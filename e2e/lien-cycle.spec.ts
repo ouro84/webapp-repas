@@ -77,7 +77,7 @@ test("date invalide : ignorée sans message, vue préférée conservée", async 
   // passeraient sinon dès le premier essai (le titre est déjà rendu par l'état
   // vide). La navigation entre semaines n'apparaît qu'une fois la page prête.
   // Une date invalide ne déclenche aucun appel asynchrone (seulement
-  // `router.replace`) : pas de toast tardif possible côté lien.
+  // `history.replaceState`) : pas de toast tardif possible côté lien.
   await expect(page.getByRole("button", { name: "Semaine suivante" })).toBeVisible();
   // Ni alerte ni toast d'erreur. `alert` scopé à `main` : le route-announcer de
   // Next (toujours monté, shadow DOM) porte lui aussi `role="alert"`. Les toasts
