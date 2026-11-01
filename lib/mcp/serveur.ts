@@ -11,7 +11,7 @@ import { z } from "zod"
 import { creerClientParJeton } from "@/lib/supabase/par-jeton"
 import { ErreurOutil } from "@/lib/mcp/erreurs"
 import { lireListeCourses, lirePlanning, lireRecette } from "@/lib/mcp/lecture"
-import { changerPersonnes, genererCycle, remplacerRepas } from "@/lib/mcp/ecriture-planning"
+import { changerPersonnes, genererCycle, marquerRestesRepas, remplacerRepas } from "@/lib/mcp/ecriture-planning"
 import { ajouterRecette } from "@/lib/mcp/ecriture-recettes"
 import { ajouterArticleCourses, cocherArticle } from "@/lib/mcp/ecriture-courses"
 import { prendreDemandePanier, rapporterPanier } from "@/lib/mcp/panier"
@@ -164,6 +164,24 @@ export function enregistrerOutilsEcriture(server: McpServer): void {
       }),
     },
     async (args, ctx) => executer(ctx, (supabase) => changerPersonnes(supabase, args, aujourdhuiParis()))
+  )
+
+  server.registerTool(
+    "marquer_restes",
+    {
+      title: "Marquer un repas en restes",
+      description:
+        "Marque le repas désigné par date et créneau comme restes : on finit ce qu'il y a au frigo, rien à cuisiner, et ses ingrédients sortent de la liste de courses (RG-22). `restes: false` annule et restitue la recette d'origine. remplacer_repas efface aussi le marquage.",
+      inputSchema: z.object({
+        date: DATE,
+        creneau: CRENEAU,
+        restes: z
+          .boolean()
+          .optional()
+          .describe("true (défaut) : marquer en restes ; false : annuler. Sans effet si le repas est déjà dans cet état."),
+      }),
+    },
+    async (args, ctx) => executer(ctx, (supabase) => marquerRestesRepas(supabase, args, aujourdhuiParis()))
   )
 
   server.registerTool(

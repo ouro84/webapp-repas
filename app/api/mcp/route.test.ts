@@ -14,6 +14,7 @@ const m = vi.hoisted(() => ({
   genererCycle: vi.fn(),
   remplacerRepas: vi.fn(),
   changerPersonnes: vi.fn(),
+  marquerRestesRepas: vi.fn(),
   ajouterRecette: vi.fn(),
   ajouterArticleCourses: vi.fn(),
   cocherArticle: vi.fn(),
@@ -31,6 +32,7 @@ vi.mock("@/lib/mcp/ecriture-planning", () => ({
   genererCycle: m.genererCycle,
   remplacerRepas: m.remplacerRepas,
   changerPersonnes: m.changerPersonnes,
+  marquerRestesRepas: m.marquerRestesRepas,
 }))
 vi.mock("@/lib/mcp/ecriture-recettes", () => ({ ajouterRecette: m.ajouterRecette }))
 vi.mock("@/lib/mcp/ecriture-courses", () => ({
@@ -117,7 +119,7 @@ describe("POST /api/mcp — authentification (RG-71)", () => {
 })
 
 describe("POST /api/mcp — outils (US-51, RG-78)", () => {
-  it("jeton valide : tools/list expose exactement les 3 lectures, les 6 écritures (#306) et les 2 outils de panier (#308)", async () => {
+  it("jeton valide : tools/list expose exactement les 3 lectures, les 7 écritures (#306, #320) et les 2 outils de panier (#308)", async () => {
     const reponse = await appeler("tools/list")
     expect(reponse.status).toBe(200)
     const { result } = await lire(reponse)
@@ -131,6 +133,7 @@ describe("POST /api/mcp — outils (US-51, RG-78)", () => {
       "lire_liste_courses",
       "lire_planning",
       "lire_recette",
+      "marquer_restes",
       "prendre_demande_panier",
       "rapporter_panier",
       "remplacer_repas",
@@ -292,6 +295,16 @@ describe("POST /api/mcp — outils d'écriture (#306, US-52)", () => {
     expect(m.changerPersonnes).toHaveBeenCalledWith(
       { jeton: "jwt-oauth" },
       { date: "2026-10-31", creneau: "soir", personnes: 6 },
+      expect.any(Date)
+    )
+  })
+
+  it("marquer_restes transmet date et créneau, `restes` absent reste absent (défaut dans l’outil)", async () => {
+    m.marquerRestesRepas.mockResolvedValue({ repas: {} })
+    await appeler("tools/call", { name: "marquer_restes", arguments: { date: "2026-10-31", creneau: "soir" } })
+    expect(m.marquerRestesRepas).toHaveBeenCalledWith(
+      { jeton: "jwt-oauth" },
+      { date: "2026-10-31", creneau: "soir" },
       expect.any(Date)
     )
   })

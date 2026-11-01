@@ -17,7 +17,7 @@ import { chargerRecettes } from "@/lib/recettes"
 import { chargerPreferences } from "@/lib/preferences"
 import { normaliser, rechercherRecettes } from "@/lib/recherche"
 import { modifierPersonnes, personnesDuSlot, PERSONNES_MAX, PERSONNES_MIN } from "@/lib/personnes"
-import { estRestes } from "@/lib/restes"
+import { estRestes, marquerRestes } from "@/lib/restes"
 import { chargerJourCoursesFoyer } from "@/lib/foyer"
 import { ErreurGeneration, genererPourUtilisateur, semaineDansPlage } from "@/lib/generation"
 import {
@@ -281,5 +281,23 @@ export async function changerPersonnes(
   if (!Number.isInteger(n) || n < PERSONNES_MIN || n > PERSONNES_MAX) throw new ErreurOutil(MESSAGE_PERSONNES)
   const cible = await repasCible(supabase, args, aujourdhui)
   const planning = modifierPersonnes(cible.planning, cible.jour, cible.type, n)!
+  return { repas: await ecrireCreneau(supabase, cible, planning, args) }
+}
+
+/**
+ * `marquer_restes` (RG-85, RG-22) : marque le repas comme restes (rien à
+ * cuisiner, ingrédients exclus de la liste de courses) ou, avec
+ * `restes: false`, le démarque. La recette sous-jacente est conservée : la
+ * démarquer la restitue. IDEMPOTENT (pas une bascule) : un assistant qui rejoue
+ * l'appel ne doit pas annuler son propre marquage. Seul le créneau visé est
+ * écrit (`ecrireCreneau`).
+ */
+export async function marquerRestesRepas(
+  supabase: ClientSupabase,
+  args: { date: string; creneau: Creneau; restes?: boolean },
+  aujourdhui: Date = new Date()
+): Promise<{ repas: RepasMcp }> {
+  const cible = await repasCible(supabase, args, aujourdhui)
+  const planning = marquerRestes(cible.planning, cible.jour, cible.type, args.restes ?? true)!
   return { repas: await ecrireCreneau(supabase, cible, planning, args) }
 }
