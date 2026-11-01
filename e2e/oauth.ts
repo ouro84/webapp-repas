@@ -227,9 +227,39 @@ export function consentement(page: Page, nomClient: string) {
   return page.getByRole("region", { name: new RegExp(`^Autoriser ${nomClient}\\s\\?$`) });
 }
 
+// Contextes déjà rabattus (une route par contexte suffit).
+const contextesRabattus = new WeakSet<object>();
+
+// Staging a `site_url = http://localhost:3000` : `/oauth/authorize` redirige le
+// navigateur vers le consentement sur ce port. Si l'e2e tourne sur un autre port
+// (`E2E_PORT`, serveur tiers déjà sur 3000), on récupère la réponse d'authorize
+// sans suivre la redirection et on réécrit son `Location` vers le port e2e
+// (Playwright n'intercepte pas la cible d'une redirection). Les cookies de
+// session sur `localhost` ne dépendent pas du port.
+export async function rabattreSiteUrl(page: Page): Promise<void> {
+  const port = process.env.E2E_PORT;
+  if (!port || port === "3000" || contextesRabattus.has(page.context())) return;
+  contextesRabattus.add(page.context());
+  // `next dev` compile la page à la demande ; tant qu'elle n'est pas prête, un
+  // premier accès peut répondre 404 : on attend qu'elle soit servie.
+  await expect
+    .poll(async () => (await page.request.get(`http://localhost:${port}/oauth/consent`)).status(), { timeout: 30_000 })
+    .not.toBe(404);
+  await page.context().route(/\/auth\/v1\/oauth\/authorize\?/, async (route) => {
+    const reponse = await route.fetch({ maxRedirects: 0 });
+    const location = reponse.headers()["location"];
+    if (!location) return route.fulfill({ response: reponse });
+    await route.fulfill({
+      response: reponse,
+      headers: { ...reponse.headers(), location: location.replace("//localhost:3000", `//localhost:${port}`) },
+    });
+  });
+}
+
 // Déroule une autorisation complète pour `email` (déjà connecté sur `page`) et
 // renvoie le client et les jetons obtenus.
 export async function autoriser(page: Page, request: APIRequestContext, nomClient: string) {
+  await rabattreSiteUrl(page);
   const { clientId } = await enregistrerClientOAuth(request, nomClient);
   const { verifier, challenge } = genererPkce();
   const redirection = capturerRedirection(page);

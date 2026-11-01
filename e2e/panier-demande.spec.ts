@@ -451,6 +451,45 @@ test("captures de la carte (hors CI, CAPTURES_PANIER)", async ({ request }) => {
       await expect(carte.getByText("1 ajouté · 1 à choisir · 1 introuvable")).toBeVisible();
     });
 
+    // Cycle terminé (#320) : bouton grisé, motif sous le bouton.
+    const { ancre: actuelle } = await demandeTerminee(request);
+    courant = actuelle;
+    const passe = cycleDecale(actuelle, -2);
+    expect(
+      (await appelerOutilMcp(request, jetonA, "generer_cycle", { ancre: passe, remplacer: true })).resultat?.isError
+    ).toBeFalsy();
+    await capturer(dossier, "cycle-termine", async (carte) => {
+      await pageA.goto(`/courses?ancre=${passe}`);
+      await expect(carte.getByText(MESSAGES_PANIER.OMQ04)).toBeVisible();
+      await expect(carte.getByRole("button", { name: "Remplir mon panier" })).toHaveAttribute("aria-disabled", "true");
+    });
+
+    // « Compléter » (#320) : compte-rendu sur ce cycle et un article coché. Un
+    // clic pendant la View Transition de la liste se perd : on clique jusqu'à
+    // observer le nombre de coches attendu (cf. e2e.md).
+    await revenirAuCycle(pageA, actuelle);
+    const cochees = pageA.getByTestId("categories-courses").getByRole("checkbox", { checked: true });
+    const cocherJusqua = async (coches: number) => {
+      await expect(async () => {
+        if ((await cochees.count()) !== coches) {
+          const cible = coches > 0
+            ? pageA.getByTestId("categories-courses").getByRole("checkbox", { checked: false })
+            : cochees;
+          await cible.first().click({ timeout: 2_000 });
+        }
+        await expect(cochees).toHaveCount(coches, { timeout: 2_000 });
+      }).toPass({ timeout: 20_000 });
+    };
+    try {
+      await cocherJusqua(1);
+      await capturer(dossier, "completer", async (carte) => {
+        await expect(carte.getByRole("button", { name: "Compléter mon panier" })).toBeEnabled();
+      });
+    } finally {
+      await revenirAuCycle(pageA, actuelle);
+      await cocherJusqua(0);
+    }
+
     const suivant = await demandeDuCycleSuivant(request, await demandeTerminee(request));
     await capturer(dossier, "cycle-suivant", async (carte) => {
       // Relais `?ancre=` plutôt que « Cycle suivant » : un clic pendant
@@ -880,13 +919,35 @@ test("UI : « Compléter mon panier » seulement avec un article coché, « Remp
   const liste = pageA.getByTestId("categories-courses");
   const cochees = liste.getByRole("checkbox", { checked: true });
   try {
-    await liste.getByRole("checkbox", { checked: false }).first().click();
-    await expect(carte.getByRole("button", { name: "Compléter mon panier" })).toBeEnabled();
-    expect(await carte.getByRole("button", { name: "Remplir mon panier" }).count()).toBe(0);
+    // L'écho de la synchro des coches peut faire revenir brièvement l'ancien
+    // libellé juste après le clic : on attend l'état stable (coches et libellé
+    // lus ensemble), pas un instantané.
+    const libelleStable = async (attendu: "Remplir mon panier" | "Compléter mon panier", coches: number) => {
+      const autre = attendu === "Remplir mon panier" ? "Compléter mon panier" : "Remplir mon panier";
+      await expect(async () => {
+        await expect(cochees).toHaveCount(coches, { timeout: 1_000 });
+        await expect(carte.getByRole("button", { name: attendu })).toBeEnabled({ timeout: 1_000 });
+        await expect(carte.getByRole("button", { name: autre })).toHaveCount(0, { timeout: 1_000 });
+      }).toPass({ timeout: 15_000 });
+    };
 
-    await cochees.first().click();
-    await expect(carte.getByRole("button", { name: "Remplir mon panier" })).toBeEnabled();
-    expect(await carte.getByRole("button", { name: "Compléter mon panier" }).count()).toBe(0);
+    // Un clic pendant la View Transition de la liste tombe sur son calque et se
+    // perd : on clique jusqu'à observer le nombre de coches attendu.
+    const cocherJusqua = async (coches: number) => {
+      await expect(async () => {
+        if ((await cochees.count()) !== coches) {
+          const cible = coches > 0 ? liste.getByRole("checkbox", { checked: false }) : cochees;
+          await cible.first().click({ timeout: 2_000 });
+        }
+        await expect(cochees).toHaveCount(coches, { timeout: 2_000 });
+      }).toPass({ timeout: 20_000 });
+    };
+
+    await cocherJusqua(1);
+    await libelleStable("Compléter mon panier", 1);
+
+    await cocherJusqua(0);
+    await libelleStable("Remplir mon panier", 0);
   } finally {
     // Échec en cours de route : ne rien laisser de coché. On décoche puis on
     // attend l'état observé (plus aucune case cochée), sans boucle à l'aveugle.

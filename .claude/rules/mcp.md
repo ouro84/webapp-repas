@@ -15,7 +15,7 @@ paths:
 ## Autorisation
 
 - **Le serveur d'autorisation est Supabase OAuth Server** (bêta), DCR activé, chemin `/oauth/consent`. OMQ ne code que l'écran de consentement. Configuration par `node scripts/configurer-oauth-supabase.mjs <ref> [--appliquer] [--site-url=<url>]` (écriture prod : `--prod-valide`, sur validation humaine). Pourquoi : les clés `oauth_server_*` sont exposées par l'API de management, pas besoin du dashboard.
-- **URL de consentement = `site_url` + chemin.** Staging garde `site_url = http://localhost:3000` : c'est ce qui fait atterrir l'e2e local et la CI sur leur `next` local. Toute bascule temporaire (tests sur preview) se remet à `http://localhost:3000` avant de pousser ou de relancer la CI. Pourquoi : sinon `oauth-mcp.spec` échoue.
+- **URL de consentement = `site_url` + chemin.** Staging garde `site_url = http://localhost:3000` : c'est ce qui fait atterrir l'e2e local et la CI sur leur `next` local. Toute bascule temporaire (tests sur preview) se remet à `http://localhost:3000` avant de pousser ou de relancer la CI ; pour un e2e local sur un autre port, utiliser `E2E_PORT` (cf. `e2e.md`), jamais `site_url`. Pourquoi : sinon `oauth-mcp.spec` échoue.
 - **`verifierJetonMcp` exige `role = authenticated`, `sub` et `client_id`.** Pourquoi : un JWT de session web n'a pas de `client_id` ; sans ce contrôle, n'importe quelle session ouvrirait le MCP (RG-71). Vérifié en e2e.
 - Vérification par `auth.getClaims(jeton)` (JWKS ES256 mis en cache par supabase-js), sans dépendance JWT. Elle ne lève jamais : un refus donne 401 + `WWW-Authenticate`, pas une 500.
 - **Révocation** (`revokeGrant`) : refresh tokens invalidés tout de suite, jeton d'accès valable jusqu'à `jwt_exp` (3600 s). RG-72 l'admet ; ne pas promettre une coupure immédiate.

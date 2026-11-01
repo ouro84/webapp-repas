@@ -21,6 +21,7 @@ import {
   genererPkce,
   inscrire,
   jetonMotDePasse,
+  rabattreSiteUrl,
   rafraichir,
   recettesCatalogue,
   remplirLogin,
@@ -55,7 +56,7 @@ test.beforeAll(async ({ request }) => {
   await inscrire(request, EMAIL_C, false);
 });
 
-test("sans jeton : 401 + WWW-Authenticate, metadata RFC 9728 cohérente", async ({ request }) => {
+test("sans jeton : 401 + WWW-Authenticate, metadata RFC 9728 cohérente", async ({ request, baseURL }) => {
   const appel = await appelerOutilMcp(request, null, "lire_planning");
   expect(appel.statut).toBe(401);
   expect(appel.reponse.headers()["www-authenticate"]).toContain(
@@ -63,7 +64,8 @@ test("sans jeton : 401 + WWW-Authenticate, metadata RFC 9728 cohérente", async 
   );
 
   const metadata = await (await request.get("/.well-known/oauth-protected-resource/api/mcp")).json();
-  expect(metadata.resource).toBe("http://localhost:3000/api/mcp");
+  // `resource` = origine du serveur (port 3000 en CI, `E2E_PORT` en local).
+  expect(metadata.resource).toBe(`${baseURL}/api/mcp`);
   expect(metadata.authorization_servers).toEqual([`${lireEnvLocal("NEXT_PUBLIC_SUPABASE_URL")}/auth/v1`]);
 });
 
@@ -79,6 +81,7 @@ test("non connecté : authorize → /login?suivant=… → connexion → retour 
   const { page, erreurs } = await pageVierge(browser);
   const nom = `E2E OMQ login ${RUN}`;
   const { clientId } = await enregistrerClientOAuth(request, nom);
+  await rabattreSiteUrl(page);
   await page.goto(urlAutorisation(clientId, genererPkce().challenge, "etat-login"));
   await page.waitForURL(/\/login\?.*suivant=/);
   await remplirLogin(page, EMAIL_A);
@@ -107,6 +110,7 @@ test("refus : Refuser → redirection avec error=access_denied", async ({ browse
   const nom = `E2E OMQ refus ${RUN}`;
   const { clientId } = await enregistrerClientOAuth(request, nom);
   const redirection = capturerRedirection(page);
+  await rabattreSiteUrl(page);
   await page.goto(urlAutorisation(clientId, genererPkce().challenge, "etat-refus"));
   await consentement(page, nom).getByRole("button", { name: "Refuser" }).click();
   const retour = await redirection;
@@ -147,6 +151,7 @@ test("onboarding non terminé : le consentement redirige vers /bienvenue", async
   await remplirLogin(page, EMAIL_C);
   await page.waitForURL("**/bienvenue");
   const { clientId } = await enregistrerClientOAuth(request, `E2E OMQ onboarding ${RUN}`);
+  await rabattreSiteUrl(page);
   await page.goto(urlAutorisation(clientId, genererPkce().challenge, "etat-c"));
   await page.waitForURL("**/bienvenue");
 });
