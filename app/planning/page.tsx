@@ -17,7 +17,8 @@
 // grille 7 colonnes à partir de md (≥ 768px).
 
 import Link from "next/link";
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
 import {
   Carrot,
@@ -46,6 +47,7 @@ import {
 } from "@/lib/stockage";
 import { modifierPersonnes, personnesDuSlot } from "@/lib/personnes";
 import { estRestes, marquerRestes } from "@/lib/restes";
+import { lireLienCycle, PARAM_LIEN_CYCLE } from "@/lib/lien-cycle";
 import { naviguerVers, useSemaineAffichee, useSync } from "@/lib/sync";
 import { chargerRecettesGerees, type RecetteGeree } from "@/lib/recettes";
 import { chargerPreferences } from "@/lib/preferences";
@@ -270,7 +272,7 @@ function annulerDerniereAction(): boolean {
 // Composant page
 // ============================================================================
 
-export default function PagePlanning() {
+function ContenuPlanning() {
   // Planning persisté (système externe) : null = état vide (RG-09).
   const brut = useSyncExternalStore(
     storePlanning.sAbonner,
@@ -331,8 +333,34 @@ export default function PagePlanning() {
     storeVuePlanning.lire,
     storeVuePlanning.lireServeur
   );
-  const vue: "semaine" | "cycle" = vueBrute === "cycle" ? "cycle" : "semaine";
+  // Lien profond `/planning?cycle=AAAA-MM-JJ` (#320, RG-87) : lu UNE fois, à
+  // l'initialisation (les états lazy ignorent le retrait du paramètre
+  // ci-dessous). Une date mal formée donne `lienCycle = null`
+  // (ignorée sans message), mais le paramètre est retiré quand même. Le lien
+  // n'est donc pas relu par une navigation client depuis /planning : un lien
+  // interne devrait faire une navigation pleine page (cf. courses-cycle.md).
+  const paramsUrl = useSearchParams();
+  const [lienCycle] = useState(() => lireLienCycle(paramsUrl.get(PARAM_LIEN_CYCLE)));
+  const [paramLienPresent] = useState(() => paramsUrl.has(PARAM_LIEN_CYCLE));
+  // Vrai tant que le lien force la vue Cycle ; un clic sur la bascule le coupe.
+  const [lienActif, setLienActif] = useState(lienCycle !== null);
+  // Retrait par `history.replaceState`, comme le relais `?ancre=` de /courses :
+  // `router.replace("/planning")` est sans effet en build de prod, où la page
+  // statique initialise le routeur sur `/planning` (déjà l'URL « courante »).
+  // Next synchronise `useSearchParams` avec l'History API native.
+  useEffect(() => {
+    if (!paramLienPresent) return;
+    const url = new URL(window.location.href);
+    url.searchParams.delete(PARAM_LIEN_CYCLE);
+    window.history.replaceState(window.history.state, "", url);
+  }, [paramLienPresent]);
+  // Le lien force la vue Cycle pour la visite SANS écrire storeVuePlanning : la
+  // vue préférée enregistrée reste celle de tous les jours.
+  const vue: "semaine" | "cycle" = lienActif || vueBrute === "cycle" ? "cycle" : "semaine";
   function setVue(v: "semaine" | "cycle"): void {
+    // Choix explicite : écrit la préférence (comportement existant) et
+    // désactive le lien pour le reste de la visite.
+    setLienActif(false);
     storeVuePlanning.ecrire(v);
   }
 
@@ -730,7 +758,10 @@ export default function PagePlanning() {
             <BasculeVue vue={vue} onChange={setVue} />
           </div>
         </header>
-        <VuePlanningCycle idsModifiables={idsModifiables} />
+        <VuePlanningCycle
+          idsModifiables={idsModifiables}
+          lienCycle={lienActif ? lienCycle ?? undefined : undefined}
+        />
       </main>
     );
   }
@@ -1032,3 +1063,19 @@ export default function PagePlanning() {
   );
 }
 
+export default function PagePlanning() {
+  // Frontière Suspense exigée par useSearchParams (Next 16, cf. app/courses/page.tsx).
+  return (
+    <Suspense
+      fallback={
+        <main id="contenu" className="flex flex-1 flex-col items-center justify-center p-8">
+          <p role="status" className="animate-pulse text-lg text-brand-700/85">
+            Chargement…
+          </p>
+        </main>
+      }
+    >
+      <ContenuPlanning />
+    </Suspense>
+  );
+}

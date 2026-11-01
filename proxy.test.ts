@@ -78,3 +78,29 @@ describe("proxy — consentement OAuth (RG-72)", () => {
     expect(reponse.headers.get("location")).toBe("https://omq.test/login")
   })
 })
+
+describe("proxy — lien profond du cycle (#320, RG-87)", () => {
+  it("/planning?cycle=… non connecté → /login?suivant=/planning?cycle=…", async () => {
+    const reponse = await proxy(new NextRequest("https://omq.test/planning?cycle=2026-11-09"))
+    const cible = new URL(reponse.headers.get("location")!)
+    expect(cible.pathname).toBe("/login")
+    expect(cible.searchParams.get("suivant")).toBe("/planning?cycle=2026-11-09")
+  })
+
+  it("/planningx?cycle=… non connecté → /login sans suivant", async () => {
+    const reponse = await proxy(new NextRequest("https://omq.test/planningx?cycle=2026-11-09"))
+    expect(reponse.headers.get("location")).toBe("https://omq.test/login")
+  })
+
+  it("connecté et onboardé sur /login?suivant=/planning?cycle=… → retour au lien profond", async () => {
+    etat.user = { id: "u1" }
+    const suivant = encodeURIComponent("/planning?cycle=2026-11-09")
+    const reponse = await proxy(new NextRequest(`https://omq.test/login?suivant=${suivant}`))
+    expect(reponse.headers.get("location")).toBe("https://omq.test/planning?cycle=2026-11-09")
+  })
+
+  it("/courses non connecté → /login sans suivant", async () => {
+    const reponse = await proxy(new NextRequest("https://omq.test/courses"))
+    expect(reponse.headers.get("location")).toBe("https://omq.test/login")
+  })
+})

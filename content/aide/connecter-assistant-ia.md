@@ -1,6 +1,6 @@
 _Ton assistant IA (Claude, Cursor, OpenCode, Hermes…) peut lire et modifier ton planning et ta liste de courses, sans ouvrir l’app._
 
-Tu lui demandes « on mange quoi ce soir ? », « génère mon cycle », « remplace le repas de jeudi midi par une blanquette » ou « envoie-moi la liste de courses », et il le fait dans OMQ, en ton nom et seulement pour ton foyer.
+Tu lui demandes « on mange quoi ce soir ? », « génère mon cycle », « remplace le repas de jeudi midi par une blanquette », « envoie-moi la liste de courses » ou « remplis mon panier Chronodrive », et il le fait dans OMQ, en ton nom et seulement pour ton foyer.
 
 ## L’adresse à donner à ton assistant
 
@@ -78,13 +78,19 @@ Hermes attend ce copier-coller jusqu’à 5 minutes.
 
 - Lire le planning du cycle en cours (ou d’une semaine), la liste de courses (ce qu’il reste à acheter) et la recette d’un repas, ingrédients à l’échelle.
 
+- Chercher des recettes par temps de préparation, végé, accompagnement, saison ou nom. Il en propose 10 au hasard parmi celles qui correspondent : redemande pour en voir d’autres.
+
 - Générer ton cycle, comme le bouton « Générer mon cycle ». Si le cycle contient déjà des repas, il te demande confirmation avant de l’écraser.
 
 - Remplacer un repas, au hasard ou par une recette que tu nommes. Si plusieurs recettes correspondent, il te propose la liste au lieu de choisir à ta place.
 
+- Marquer un repas en restes (rien à cuisiner, ses ingrédients sortent de la liste de courses), ou annuler le marquage.
+
 - Changer le nombre de personnes d’un repas (de 1 à 12).
 
 - Ajouter une recette à celles de ton foyer, ajouter un article à la liste de courses, cocher ou décocher un article.
+
+- Remplir ton panier Chronodrive pour le cycle en cours ou à venir, comme le bouton « Remplir mon panier » de la page Courses (si ton foyer a un exécuteur de panier). Il te demande ton accord avant de lancer. Rien n’est commandé : tu relis et valides le panier dans l’appli Chronodrive.
 
 Ses modifications sont des modifications ordinaires : les autres membres du foyer les voient en direct, avec l’alerte habituelle s’ils sont en magasin.
 
