@@ -46,7 +46,7 @@ Interdits dans les deux modes :
 
 Appelle `prendre_demande_panier`, avant toute autre action.
 
-- Réponse `demande: null` : il n'y a rien à faire (webhook rejoué, demande expirée ou déjà prise). Arrête-toi aussitôt, sans appeler d'autre outil. Ta réponse finale est exactement `[SILENT]`, pour qu'aucun message ne parte sur Telegram.
+- Réponse `demande: null` : il n'y a rien à faire (webhook rejoué, demande expirée ou déjà prise). Arrête-toi aussitôt, sans appeler d'autre outil. Ta réponse finale est exactement `[SILENT]` (limite connue : Hermes refuse ce marqueur sur un tour webhook et envoie quand même un court message sur Telegram ; sans conséquence).
 - Sinon, garde `demande.id` (pour `rapporter_panier`) et `demande.ancre` (AAAA-MM-JJ, début du cycle à traiter).
 - Erreur de l'outil : aucune demande n'est prise, il n'y a rien à rapporter. Arrête-toi et réponds « Panier Chronodrive : impossible de prendre la demande OMQ. », suivi du message d'erreur.
 

@@ -69,6 +69,7 @@ Protocole et mesures : `docs/etudes/chronodrive.md`. PoC du spike #307 : `integr
 
 - Tout tourne dans le conteneur `hermes`, identifiants dans `/opt/data/chronodrive.env`, jamais dans Git ni dans `config.yaml`. Pourquoi : réseau host = IP résidentielle (Cloudflare), et les identifiants ne quittent pas l'exécuteur (ADR-12, CGV art. 3).
 - **Funnel sur le port 10000**, chemin unique. Pourquoi : 443 et 8443 sont pris sur le NAS, Funnel y coupe le TLS.
+- **Un run webhook sans demande (`demande: null`) envoie quand même un court message Telegram** : Hermes refuse le marqueur `[SILENT]` sur un tour webhook (« silence marker rejected on a user turn »). Ne pas documenter `[SILENT]` comme non livré. Pourquoi : constaté à la recette ; le message est sans conséquence, mais un « aucun message » attendu ferait chercher une panne.
 - **Poser `host: 127.0.0.1`** dans `platforms.webhook.extra` de Hermes. Pourquoi : par défaut il écoute sur toutes les interfaces et expose le webhook au réseau local ; Funnel y accède en local.
 - **OMQ signe le webhook au format Standard Webhooks** (`webhook-id`, `webhook-timestamp`, `webhook-signature: v1,<base64>`). Pourquoi : c'est le format que vérifie Hermes, avec anti-rejeu et dédoublonnage par id.
 - **Secret `whsec_<base64>` : la clé HMAC est le base64 décodé**, pas la chaîne entière (un secret sans préfixe est pris brut). Le secret actuel, celui du spike, est **brut** et conservé tel quel. Pourquoi : la signature calculée côté OMQ (Postgres) doit décoder exactement comme Hermes, sinon tout webhook est rejeté en 401.
