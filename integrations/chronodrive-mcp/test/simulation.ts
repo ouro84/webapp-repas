@@ -19,7 +19,7 @@ export function clientSimule(routes: Record<string, Route>, idClient = "987654")
   const compteurs = new Map<string, number>();
   const client = {
     async appeler<T>(
-      methode: "GET" | "POST",
+      methode: "GET" | "POST" | "DELETE",
       chemin: string,
       options: { service: string; params?: Record<string, string>; corps?: unknown; entetes?: Record<string, string> },
     ): Promise<T> {
@@ -60,10 +60,13 @@ export function voir(client: object, ids: string[], options: OptionsHorloge = {}
 
 // Panier simulé : `quantites` est l'état serveur, chaque ligne lue porte la fiche `fiche(id)`.
 // `ajout` décide, par produit, du returnType renvoyé et de l'incrément réellement appliqué.
+// `retrait` règle le DELETE d'une ligne (#320) : "retire" (défaut) la supprime de l'état, "sans_effet"
+// répond 204 sans rien changer, une `Error` est levée telle quelle. Corps vide (null), comme l'API réelle.
 export function panierSimule(
   id: string,
   quantites: Record<string, number>,
   ajout: (productId: string, quantite: number) => { returnType: string; increment: number } = (_p, q) => ({ returnType: "SUCCESS", increment: q }),
+  retrait: (productId: string) => "retire" | "sans_effet" | Error = () => "retire",
 ) {
   const etat = new Map(Object.entries(quantites));
   const routes: Record<string, Route> = {
@@ -79,5 +82,13 @@ export function panierSimule(
       return { content: [{ returnType, productId: ligne.productId }] };
     },
   };
+  for (const productId of Object.keys(quantites)) {
+    routes[`DELETE /v1/carts/${id}/items/${productId}`] = () => {
+      const effet = retrait(productId);
+      if (effet instanceof Error) throw effet;
+      if (effet === "retire") etat.delete(productId);
+      return null;
+    };
+  }
   return { etat, routes };
 }
