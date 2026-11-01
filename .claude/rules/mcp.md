@@ -55,4 +55,4 @@ paths:
 ## Tests
 
 - Unitaires : `lib/mcp/*.test.ts` (client mocké, client navigateur qui lève), `app/api/mcp/route.test.ts` (vrai mcp-handler, auth, lectures et écritures mockées).
-- e2e : `e2e/oauth-mcp.spec.ts` et `e2e/mcp-ecriture.spec.ts` (comptes jetables ; helpers `inscrire`, `connecter`, `autoriser` dans `e2e/oauth.ts`). Les boutons du consentement se ciblent dans la région « Autoriser <client> ? », car le bandeau cookies porte aussi un bouton « Refuser ».
+- e2e : `e2e/oauth-mcp.spec.ts` et `e2e/mcp-ecriture.spec.ts` (comptes jetables ; helpers `inscrire`, `connecter`, `autoriser` dans `e2e/oauth.ts`). `mcp-ecriture.spec` couvre aussi `marquer_restes` (marquage puis restitution), `lire_planning` avec `ancre` (cycle suivant) et `chercher_recettes` (#320). Les boutons du consentement se ciblent dans la région « Autoriser <client> ? », car le bandeau cookies porte aussi un bouton « Refuser ».

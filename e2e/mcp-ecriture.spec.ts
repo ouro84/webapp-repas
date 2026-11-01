@@ -132,3 +132,56 @@ test("changer_personnes : 13 refusé, 6 accepté (RG-77, RG-16)", async ({ reque
   expect(ok.resultat?.isError).toBeFalsy();
   expect((ok.resultat?.structuredContent?.repas as Repas).personnes).toBe(6);
 });
+
+type Lecture = { periode: { du: string; au: string }; repas: (Repas & { restes: boolean })[] };
+
+async function lirePlanningMcp(
+  request: Parameters<typeof appelerOutilMcp>[0],
+  args?: Record<string, unknown>
+): Promise<Lecture> {
+  const lecture = await appelerOutilMcp(request, jeton, "lire_planning", args);
+  expect(lecture.resultat?.isError).toBeFalsy();
+  return lecture.resultat?.structuredContent as unknown as Lecture;
+}
+
+function lendemain(date: string): string {
+  const d = new Date(`${date}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
+test("marquer_restes puis lire_planning : le repas est en restes, puis restitué (RG-22, RG-85)", async ({ request }) => {
+  const { date, creneau, recette } = await premierRepas(request);
+  const trouver = (l: Lecture) => l.repas.find((r) => r.date === date && r.creneau === creneau);
+
+  const marque = await appelerOutilMcp(request, jeton, "marquer_restes", { date, creneau });
+  expect(marque.resultat?.isError).toBeFalsy();
+  expect(trouver(await lirePlanningMcp(request))?.restes).toBe(true);
+
+  const annule = await appelerOutilMcp(request, jeton, "marquer_restes", { date, creneau, restes: false });
+  expect(annule.resultat?.isError).toBeFalsy();
+  const restitue = trouver(await lirePlanningMcp(request));
+  expect(restitue?.restes).toBe(false);
+  expect(restitue?.recette).toBe(recette);
+});
+
+test("lire_planning avec ancre du cycle suivant, chercher_recettes par attributs (RG-85)", async ({ request }) => {
+  const courant = await lirePlanningMcp(request);
+  const ancre = lendemain(courant.periode.au);
+
+  const suivant = await lirePlanningMcp(request, { ancre });
+  // Le cycle suivant commence ce lendemain-là, ou au jour de courses qui le précède.
+  expect(suivant.periode.du > courant.periode.du).toBe(true);
+  expect(suivant.periode.du <= ancre).toBe(true);
+
+  const recherche = await appelerOutilMcp(request, jeton, "chercher_recettes", { vegetarien: true });
+  expect(recherche.resultat?.isError).toBeFalsy();
+  const { recettes, total } = recherche.resultat?.structuredContent as unknown as {
+    recettes: { nom: string; vegetarien: boolean }[];
+    total: number;
+  };
+  expect(recettes.length).toBeGreaterThan(0);
+  expect(recettes.length).toBeLessThanOrEqual(10);
+  expect(recettes.every((r) => r.vegetarien === true)).toBe(true);
+  expect(total).toBeGreaterThanOrEqual(recettes.length);
+});
