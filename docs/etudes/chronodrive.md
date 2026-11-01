@@ -83,7 +83,7 @@ Notes :
 
 ## Résultats du spike
 
-**Verdict : GO** (2026-10-30), sous les réserves listées plus bas. Critères fixés dans #307 avant toute mesure ; le critère 1 a été amendé après mesure (voir le tableau) ; PoC dans `integrations/chronodrive-mcp/spike/`, mesures détaillées dans `spike/mesures/mapping-2026-10-30.md`.
+**Verdict : GO** (2026-10-30), sous les réserves listées plus bas. Critères fixés dans #307 avant toute mesure ; le critère 1 a été amendé après mesure (voir le tableau) ; le PoC jetable a été retiré du dépôt à la fin de #308 ; les mesures du mapping figurent ci-dessous.
 
 Conditions du spike : compte Chronodrive **neuf**, créé pour le PoC (aucune commande, un seul favori), drive Toulouse Lalande (`1034`), liste OMQ réelle de 36 articles non cochés (cycle du 30/10 au 05/11), Hermes v0.21.5 dans Docker sur le NAS, cascade LLM `glm-5.3-flash`. Avec un compte neuf, la recherche fait tout le travail : la voie « favoris d'abord » n'a **pas** été mesurée (voir les réserves).
 
@@ -100,7 +100,7 @@ Conditions du spike : compte Chronodrive **neuf**, créé pour le PoC (aucune co
 - **Un ajout peut réussir sans renvoyer `SUCCESS`.** Le run complet a reçu `returnType: NO_STOCK_AFTER` pour un produit, le PoC l'a traité en échec et l'a rapporté « à choisir »… alors que le produit était bien dans le panier. Un ajout non rapporté n'est pas coché dans OMQ, et une relance le doublerait. L'exécuteur doit donc **confirmer chaque ajout en comparant la quantité du produit dans le panier avant et après l'ajout**, plutôt que se fier au code de retour. Une simple présence ne suffit pas : le produit peut déjà être dans le panier.
 - **Articles « à vérifier au placard » non cochés = à acheter.** L'utilisateur les coche lui-même avant de lancer la demande s'il les a déjà. Le run 1 et le run complet les avaient écartés d'eux-mêmes ; aucun prompt du spike ne le dit encore : celui de #308 doit le dire explicitement.
 - **Pas de refresh token** : les identifiants restent nécessaires chez l'exécuteur (déjà le cas, ADR-12). Le jeton dure 2 h ; l'exécuteur se reconnecte quand il a expiré.
-- **Signature du webhook** : Hermes vérifie le format **Standard Webhooks** (en-têtes `webhook-id`, `webhook-timestamp`, `webhook-signature: v1,<base64 HMAC-SHA256 de « id.timestamp.corps »>`), avec fenêtre anti-rejeu et dédoublonnage par `webhook-id`. C'est le format qu'OMQ doit émettre (`spike/envoyer-webhook.mjs`).
+- **Signature du webhook** : Hermes vérifie le format **Standard Webhooks** (en-têtes `webhook-id`, `webhook-timestamp`, `webhook-signature: v1,<base64 HMAC-SHA256 de « id.timestamp.corps »>`), avec fenêtre anti-rejeu et dédoublonnage par `webhook-id`. C'est le format qu'OMQ doit émettre (`integrations/chronodrive-mcp/outils/envoyer-webhook.mjs`).
 - **Funnel sur le port 10000** : sur le NAS, 443 et 8443 sont déjà pris (« address already in use », TLS coupé). L'URL de l'exécuteur porte donc un port ; aucun impact côté OMQ, qui stocke une URL. Premier lancement : certificat Let's Encrypt émis en 35 s environ.
 - **Clés de service** : `GET v1/customers/me/carts` attend la clé `CUSTOMERS`, pas `CARTS`. Un 401 « API Key is not valid » signale une mauvaise clé, pas un jeton expiré.
 - **Identifiant du drive** : absent de l'URL du site ; il se lit dans `GET v1/sites?size=500` (clé `SITES`, sans authentification), champ `id` du drive cherché par `name` (Toulouse Lalande → `1034`, trouvé ainsi pendant le spike).
@@ -142,3 +142,23 @@ Sources lues le 2026-10-30 comme documentation (aucun code exécuté) : `y-vex/c
 **Fiche produit** (même forme en recherche, favoris et panier) : `id`, `labels.productLabel`, `labels.brandLabel`, `labels.unitQuantityLabel` (contenance), `prices.defaultPrice`, `prices.pricePerUnitMeasure`, `flags.isOrganic`, et pour la disponibilité `stock`, `remainingStock`, `isEligible`, `maxCartQuantity`.
 
 **Inconnues.** Aucun des trois projets n'utilise le `refresh_token` : ils refont le login complet sur un 401. Le spike a confirmé qu'aucun refresh token n'est délivré. Aucun ne mentionne de captcha ni de 2FA ; `ncleton` passe par Camoufox par précaution, sans échec documenté en HTTP simple.
+
+## Réserves levées (#308)
+
+Sources : `integrations/chronodrive-mcp/mesures/mapping-2026-10-31.md`, `run-2026-10-31.md` et `run-2026-11-01.md`.
+
+- **Mapping remesuré sur le vrai compte** (favoris), sur une autre liste que celle du spike : 35 « haute » sur 40 (87,5 %), tous les produits validés par Arnaud, une erreur de quantité (farine comptée deux fois), corrigée depuis.
+- **Trois runs réels** :
+  - run 1 : 11 min 14 s, un produit faux (lait ajouté en lasagnes, identifiant recopié depuis un autre terme), corrigé par la garde par terme ;
+  - run 2 : 9 min 52 s, une erreur de quantité (haricots verts 2 × 1 kg), corrigée par le plafond calculé par le code ;
+  - run 3 : 9 min 30 s, **0 produit faux** (verdict d'Arnaud).
+- **Durée** : environ 10 min, compatible avec l'expiration de 30 min.
+- **Disponibilité** : `isEligible`, le stock et `maxCartQuantity` sont contrôlés, et un produit devenu indisponible à l'ajout est refusé (champignon au run 3).
+- **Reconnexion** : faux jeton, puis expiration passée, se reconnectent tous deux de façon transparente.
+- **Panier courant** relu à chaque run.
+- **Relance après interruption** : aucun doublon, après le correctif `dansPanier` jugé à l'article. Premier test : un doublon sur le lait, parce que le Lactel était passé hors stock. Nouveau test après correctif : 0 ajouté, 3 « déjà au panier », panier inchangé.
+- **Limites connues** :
+  - Hermes refuse `[SILENT]` sur un tour webhook : un court message Telegram part donc quand même quand il n'y a pas de demande ;
+  - les outils d'écriture OMQ restent visibles du run webhook (risque accepté) ;
+  - Chronodrive reste joignable depuis Telegram et WhatsApp (reporté à #320) ;
+  - « Relancer pour les articles restants » reste affiché après « Tout décocher ».

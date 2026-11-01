@@ -27,6 +27,8 @@ on:
       # .gitignore : sans effet sur le build ni les tests.
       - ".claude/**"
       - ".gitignore"
+      # Exécuteurs hors de l'app (NAS), testés localement par node --test (#308).
+      - "integrations/**"
   push:
     branches: [main]
   # Déclenchement manuel : filet de sécurité quand GitHub « zappe » le run push

@@ -14,6 +14,8 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     // Dossier local d'understand-anything, hors de Git.
     ".understand-anything/**",
+    // Exécuteurs hors de l'app (NAS), avec leur propre outillage (#308).
+    "integrations/**",
   ]),
 ]);
 
