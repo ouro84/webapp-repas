@@ -48,7 +48,8 @@ describe("creerEtEnvoyerDemande", () => {
     expect(resultat).toEqual({ ok: true, demandeId: "d1" })
     expect(rpc).toHaveBeenCalledTimes(1)
     expect(rpc).toHaveBeenCalledWith("creer_demande_panier", { p_ancre: "2026-11-05" })
-    expect(panier.envoyerWebhook).toHaveBeenCalledWith(ENVOI, {})
+    // Sans `fetch` injecté, l'option n'est pas passée du tout (égalité stricte).
+    expect(panier.envoyerWebhook.mock.calls[0][1]).toStrictEqual({})
   })
 
   it("transmet le fetch injecté au webhook", async () => {

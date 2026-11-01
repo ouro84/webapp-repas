@@ -60,7 +60,7 @@ export async function creerEtEnvoyerDemande(
   }
 
   const envoi = data as EnvoiWebhook
-  const resultat = await envoyerWebhook(envoi, { fetch: options.fetch })
+  const resultat = await envoyerWebhook(envoi, options.fetch ? { fetch: options.fetch } : {})
   if (!resultat.ok) {
     // Ferme la demande (échec / injoignable) pour qu'une nouvelle soit possible
     // aussitôt. Si cette fermeture échoue, l'expiration paresseuse à 5 min

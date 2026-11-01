@@ -7,7 +7,8 @@
 // retirerCreneauxDesactives, ingredientsAEchelle, formaterQuantite.
 
 import { chargerLongueurCycle, chargerPlanningDistant } from "@/lib/persistance"
-import { chargerJourCoursesFoyer, chargerJourCoursesStrict } from "@/lib/foyer"
+import { chargerJourCoursesFoyer } from "@/lib/foyer"
+import { resoudreAncreCycle } from "@/lib/ancre-cycle"
 import { chargerReglages } from "@/lib/reglages-data"
 import { REGLAGES_DEFAUT } from "@/lib/reglages"
 import { chargerListeCoursesCycle } from "@/lib/liste-courses-cycle"
@@ -15,10 +16,7 @@ import { retirerArticlesCoches } from "@/lib/liste-courses"
 import { retirerCreneauxDesactives } from "@/lib/generateur"
 import { semaineDansPlage } from "@/lib/generation"
 import {
-  ancreCourante,
   ancreParDefaut,
-  cycleDecale,
-  dateVersSemaineJour,
   joursDuCycle,
   libelleCycle,
   semainesDuCycle,
@@ -153,9 +151,9 @@ export const CYCLE_HORS_PLAGE =
 
 /**
  * Ancre du cycle qui contient `ancre` (une date quelconque, AAAA-MM-JJ) : même
- * résolution pour `generer_cycle` et les lectures (#320, RG-85). Une date entre
- * deux cycles (cycle raccourci) désigne le cycle suivant. Lève
- * `ErreurOutil` si la date est invalide ou le cycle hors plage −12/+6 semaines.
+ * résolution pour `generer_cycle` et les lectures (#320, RG-85), via
+ * `resoudreAncreCycle` (`lib/ancre-cycle.ts`, partagé avec la route du panier).
+ * Lève `ErreurOutil` si la date est invalide ou le cycle hors plage −12/+6 semaines.
  */
 export async function ancreDemandee(
   supabase: ClientSupabase,
@@ -164,16 +162,9 @@ export async function ancreDemandee(
 ): Promise<string> {
   const invalide = validerDate(ancre)
   if (invalide) throw new ErreurOutil(invalide)
-  let resolue = ancreCourante(depuisISO(ancre), await chargerJourCoursesStrict(supabase))
-  // Cycle raccourci (longueur < 7) : la date peut tomber dans le trou avant le
-  // prochain jour de courses ; ancreCourante la ramènerait au cycle courant.
-  // Une date après le dernier jour du cycle désigne le cycle suivant.
-  const jours = joursDuCycle(resolue, await chargerLongueurCycle(resolue, supabase))
-  if (ancre > jours[jours.length - 1]) resolue = cycleDecale(resolue, 1)
-  if (!semaineDansPlage(semaineISO(aujourdhui), dateVersSemaineJour(resolue).semaine)) {
-    throw new ErreurOutil(CYCLE_HORS_PLAGE)
-  }
-  return resolue
+  const resolution = await resoudreAncreCycle(supabase, ancre, aujourdhui)
+  if (!resolution.ok) throw new ErreurOutil(CYCLE_HORS_PLAGE)
+  return resolution.ancre
 }
 
 /**

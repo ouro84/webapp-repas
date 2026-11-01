@@ -4,6 +4,7 @@ import { apiError } from "@/lib/errors"
 import { aujourdhuiParis } from "@/lib/semaines"
 import { ancreParDefaut, estDateISO } from "@/lib/cycles"
 import { chargerJourCoursesStrict } from "@/lib/foyer"
+import { resoudreAncreCycle } from "@/lib/ancre-cycle"
 import { limitePanier } from "@/lib/rate-limit"
 import { creerEtEnvoyerDemande, ERREUR_GENERIQUE, MESSAGE_TROP_DE_DEMANDES } from "@/lib/panier-demande"
 
@@ -16,9 +17,10 @@ export const maxDuration = 30
 // rate-limit, lecture de l'ancre, puis `creerEtEnvoyerDemande` (RPC
 // `creer_demande_panier` sous RLS foyer, webhook à l'exécuteur, fermeture si
 // injoignable : séquence partagée avec le MCP). Client à cookies, jamais de
-// `service_role`. Corps JSON optionnel `{ ancre?: string }` : le cycle visé par
-// la demande ; absent ou vide, c'est le cycle courant (`ancreParDefaut`). Une
-// ancre mal formée donne 400 sans aucune RPC. Une demande déjà active, un
+// `service_role`. Corps JSON optionnel `{ ancre?: string }` : une date du cycle
+// visé, résolue en ancre de cycle (`resoudreAncreCycle`, comme le MCP) ; absent
+// ou vide, c'est le cycle courant (`ancreParDefaut`). Une date mal formée ou
+// d'un cycle hors plage donne 400 sans aucune RPC. Une demande déjà active, un
 // exécuteur absent ou un cycle terminé donnent 409 (OMQ02 / OMQ01 / OMQ04),
 // garantis par la base (index unique partiel, garde de date), pas par la route.
 
@@ -65,16 +67,26 @@ export async function POST(request: Request) {
     return apiError(ROUTE, "ancre invalide", "Cycle invalide.", 400)
   }
 
-  let ancre = corps.ancre
-  if (ancre === undefined) {
-    // Lecture stricte plutôt que `chargerJourCoursesFoyer`, qui retombe sur
-    // lundi en cas d'erreur : une ancre fausse viserait un autre cycle que
-    // celui que l'exécuteur lit et coche. La RLS (`id = mon_foyer()`) borne la ligne.
-    try {
-      ancre = ancreParDefaut(aujourdhuiParis(), await chargerJourCoursesStrict(supabase))
-    } catch (erreurFoyer) {
-      return apiError(ROUTE, erreurFoyer, ERREUR_GENERIQUE, 500)
+  let ancre: string
+  try {
+    const aujourdhui = aujourdhuiParis()
+    if (corps.ancre === undefined) {
+      // Lecture stricte plutôt que `chargerJourCoursesFoyer`, qui retombe sur
+      // lundi en cas d'erreur : une ancre fausse viserait un autre cycle que
+      // celui que l'exécuteur lit et coche. La RLS (`id = mon_foyer()`) borne la ligne.
+      ancre = ancreParDefaut(aujourdhui, await chargerJourCoursesStrict(supabase))
+    } else {
+      // `p_ancre` doit être une ANCRE de cycle : une date en milieu de cycle
+      // contournerait la garde OMQ04 (la base lit les jours depuis l'ancre) et
+      // la plage. Même résolution que les outils MCP (`lib/ancre-cycle.ts`).
+      const resolution = await resoudreAncreCycle(supabase, corps.ancre, aujourdhui)
+      if (!resolution.ok) {
+        return apiError(ROUTE, `ancre ${resolution.motif}`, "Cycle invalide.", 400)
+      }
+      ancre = resolution.ancre
     }
+  } catch (erreurFoyer) {
+    return apiError(ROUTE, erreurFoyer, ERREUR_GENERIQUE, 500)
   }
 
   const resultat = await creerEtEnvoyerDemande(supabase, ancre, { contexte: ROUTE })
