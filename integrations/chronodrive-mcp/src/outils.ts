@@ -16,7 +16,7 @@ import {
   type OptionsHorloge,
   type Produit,
 } from "./catalogue.ts";
-import { erreurDeConnexion, ErreurChronodrive } from "./client.ts";
+import { ErreurChronodrive, erreurDeConnexion } from "./client.ts";
 import { normaliserTerme, type Correspondance, type Correspondances, type EntreeCorrespondance } from "./correspondances.ts";
 import { ajouterLignes, lirePanierCourant, PRODUIT_INCONNU, type ResultatAjout } from "./panier.ts";
 

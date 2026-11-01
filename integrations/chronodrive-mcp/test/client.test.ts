@@ -609,3 +609,21 @@ test("DELETE : 401 de jeton → un seul login puis un seul rejeu", async () => {
   assert.equal(sim.compter("DELETE", R_LIGNE_PANIER), 2);
   assert.equal(sim.appels.at(-1)?.entetes.get("authorization"), `Bearer ${JETON}-2`);
 });
+
+test("DELETE : second 401 remonte en erreur, sans boucle de login", async () => {
+  // Session déjà ouverte ; le DELETE prend un 401, une reconnexion, puis un second 401 : l'erreur remonte.
+  const sim = fetchSimule([
+    ...routesLogin(),
+    { methode: "GET", motif: R_PANIERS, reponse: () => json({ content: [] }) },
+    { methode: "DELETE", motif: R_LIGNE_PANIER, reponse: () => json({ message: "Unauthorized" }, 401) },
+  ]);
+  const client = new ClientChronodrive(nouvelleConfig(), { fetch: sim.fetch, maintenant: horloge().maintenant });
+  await client.appeler("GET", "/v1/customers/me/carts", { service: "CUSTOMERS" });
+  await assert.rejects(client.appeler("DELETE", "/v1/carts/C1/items/42", { service: "CARTS" }), (e: unknown) => {
+    assert.ok(e instanceof ErreurChronodrive);
+    assert.equal(e.statut, 401);
+    return true;
+  });
+  assert.equal(sim.compter("POST", R_LOGIN), 2);
+  assert.equal(sim.compter("DELETE", R_LIGNE_PANIER), 2);
+});

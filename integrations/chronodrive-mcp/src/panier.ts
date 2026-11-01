@@ -257,8 +257,11 @@ export type LigneRetrait = {
 };
 
 // `vide` : vrai seulement si la relecture finale a été faite et ne montre aucune ligne.
-// `relu` : faux si cette relecture a échoué deux fois.
-export type BilanVidage = { panierId: string; simulation: boolean; lignes: LigneRetrait[]; vide: boolean; relu: boolean };
+// `relu` : faux si cette relecture a échoué deux fois, ou si elle montre un autre panier (commande
+// validée pendant le script).
+// `restantes` : nombre de lignes du panier relu après le vidage (ajout concurrent compris), `null`
+// sans relecture ; en simulation, la taille du panier lu.
+export type BilanVidage = { panierId: string; simulation: boolean; lignes: LigneRetrait[]; vide: boolean; relu: boolean; restantes: number | null };
 
 // Vidage du panier courant (#320, RG-82), réservé au hors run : un DELETE par ligne, en série
 // (ordre déterministe, pas de rafale vers Chronodrive). Un retrait n'est confirmé que par la
@@ -276,7 +279,7 @@ export async function viderPanier(client: Appelant, options: { simulation: boole
     erreur: null,
   }));
   if (options.simulation || lignes.length === 0) {
-    return { panierId: avant.id, simulation: options.simulation, lignes, vide: lignes.length === 0, relu: true };
+    return { panierId: avant.id, simulation: options.simulation, lignes, vide: lignes.length === 0, relu: true, restantes: avant.lignes.size };
   }
 
   const tentees: LigneRetrait[] = [];
@@ -287,15 +290,19 @@ export async function viderPanier(client: Appelant, options: { simulation: boole
       await client.appeler<unknown>("DELETE", `${base}/${encodeURIComponent(ligne.productId)}`, { service: "CARTS" });
     } catch (e) {
       ligne.erreur = messageErreur(e);
+      // Arrêt du lot, pas de la relecture finale : elle garde ses deux essais (le total reste borné)
+      // et, si elle aboutit, le bilan reste vrai.
       if (erreurDeConnexion(e)) break;
     }
   }
 
   const { panier: apres } = await relirePanier(client);
-  if (!apres) {
+  // Un autre identifiant (commande validée pendant le script) : ce n'est plus le panier vidé, rien
+  // ne se confirme.
+  if (!apres || apres.id !== avant.id) {
     for (const ligne of tentees) ligne.statut = "non_verifie";
-    return { panierId: avant.id, simulation: false, lignes, vide: false, relu: false };
+    return { panierId: avant.id, simulation: false, lignes, vide: false, relu: false, restantes: null };
   }
   for (const ligne of tentees) ligne.statut = apres.lignes.has(ligne.productId) ? "toujours_au_panier" : "retiree";
-  return { panierId: avant.id, simulation: false, lignes, vide: apres.lignes.size === 0, relu: true };
+  return { panierId: avant.id, simulation: false, lignes, vide: apres.lignes.size === 0, relu: true, restantes: apres.lignes.size };
 }

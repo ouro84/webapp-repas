@@ -1,10 +1,12 @@
-// Vide le panier Chronodrive courant (#320, RG-82). À lancer À LA MAIN sur le NAS, ou par Claude Code
-// via ssh : hors run, jamais exposé à un LLM, jamais de commande, de créneau ni de paiement.
+// Vide le panier Chronodrive courant (#320, RG-82). Jamais depuis un run Hermes ni par un outil MCP :
+// le run webhook ne voit aucun outil de retrait (RG-82). À lancer À LA MAIN sur le NAS ; Claude Code
+// ne le lance que sur ordre explicite d'Arnaud. Jamais de commande, de créneau ni de paiement.
 //
 // Usage : node src/vider-panier.ts [--simulation]
 //   --simulation  liste ce qui serait retiré, sans rien modifier.
 // Code de sortie : 0 panier vidé (relu vide) ou simulation ; 1 panier pas vidé ou non relu, ou erreur ;
 // 2 argument inconnu (refusé avant toute connexion).
+import { realpathSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { fabriqueClient } from "./client.ts";
 import { messagePourLeLlm } from "./outils.ts";
@@ -41,7 +43,7 @@ export function formaterBilan(b: BilanVidage): string {
   else if (b.simulation) conclusion = `Simulation : ${n} ligne(s) seraient retirées, rien n'a été modifié.`;
   else if (b.vide) conclusion = `Panier vidé : ${n} ligne(s) retirée(s), panier relu vide.`;
   else if (!b.relu) conclusion = "Panier non relu : vérifie dans l'appli Chronodrive.";
-  else conclusion = `Panier pas entièrement vidé : ${b.lignes.filter((l) => l.statut !== "retiree").length} ligne(s) restent, vérifie dans l'appli Chronodrive.`;
+  else conclusion = `Panier pas entièrement vidé : ${b.restantes ?? b.lignes.filter((l) => l.statut !== "retiree").length} ligne(s) restent, vérifie dans l'appli Chronodrive.`;
   return [...lignes, conclusion].join("\n");
 }
 
@@ -66,4 +68,13 @@ async function main(): Promise<void> {
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) await main();
+// `argv[1]` peut passer par un lien symbolique alors que `import.meta.url` est le chemin réel.
+function estLance(): boolean {
+  try {
+    return !!process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href;
+  } catch {
+    return false;
+  }
+}
+
+if (estLance()) await main();
