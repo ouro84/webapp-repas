@@ -141,7 +141,7 @@ Chemin final : `/opt/data/skills/omq/panier-chronodrive/SKILL.md`. La skill se l
 
 ### 6. Redémarrer la gateway
 
-Un changement de `mcp_servers` exige un redémarrage. La gateway porte aussi Telegram, WhatsApp, Home Assistant et le cron : **prévenir Arnaud et attendre son feu vert**. Puis :
+Un changement du code ou de l'`env` d'un serveur MCP (par exemple après l'étape 2) exige un redémarrage ; l'ajout ou le retrait d'un serveur sous `mcp_servers` se recharge à chaud. La gateway porte aussi Telegram, WhatsApp, Home Assistant et le cron : **prévenir Arnaud et attendre son feu vert**. Puis :
 
 ```sh
 $D exec hermes s6-svc -t /run/service/gateway-default
