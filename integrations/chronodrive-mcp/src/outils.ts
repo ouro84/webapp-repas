@@ -117,11 +117,15 @@ function pourLeLlm({ prixUnite: _prixUnite, maxPanier: _maxPanier, ...produit }:
   return produit;
 }
 
+// Produit proposé par `chercher_produits` : `dansPanier` = l'id est dans le panier courant, lu une
+// fois par appel ; absent si le panier n'a pas pu être lu (`avertissement`).
+export type ProduitPropose = ProduitLlm & { dansPanier?: boolean };
+
 export type ResultatTerme = {
   terme: string;
-  cache: ProduitLlm | null;
-  favoris: ProduitLlm[];
-  recherche: ProduitLlm[];
+  cache: ProduitPropose | null;
+  favoris: ProduitPropose[];
+  recherche: ProduitPropose[];
   erreur: string | null;
 };
 
@@ -136,6 +140,15 @@ function erreurDeConnexion(e: unknown): boolean {
 }
 
 const AVERTISSEMENT_CACHE = "cache des correspondances indisponible : résultats calculés sans lui (voir les journaux du NAS)";
+export const AVERTISSEMENT_PANIER = 'panier illisible : contrôle "déjà au panier" impossible';
+
+type Etat = { avertissement?: string };
+
+// Plusieurs avertissements dans un même appel (cache et panier) : joints, aucun n'est perdu.
+function avertir(etat: Etat, message: string): void {
+  if (!etat.avertissement) etat.avertissement = message;
+  else if (!etat.avertissement.includes(message)) etat.avertissement = `${etat.avertissement} ; ${message}`;
+}
 
 export function creerServeur(deps: Dependances): McpServer {
   const journal = deps.journal ?? ((message: string) => void process.stderr.write(`${message}\n`));
@@ -144,14 +157,14 @@ export function creerServeur(deps: Dependances): McpServer {
 
   // Erreurs du cache non bloquantes (src/correspondances.ts) : journal sur stderr, l'outil continue
   // sans cache et le signale au LLM par `avertissement`.
-  function avecCache<T>(action: (cache: CacheCorrespondances) => T, repli: T, etat: { avertissement?: string }): T {
+  function avecCache<T>(action: (cache: CacheCorrespondances) => T, repli: T, etat: Etat): T {
     try {
       return action(deps.cache());
     } catch (e) {
       const nom = e instanceof Error ? e.name : typeof e;
       const message = e instanceof Error ? e.message : String(e);
       journal(`[chronodrive] cache des correspondances en échec, on continue sans : ${nom} ${message}`);
-      etat.avertissement = AVERTISSEMENT_CACHE;
+      avertir(etat, AVERTISSEMENT_CACHE);
       return repli;
     }
   }
@@ -219,6 +232,23 @@ export function creerServeur(deps: Dependances): McpServer {
     return suite;
   }
 
+  // Ids du panier courant, lus une fois par appel de `chercher_produits`, dans la file des ajouts
+  // (un lot en cours est fini avant la lecture). Échec : null et `avertissement`, l'appel continue ;
+  // une erreur de connexion l'interrompt comme ailleurs. Pourquoi : la skill reconnaît un article
+  // « déjà au panier » à N'IMPORTE quel produit proposé pour lui, pas au seul produit qu'elle choisit
+  // (relance du 2026-11-01 : Lactel au panier passé hors stock, lait Auchan ajouté en plus, RG-83).
+  async function idsDuPanier(client: AppelantRecherche, etat: Etat): Promise<Set<string> | null> {
+    try {
+      const panier = await enSerie(() => lirePanierCourant(client));
+      return new Set(panier.lignes.keys());
+    } catch (e) {
+      if (erreurDeConnexion(e)) throw e;
+      journal(`[chronodrive] panier illisible, dansPanier non renseigné : ${messagePourLeLlm(e)}`);
+      avertir(etat, AVERTISSEMENT_PANIER);
+      return null;
+    }
+  }
+
   function outil<Forme extends z.ZodRawShape>(
     nom: (typeof NOMS_OUTILS)[number],
     description: string,
@@ -263,6 +293,8 @@ export function creerServeur(deps: Dependances): McpServer {
       "`recherche` = résultats du catalogue (8 au plus), lancée seulement s'il n'y a ni cache ni favori disponible.",
       "Quand `cache` est retenu, `favoris` et `recherche` sont vides.",
       "Chaque produit porte `disponible` : `false` = hors stock ou non commandable (voir `raison`), ne jamais l'ajouter.",
+      "Chaque produit porte aussi `dansPanier` : `true` = ce produit est déjà dans le panier courant (lu une fois par appel, y compris pour un produit indisponible ;",
+      "un produit du cache devenu indisponible mais encore au panier est renvoyé en `cache` avec `disponible: false`). Si le panier n'a pas pu être lu, `dansPanier` est absent et `avertissement` le dit.",
       "`erreur` non nulle : la recherche de ce terme a échoué, les autres termes restent valables. Une erreur de connexion fait échouer tout l'appel.",
     ].join(" "),
     { termes: z.array(terme).min(1).max(40).describe("Articles à chercher, tels qu'écrits dans la liste de courses (ex. « lait demi-écrémé »)") },
@@ -271,7 +303,10 @@ export function creerServeur(deps: Dependances): McpServer {
     async ({ termes }) => {
       const client = deps.client();
       const favoris = await chargerFavoris(client, horloge);
-      const etat: { avertissement?: string } = {};
+      const etat: Etat = {};
+      const panier = await idsDuPanier(client, etat);
+      // Fiche pour le LLM, marquée `dansPanier` si le panier a été lu.
+      const marquer = (p: Produit): ProduitPropose => (panier ? { ...pourLeLlm(p), dansPanier: panier.has(p.id) } : pourLeLlm(p));
       const connues = avecCache((c) => c.connues(termes), new Map<string, Correspondance>(), etat);
       const resultats: ResultatTerme[] = [];
       // Fiches complètes effectivement montrées au LLM, par terme : notées à nouveau en fin d'appel,
@@ -287,19 +322,28 @@ export function creerServeur(deps: Dependances): McpServer {
           if (entree) {
             const produit = await ficheActuelle(client, entree, favoris);
             if (produit?.disponible) {
-              r.cache = pourLeLlm(produit);
+              r.cache = marquer(produit);
               montres.push(produit);
             }
             // Produit retrouvé mais indisponible : l'entrée est supprimée. Introuvable : ignorée seulement.
-            else if (produit) avecCache((c) => c.oublier(t), undefined, etat);
+            else if (produit) {
+              avecCache((c) => c.oublier(t), undefined, etat);
+              // Encore au panier (run interrompu entre l'ajout et la coche) : montré quand même, non
+              // retenu, pour que l'article soit reconnu « déjà au panier » même si ni favoris ni
+              // recherche ne le renvoient. Pourquoi : relance du 2026-11-01, lait doublé (RG-83).
+              if (panier?.has(produit.id)) {
+                r.cache = marquer(produit);
+                montres.push(produit);
+              }
+            }
           }
-          if (r.cache) continue;
+          if (r.cache?.disponible) continue;
           const pourTerme = favorisPour(t, favoris);
-          r.favoris = pourTerme.map(pourLeLlm);
+          r.favoris = pourTerme.map(marquer);
           montres.push(...pourTerme);
           if (!pourTerme.some((p) => p.disponible)) {
             const trouves = (await rechercher(client, t, RECHERCHE_MAX, horloge)).slice(0, RECHERCHE_MAX);
-            r.recherche = trouves.map(pourLeLlm);
+            r.recherche = trouves.map(marquer);
             montres.push(...trouves);
           }
         } catch (e) {
@@ -382,7 +426,7 @@ export function creerServeur(deps: Dependances): McpServer {
           const libelle = bilan.produits.get(r.productId)?.libelle || produitVu(client, r.productId, horloge)?.libelle;
           return libelle ? [{ terme: r.terme, productId: r.productId, libelle }] : [];
         });
-        const etat: { avertissement?: string } = {};
+        const etat: Etat = {};
         if (confirmes.length > 0) avecCache((c) => c.memoriser(confirmes), undefined, etat);
         return { resultats, ...etat };
       });
@@ -412,7 +456,7 @@ export function creerServeur(deps: Dependances): McpServer {
     { termes: z.array(terme).min(1).max(40) },
     true,
     async ({ termes }) => {
-      const etat: { avertissement?: string } = {};
+      const etat: Etat = {};
       const connues = avecCache((c) => c.connues(termes), new Map<string, Correspondance>(), etat);
       const correspondances = termes.map((t) => ({ terme: t, correspondance: connues.get(normaliserTerme(t)) ?? null }));
       return { correspondances, ...etat };
@@ -436,7 +480,7 @@ export function creerServeur(deps: Dependances): McpServer {
     },
     false,
     async ({ entrees }) => {
-      const etat: { avertissement?: string } = {};
+      const etat: Etat = {};
       const memorisees = avecCache(
         (c) => {
           c.memoriser(entrees);

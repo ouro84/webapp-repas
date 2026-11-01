@@ -299,6 +299,141 @@ test("chercher_produits marque l'indisponible", async () => {
   assert.match(farine.recherche[2].raison ?? "", /rupture/);
 });
 
+type ProduitMarque = { id: string; disponible: boolean; dansPanier?: boolean };
+
+// Tous les produits renvoyés pour un terme : cache, favoris et recherche.
+function proposes(t: ResultatTerme): ProduitMarque[] {
+  return [...(t.cache ? [t.cache] : []), ...t.favoris, ...t.recherche] as ProduitMarque[];
+}
+
+test("chercher_produits marque `dansPanier` sur chaque produit (relance du 2026-11-01 : lait doublé)", async () => {
+  // Panier : le Lactel ajouté au run interrompu, passé hors stock depuis ; l'article « lait » n'est
+  // pas coché dans OMQ. La relance proposait encore 146939 (indisponible) puis, après
+  // reformulation, le lait Auchan 176758 : la skill ajoutait ce second lait.
+  const lactel = produit("146939", "Lait demi-écrémé 1,5% M.G UHT bio", { stock: 0 }, "LACTEL");
+  const auchan = produit("176758", "Lait demi-écrémé 1,6% M.G UHT 1 L", {}, "AUCHAN");
+  const sim = clientSimule({
+    ...panierSimule("p1", { "146939": 1 }).routes,
+    ...routesFavoris([lactel]),
+    [RECHERCHE]: (appel) => ({ content: appel.params?.searchTerm === "lait demi-écrémé" ? [auchan] : [] }),
+  });
+  const cache = cacheSimule({ lait: { productId: "146939", libelle: "Lait demi-écrémé 1,5% M.G UHT bio" } });
+  const { appeler } = await demarrer({ client: () => sim.client, cache: () => cache.cache });
+
+  const r = await appeler("chercher_produits", { termes: ["lait"] });
+  const [lait] = termes(r);
+  assert.equal(r.structuredContent?.avertissement, undefined);
+  assert.deepEqual(
+    lait.favoris.map((p) => [p.id, p.disponible, (p as ProduitMarque).dansPanier]),
+    [["146939", false, true]],
+  );
+  assert.ok(proposes(lait).some((p) => p.dansPanier === true), "l'article est déjà au panier");
+
+  const [reformulation] = termes(await appeler("chercher_produits", { termes: ["lait demi-écrémé"] }));
+  assert.deepEqual(
+    reformulation.recherche.map((p) => [p.id, p.disponible, (p as ProduitMarque).dansPanier]),
+    [["176758", true, false]],
+  );
+  // Une lecture du panier par appel, quel que soit le nombre de termes.
+  assert.equal(sim.compter("GET /v1/customers/me/carts"), 2);
+});
+
+test("chercher_produits : produit du cache indisponible mais encore au panier → montré en `cache`", async () => {
+  // Le cache retenait 500 (trouvé par recherche, pas un favori) : indisponible, l'entrée est oubliée,
+  // mais le produit reste montré pour que l'article soit reconnu « déjà au panier ».
+  const sim = clientSimule({
+    ...panierSimule("p1", { "500": 1 }).routes,
+    ...routesFavoris([]),
+    [RECHERCHE]: (appel) =>
+      appel.params?.searchTerm === "Champignons de Paris émincés"
+        ? { content: [produit("500", "Champignons de Paris émincés", { stock: 0 })] }
+        : { content: [produit("501", "Champignons de Paris entiers")] },
+  });
+  const cache = cacheSimule({ champignons: { productId: "500", libelle: "Champignons de Paris émincés" } });
+  const { appeler } = await demarrer({ client: () => sim.client, cache: () => cache.cache });
+
+  const [champignons] = termes(await appeler("chercher_produits", { termes: ["champignons"] }));
+  assert.deepEqual(cache.oublies, ["champignons"]);
+  const enCache = champignons.cache as ProduitMarque | null;
+  assert.deepEqual([enCache?.id, enCache?.disponible, enCache?.dansPanier], ["500", false, true]);
+  // Pas retenu : la recherche est lancée comme sans cache.
+  assert.deepEqual(champignons.recherche.map((p) => [p.id, (p as ProduitMarque).dansPanier]), [["501", false]]);
+
+  // Hors du panier, un produit du cache indisponible n'est pas montré (comportement inchangé).
+  const sim2 = clientSimule({
+    ...panierSimule("p1", {}).routes,
+    ...routesFavoris([]),
+    [RECHERCHE]: () => ({ content: [produit("500", "Champignons de Paris émincés", { stock: 0 })] }),
+  });
+  const cache2 = cacheSimule({ champignons: { productId: "500", libelle: "Champignons de Paris émincés" } });
+  const { appeler: appeler2 } = await demarrer({ client: () => sim2.client, cache: () => cache2.cache });
+  const [sans] = termes(await appeler2("chercher_produits", { termes: ["champignons"] }));
+  assert.equal(sans.cache, null);
+});
+
+test("chercher_produits : panier illisible → avertissement, `dansPanier` absent, l'appel aboutit", async () => {
+  const sim = clientSimule({
+    ...routesFavoris([produit("10", "Lait demi-écrémé")]),
+    [RECHERCHE]: () => ({ content: [produit("20", "Beurre doux")] }),
+    "GET /v1/customers/me/carts": () => {
+      throw new ErreurChronodrive("GET /v1/customers/me/carts", "HTTP 503");
+    },
+  });
+  const { appeler, journal } = await demarrer({ client: () => sim.client });
+
+  const r = await appeler("chercher_produits", { termes: ["lait", "beurre"] });
+  const [lait, beurre] = termes(r);
+  assert.equal(r.structuredContent?.avertissement, 'panier illisible : contrôle "déjà au panier" impossible');
+  assert.deepEqual([lait.favoris[0].id, beurre.recherche[0].id], ["10", "20"]);
+  for (const p of [...proposes(lait), ...proposes(beurre)]) assert.ok(!("dansPanier" in p), JSON.stringify(p));
+  assert.ok(journal.some((l) => /panier illisible/.test(l) && /HTTP 503/.test(l)), journal.join("\n"));
+
+  // Cache ET panier en échec : les deux avertissements sont rendus.
+  const casse: CacheCorrespondances = {
+    connues: () => {
+      throw new Error("database is locked");
+    },
+    memoriser: () => undefined,
+    oublier: () => undefined,
+  };
+  const { appeler: appeler2 } = await demarrer({ client: () => sim.client, cache: () => casse });
+  const avertissement = String((await appeler2("chercher_produits", { termes: ["lait"] })).structuredContent?.avertissement);
+  assert.match(avertissement, /cache des correspondances indisponible/);
+  assert.match(avertissement, /panier illisible/);
+});
+
+test("chercher_produits : erreur de connexion à la lecture du panier → tout l'appel échoue", async () => {
+  const sim = clientSimule({
+    ...routesFavoris([produit("10", "Lait demi-écrémé")]),
+    "GET /v1/customers/me/carts": () => {
+      throw new ErreurChronodrive("GET /v1/customers/me/carts", "HTTP 401 Unauthorized", 401);
+    },
+  });
+  const { appeler } = await demarrer({ client: () => sim.client });
+  const r = await appeler("chercher_produits", { termes: ["lait"] });
+  assert.equal(r.isError, true);
+  assert.match(r.content[0].text, /HTTP 401/);
+});
+
+test("chercher_produits : la lecture du panier attend le lot d'ajout en cours", async () => {
+  const panier = panierSimule("p1", {});
+  const lent: Route = async (appel, n) => {
+    await new Promise((r) => setTimeout(r, 20));
+    return panier.routes["POST /v1/carts/p1/items"](appel, n);
+  };
+  const sim = clientSimule({ ...panier.routes, ...routesFavoris([produit("10", "Lait demi-écrémé")]), "POST /v1/carts/p1/items": lent });
+  const { appeler } = await demarrer({ client: () => sim.client });
+  const [avant] = termes(await appeler("chercher_produits", { termes: ["lait"] }));
+  assert.equal((avant.favoris[0] as ProduitMarque).dansPanier, false);
+
+  const [, apres] = await Promise.all([
+    appeler("ajouter_au_panier", { lignes: [{ terme: "lait", productId: "10", quantite: 1 }] }),
+    appeler("chercher_produits", { termes: ["lait"] }),
+  ]);
+  // Sans la file des ajouts, le panier serait lu pendant le POST, avant l'incrément.
+  assert.equal((termes(apres)[0].favoris[0] as ProduitMarque).dansPanier, true);
+});
+
 test("chercher_produits : recherche plafonnée à 8 résultats", async () => {
   const sim = clientSimule({
     ...routesFavoris([]),
@@ -680,7 +815,8 @@ test("ajouter_au_panier : deux appels parallèles sont exécutés l'un après l'
 });
 
 test("ajouter_au_panier : un lot en échec ne bloque pas le suivant", async () => {
-  let echec = true;
+  // Armé après chercher_produits, qui lit aussi le panier.
+  let echec = false;
   const panier = panierSimule("p1", {});
   const sim = clientSimule({
     ...panier.routes,
@@ -695,6 +831,7 @@ test("ajouter_au_panier : un lot en échec ne bloque pas le suivant", async () =
   });
   const { appeler } = await demarrer({ client: () => sim.client });
   termes(await appeler("chercher_produits", { termes: ["lait"] }));
+  echec = true;
   const ligne = { terme: "lait", productId: "10", quantite: 1 };
   const [a, b] = await Promise.all([appeler("ajouter_au_panier", { lignes: [ligne] }), appeler("ajouter_au_panier", { lignes: [ligne] })]);
   assert.equal(a.isError, true);

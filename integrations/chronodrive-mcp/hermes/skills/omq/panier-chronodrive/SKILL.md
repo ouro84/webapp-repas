@@ -28,7 +28,7 @@ Serveur OMQ « On Mange Quoi ? » (noms Hermes `mcp__On_Mange_Quoi____<outil>`) 
 | OMQ `rapporter_panier` | `demande_id`, `statut`, `motif`, `ajoutes`, `a_choisir`, `introuvables` | une seule fois, à la fin (une correction permise après une erreur de validation) | **interdit** |
 | Chronodrive `chercher_produits` | `termes` (liste de textes) | par lots de 10 termes | par lots de 10 termes |
 | Chronodrive `ajouter_au_panier` | `lignes` : `[{terme, terme_recherche, productId, quantite, quantite_omq}]` (`terme_recherche` seulement après une reformulation ; `quantite_omq` toujours) | par lots, articles « haute » seulement | **interdit** |
-| Chronodrive `lire_panier` | aucun | une fois, au début (étape 2) ; ensuite facultatif, pour diagnostiquer | facultatif |
+| Chronodrive `lire_panier` | aucun | facultatif, pour diagnostiquer (« déjà au panier » se lit sur `dansPanier`, étape 3) | facultatif |
 | Chronodrive `correspondances_connues` | `termes` | facultatif (`chercher_produits` lit déjà le cache) | facultatif |
 | Chronodrive `memoriser_correspondances` | `entrees` | **interdit** | **interdit** |
 
@@ -50,11 +50,9 @@ Appelle `prendre_demande_panier`, avant toute autre action.
 - Sinon, garde `demande.id` (pour `rapporter_panier`) et `demande.ancre` (AAAA-MM-JJ, début du cycle à traiter).
 - Erreur de l'outil : aucune demande n'est prise, il n'y a rien à rapporter. Arrête-toi et réponds « Panier Chronodrive : impossible de prendre la demande OMQ. », suivi du message d'erreur.
 
-### 2. Lire la liste et le panier
+### 2. Lire la liste
 
 Appelle `lire_liste_courses` sans argument. Elle renvoie les articles **non cochés** du cycle en cours : `cycle {du, au}`, `categories[].articles[]` et `a_verifier_au_placard[]`. Chaque article porte `nom`, `quantite` (texte, vide si non renseignée) et `manuel`.
-
-Puis appelle `lire_panier` une fois et retiens les `id` des produits déjà présents dans le panier (étape 4, « déjà au panier »).
 
 - Si `demande.ancre` n'est pas comprise entre `cycle.du` et `cycle.au` (bornes incluses) : appelle `rapporter_panier` avec `statut: "echec"`, `motif: "le cycle a changé"` et les trois listes vides, puis envoie le message d'échec. Arrête-toi.
 - Si la liste est vide (`nombre_articles: 0`) : appelle `rapporter_panier` avec `statut: "terminee"` et les trois listes vides, puis réponds « Rien à acheter : la liste OMQ est vide. Rien n'est commandé. ».
@@ -72,7 +70,14 @@ Pour chaque terme, la réponse donne :
 - `recherche` : les résultats du catalogue (8 au plus), lancée seulement s'il n'y a ni cache ni favori disponible ;
 - `erreur` : la recherche de ce terme a échoué, les autres termes restent valables. L'article passe « à choisir » avec la raison « recherche en échec », **jamais** « introuvable » : le produit existe peut-être.
 
-Chaque produit porte `id`, `libelle`, `marque`, `contenance`, `prix`, `bio`, `disponible` et `raison`. Un champ `avertissement` (cache indisponible) n'est pas bloquant. Si tout l'appel échoue (connexion impossible, par exemple), c'est un « Échec technique ».
+Chaque produit porte `id`, `libelle`, `marque`, `contenance`, `prix`, `bio`, `disponible`, `raison` et `dansPanier` : `true` = ce produit est **déjà dans le panier** Chronodrive, même s'il est devenu indisponible (étape 4, « Déjà au panier »). Un produit du cache devenu indisponible mais encore au panier revient en `cache` avec `disponible: false` et `dansPanier: true` : il n'est pas retenu, `favoris` et `recherche` suivent.
+
+Un champ `avertissement` peut accompagner la réponse :
+
+- « cache des correspondances indisponible » : pas bloquant ;
+- « panier illisible : contrôle "déjà au panier" impossible » : `dansPanier` manque, et un article déjà au panier ne peut plus être reconnu. En run, n'ajoute **rien** : suis « Échec technique » avec le motif « panier Chronodrive illisible », sans appeler `ajouter_au_panier`. En mesure, signale-le dans la réponse et continue.
+
+Si tout l'appel échoue (connexion impossible, par exemple), c'est un « Échec technique ».
 
 Si aucun candidat ne convient pour un article (par exemple, des favoris d'une autre nature), ou si le terme ne donne aucun produit, tu peux relancer `chercher_produits` avec **une** reformulation de l'article (2 termes essayés au plus par article). Regroupe ces reformulations dans un même appel, **toujours après** l'appel qui contenait les termes d'origine, jamais dans le même : l'outil d'ajout n'accepte une reformulation que si elle a été cherchée pour la première fois dans un appel postérieur à celui de l'article. Pour un terme au pluriel resté sans résultat, la reformulation est d'abord le **singulier** (« poireaux » → « poireau ») : la recherche du catalogue y est sensible. Ne classe « introuvable » qu'après cette reformulation. Retiens, pour chaque article, le terme dont le résultat contient le produit choisi : si c'est la reformulation, tu la passeras en `terme_recherche` à l'étape 5.
 
@@ -82,7 +87,7 @@ Classe chaque article « haute », « à choisir » ou « introuvable », selon 
 
 **Même produit pour plusieurs articles** : la liste OMQ garde séparés les articles d'un même ingrédient en unités différentes (« farine 2 c.à.s » et « farine 160 g »). Quand plusieurs articles « haute » tombent sur le **même** `id`, fusionne-les : **un seul** ajout, dont la quantité couvre le **total** des besoins (2 c.à.s + 160 g de farine tiennent dans un paquet de 1 kg : quantité 1). Pourquoi : deux ajouts du même produit doubleraient le panier sans besoin. Après l'ajout confirmé, coche **chacun** de ces articles. Dans le rapport, chaque article figure dans `ajoutes` avec le même produit ; la quantité du premier est celle ajoutée, celle des suivants vaut 1 (le schéma impose au moins 1) et le message Telegram dit « regroupé avec … ».
 
-**Déjà au panier** : un article « haute » dont le produit choisi est déjà dans le panier (lu à l'étape 2) passe « à choisir », avec la raison « déjà au panier, vérifie la quantité » et ce produit comme seul candidat. Ne l'ajoute pas et ne le coche pas. Pourquoi : après un run interrompu entre un ajout et sa coche, une relance ne doit pas l'ajouter une seconde fois (RG-83) ; Arnaud vérifie la quantité lui-même.
+**Déjà au panier**, à vérifier pour chaque article **avant** de choisir un produit : si **un seul** des produits proposés pour l'article porte `dansPanier: true` (dans `cache`, `favoris` ou `recherche`, pour son `nom` comme pour ses reformulations, disponible ou non), l'article passe « à choisir », avec la raison « déjà au panier, vérifie la quantité » et ce produit comme seul candidat. Ne l'ajoute pas, ne le coche pas, et n'ajoute pas non plus un autre produit à sa place. Pourquoi : après un run interrompu entre un ajout et sa coche, une relance ne doit pas l'ajouter une seconde fois (RG-83), même si le produit resté au panier est devenu indisponible et qu'un autre conviendrait (relance du 2026-11-01 : Lactel au panier passé hors stock, lait Auchan ajouté en plus) ; Arnaud vérifie la quantité lui-même.
 
 ### 5. Ajouter et cocher, lot par lot
 
@@ -153,6 +158,7 @@ Ne liste pas les autres articles ajoutés un par un : ils sont sur `/courses`. P
 Ces cas arrêtent le run, une fois la demande prise :
 
 - un outil Chronodrive renvoie une erreur sur tout l'appel : connexion impossible, captcha, API changée, exécuteur en lecture seule ;
+- `chercher_produits` renvoie l'avertissement « panier illisible » (étape 3) : motif « panier Chronodrive illisible » ;
 - une ligne d'ajout revient avec « ajout envoyé mais panier non relu » ou « ajout peut-être appliqué » (étape 5) ;
 - `cocher_article` échoue (étape 5) ;
 - `lire_liste_courses` ou un autre outil OMQ échoue.
@@ -165,6 +171,7 @@ Ne relance pas l'appel en erreur : le client Chronodrive refait déjà lui-même
    - « Exécuteur en lecture seule : rien n'a été ajouté » ;
    - « ajout Chronodrive non confirmé, à vérifier dans le panier » ;
    - « coche OMQ impossible » ;
+   - « panier Chronodrive illisible » ;
    - « Liste de courses OMQ illisible ».
 
    Un refus suit la même règle qu’à l’étape 6. Si OMQ lui-même est injoignable, cet appel peut échouer aussi : la demande passera en échec seule après 30 min.
