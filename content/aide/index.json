@@ -215,17 +215,19 @@
     "majLe": "2026-07-15T21:05:00.000Z"
   },
   {
-    "titre": "Connecter OMQ à votre assistant IA",
+    "titre": "Connecter OMQ à ton assistant IA",
     "slug": "connecter-assistant-ia",
     "section": "Mon compte",
     "ordre": 30,
-    "resume": "Brancher Claude, Cursor, OpenCode ou Hermes sur OMQ pour gérer ton planning et ta liste de courses depuis ton assistant.",
+    "resume": "Brancher Claude, Cursor, OpenCode ou Hermes sur OMQ pour gérer ton planning, ta liste de courses et ton panier Chronodrive depuis ton assistant.",
     "motsCles": [
       "courses",
       "planning",
-      "compte"
+      "compte",
+      "panier",
+      "chronodrive"
     ],
-    "majLe": "2026-10-29T21:15:00.000Z"
+    "majLe": "2026-11-01T21:00:00.000Z"
   },
   {
     "titre": "Questions fréquentes",
