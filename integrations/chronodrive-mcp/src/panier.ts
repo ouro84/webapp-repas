@@ -3,11 +3,16 @@
 // Aucun outil de retrait ni de commande ici (RG-82) : `POST v1/carts/{id}/items` seulement.
 import { produitVu, versProduit, type Appelant, type OptionsHorloge, type Produit } from "./catalogue.ts";
 import { ErreurChronodrive } from "./client.ts";
+import { plafonnerQuantite, type QuantiteAjustee } from "./quantites.ts";
 
 // `refus` : refus décidé par l'appelant avant tout envoi (garde par terme de `ajouter_au_panier`,
 // src/outils.ts) ; la ligne n'est pas envoyée et ne compte pas comme doublon.
-export type LigneAjout = { productId: string; quantite: number; refus?: string | null };
+// `quantiteOmq` : texte de la quantité OMQ de l'article (« 800 g », « 2 c.à.s + 160 g »), qui
+// plafonne la quantité avec la contenance du produit (src/quantites.ts).
+export type LigneAjout = { productId: string; quantite: number; quantiteOmq?: string | null; refus?: string | null };
 
+// `demande` : quantité réellement demandée à Chronodrive, après le plafond OMQ ; `quantiteAjustee`
+// n'est renseignée que si ce plafond l'a baissée.
 export type ResultatAjout = {
   productId: string;
   demande: number;
@@ -16,6 +21,7 @@ export type ResultatAjout = {
   confirme: boolean;
   returnType: string | null;
   erreur: string | null;
+  quantiteAjustee: QuantiteAjustee | null;
 };
 
 export type PanierCourant = { id: string; lignes: Map<string, number>; produits: Map<string, Produit> };
@@ -84,7 +90,8 @@ type Envoi = { index: number; quantite: number; plafond: string | null; tente: b
 // Écart < demande : confirmé mais signalé dans `erreur`.
 // Une ligne refusée par l'appelant (`refus`) n'est pas envoyée. Seul un produit vu en recherche ou
 // en favoris depuis moins de 30 min est envoyé, et jamais s'il y est indisponible : un `productId`
-// inventé ou périmé est refusé sans POST. La quantité doit être un entier ≥ 1, plafonné à 20,
+// inventé ou périmé est refusé sans POST. La quantité doit être un entier ≥ 1, plafonné d'abord au
+// besoin calculé depuis `quantiteOmq` et la contenance de la fiche vue (src/quantites.ts), puis à 20,
 // puis à `maxCartQuantity` moins la quantité déjà au panier (lu comme
 // un plafond total : prudent si c'est en fait un plafond par ajout, l'écart signale alors le manque).
 // Budget du lot : 90 s ; au-delà, les lignes restantes reviennent « non tenté », sans POST.
@@ -107,6 +114,7 @@ export async function ajouterLignes(client: Appelant, lignes: LigneAjout[], opti
       confirme: false,
       returnType: null,
       erreur: null,
+      quantiteAjustee: null,
     };
     resultats.push(resultat);
 
@@ -139,8 +147,14 @@ export async function ajouterLignes(client: Appelant, lignes: LigneAjout[], opti
       continue;
     }
 
-    let quantite = Math.min(QUANTITE_MAX, ligne.quantite);
-    let plafond = ligne.quantite > QUANTITE_MAX ? `plafonné à ${QUANTITE_MAX} par ajout` : null;
+    // Plafond OMQ (run réel #2 : 800 g de haricots verts ajoutés en 2 paquets de 1 kg) : jamais
+    // d'augmentation ; `demande` devient ce qui est demandé, l'ajustement est rapporté à part.
+    const { envoyee, ajustee } = plafonnerQuantite(ligne.quantite, ligne.quantiteOmq, fiche.contenance);
+    resultat.demande = envoyee;
+    resultat.quantiteAjustee = ajustee;
+
+    let quantite = Math.min(QUANTITE_MAX, envoyee);
+    let plafond = envoyee > QUANTITE_MAX ? `plafonné à ${QUANTITE_MAX} par ajout` : null;
     if (fiche.maxPanier != null) {
       const reste = fiche.maxPanier - quantiteAvant;
       if (reste < 1) {

@@ -582,6 +582,36 @@ test("cache retenu par chercher_produits = proposition pour le terme", async () 
   assert.equal(ligne.confirme, true);
 });
 
+test("quantite_omq plafonne la quantité (run du 2026-11-01 : haricots verts 800 g → 2 × 1 kg)", async () => {
+  const haricots = fiche("4407", { labels: { productLabel: "Haricots verts extra-fins", brandLabel: "AUCHAN", unitQuantityLabel: "1 kg" } });
+  const sim = clientSimule({ ...panierSimule("p1", {}).routes, ...routesFavoris([haricots]) });
+  const cache = cacheSimule({ "haricots verts": { productId: "4407", libelle: "Haricots verts extra-fins" } });
+  const { appeler } = await demarrer({ client: () => sim.client, cache: () => cache.cache });
+  const [resultat] = termes(await appeler("chercher_produits", { termes: ["haricots verts"] }));
+  assert.equal(resultat.cache?.id, "4407");
+
+  const r = await appeler("ajouter_au_panier", {
+    lignes: [{ terme: "haricots verts", productId: "4407", quantite: 2, quantite_omq: " 800 g " }],
+  });
+  assert.ok(!r.isError, r.content[0].text);
+  const [ligne] = (r.structuredContent as { resultats: Record<string, unknown>[] }).resultats;
+  assert.deepEqual(
+    [ligne.demande, ligne.avant, ligne.apres, ligne.confirme, ligne.erreur, ligne.quantiteAjustee],
+    [1, 0, 1, true, null, { demandee: 2, envoyee: 1 }],
+  );
+  const [post] = sim.appels.filter((a) => a.methode === "POST");
+  assert.equal((post.corps as { content: { quantity: number }[] }).content[0].quantity, 1);
+});
+
+test("ajouter_au_panier : sans quantite_omq, la quantité passe telle quelle", async () => {
+  const sim = clientSimule({ ...panierSimule("p1", {}).routes, ...routesFavoris([produit("10", "Lait demi-écrémé")]) });
+  const { appeler } = await demarrer({ client: () => sim.client });
+  termes(await appeler("chercher_produits", { termes: ["lait"] }));
+  const r = await appeler("ajouter_au_panier", { lignes: [{ terme: "lait", productId: "10", quantite: 3 }] });
+  const [ligne] = (r.structuredContent as { resultats: Record<string, unknown>[] }).resultats;
+  assert.deepEqual([ligne.demande, ligne.apres, ligne.quantiteAjustee], [3, 3, null]);
+});
+
 test("client remplacé (config relue) entre la recherche et l'ajout : lignes refusées sans POST", async () => {
   const avant = clientSimule({ ...panierSimule("p1", {}).routes, ...routesFavoris([produit("10", "Lait demi-écrémé")]) });
   const apres = clientSimule(panierSimule("p1", {}).routes);
@@ -606,6 +636,7 @@ test("ajouter_au_panier : schéma — quantité entière 1..20, 20 lignes au plu
     [{ ...ligne, quantite: 0 }],
     [{ ...ligne, quantite: 1.5 }],
     [{ ...ligne, terme_recherche: "x".repeat(201) }],
+    [{ ...ligne, quantite_omq: "x".repeat(101) }],
     [],
     Array(21).fill(ligne),
   ]) {

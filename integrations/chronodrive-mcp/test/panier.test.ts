@@ -54,7 +54,7 @@ test("ajout confirmé par écart de quantité, produit déjà présent", async (
   voir(sim.client, ["10"]);
 
   const { resultats, produits } = await ajouterLignes(sim.client, [{ productId: "10", quantite: 1 }]);
-  assert.deepEqual(resultats[0], { productId: "10", demande: 1, avant: 2, apres: 3, confirme: true, returnType: "SUCCESS", erreur: null });
+  assert.deepEqual(resultats[0], { productId: "10", demande: 1, avant: 2, apres: 3, confirme: true, returnType: "SUCCESS", erreur: null, quantiteAjustee: null });
   // Fiches du panier relu après l'ajout, exposées pour le libellé du cache.
   assert.equal(produits.get("10")?.libelle, "Produit 10");
 
@@ -74,7 +74,7 @@ test("NO_STOCK_AFTER avec écart → confirmé", async () => {
   voir(sim.client, ["20"]);
 
   const { resultats } = await ajouterLignes(sim.client, [{ productId: "20", quantite: 2 }]);
-  assert.deepEqual(resultats[0], { productId: "20", demande: 2, avant: 0, apres: 2, confirme: true, returnType: "NO_STOCK_AFTER", erreur: null });
+  assert.deepEqual(resultats[0], { productId: "20", demande: 2, avant: 0, apres: 2, confirme: true, returnType: "NO_STOCK_AFTER", erreur: null, quantiteAjustee: null });
 });
 
 test("SUCCESS sans écart → non confirmé, erreur explicite", async () => {
@@ -193,6 +193,44 @@ test("quantité : entier ≥ 1, plafonnée à 20 et à maxCartQuantity ; vide pu
   assert.match(resultats[4].erreur ?? "", /double/);
   // Un productId vide est signalé comme tel, avant tout contrôle de doublon.
   assert.equal(resultats[5].erreur, "productId vide");
+});
+
+test("quantité plafonnée par la quantité OMQ et la contenance : jamais augmentée, avant 20 et maxCartQuantity", async () => {
+  const panier = panierSimule("p1", {});
+  const sim = clientSimule({
+    ...panier.routes,
+    // Contenance « 1 kg » par défaut (test/simulation.ts `fiche`).
+    "GET /v1/products": () => ({
+      content: [fiche("60"), fiche("61"), fiche("62", { maxCartQuantity: 2, labels: { productLabel: "Riz", unitQuantityLabel: "500 g" } }), fiche("63"), fiche("64"), fiche("65")],
+    }),
+  });
+  await rechercher(sim.client, "riz");
+
+  const { resultats } = await ajouterLignes(sim.client, [
+    { productId: "60", quantite: 2, quantiteOmq: "800 g" }, // besoin 1 : plafonné
+    { productId: "61", quantite: 2, quantiteOmq: "2 c.à.s" }, // illisible : inchangé
+    { productId: "62", quantite: 4, quantiteOmq: "3 kg" }, // besoin 6 ≥ 4 : inchangé, puis maxCartQuantity
+    { productId: "63", quantite: 1, quantiteOmq: "2,5 kg" }, // besoin 3 : jamais d'augmentation
+    { productId: "64", quantite: 35, quantiteOmq: "30 kg" }, // besoin 30, puis plafond de 20 par ajout
+    { productId: "65", quantite: 3, quantiteOmq: "800 g", refus: "refusé par l'appelant" },
+  ]);
+  const quantites = sim.appels.filter((a) => a.methode === "POST").map((a) => (a.corps as { content: { productId: string; quantity: number }[] }).content[0]);
+  assert.deepEqual(
+    quantites.map((q) => [q.productId, q.quantity]),
+    [["60", 1], ["61", 2], ["62", 2], ["63", 1], ["64", 20]],
+  );
+  assert.deepEqual(
+    resultats.map((r) => [r.productId, r.demande, r.quantiteAjustee, r.confirme, r.erreur]),
+    [
+      // `demande` = ce qui a été envoyé : 1 sur 1, pas un « ajout partiel ».
+      ["60", 1, { demandee: 2, envoyee: 1 }, true, null],
+      ["61", 2, null, true, null],
+      ["62", 4, null, true, "ajout partiel : 2 sur 4 (plafonné par maxCartQuantity (2, déjà 0 au panier))"],
+      ["63", 1, null, true, null],
+      ["64", 30, { demandee: 35, envoyee: 30 }, true, "ajout partiel : 20 sur 30 (plafonné à 20 par ajout)"],
+      ["65", 3, null, false, "refusé par l'appelant"],
+    ],
+  );
 });
 
 test("productId vide répété : « vide » à chaque ligne, jamais « doublon »", async () => {

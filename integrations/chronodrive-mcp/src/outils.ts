@@ -326,6 +326,8 @@ export function creerServeur(deps: Dependances): McpServer {
       "Seul un produit renvoyé par chercher_produits depuis moins de 30 min POUR CE TERME est accepté : copier l'`id` depuis le résultat du terme de cet article,",
       "et passer `terme_recherche` quand le produit vient d'une reformulation, cherchée dans un appel de chercher_produits POSTÉRIEUR à celui du terme.",
       "Sinon la ligne est refusée sans envoi (« produit non proposé pour cet article »).",
+      "Passer `quantite_omq` (quantité OMQ de l'article, texte exact) : quand elle et la contenance du produit se comparent (masse, volume ou nombre),",
+      "la quantité est plafonnée au nombre d'unités qui couvre le besoin, jamais augmentée ; `demande` = quantité envoyée, `quantiteAjustee` {demandee, envoyee} signale le plafond.",
       "Ne jamais relancer une ligne non confirmée sans relire le panier (`lire_panier`) : l'ajout a pu passer.",
       "Les lignes confirmées sont retenues pour le terme (cache des correspondances). Ne commande rien.",
     ].join(" "),
@@ -344,6 +346,14 @@ export function creerServeur(deps: Dependances): McpServer {
               ),
             productId: z.string().trim().min(1).max(50).describe("`id` d'un produit renvoyé par chercher_produits pour ce terme"),
             quantite: z.number().int().min(1).max(20),
+            quantite_omq: z
+              .string()
+              .trim()
+              .max(100)
+              .optional()
+              .describe(
+                "Quantité OMQ de l'article, texte exact (ex. « 800 g », « 2 c.à.s », « » si vide) ; articles fusionnés : leurs quantités jointes par « + » (« 2 c.à.s + 160 g »)",
+              ),
           }),
         )
         .min(1)
@@ -359,8 +369,8 @@ export function creerServeur(deps: Dependances): McpServer {
         // Garde par terme (`propose`). Un produit jamais vu en recherche ou en favoris (même s'il est
         // dans le panier) garde le refus « produit inconnu » ; un produit vu pour un autre terme, ou
         // avec une reformulation non valable, est « non proposé ».
-        const aEnvoyer = lignes.map(({ terme: t, terme_recherche, productId, quantite }) => {
-          if (propose(client, t, terme_recherche, productId)) return { productId, quantite };
+        const aEnvoyer = lignes.map(({ terme: t, terme_recherche, productId, quantite, quantite_omq: quantiteOmq }) => {
+          if (propose(client, t, terme_recherche, productId)) return { productId, quantite, quantiteOmq };
           return { productId, quantite, refus: produitVu(client, productId, horloge) ? PRODUIT_NON_PROPOSE : PRODUIT_INCONNU };
         });
         const bilan = await ajouterLignes(client, aEnvoyer, horloge);
