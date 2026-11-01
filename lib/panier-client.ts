@@ -24,21 +24,6 @@ export async function chargerEtatPanier(
   return data as EtatPanier
 }
 
-/**
- * Jour de courses du foyer, lu directement et SANS repli : jumeau de la route
- * `POST /api/panier/demande` (ancre par défaut quand le corps n'en porte pas). `chargerJourCoursesFoyer` retombe sur lundi en
- * cas d'erreur, ce qui ferait croire que le cycle courant est un autre cycle
- * (bouton montré ou masqué à tort). Lève sur erreur ; la RLS borne la ligne.
- */
-export async function chargerJourCoursesPanier(
-  supabase: ClientSupabase = clientParDefaut()
-): Promise<number> {
-  const { data, error } = await supabase.from("foyers").select("jour_courses").maybeSingle()
-  if (error) throw new Error(`Lecture du jour de courses impossible : ${error.message}`)
-  if (!data) throw new Error("Lecture du jour de courses impossible : foyer introuvable.")
-  return (data as { jour_courses: number }).jour_courses
-}
-
 /** `statut` : code HTTP de la route, `null` si la requête n'a pas abouti (réseau). */
 export type ResultatLancement =
   | { ok: true }

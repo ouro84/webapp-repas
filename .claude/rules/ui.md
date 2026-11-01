@@ -36,8 +36,9 @@ Store `lib/theme.ts` (`useSyncExternalStore`, clé localStorage `theme` ∈ clai
 ## Marque et icônes
 
 - Nom « On mange quoi ? », baseline « La question du soir a enfin sa réponse ». Logo `components/ui/logo.tsx` : `fill="currentColor"`, `aria-hidden`, couleur via `text-brand-*`. Favicon `app/icon.svg` (couleurs en dur, hors contexte CSS).
+- **Logo Chronodrive** (`components/ui/logo-chronodrive.tsx`) : symbole « app » du sprite officiel de l’enseigne, monochrome, SVG inline en `currentColor` + `aria-hidden`, couleur via `text-*` du parent ; il remplace une icône générique dans le titre de la carte Panier Chronodrive. Ne pas redessiner sa géométrie : elle vient du sprite (`var(--icon-color)` → `currentColor`). Pourquoi : un logo de marque tiers reste fidèle à l’original, et `currentColor` le suit en dark mode sans variante dédiée.
 - **Icônes : SVG inline ou `lucide-react`**, jamais d'emoji ni de glyphe Unicode (y compris `↑↓`).
-- Icônes déjà prises, à éviter pour un nouvel usage : `Leaf` (végé), `TreeDeciduous` (automne), `Wheat`/`Carrot` (accompagnement), `CookingPot` (restes), `RefreshCw`/`Search`/`MoreHorizontal` (actions de slot), `SlidersHorizontal` (réglages), `HelpCircle` (aide), `Heart`/`Ban` (préférences), `CalendarDays`/`ShoppingCart`/`BookOpen`/`Clock` (nav), `ShoppingBasket` (carte Panier Chronodrive), `Eye`/`PenLine` (droits du consentement OAuth).
+- Icônes déjà prises, à éviter pour un nouvel usage : `Leaf` (végé), `TreeDeciduous` (automne), `Wheat`/`Carrot` (accompagnement), `CookingPot` (restes), `RefreshCw`/`Search`/`MoreHorizontal` (actions de slot), `SlidersHorizontal` (réglages), `HelpCircle` (aide), `Heart`/`Ban` (préférences), `CalendarDays`/`ShoppingCart`/`BookOpen`/`Clock` (nav), `Eye`/`PenLine` (droits du consentement OAuth).
 
 ## Nav (`components/ui/nav.tsx`)
 

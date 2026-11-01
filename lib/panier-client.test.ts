@@ -3,7 +3,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import { chargerEtatPanier, chargerJourCoursesPanier, lancerDemandePanier } from "@/lib/panier-client"
+import { chargerEtatPanier, lancerDemandePanier } from "@/lib/panier-client"
 import type { EtatPanier } from "@/lib/panier-affichage"
 import { creerSupabaseMock } from "@/tests/fixtures/supabase-mock"
 
@@ -36,28 +36,6 @@ describe("chargerEtatPanier", () => {
   it("lève si la RPC ne renvoie rien (B4)", async () => {
     const { client } = creerSupabaseMock({ rpc: { etat_panier: { data: null, error: null } } })
     await expect(chargerEtatPanier(null, client)).rejects.toThrow(/aucune donnée/)
-  })
-})
-
-describe("chargerJourCoursesPanier", () => {
-  it("renvoie jour_courses du foyer", async () => {
-    const { client, appels } = creerSupabaseMock({
-      tables: { foyers: { data: { jour_courses: 5 }, error: null } },
-    })
-    await expect(chargerJourCoursesPanier(client)).resolves.toBe(5)
-    expect(appels[0]).toMatchObject({ table: "foyers" })
-  })
-
-  it("lève sur erreur, SANS repli sur lundi (B13)", async () => {
-    const { client } = creerSupabaseMock({
-      tables: { foyers: { data: null, error: { message: "boom" } } },
-    })
-    await expect(chargerJourCoursesPanier(client)).rejects.toThrow(/boom/)
-  })
-
-  it("lève si aucun foyer n'est lu", async () => {
-    const { client } = creerSupabaseMock({ tables: { foyers: { data: null, error: null } } })
-    await expect(chargerJourCoursesPanier(client)).rejects.toThrow(/foyer introuvable/)
   })
 })
 
