@@ -17,7 +17,7 @@ vi.mock("@/lib/generation", async (importOriginal) => ({
 
 import { ErreurGeneration, genererPourUtilisateur } from "@/lib/generation"
 import { ErreurOutil } from "@/lib/mcp/erreurs"
-import { changerPersonnes, genererCycle, remplacerRepas } from "@/lib/mcp/ecriture-planning"
+import { changerPersonnes, genererCycle, marquerRestesRepas, remplacerRepas } from "@/lib/mcp/ecriture-planning"
 import {
   creerSupabaseMock,
   filtre,
@@ -172,6 +172,31 @@ describe("genererCycle (RG-74)", () => {
   it("ancre quelconque : vise le cycle qui la contient", async () => {
     const { client, rpcs } = mock()
     await genererCycle(client, { ancre: "2026-11-01" }, JEUDI)
+    expect((rpcs[0].args as { p_ancre: string }).p_ancre).toBe("2026-10-29")
+  })
+
+  it("cycle raccourci : une date du trou entre deux cycles vise le cycle suivant, pas le courant (I1)", async () => {
+    vi.mocked(genererPourUtilisateur).mockResolvedValue(cycleGenere("2026-11-05"))
+    const { client, rpcs } = mock({
+      cycle_courses: (appel): ReponseMock => ({
+        data: filtre(appel, "eq", "ancre") === "2026-10-29" ? { longueur: 5 } : null,
+        error: null,
+      }),
+    })
+    // Le cycle du 29/10 dure 5 jours (au 02/11) : le 03/11 tombe dans le trou.
+    await genererCycle(client, { ancre: "2026-11-03", remplacer: true }, JEUDI)
+    expect(genererPourUtilisateur).toHaveBeenCalledWith(client, { ancre: "2026-11-05", longueur: 7 }, { aujourdhui: JEUDI })
+    expect((rpcs[0].args as { p_ancre: string }).p_ancre).toBe("2026-11-05")
+  })
+
+  it("cycle long : une date à l'intérieur reste dans le cycle qui la contient (I1)", async () => {
+    const { client, rpcs } = mock({
+      cycle_courses: (appel): ReponseMock => ({
+        data: filtre(appel, "eq", "ancre") === "2026-10-29" ? { longueur: 9 } : null,
+        error: null,
+      }),
+    })
+    await genererCycle(client, { ancre: "2026-11-03", remplacer: true }, JEUDI)
     expect((rpcs[0].args as { p_ancre: string }).p_ancre).toBe("2026-10-29")
   })
 
@@ -417,5 +442,70 @@ describe("changerPersonnes (RG-77, RG-16)", () => {
       ).rejects.toThrow("Nombre de personnes invalide : choisis un entier entre 1 et 12.")
       expect(rpcs).toEqual([])
     }
+  })
+})
+
+// Jeudi : salade au midi, gratin (4 personnes) au soir déjà en restes.
+function semaineAvecGratinEnRestes() {
+  plannings["2026-W44"] = {
+    semaine: "2026-W44",
+    updated_at: "t",
+    planning_slot: [slot("jeudi", "salade", "dejeuner"), { ...slot("jeudi", "gratin", "diner", 4), restes: true }],
+  }
+}
+
+describe("marquerRestesRepas (RG-85, RG-22)", () => {
+  beforeEach(() => semaineJeudi())
+
+  it("marque le seul créneau visé, via sauvegarder_slots", async () => {
+    const { client, rpcs } = mock()
+    const resultat = await marquerRestesRepas(client, { date: "2026-10-29", creneau: "soir" }, JEUDI)
+    expect(slotsEcrits(rpcs)).toEqual([
+      { recette_id: "gratin", jour: "jeudi", type_repas: "diner", personnes: 4, restes: true },
+    ])
+    expect(resultat.repas).toMatchObject({ recette: "gratin", restes: true })
+  })
+
+  it("restes: false restitue la recette d’origine", async () => {
+    semaineAvecGratinEnRestes()
+    const { client, rpcs } = mock()
+    const resultat = await marquerRestesRepas(client, { date: "2026-10-29", creneau: "soir", restes: false }, JEUDI)
+    expect(slotsEcrits(rpcs)).toEqual([
+      { recette_id: "gratin", jour: "jeudi", type_repas: "diner", personnes: 4, restes: false },
+    ])
+    expect(resultat.repas).toMatchObject({ recette: "gratin", restes: false })
+  })
+
+  it("idempotent : marquer un repas déjà en restes le laisse en restes", async () => {
+    semaineAvecGratinEnRestes()
+    const { client, rpcs } = mock()
+    const resultat = await marquerRestesRepas(client, { date: "2026-10-29", creneau: "soir", restes: true }, JEUDI)
+    expect(slotsEcrits(rpcs)).toEqual([
+      { recette_id: "gratin", jour: "jeudi", type_repas: "diner", personnes: 4, restes: true },
+    ])
+    expect(resultat.repas).toMatchObject({ recette: "gratin", restes: true })
+  })
+
+  it("créneau vide : ErreurOutil, aucune écriture", async () => {
+    plannings["2026-W44"] = {
+      semaine: "2026-W44",
+      updated_at: "t",
+      planning_slot: [slot("jeudi", "salade", "dejeuner")],
+    }
+    const { client, rpcs } = mock()
+    const appel = marquerRestesRepas(client, { date: "2026-10-29", creneau: "soir" }, JEUDI)
+    await expect(appel).rejects.toBeInstanceOf(ErreurOutil)
+    await expect(appel).rejects.toThrow("Aucun repas prévu")
+    expect(rpcs).toEqual([])
+  })
+
+  it("créneau désactivé : ErreurOutil, aucune écriture", async () => {
+    const { client, rpcs } = mock({
+      reglages: { data: reglages({ max_diner_semaine: "aucun" }), error: null },
+    })
+    await expect(marquerRestesRepas(client, { date: "2026-10-29", creneau: "soir" }, JEUDI)).rejects.toThrow(
+      "Aucun repas prévu"
+    )
+    expect(rpcs).toEqual([])
   })
 })

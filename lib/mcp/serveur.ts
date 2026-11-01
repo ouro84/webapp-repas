@@ -11,7 +11,8 @@ import { z } from "zod"
 import { creerClientParJeton } from "@/lib/supabase/par-jeton"
 import { ErreurOutil } from "@/lib/mcp/erreurs"
 import { lireListeCourses, lirePlanning, lireRecette } from "@/lib/mcp/lecture"
-import { changerPersonnes, genererCycle, remplacerRepas } from "@/lib/mcp/ecriture-planning"
+import { chercherRecettes } from "@/lib/mcp/recherche-recettes"
+import { changerPersonnes, genererCycle, marquerRestesRepas, remplacerRepas } from "@/lib/mcp/ecriture-planning"
 import { ajouterRecette } from "@/lib/mcp/ecriture-recettes"
 import { ajouterArticleCourses, cocherArticle } from "@/lib/mcp/ecriture-courses"
 import { prendreDemandePanier, rapporterPanier } from "@/lib/mcp/panier"
@@ -60,9 +61,13 @@ export function enregistrerOutilsLecture(server: McpServer): void {
     {
       title: "Lire le planning des repas",
       description:
-        "Repas prévus, chacun désigné par date (AAAA-MM-JJ) et créneau (midi | soir), avec la recette et le nombre de personnes. Sans argument : le cycle de courses en cours. Avec `semaine` (AAAA-Www) : cette semaine ISO. Une liste vide signifie qu'aucun repas n'est prévu : propose generer_cycle. Un repas `restes: true` ne se cuisine pas : on finit les restes du plat indiqué.",
+        "Repas prévus, chacun désigné par date (AAAA-MM-JJ) et créneau (midi | soir), avec la recette et le nombre de personnes. Sans argument : le cycle de courses en cours. Avec `semaine` (AAAA-Www) : cette semaine ISO. Une liste vide signifie qu'aucun repas n'est prévu : propose generer_cycle. Un repas `restes: true` ne se cuisine pas : on finit les restes du plat indiqué. Avec `ancre` (AAAA-MM-JJ, une date quelconque du cycle) : ce cycle-là, par exemple le suivant (`ancre` = lendemain de `periode.au`). `semaine` et `ancre` s'excluent. Chaque repas porte `accompagnement` (`feculents`, `legumes` ou null).",
       inputSchema: z.object({
         semaine: z.string().optional().describe("Semaine ISO, ex. 2026-W44. Par défaut : le cycle en cours."),
+        ancre: z
+          .string()
+          .optional()
+          .describe("Une date quelconque (AAAA-MM-JJ) du cycle voulu, ex. le lendemain de periode.au pour le cycle suivant. Exclusif avec semaine."),
       }),
     },
     async (args, ctx) => executer(ctx, (supabase) => lirePlanning(supabase, args, aujourdhuiParis()))
@@ -73,9 +78,13 @@ export function enregistrerOutilsLecture(server: McpServer): void {
     {
       title: "Lire la liste de courses",
       description:
-        "Liste de courses du cycle en cours, groupée par rayon, articles ajoutés à la main compris. Par défaut, seulement ce qu'il reste à acheter (articles non cochés) ; `inclure_coches: true` renvoie aussi les articles cochés. `a_verifier_au_placard` liste les produits à vérifier avant d'acheter.",
+        "Liste de courses du cycle en cours, ou de celui qui contient `ancre` (AAAA-MM-JJ), groupée par rayon, articles ajoutés à la main compris. Par défaut, seulement ce qu'il reste à acheter (articles non cochés) ; `inclure_coches: true` renvoie aussi les articles cochés. `a_verifier_au_placard` liste les produits à vérifier avant d'acheter.",
       inputSchema: z.object({
         inclure_coches: z.boolean().optional().describe("Inclure les articles déjà cochés (défaut : non)."),
+        ancre: z
+          .string()
+          .optional()
+          .describe("Une date quelconque (AAAA-MM-JJ) du cycle voulu. Par défaut : le cycle en cours."),
       }),
     },
     async (args, ctx) => executer(ctx, (supabase) => lireListeCourses(supabase, args, aujourdhuiParis()))
@@ -93,6 +102,26 @@ export function enregistrerOutilsLecture(server: McpServer): void {
       }),
     },
     async (args, ctx) => executer(ctx, (supabase) => lireRecette(supabase, args, aujourdhuiParis()))
+  )
+
+  server.registerTool(
+    "chercher_recettes",
+    {
+      title: "Chercher des recettes",
+      description:
+        "Cherche des recettes par attributs, sans rien modifier : `temps_preparation`, `vegetarien`, `accompagnement`, `saison`, `texte` (dans le nom). Renvoie 10 recettes au plus, tirées au hasard parmi les correspondances (`total`), avec leurs attributs et leur origine (recette du foyer ou du catalogue). Pour en mettre une au planning, appelle remplacer_repas avec son nom exact. Entre deux recettes de même nom, remplacer_repas prend celle du foyer. Rappelle l'outil pour d'autres propositions.",
+      inputSchema: z.object({
+        texte: z.string().optional().describe("Mot ou fragment du nom de la recette (casse et accents ignorés)."),
+        temps_preparation: z.enum(["rapide", "normal", "long"]).optional().describe("Temps de préparation exact."),
+        vegetarien: z.boolean().optional().describe("true : végétariennes seulement ; false : non végétariennes."),
+        accompagnement: z.enum(["feculents", "legumes"]).optional().describe("Accompagnement de la recette."),
+        saison: z
+          .enum(SAISONS as [Saison, ...Saison[]])
+          .optional()
+          .describe("Saison visée : inclut les recettes sans saison déclarée (toute l'année)."),
+      }),
+    },
+    async (args, ctx) => executer(ctx, (supabase) => chercherRecettes(supabase, args))
   )
 }
 
@@ -156,6 +185,24 @@ export function enregistrerOutilsEcriture(server: McpServer): void {
       }),
     },
     async (args, ctx) => executer(ctx, (supabase) => changerPersonnes(supabase, args, aujourdhuiParis()))
+  )
+
+  server.registerTool(
+    "marquer_restes",
+    {
+      title: "Marquer un repas en restes",
+      description:
+        "Marque le repas désigné par date et créneau comme restes : on finit ce qu'il y a au frigo, rien à cuisiner, et ses ingrédients sortent de la liste de courses (RG-22). `restes: false` annule et restitue la recette d'origine. remplacer_repas efface aussi le marquage. Rejouer l'appel ne change rien : ce n'est pas une bascule.",
+      inputSchema: z.object({
+        date: DATE,
+        creneau: CRENEAU,
+        restes: z
+          .boolean()
+          .optional()
+          .describe("true (défaut) : marquer en restes ; false : annuler. Sans effet si le repas est déjà dans cet état."),
+      }),
+    },
+    async (args, ctx) => executer(ctx, (supabase) => marquerRestesRepas(supabase, args, aujourdhuiParis()))
   )
 
   server.registerTool(

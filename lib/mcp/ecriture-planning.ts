@@ -17,7 +17,7 @@ import { chargerRecettes } from "@/lib/recettes"
 import { chargerPreferences } from "@/lib/preferences"
 import { normaliser, rechercherRecettes } from "@/lib/recherche"
 import { modifierPersonnes, personnesDuSlot, PERSONNES_MAX, PERSONNES_MIN } from "@/lib/personnes"
-import { estRestes } from "@/lib/restes"
+import { estRestes, marquerRestes } from "@/lib/restes"
 import { chargerJourCoursesFoyer } from "@/lib/foyer"
 import { ErreurGeneration, genererPourUtilisateur, semaineDansPlage } from "@/lib/generation"
 import {
@@ -30,7 +30,6 @@ import {
   retirerCreneauxDesactives,
 } from "@/lib/generateur"
 import {
-  ancreCourante,
   ancreParDefaut,
   dateVersSemaineJour,
   joursDuCycle,
@@ -38,9 +37,11 @@ import {
 } from "@/lib/cycles"
 import { semaineISO } from "@/lib/semaines"
 import { ErreurOutil } from "@/lib/mcp/erreurs"
-import { localiserRepas, repasAuxDates, TYPE_REPAS, validerDate, type Creneau } from "@/lib/mcp/repas"
+import { idsRecettesDuFoyer } from "@/lib/mcp/recherche-recettes"
+import { localiserRepas, repasAuxDates, TYPE_REPAS, type Creneau } from "@/lib/mcp/repas"
 import {
-  depuisISO,
+  ancreDemandee,
+  CYCLE_HORS_PLAGE,
   libellePeriode,
   libelleRepas,
   planningsAffiches,
@@ -50,9 +51,6 @@ import {
 } from "@/lib/mcp/lecture"
 import type { ClientSupabase } from "@/lib/supabase/types"
 import type { Jour, JourPlanning, Planning, Recette, ReglagesGeneration } from "@/types"
-
-const CYCLE_HORS_PLAGE =
-  "Ce cycle est hors de la plage autorisée (12 semaines en arrière, 6 en avant). Choisis une date plus proche."
 
 export type CycleGenereMcp = {
   periode: { du: string; au: string; libelle: string }
@@ -76,17 +74,14 @@ export async function genererCycle(
   aujourdhui: Date = new Date(),
   verifierQuota: () => Promise<void> = async () => {}
 ): Promise<CycleGenereMcp> {
-  const jourCourses = await chargerJourCoursesFoyer(supabase)
   let ancre: string
   if (args.ancre !== undefined) {
-    const invalide = validerDate(args.ancre)
-    if (invalide) throw new ErreurOutil(invalide)
-    ancre = ancreCourante(depuisISO(args.ancre), jourCourses)
+    ancre = await ancreDemandee(supabase, args.ancre, aujourdhui)
   } else {
-    ancre = ancreParDefaut(aujourdhui, jourCourses)
-  }
-  if (!semaineDansPlage(semaineISO(aujourdhui), dateVersSemaineJour(ancre).semaine)) {
-    throw new ErreurOutil(CYCLE_HORS_PLAGE)
+    ancre = ancreParDefaut(aujourdhui, await chargerJourCoursesFoyer(supabase))
+    if (!semaineDansPlage(semaineISO(aujourdhui), dateVersSemaineJour(ancre).semaine)) {
+      throw new ErreurOutil(CYCLE_HORS_PLAGE)
+    }
   }
 
   const longueur = await chargerLongueurCycle(ancre, supabase)
@@ -189,9 +184,7 @@ async function ecrireCreneau(
 // catalogues fusionnés, RG-33) : la recette du foyer l'emporte, c'est celle que
 // l'utilisateur a ajoutée ou personnalisée. RLS : foyer_id non nul = du foyer.
 async function homonymeDuFoyer(supabase: ClientSupabase, homonymes: Recette[]): Promise<Recette> {
-  const { data, error } = await supabase.from("recette").select("id").not("foyer_id", "is", null)
-  if (error) throw new Error(`Lecture des recettes du foyer impossible : ${error.message}`)
-  const idsFoyer = new Set(((data ?? []) as Array<{ id: string }>).map((r) => r.id))
+  const idsFoyer = await idsRecettesDuFoyer(supabase)
   return homonymes.find((r) => idsFoyer.has(r.id)) ?? homonymes[0]
 }
 
@@ -286,6 +279,26 @@ export async function changerPersonnes(
   const n = args.personnes
   if (!Number.isInteger(n) || n < PERSONNES_MIN || n > PERSONNES_MAX) throw new ErreurOutil(MESSAGE_PERSONNES)
   const cible = await repasCible(supabase, args, aujourdhui)
+  // repasCible garantit que le slot existe : marquerRestes / modifierPersonnes ne renvoient pas null.
   const planning = modifierPersonnes(cible.planning, cible.jour, cible.type, n)!
+  return { repas: await ecrireCreneau(supabase, cible, planning, args) }
+}
+
+/**
+ * `marquer_restes` (RG-85, RG-22) : marque le repas comme restes (rien à
+ * cuisiner, ingrédients exclus de la liste de courses) ou, avec
+ * `restes: false`, le démarque. La recette sous-jacente est conservée : la
+ * démarquer la restitue. IDEMPOTENT (pas une bascule) : un assistant qui rejoue
+ * l'appel ne doit pas annuler son propre marquage. Seul le créneau visé est
+ * écrit (`ecrireCreneau`).
+ */
+export async function marquerRestesRepas(
+  supabase: ClientSupabase,
+  args: { date: string; creneau: Creneau; restes?: boolean },
+  aujourdhui: Date = new Date()
+): Promise<{ repas: RepasMcp }> {
+  const cible = await repasCible(supabase, args, aujourdhui)
+  // repasCible garantit que le slot existe : marquerRestes / modifierPersonnes ne renvoient pas null.
+  const planning = marquerRestes(cible.planning, cible.jour, cible.type, args.restes ?? true)!
   return { repas: await ecrireCreneau(supabase, cible, planning, args) }
 }

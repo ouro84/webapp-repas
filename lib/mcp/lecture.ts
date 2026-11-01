@@ -15,7 +15,10 @@ import { retirerArticlesCoches } from "@/lib/liste-courses"
 import { retirerCreneauxDesactives } from "@/lib/generateur"
 import { semaineDansPlage } from "@/lib/generation"
 import {
+  ancreCourante,
   ancreParDefaut,
+  cycleDecale,
+  dateVersSemaineJour,
   joursDuCycle,
   libelleCycle,
   semainesDuCycle,
@@ -35,11 +38,19 @@ import {
   localiserRepas,
   repasAuxDates,
   TYPE_REPAS,
+  validerDate,
   type Creneau,
   type RepasDate,
 } from "@/lib/mcp/repas"
 import type { ClientSupabase } from "@/lib/supabase/types"
-import type { Ingredient, Jour, Planning, ReglagesGeneration, TempsPreparation } from "@/types"
+import type {
+  Accompagnement,
+  Ingredient,
+  Jour,
+  Planning,
+  ReglagesGeneration,
+  TempsPreparation,
+} from "@/types"
 
 export type PlanningMcp = {
   periode: { du: string; au: string; libelle: string }
@@ -52,6 +63,8 @@ export type PlanningMcp = {
     restes: boolean
     vegetarien: boolean
     temps_preparation: TempsPreparation
+    // Féculents ou légumes, null si la recette n'en porte pas (#320, RG-85).
+    accompagnement: Accompagnement | null
   }>
 }
 
@@ -70,6 +83,7 @@ export function versRepasMcp({ date, creneau, jour, jp }: RepasDate): RepasMcp {
     restes: estRestes(jp, type),
     vegetarien: recette.vegetarien === true,
     temps_preparation: recette.tempsPreparation,
+    accompagnement: recette.accompagnement ?? null,
   }
 }
 
@@ -134,15 +148,47 @@ export async function planningsAffiches(
   return resultats.flatMap((r) => (r ? [retirerCreneauxDesactives(r.planning, reglages)] : []))
 }
 
+export const CYCLE_HORS_PLAGE =
+  "Ce cycle est hors de la plage autorisée (12 semaines en arrière, 6 en avant). Choisis une date plus proche."
+
+/**
+ * Ancre du cycle qui contient `ancre` (une date quelconque, AAAA-MM-JJ) : même
+ * résolution pour `generer_cycle` et les lectures (#320, RG-85). Une date entre
+ * deux cycles (cycle raccourci) désigne le cycle suivant. Lève
+ * `ErreurOutil` si la date est invalide ou le cycle hors plage −12/+6 semaines.
+ */
+export async function ancreDemandee(
+  supabase: ClientSupabase,
+  ancre: string,
+  aujourdhui: Date
+): Promise<string> {
+  const invalide = validerDate(ancre)
+  if (invalide) throw new ErreurOutil(invalide)
+  let resolue = ancreCourante(depuisISO(ancre), await chargerJourCoursesFoyer(supabase))
+  // Cycle raccourci (longueur < 7) : la date peut tomber dans le trou avant le
+  // prochain jour de courses ; ancreCourante la ramènerait au cycle courant.
+  // Une date après le dernier jour du cycle désigne le cycle suivant.
+  const jours = joursDuCycle(resolue, await chargerLongueurCycle(resolue, supabase))
+  if (ancre > jours[jours.length - 1]) resolue = cycleDecale(resolue, 1)
+  if (!semaineDansPlage(semaineISO(aujourdhui), dateVersSemaineJour(resolue).semaine)) {
+    throw new ErreurOutil(CYCLE_HORS_PLAGE)
+  }
+  return resolue
+}
+
 /**
  * `lire_planning` : repas du cycle COURANT (ancre du jour de courses, comme
- * /courses) ou de la semaine ISO `semaine`, chacun désigné par date + créneau.
+ * /courses), du cycle qui contient `ancre`, ou de la semaine ISO `semaine`,
+ * chacun désigné par date + créneau. `semaine` et `ancre` s'excluent.
  */
 export async function lirePlanning(
   supabase: ClientSupabase,
-  args: { semaine?: string },
+  args: { semaine?: string; ancre?: string },
   aujourdhui: Date = new Date()
 ): Promise<PlanningMcp> {
+  if (args.semaine !== undefined && args.ancre !== undefined) {
+    throw new ErreurOutil("Choisis soit semaine, soit ancre, pas les deux.")
+  }
   let dates: string[]
   let semaines: string[]
   if (args.semaine !== undefined) {
@@ -160,7 +206,10 @@ export async function lirePlanning(
     dates = datesDeSemaine(args.semaine)
     semaines = [args.semaine]
   } else {
-    const ancre = ancreParDefaut(aujourdhui, await chargerJourCoursesFoyer(supabase))
+    const ancre =
+      args.ancre !== undefined
+        ? await ancreDemandee(supabase, args.ancre, aujourdhui)
+        : ancreParDefaut(aujourdhui, await chargerJourCoursesFoyer(supabase))
     const longueur = await chargerLongueurCycle(ancre, supabase)
     dates = joursDuCycle(ancre, longueur)
     semaines = semainesDuCycle(ancre, longueur)
@@ -187,15 +236,21 @@ export function versArticle(i: Ingredient, coches: Coches | null): ArticleMcp {
 }
 
 /**
- * `lire_liste_courses` : liste du cycle courant, articles NON cochés par défaut
- * (RG-78), groupés par catégorie, articles manuels compris.
+ * `lire_liste_courses` : liste du cycle courant (ou de celui qui contient
+ * `ancre`, #320), articles NON cochés par défaut (RG-78), groupés par
+ * catégorie, articles manuels compris.
  */
 export async function lireListeCourses(
   supabase: ClientSupabase,
-  args: { inclure_coches?: boolean },
+  args: { inclure_coches?: boolean; ancre?: string },
   aujourdhui: Date = new Date()
 ): Promise<ListeMcp> {
-  const { ancre, longueur, liste, coches } = await chargerListeCoursesCycle(supabase, { aujourdhui })
+  const ancreCycle =
+    args.ancre !== undefined ? await ancreDemandee(supabase, args.ancre, aujourdhui) : undefined
+  const { ancre, longueur, liste, coches } = await chargerListeCoursesCycle(supabase, {
+    ...(ancreCycle !== undefined ? { ancre: ancreCycle } : {}),
+    aujourdhui,
+  })
   const inclure = args.inclure_coches === true
   const affichee = inclure ? liste : retirerArticlesCoches(liste, coches)
   const cochesAffichees = inclure ? coches : null

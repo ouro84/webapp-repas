@@ -12,10 +12,11 @@ vi.mock("@/lib/supabase/client", () => ({
 
 import * as listeCoursesCycle from "@/lib/liste-courses-cycle"
 import { ErreurOutil } from "@/lib/mcp/erreurs"
-import { lireListeCourses, lirePlanning, lireRecette } from "@/lib/mcp/lecture"
+import { CYCLE_HORS_PLAGE, lireListeCourses, lirePlanning, lireRecette } from "@/lib/mcp/lecture"
 import {
   creerSupabaseMock,
   filtre,
+  type AppelTable,
   type ConfigMock,
   type ReponseMock,
 } from "@/tests/fixtures/supabase-mock"
@@ -24,7 +25,13 @@ import {
 // 29/10 (W44) au 04/11 (W45).
 const JEUDI = new Date(2026, 9, 29, 12)
 
-type OptionsSlot = { type?: "diner" | "dejeuner"; personnes?: number; restes?: boolean; vegetarien?: boolean }
+type OptionsSlot = {
+  type?: "diner" | "dejeuner"
+  personnes?: number
+  restes?: boolean
+  vegetarien?: boolean
+  accompagnement?: "feculents" | "legumes" | null
+}
 
 function slot(jour: string, recette: string, ingredient: string, o: OptionsSlot = {}) {
   return {
@@ -37,7 +44,7 @@ function slot(jour: string, recette: string, ingredient: string, o: OptionsSlot 
       nom: recette,
       temps_preparation: "rapide",
       vegetarien: o.vegetarien ?? false,
-      accompagnement: null,
+      accompagnement: o.accompagnement ?? null,
       saisons: null,
       etapes: ["Couper", "Cuire"],
       recette_ingredient: [
@@ -90,6 +97,15 @@ function mock(tables: ConfigMock["tables"] = {}) {
   })
 }
 
+// Le cycle du 29/10 dure `longueur` jours (5 par défaut : raccourci) ; les autres
+// cycles gardent la longueur par défaut (7).
+function cycleCourtDu29(longueur = 5) {
+  return (appel: AppelTable): ReponseMock => ({
+    data: filtre(appel, "eq", "ancre") === "2026-10-29" ? { longueur } : null,
+    error: null,
+  })
+}
+
 beforeEach(() => {
   vi.restoreAllMocks()
   plannings = {
@@ -98,7 +114,7 @@ beforeEach(() => {
       updated_at: "2026-10-29T10:00:00Z",
       planning_slot: [
         slot("lundi", "lundi-passe", "navet"),
-        slot("jeudi", "gratin", "tomate", { personnes: 4 }),
+        slot("jeudi", "gratin", "tomate", { personnes: 4, accompagnement: "feculents" }),
         slot("samedi", "salade", "concombre", { type: "dejeuner", vegetarien: true }),
         slot("samedi", "restes-gratin", "tomate", { restes: true }),
       ],
@@ -131,6 +147,7 @@ describe("lirePlanning (RG-73, RG-78)", () => {
       restes: false,
       vegetarien: false,
       temps_preparation: "rapide",
+      accompagnement: "feculents",
     })
     expect(resultat.repas[1].vegetarien).toBe(true)
     expect(resultat.repas[2].restes).toBe(true)
@@ -158,6 +175,81 @@ describe("lirePlanning (RG-73, RG-78)", () => {
     await expect(lirePlanning(client, { semaine: "2027-W30" }, JEUDI)).rejects.toThrow(
       "Cette date est hors de la plage autorisée (12 semaines en arrière, 6 en avant). Choisis une date plus proche."
     )
+  })
+})
+
+describe("lirePlanning — ancre (#320, RG-85)", () => {
+  it("ancre = un mercredi, jour de courses lundi → cycle qui contient la date (du = lundi précédent)", async () => {
+    const { client } = mock({ foyers: { data: { jour_courses: 1 }, error: null } })
+    const resultat = await lirePlanning(client, { ancre: "2026-11-04" }, JEUDI)
+    expect(resultat.periode).toMatchObject({ du: "2026-11-02", au: "2026-11-08" })
+    expect(resultat.repas.map((r) => [r.date, r.creneau, r.recette])).toEqual([["2026-11-02", "soir", "soupe"]])
+  })
+
+  it("ancre dans le cycle suivant (lendemain de periode.au) → cycle suivant", async () => {
+    const { client } = mock()
+    const courant = await lirePlanning(client, {}, JEUDI)
+    expect(courant.periode.au).toBe("2026-11-04")
+    const suivant = await lirePlanning(client, { ancre: "2026-11-05" }, JEUDI)
+    expect(suivant.periode).toMatchObject({ du: "2026-11-05", au: "2026-11-11" })
+  })
+
+  it("cycle raccourci (5 jours) : la date du lendemain de periode.au désigne le cycle suivant (I1)", async () => {
+    const { client } = mock({ cycle_courses: cycleCourtDu29() })
+    const courant = await lirePlanning(client, {}, JEUDI)
+    expect(courant.periode).toMatchObject({ du: "2026-10-29", au: "2026-11-02" })
+    const suivant = await lirePlanning(client, { ancre: "2026-11-03" }, JEUDI)
+    expect(suivant.periode).toMatchObject({ du: "2026-11-05", au: "2026-11-11" })
+  })
+
+  it("cycle long (9 jours) : une date à l'intérieur reste dans ce cycle (I1)", async () => {
+    const { client } = mock({ cycle_courses: cycleCourtDu29(9) })
+    const resultat = await lirePlanning(client, { ancre: "2026-11-03" }, JEUDI)
+    expect(resultat.periode).toMatchObject({ du: "2026-10-29", au: "2026-11-06" })
+  })
+
+  it("semaine et ancre ensemble → ErreurOutil, aucune lecture", async () => {
+    const { client, appels, rpcs } = mock()
+    await expect(lirePlanning(client, { semaine: "2026-W44", ancre: "2026-10-29" }, JEUDI)).rejects.toThrow(
+      new ErreurOutil("Choisis soit semaine, soit ancre, pas les deux.")
+    )
+    expect(appels).toEqual([])
+    expect(rpcs).toEqual([])
+  })
+
+  it("ancre impossible (2026-02-30) ou mal formée → ErreurOutil (message de validerDate)", async () => {
+    const { client } = mock()
+    const message = "Date invalide : utilise le format AAAA-MM-JJ (ex. 2026-10-29)."
+    await expect(lirePlanning(client, { ancre: "2026-02-30" }, JEUDI)).rejects.toThrow(new ErreurOutil(message))
+    await expect(lirePlanning(client, { ancre: "29/10/2026" }, JEUDI)).rejects.toThrow(new ErreurOutil(message))
+  })
+
+  it("ancre hors plage → CYCLE_HORS_PLAGE", async () => {
+    const { client } = mock()
+    await expect(lirePlanning(client, { ancre: "2027-12-01" }, JEUDI)).rejects.toThrow(
+      new ErreurOutil(CYCLE_HORS_PLAGE)
+    )
+  })
+})
+
+describe("lirePlanning — accompagnement (#320, RG-85)", () => {
+  it("chaque repas porte accompagnement (feculents | legumes), null si absent", async () => {
+    plannings["2026-W44"] = {
+      semaine: "2026-W44",
+      updated_at: "2026-10-29T10:00:00Z",
+      planning_slot: [
+        slot("jeudi", "gratin", "tomate", { accompagnement: "feculents" }),
+        slot("samedi", "salade", "concombre", { type: "dejeuner", accompagnement: "legumes" }),
+        slot("samedi", "pizza", "tomate"),
+      ],
+    }
+    const { client } = mock()
+    const resultat = await lirePlanning(client, { semaine: "2026-W44" }, JEUDI)
+    expect(resultat.repas.map((r) => [r.recette, r.accompagnement])).toEqual([
+      ["gratin", "feculents"],
+      ["salade", "legumes"],
+      ["pizza", null],
+    ])
   })
 })
 
@@ -205,6 +297,36 @@ describe("lireListeCourses (RG-78)", () => {
     const { client } = mock()
     await lireListeCourses(client, {}, JEUDI)
     expect(espion).toHaveBeenCalledWith(client, { aujourdhui: JEUDI })
+  })
+})
+
+describe("lireListeCourses — ancre (#320, RG-85)", () => {
+  it("ancre → chargerListeCoursesCycle reçoit l'ancre de cycle résolue (pas la date brute)", async () => {
+    const espion = vi.spyOn(listeCoursesCycle, "chargerListeCoursesCycle")
+    const { client } = mock()
+    // Jour de courses = jeudi : le mercredi 4 novembre appartient au cycle ancré le jeudi 29 octobre.
+    const resultat = await lireListeCourses(client, { ancre: "2026-11-04" }, JEUDI)
+    expect(espion).toHaveBeenCalledWith(client, { ancre: "2026-10-29", aujourdhui: JEUDI })
+    expect(resultat.cycle).toMatchObject({ du: "2026-10-29", au: "2026-11-04" })
+  })
+
+  it("cycle raccourci : la date du lendemain du dernier jour désigne le cycle suivant (I1)", async () => {
+    const espion = vi.spyOn(listeCoursesCycle, "chargerListeCoursesCycle")
+    const { client } = mock({ cycle_courses: cycleCourtDu29() })
+    await lireListeCourses(client, { ancre: "2026-11-03" }, JEUDI)
+    expect(espion).toHaveBeenCalledWith(client, { ancre: "2026-11-05", aujourdhui: JEUDI })
+  })
+
+  it("ancre impossible ou hors plage → ErreurOutil, rien n'est lu", async () => {
+    const espion = vi.spyOn(listeCoursesCycle, "chargerListeCoursesCycle")
+    const { client } = mock()
+    await expect(lireListeCourses(client, { ancre: "2026-02-30" }, JEUDI)).rejects.toThrow(
+      "Date invalide : utilise le format AAAA-MM-JJ (ex. 2026-10-29)."
+    )
+    await expect(lireListeCourses(client, { ancre: "2027-12-01" }, JEUDI)).rejects.toThrow(
+      new ErreurOutil(CYCLE_HORS_PLAGE)
+    )
+    expect(espion).not.toHaveBeenCalled()
   })
 })
 
