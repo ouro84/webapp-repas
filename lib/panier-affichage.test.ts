@@ -38,6 +38,7 @@ function demande(surcharge: Partial<DemandePanier> = {}): DemandePanier {
 const etat = (derniere: DemandePanier | null, executeur = true): EtatPanier => ({
   executeur,
   derniere,
+  active: null,
 })
 
 describe("affichagePanier", () => {

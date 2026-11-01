@@ -124,7 +124,7 @@ type Derniere = {
   rapport_tardif: boolean;
 } | null;
 
-async function etatPanier(request: APIRequestContext, email: string): Promise<{ executeur: boolean; derniere: Derniere }> {
+async function etatPanier(request: APIRequestContext, email: string): Promise<{ executeur: boolean; derniere: Derniere; active: Derniere }> {
   const jeton = await sessionDe(request, email);
   const r = await request.post(`${lireEnvLocal("NEXT_PUBLIC_SUPABASE_URL")}/rest/v1/rpc/etat_panier`, {
     headers: {
@@ -608,7 +608,7 @@ test("isolation foyer : un autre compte ne prend ni ne rapporte la demande (RG-7
   const refuse = await rapporter(request, jetonB, demandeId);
   expect(refuse.resultat?.isError).toBe(true);
   expect(texte(refuse)).toBe(MESSAGES_PANIER.OMQ03);
-  expect(await etatPanier(request, EMAIL_B)).toEqual({ executeur: false, derniere: null });
+  expect(await etatPanier(request, EMAIL_B)).toEqual({ executeur: false, derniere: null, active: null });
   // Ni par lecture directe de la table, sous RLS (RG-71).
   expect(await lireDemande(request, EMAIL_B, demandeId)).toBeNull();
 

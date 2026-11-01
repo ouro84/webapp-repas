@@ -108,9 +108,10 @@ export type RapportPanier = z.infer<typeof schemaRapport>
  * par la route (lus par une personne sur /courses) et par le MCP (OMQ03 est lu
  * par un assistant : il dit quoi faire ensuite).
  */
-export const MESSAGES_PANIER: Record<"OMQ01" | "OMQ02" | "OMQ03", string> = {
+export const MESSAGES_PANIER: Record<"OMQ01" | "OMQ02" | "OMQ03" | "OMQ04", string> = {
   OMQ01: "Aucun exécuteur de panier n’est configuré pour ton foyer.",
   OMQ02: "Une demande de panier est déjà en cours : attends qu’elle se termine.",
+  OMQ04: "Cycle terminé : le panier ne se remplit que pour un cycle en cours ou à venir.",
   OMQ03:
     "Cette demande ne peut plus recevoir de rapport : elle est inconnue, close, ou remplacée par une demande plus récente. Ne renvoie pas ce rapport et arrête-toi sans réessayer.",
 }

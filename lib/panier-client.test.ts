@@ -7,7 +7,7 @@ import { chargerEtatPanier, chargerJourCoursesPanier, lancerDemandePanier } from
 import type { EtatPanier } from "@/lib/panier-affichage"
 import { creerSupabaseMock } from "@/tests/fixtures/supabase-mock"
 
-const ETAT: EtatPanier = { executeur: true, derniere: null }
+const ETAT: EtatPanier = { executeur: true, derniere: null, active: null }
 
 describe("chargerEtatPanier", () => {
   it("renvoie data de etat_panier", async () => {

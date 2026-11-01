@@ -61,11 +61,12 @@ function demande(partiel: Partial<DemandePanier> = {}): DemandePanier {
   }
 }
 
-const SANS_DEMANDE: EtatPanier = { executeur: true, derniere: null }
-const ACTIVE: EtatPanier = { executeur: true, derniere: demande({ statut: "en_cours" }) }
+const SANS_DEMANDE: EtatPanier = { executeur: true, derniere: null, active: null }
+const ACTIVE: EtatPanier = { executeur: true, derniere: demande({ statut: "en_cours" }), active: null }
 const TERMINEE: EtatPanier = {
   executeur: true,
   derniere: demande({ statut: "terminee", rapport: RAPPORT, termine_le: "2026-10-28T17:09:00Z" }),
+  active: null,
 }
 
 /** Laisse se résoudre les promesses en attente (chargements, clic). */
@@ -133,7 +134,7 @@ afterEach(() => {
 
 describe("PanierChronodrive (#308, US-53)", () => {
   it("aucun exécuteur → rien n’est rendu", async () => {
-    client.chargerEtatPanier.mockResolvedValue({ executeur: false, derniere: null })
+    client.chargerEtatPanier.mockResolvedValue({ executeur: false, derniere: null, active: null })
     const { container } = await rendre()
     expect(client.chargerEtatPanier).toHaveBeenCalledTimes(1)
     expect(container.innerHTML).toBe("")

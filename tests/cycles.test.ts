@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest"
 import {
   ancreCourante, ancreDeSemaine, ancreParDefaut, cycleDecale, joursDuCycle, semainesDuCycle,
-  dateVersSemaineJour, estDateISO, libelleCycle, cyclesSelectionnables, LONGUEUR_DEFAUT,
+  cycleTermine, dateVersSemaineJour, estDateISO, libelleCycle, cyclesSelectionnables, LONGUEUR_DEFAUT,
   planningDuCycle, planningGenereParSemaine, remplacerJourDansSemaines,
 } from "@/lib/cycles"
 import type { JourPlanning, Planning } from "@/types"
@@ -242,5 +242,34 @@ describe("estDateISO", () => {
     for (const date of ["2026-02-30", "2026-13-01", "2026-2-3", "29/10/2026"]) {
       expect(estDateISO(date)).toBe(false)
     }
+  })
+})
+
+describe("cycleTermine (#320, RG-81)", () => {
+  // Aujourd'hui = jeudi 29 octobre 2026, à l'heure locale.
+  const AUJOURDHUI = new Date(2026, 9, 29, 10, 0)
+
+  it("la veille du début du cycle → non terminé (cycle à venir)", () => {
+    expect(cycleTermine("2026-10-30", 7, AUJOURDHUI)).toBe(false)
+  })
+
+  it("dernier jour = aujourd'hui → non terminé", () => {
+    // 23 oct + 7 jours → dernier jour = 29 oct.
+    expect(cycleTermine("2026-10-23", 7, AUJOURDHUI)).toBe(false)
+  })
+
+  it("dernier jour = hier → terminé", () => {
+    // 22 oct + 7 jours → dernier jour = 28 oct.
+    expect(cycleTermine("2026-10-22", 7, AUJOURDHUI)).toBe(true)
+  })
+
+  it("cycle de 5 jours : le dernier jour compte, pas ancre + 7", () => {
+    // 24 oct + 5 jours → dernier jour = 28 oct (terminé) ; sur 7 jours il courrait encore.
+    expect(cycleTermine("2026-10-24", 5, AUJOURDHUI)).toBe(true)
+    expect(cycleTermine("2026-10-25", 5, AUJOURDHUI)).toBe(false)
+  })
+
+  it("cycle en cours (aujourd'hui au milieu) → non terminé", () => {
+    expect(cycleTermine("2026-10-27", 7, AUJOURDHUI)).toBe(false)
   })
 })

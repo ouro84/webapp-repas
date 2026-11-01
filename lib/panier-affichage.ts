@@ -18,10 +18,15 @@ export type DemandePanier = {
   termine_le: string | null
 }
 
-/** Forme de la RPC `etat_panier()`. */
+/**
+ * Forme de la RPC `etat_panier(p_ancre)` : `derniere` = dernière demande du
+ * cycle demandé (ou du foyer sans ancre), `active` = la demande en attente ou
+ * en cours du foyer, quel que soit son cycle (RG-83).
+ */
 export type EtatPanier = {
   executeur: boolean
   derniere: DemandePanier | null
+  active: DemandePanier | null
 }
 
 export type AffichagePanier =

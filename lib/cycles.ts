@@ -85,6 +85,18 @@ export function joursDuCycle(ancre: string, longueur: number): string[] {
   })
 }
 
+/**
+ * Vrai si le cycle est terminé : son dernier jour (`ancre + longueur − 1`) est
+ * strictement antérieur à `aujourdhui` (#320, RG-81). Le cycle courant et les
+ * cycles à venir ne sont jamais terminés. Miroir TS de la garde `OMQ04` de
+ * `creer_demande_panier` (SQL : `(now() at time zone 'Europe/Paris')::date`) :
+ * passer `aujourdhui` en heure de Paris (`aujourdhuiParis()`).
+ */
+export function cycleTermine(ancre: string, longueur: number, aujourdhui: Date): boolean {
+  const jours = joursDuCycle(ancre, longueur)
+  return jours[jours.length - 1] < versISO(aujourdhui)
+}
+
 /** Semaines ISO distinctes que le cycle touche (ordre chronologique). */
 export function semainesDuCycle(ancre: string, longueur: number): string[] {
   const vues = new Set<string>()
