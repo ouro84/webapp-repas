@@ -35,6 +35,8 @@ paths:
   - **Captures de contrôle visuel hors CI** : `CAPTURES_PANIER=<dossier absolu hors du dépôt> npm run test:e2e:staging -- e2e/panier-demande.spec.ts -g captures` (320 et 390 px, clair et sombre, par `emulateMedia` puisque le thème par défaut suit le système ; vérifie aussi l'absence de débordement et un bouton sur une ligne). Sans la variable, le test est sauté ; un chemin relatif ou dans le dépôt est refusé. Pourquoi : des PNG dans `test-results/` seraient publiés en artefact CI, et le dossier n'a rien à faire dans le repo.
   - **Le test de captures crée son état et nettoie derrière lui** (`supprimerDemandesPanier` au début et en `finally`), sans dépendre de sa place dans le fichier. Pourquoi : l'état « disponible » exige un foyer sans demande, ce que l'ordre des tests ne garantit pas.
 
+- **`lien-cycle.spec`** (#320, RG-87) : compte partagé, lecture seule ; la vue préférée se pose par init script (`vue_planning`), gardé par un drapeau `sessionStorage` pour ne l'appliquer qu'une fois, et le libellé attendu se calcule avec `libelleCycle` sur le jour de courses lundi (`ancreParDefaut`, `cycleDecale`). Pourquoi : `addInitScript` rejoue à chaque chargement complet et écraserait la valeur lue après un `reload` ; le week-end décale le cycle par défaut, donc un libellé figé casserait.
+
 ## Le compte partagé : chaque spec restaure ce qu'elle touche
 
 Un état résiduel fausse les specs suivantes du même job. Nettoyer en `beforeEach` et/ou `afterAll` avec les helpers de `e2e/helpers.ts` :
