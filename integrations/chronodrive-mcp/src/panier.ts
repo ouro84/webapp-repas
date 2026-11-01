@@ -1,8 +1,9 @@
 // Panier de l'exécuteur Chronodrive (#308) : panier courant et ajouts confirmés (RG-83).
 // Protocole : docs/etudes/chronodrive.md, « Protocole relevé ». Pièges : .claude/rules/chronodrive.md.
-// Aucun outil de retrait ni de commande ici (RG-82) : `POST v1/carts/{id}/items` seulement.
+// Aucune commande ici (RG-82) : `POST v1/carts/{id}/items` (ajout) et, hors run seulement,
+// `DELETE v1/carts/{id}/items/{productId}` (vidage, #320).
 import { produitVu, versProduit, type Appelant, type OptionsHorloge, type Produit } from "./catalogue.ts";
-import { ErreurChronodrive } from "./client.ts";
+import { ErreurChronodrive, erreurDeConnexion } from "./client.ts";
 import { plafonnerQuantite, type QuantiteAjustee } from "./quantites.ts";
 
 // `refus` : refus décidé par l'appelant avant tout envoi (garde par terme de `ajouter_au_panier`,
@@ -80,6 +81,19 @@ export async function lirePanierCourant(client: Appelant): Promise<PanierCourant
 function messageErreur(e: unknown): string {
   // Les erreurs du client sont déjà caviardées (RG-80) ; une erreur étrangère ne livre que son nom.
   return e instanceof ErreurChronodrive ? e.message : `erreur inattendue (${e instanceof Error ? e.name : "inconnue"})`;
+}
+
+// Relecture finale du panier, retentée une fois : la seconde tentative absorbe un échec isolé.
+async function relirePanier(client: Appelant): Promise<{ panier: PanierCourant | null; erreur: unknown }> {
+  let erreur: unknown = null;
+  for (let essai = 0; essai < 2; essai++) {
+    try {
+      return { panier: await lirePanierCourant(client), erreur: null };
+    } catch (e) {
+      erreur = e;
+    }
+  }
+  return { panier: null, erreur };
 }
 
 type Envoi = {
@@ -203,15 +217,7 @@ export async function ajouterLignes(client: Appelant, lignes: LigneAjout[], opti
   const tentes = envois.filter((envoi) => envoi.tente);
 
   // Relecture finale retentée une fois : sans elle, rien n'est confirmé ni coché (RG-83).
-  let apres: PanierCourant | null = null;
-  let erreurRelecture: unknown = null;
-  for (let essai = 0; essai < 2 && !apres; essai++) {
-    try {
-      apres = await lirePanierCourant(client);
-    } catch (e) {
-      erreurRelecture = e;
-    }
-  }
+  const { panier: apres, erreur: erreurRelecture } = await relirePanier(client);
   if (!apres) {
     for (const envoi of tentes) {
       const r = resultats[envoi.index];
@@ -235,4 +241,68 @@ export async function ajouterLignes(client: Appelant, lignes: LigneAjout[], opti
     }
   }
   return { resultats, produits: apres.produits };
+}
+
+export type StatutRetrait = "simulee" | "retiree" | "toujours_au_panier" | "non_tente" | "non_verifie";
+
+// `quantite` : quantité au panier avant le retrait. `erreur` : message de l'erreur du DELETE
+// (messageErreur, pas messagePourLeLlm : outils.ts importe panier.ts).
+export type LigneRetrait = {
+  productId: string;
+  libelle: string;
+  marque: string | null;
+  quantite: number;
+  statut: StatutRetrait;
+  erreur: string | null;
+};
+
+// `vide` : vrai seulement si la relecture finale a été faite et ne montre aucune ligne.
+// `relu` : faux si cette relecture a échoué deux fois, ou si elle montre un autre panier (commande
+// validée pendant le script).
+// `restantes` : nombre de lignes du panier relu après le vidage (ajout concurrent compris), `null`
+// sans relecture ; en simulation, la taille du panier lu.
+export type BilanVidage = { panierId: string; simulation: boolean; lignes: LigneRetrait[]; vide: boolean; relu: boolean; restantes: number | null };
+
+// Vidage du panier courant (#320, RG-82), réservé au hors run : un DELETE par ligne, en série
+// (ordre déterministe, pas de rafale vers Chronodrive). Un retrait n'est confirmé que par la
+// relecture du panier, jamais par la réponse du DELETE (2xx sans effet possible). Une erreur sur
+// une ligne n'arrête pas les autres, sauf une erreur de connexion (les lignes suivantes restent
+// « non tentées » : sinon chacune retenterait un login). En simulation, aucun DELETE.
+export async function viderPanier(client: Appelant, options: { simulation: boolean }): Promise<BilanVidage> {
+  const avant = await lirePanierCourant(client);
+  const lignes: LigneRetrait[] = [...avant.lignes].map(([productId, quantite]) => ({
+    productId,
+    libelle: avant.produits.get(productId)?.libelle ?? productId,
+    marque: avant.produits.get(productId)?.marque ?? null,
+    quantite,
+    statut: options.simulation ? "simulee" : "non_tente",
+    erreur: null,
+  }));
+  if (options.simulation || lignes.length === 0) {
+    return { panierId: avant.id, simulation: options.simulation, lignes, vide: lignes.length === 0, relu: true, restantes: avant.lignes.size };
+  }
+
+  const tentees: LigneRetrait[] = [];
+  const base = `/v1/carts/${encodeURIComponent(avant.id)}/items`;
+  for (const ligne of lignes) {
+    tentees.push(ligne);
+    try {
+      await client.appeler<unknown>("DELETE", `${base}/${encodeURIComponent(ligne.productId)}`, { service: "CARTS" });
+    } catch (e) {
+      ligne.erreur = messageErreur(e);
+      // Arrêt du lot, pas de la relecture finale : elle garde ses deux essais (le total reste borné)
+      // et, si elle aboutit, le bilan reste vrai.
+      if (erreurDeConnexion(e)) break;
+    }
+  }
+
+  const { panier: apres } = await relirePanier(client);
+  // Un autre identifiant (commande validée pendant le script) : ce n'est plus le panier vidé, rien
+  // ne se confirme.
+  if (!apres || apres.id !== avant.id) {
+    for (const ligne of tentees) ligne.statut = "non_verifie";
+    return { panierId: avant.id, simulation: false, lignes, vide: false, relu: false, restantes: null };
+  }
+  for (const ligne of tentees) ligne.statut = apres.lignes.has(ligne.productId) ? "toujours_au_panier" : "retiree";
+  return { panierId: avant.id, simulation: false, lignes, vide: apres.lignes.size === 0, relu: true, restantes: apres.lignes.size };
 }

@@ -35,6 +35,15 @@ export class ErreurChronodrive extends Error {
   }
 }
 
+// Erreurs de connexion : elles se répéteraient d'un appel à l'autre (une tentative de login chacune),
+// donc les outils qui bouclent (recherche par terme, vidage ligne à ligne) s'interrompent dessus.
+const ETAPES_CONNEXION = new Set(["config", "config-front", "login", "authorize", "token", "GET /v1/customers/me"]);
+
+// Un 401 qui a survécu à l'unique reconnexion du client se répéterait aussi à chaque appel : même traitement.
+export function erreurDeConnexion(e: unknown): boolean {
+  return e instanceof ErreurChronodrive && (ETAPES_CONNEXION.has(e.etape) || e.statut === 401);
+}
+
 export type Config = {
   email: string;
   motDePasse: string;
@@ -181,7 +190,7 @@ export class ClientChronodrive {
   // 401 remonte en erreur (pas de boucle de login), et un 401 juste après un login fait pour cet
   // appel remonte aussitôt. Un 401 « API Key is not valid » est une erreur de clé de service :
   // jamais de login dessus, les clés sont relues une fois sur l'accueil puis l'appel est rejoué une fois.
-  async appeler<T>(methode: "GET" | "POST", chemin: string, options: OptionsAppel): Promise<T> {
+  async appeler<T>(methode: "GET" | "POST" | "DELETE", chemin: string, options: OptionsAppel): Promise<T> {
     const etape = `${methode} ${chemin}`;
     const { session, neuve } = await this.#sessionCourante();
     const premier = await this.#requete(session, methode, chemin, options);

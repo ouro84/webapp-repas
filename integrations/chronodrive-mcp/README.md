@@ -19,6 +19,7 @@ Protocole de l'API et mesures : `docs/etudes/chronodrive.md`. Pièges : `.claude
 | `src/outils.ts` | Les 5 outils MCP : `chercher_produits`, `ajouter_au_panier`, `lire_panier`, `correspondances_connues`, `memoriser_correspondances`. `ajouter_au_panier` n'accepte, pour chaque ligne, qu'un produit proposé par `chercher_produits` pour le terme de cette ligne (`terme`, ou `terme_recherche` pour une reformulation cherchée dans un appel postérieur à celui de l'article) depuis moins de 30 min. Avec `quantite_omq` (quantité OMQ de l'article), la quantité est plafonnée au besoin calculé, jamais augmentée (`quantiteAjustee`). `chercher_produits` lit le panier courant une fois par appel et marque chaque produit renvoyé de `dansPanier` (indisponibles compris) : la skill reconnaît ainsi un article déjà au panier, quel que soit le produit qu'elle choisirait. |
 | `src/quantites.ts` | Lecture de la quantité OMQ et de la contenance (masse, volume, nombre) et plafond `min(demande, besoin)`. |
 | `src/mcp.ts` | Point d'entrée stdio (`node src/mcp.ts`), en lecture seule sauf si `CHRONODRIVE_LECTURE_SEULE` vaut `'0'`. |
+| `src/vider-panier.ts` | Script manuel qui vide le panier courant (jamais depuis un run Hermes ni par un outil MCP : le run webhook ne voit aucun outil de retrait, RG-82 ; Claude Code ne le lance que sur ordre explicite d'Arnaud) ; `--simulation` pour voir sans rien retirer. |
 | `test/` | Tests `node --test`, Chronodrive simulé (`test/simulation.ts`). |
 | `hermes/skills/omq/panier-chronodrive/SKILL.md` | Skill Hermes : procédure du run et du mode mesure. |
 | `hermes/route-webhook.md` | Route webhook `panier-omq`, secret, Funnel. |
@@ -140,7 +141,7 @@ Chemin final : `/opt/data/skills/omq/panier-chronodrive/SKILL.md`. La skill se l
 
 ### 6. Redémarrer la gateway
 
-Un changement de `mcp_servers` exige un redémarrage. La gateway porte aussi Telegram, WhatsApp, Home Assistant et le cron : **prévenir Arnaud et attendre son feu vert**. Puis :
+Un changement du code ou de l'`env` d'un serveur MCP (par exemple après l'étape 2) exige un redémarrage ; l'ajout ou le retrait d'un serveur sous `mcp_servers` se recharge à chaud. La gateway porte aussi Telegram, WhatsApp, Home Assistant et le cron : **prévenir Arnaud et attendre son feu vert**. Puis :
 
 ```sh
 $D exec hermes s6-svc -t /run/service/gateway-default
@@ -174,29 +175,40 @@ Suivre `hermes/route-webhook.md` :
 
 Par défaut, un run webhook voit `web_search`, `web_extract`, `vision_analyze`, `clarify` et **tous** les serveurs MCP activés : linkedin, camofox-browser, dodojo, en plus de `chronodrive` et OMQ. La skill interdit les autres outils, mais le contenu de la liste et les libellés Chronodrive sont des données non fiables : une consigne glissée dans un libellé ne doit trouver aucun autre outil à appeler. Le run de `panier-omq` doit donc ne voir **que** les deux serveurs MCP `chronodrive` et « On Mange Quoi ? ».
 
-Une route dynamique ne prend pas `toolsets`. Pistes, selon ce que Hermes v0.21.5 accepte (à lire dans sa documentation ou `hermes webhook --help`) :
+La route `panier-omq` est **dynamique** (`hermes webhook subscribe …`) et la CLI n'a pas d'option `toolsets` : la clé s'ajoute **à la main** dans `/opt/data/webhook_subscriptions.json`, dans l'objet de la route :
 
-- une route **statique** `platforms.webhook.extra.routes.panier-omq` dans `config.yaml`, avec `toolsets` limité aux deux MCP, à la place de la route dynamique ; elle demande un redémarrage ;
-- ou `platform_toolsets.webhook` limité aux deux MCP : il s'applique à toutes les routes webhook, ce qui convient tant que `panier-omq` est la seule.
+```json
+"toolsets": ["chronodrive", "On Mange Quoi ?"]
+```
 
-Exclure aussi `chronodrive` des plateformes Telegram et WhatsApp si Hermes le permet (même mécanisme, `platform_toolsets.telegram` et `platform_toolsets.whatsapp`) : le panier ne doit être rempli que par le run webhook ou par une mesure lancée à la main. Si Hermes ne le permet pas, le noter dans `mesures/run-<date>.md`.
+- **Désigner chaque serveur par son nom**, jamais par `mcp-<nom>` : avec `mcp-<nom>`, Hermes ignore la clé sans erreur et le run voit tous les MCP activés.
+- **Sauvegarder avant de modifier** : `cp webhook_subscriptions.json webhook_subscriptions.json.bak-<motif>` (le fichier contient le secret, mode `600` ou `640`).
+- **Aucun redémarrage** : une route dynamique, et l'ajout ou le retrait d'un serveur MCP, sont rechargés à chaud. Seul un changement du **code** ou de l'`env` d'un serveur MCP exige de redémarrer la gateway (étape 6).
 
-Sauvegarder `config.yaml` avant (`config.yaml.bak-avant-308-toolsets`), puis redémarrer la gateway avec Arnaud (étape 6).
+`chronodrive` est exclu des plateformes Telegram et WhatsApp : le panier ne doit être rempli que par le run webhook ou par une mesure lancée à la main. `platform_toolsets.<plateforme>` est une **liste d'autorisation** : dès qu'elle nomme un serveur MCP (par son nom, pas `mcp-<nom>`), seuls les serveurs nommés passent. `telegram` et `whatsapp` listent donc leurs toolsets natifs, puis `"On Mange Quoi ?"`, `linkedin`, `dodojo` et `camofox-browser`, sans `chronodrive`. Tout nouveau serveur MCP doit y être ajouté à la main. Sauvegarde : `config.yaml.bak-avant-320-toolsets`. Cette liste est relue à chaque tour d'après le code de Hermes, sans redémarrage ; vérifier sur Telegram (« liste tes outils MCP sans en appeler aucun ») qu'aucun `mcp__chronodrive__*` n'apparaît.
 
-**Vérifier ce que le run voit réellement**, avec une route de contrôle soumise à la même restriction (même `platform_toolsets.webhook`, ou route statique avec les mêmes `toolsets`), dont le prompt demande la liste des outils sans en appeler aucun :
+**Vérifier ce que le run voit réellement**, avec une route de contrôle `controle-outils` qui porte **les mêmes `toolsets`** (même ajout à la main dans `webhook_subscriptions.json`, après sauvegarde), livrée en `log` et dont le prompt demande la liste des outils sans en appeler aucun :
 
 ```sh
 $D exec -u 1000 hermes sh -c '
   SECRET=$(sed -n "s/^OMQ_WEBHOOK_SECRET=//p" /opt/data/chronodrive.env)
   hermes webhook subscribe controle-outils \
     --prompt "Liste les noms exacts de tous les outils dont tu disposes, un par ligne. N’en appelle aucun." \
-    --deliver telegram --deliver-chat-id 8985917282 \
+    --deliver log \
     --secret "$SECRET"
+'
+```
+
+Ajouter la clé `toolsets` à la route `controle-outils` (même valeur que `panier-omq`), puis lui envoyer un webhook signé :
+
+```sh
+$D exec -u 1000 hermes sh -c '
+  SECRET=$(sed -n "s/^OMQ_WEBHOOK_SECRET=//p" /opt/data/chronodrive.env)
   node /tmp/envoyer-webhook.mjs http://127.0.0.1:8644/webhooks/controle-outils "$SECRET"
 '
 ```
 
-Le script `envoyer-webhook.mjs` signe comme OMQ : le copier avant, depuis `outils/` du dépôt, dans `/tmp` du conteneur, puis le lancer de là. Depuis le PC, à la racine du dépôt : `ssh nas-hermes '/share/CACHEDEV1_DATA/.qpkg/container-station/bin/docker exec -i -u 1000 hermes sh -c "cat > /tmp/envoyer-webhook.mjs"' < integrations/chronodrive-mcp/outils/envoyer-webhook.mjs`. La réponse sur Telegram ne doit lister que des outils `mcp__chronodrive__*` et `mcp__On_Mange_Quoi____*`. Supprimer ensuite la route `controle-outils` (`hermes webhook --help` donne la sous-commande). Si la restriction passe par une route statique, faire le même contrôle avec une route statique de contrôle aux mêmes `toolsets`.
+Le script `envoyer-webhook.mjs` signe comme OMQ : le copier avant, depuis `outils/` du dépôt, dans `/tmp` du conteneur, puis le lancer de là. Depuis le PC, à la racine du dépôt : `ssh nas-hermes '/share/CACHEDEV1_DATA/.qpkg/container-station/bin/docker exec -i -u 1000 hermes sh -c "cat > /tmp/envoyer-webhook.mjs"' < integrations/chronodrive-mcp/outils/envoyer-webhook.mjs`. La livraison `log` n'envoie rien sur Telegram : lire la réponse du run dans `/opt/data/state.db`. Elle ne doit lister que des outils `mcp__chronodrive__*` et `mcp__On_Mange_Quoi____*`. Supprimer ensuite la route `controle-outils` (`hermes webhook --help` donne la sous-commande).
 
 ## Enregistrer l'exécuteur dans OMQ
 
@@ -223,6 +235,27 @@ Notes :
 - L'URL porte le port du Funnel (`10000`).
 - Le secret transite dans le corps de la requête HTTPS vers l'API de management.
 - Rotation : ré-enregistrer avec le nouveau secret. Le secret Vault existant est mis à jour.
+
+## Vider le panier (hors run)
+
+`src/vider-panier.ts` retire du panier Chronodrive courant toutes les lignes, une par une, puis relit le panier : un retrait n'est confirmé que par cette relecture. Il se lance à la main sur le NAS. **Jamais depuis un run Hermes ni par un outil MCP** : le run webhook ne voit aucun outil de retrait (RG-82). Claude Code ne le lance que sur ordre explicite d'Arnaud. Le script ne passe ni commande, ni créneau, ni paiement. Ne pas le lancer pendant un run de panier (carte « Panier en cours… » sur `/courses`) : RG-82 l'interdit.
+
+Toujours commencer par la simulation, qui liste ce qui serait retiré sans rien modifier. Sur le NAS (`$D` est défini plus haut) :
+
+```sh
+$D exec -u 1000 -w /opt/data/chronodrive-mcp hermes node src/vider-panier.ts --simulation
+$D exec -u 1000 -w /opt/data/chronodrive-mcp hermes node src/vider-panier.ts
+```
+
+Codes de sortie :
+
+| Code | Sens |
+|------|------|
+| `0` | Simulation, ou panier vidé et relu vide (un panier déjà vide compte aussi). |
+| `1` | Panier pas entièrement vidé, panier non relu, ou erreur (connexion, configuration). Le bilan dit quoi vérifier dans l'appli Chronodrive. |
+| `2` | Argument inconnu : seul `--simulation` est accepté, et rien n'est lancé. |
+
+Le code se copie comme à l'étape 2. Le script lit le nouveau code à chaque lancement : **pas de redémarrage de la gateway pour lui**. Le MCP en cours garde l'ancien code jusqu'au prochain redémarrage, ce qui est compatible : le vidage n'y touche pas.
 
 ## Spike désinstallé
 

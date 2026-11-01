@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 
 import { chargerFavoris, DUREE_FAVORIS_MS, rechercher } from "../src/catalogue.ts";
 import { ErreurChronodrive } from "../src/client.ts";
-import { ajouterLignes, BUDGET_LOT_MS, lirePanierCourant } from "../src/panier.ts";
+import { ajouterLignes, BUDGET_LOT_MS, lirePanierCourant, viderPanier } from "../src/panier.ts";
 import { clientSimule, fiche, panierSimule, voir, type Route } from "./simulation.ts";
 
 const AJOUTS = "POST /v1/carts/p1/items";
@@ -456,4 +456,218 @@ test("fiche vue périmée (plus de 30 min) : refusée sans POST, relancer cherch
   assert.equal(sim.compter(AJOUTS), 0);
   assert.equal(r.confirme, false);
   assert.match(r.erreur ?? "", /relance chercher_produits/);
+});
+
+// Vidage du panier hors run (#320, RG-82) : DELETE ligne à ligne, confirmé par relecture.
+const retraitDe = (id: string) => `DELETE /v1/carts/C1/items/${id}`;
+
+test("vider : simulation → aucune requête DELETE, lignes « simulee », quantités du panier", async () => {
+  const panier = panierSimule("C1", { "1": 2, "2": 1 });
+  const sim = clientSimule(panier.routes);
+  const bilan = await viderPanier(sim.client, { simulation: true });
+  assert.equal(sim.compter(retraitDe("1")), 0);
+  assert.equal(sim.compter(retraitDe("2")), 0);
+  assert.deepEqual(bilan.lignes.map((l) => [l.productId, l.quantite, l.statut]), [["1", 2, "simulee"], ["2", 1, "simulee"]]);
+  assert.equal(bilan.lignes[0].libelle, "Produit 1");
+  assert.equal(bilan.lignes[0].marque, "Marque");
+  assert.equal(bilan.simulation, true);
+  assert.equal(bilan.panierId, "C1");
+  assert.equal(bilan.vide, false);
+  assert.equal(bilan.relu, true);
+});
+
+test("vider : toutes les lignes retirées puis panier relu vide", async () => {
+  const panier = panierSimule("C1", { "1": 2, "2": 1 });
+  const sim = clientSimule(panier.routes);
+  const bilan = await viderPanier(sim.client, { simulation: false });
+  assert.deepEqual(bilan.lignes.map((l) => [l.productId, l.statut, l.erreur]), [["1", "retiree", null], ["2", "retiree", null]]);
+  assert.equal(bilan.vide, true);
+  assert.equal(bilan.relu, true);
+  assert.equal(sim.compter(retraitDe("1")), 1);
+  assert.equal(sim.compter(retraitDe("2")), 1);
+  assert.equal(panier.etat.size, 0);
+});
+
+test("vider : les DELETE partent en série, dans l'ordre du panier", async () => {
+  const panier = panierSimule("C1", { "1": 1, "2": 1, "3": 1 });
+  let enCours = 0;
+  let maxEnCours = 0;
+  const ordre: string[] = [];
+  const routes = { ...panier.routes };
+  for (const id of ["1", "2", "3"]) {
+    routes[retraitDe(id)] = async (appel, n) => {
+      enCours++;
+      maxEnCours = Math.max(maxEnCours, enCours);
+      ordre.push(id);
+      await new Promise((r) => setTimeout(r, 5));
+      enCours--;
+      return panier.routes[retraitDe(id)](appel, n);
+    };
+  }
+  const sim = clientSimule(routes);
+  await viderPanier(sim.client, { simulation: false });
+  assert.equal(maxEnCours, 1);
+  assert.deepEqual(ordre, ["1", "2", "3"]);
+});
+
+test("vider : panier déjà vide → aucun DELETE, vide", async () => {
+  const panier = panierSimule("C1", {});
+  const sim = clientSimule(panier.routes);
+  const bilan = await viderPanier(sim.client, { simulation: false });
+  assert.deepEqual(bilan.lignes, []);
+  assert.equal(bilan.vide, true);
+  assert.equal(bilan.relu, true);
+  assert.equal(sim.appels.filter((a) => a.methode === "DELETE").length, 0);
+});
+
+test("vider : DELETE 2xx sans effet → toujours_au_panier, pas vide", async () => {
+  const panier = panierSimule("C1", { "1": 2, "2": 1 }, undefined, (id) => (id === "2" ? "sans_effet" : "retire"));
+  const sim = clientSimule(panier.routes);
+  const bilan = await viderPanier(sim.client, { simulation: false });
+  assert.deepEqual(bilan.lignes.map((l) => [l.productId, l.statut]), [["1", "retiree"], ["2", "toujours_au_panier"]]);
+  assert.equal(bilan.vide, false);
+  assert.equal(bilan.relu, true);
+});
+
+test("vider : échec d'une ligne n'arrête pas les autres", async () => {
+  const panier = panierSimule("C1", { "1": 2, "2": 1 }, undefined, (id) =>
+    id === "1" ? new ErreurChronodrive("DELETE /v1/carts/C1/items/1", "réponse HTTP 500") : "retire",
+  );
+  const sim = clientSimule(panier.routes);
+  const bilan = await viderPanier(sim.client, { simulation: false });
+  assert.equal(bilan.lignes[0].statut, "toujours_au_panier");
+  assert.match(bilan.lignes[0].erreur ?? "", /réponse HTTP 500/);
+  assert.equal(bilan.lignes[1].statut, "retiree");
+  assert.equal(bilan.lignes[1].erreur, null);
+  assert.equal(bilan.vide, false);
+});
+
+test("vider : erreur de connexion interrompt la boucle", async () => {
+  const panier = panierSimule("C1", { "1": 2, "2": 1 }, undefined, (id) =>
+    id === "1" ? new ErreurChronodrive("login", "identifiants refusés") : "retire",
+  );
+  const sim = clientSimule(panier.routes);
+  const bilan = await viderPanier(sim.client, { simulation: false });
+  assert.equal(bilan.lignes[0].statut, "toujours_au_panier");
+  assert.equal(bilan.lignes[1].statut, "non_tente");
+  assert.equal(sim.compter(retraitDe("2")), 0);
+  assert.equal(bilan.vide, false);
+});
+
+test("vider : relecture finale en échec deux fois → non_verifie, relu false, vide false", async () => {
+  const panier = panierSimule("C1", { "1": 2, "2": 1 });
+  const sim = clientSimule({
+    ...panier.routes,
+    "GET /v1/carts/C1": (appel, n) => {
+      if (n >= 2) throw new ErreurChronodrive("GET /v1/carts/C1", "HTTP 503");
+      return panier.routes["GET /v1/carts/C1"](appel, n);
+    },
+  });
+  const bilan = await viderPanier(sim.client, { simulation: false });
+  assert.deepEqual(bilan.lignes.map((l) => l.statut), ["non_verifie", "non_verifie"]);
+  assert.equal(bilan.relu, false);
+  assert.equal(bilan.vide, false);
+  assert.equal(sim.compter("GET /v1/carts/C1"), 3);
+});
+
+test("vider : relecture finale en échec une fois → retentée, lignes confirmées", async () => {
+  const panier = panierSimule("C1", { "1": 2 });
+  const sim = clientSimule({
+    ...panier.routes,
+    "GET /v1/carts/C1": (appel, n) => {
+      if (n === 2) throw new ErreurChronodrive("GET /v1/carts/C1", "HTTP 503");
+      return panier.routes["GET /v1/carts/C1"](appel, n);
+    },
+  });
+  const bilan = await viderPanier(sim.client, { simulation: false });
+  assert.equal(bilan.lignes[0].statut, "retiree");
+  assert.equal(bilan.vide, true);
+  assert.equal(bilan.relu, true);
+});
+
+test("vider : ligne non tentée (connexion) et relecture en échec → non_tente conservé", async () => {
+  const panier = panierSimule("C1", { "1": 2, "2": 1 }, undefined, (id) =>
+    id === "1" ? new ErreurChronodrive("login", "identifiants refusés") : "retire",
+  );
+  const sim = clientSimule({
+    ...panier.routes,
+    "GET /v1/carts/C1": (appel, n) => {
+      if (n >= 2) throw new ErreurChronodrive("GET /v1/carts/C1", "HTTP 503");
+      return panier.routes["GET /v1/carts/C1"](appel, n);
+    },
+  });
+  const bilan = await viderPanier(sim.client, { simulation: false });
+  assert.deepEqual(bilan.lignes.map((l) => l.statut), ["non_verifie", "non_tente"]);
+});
+
+test("vider : une ligne « retiree » peut porter l'erreur du DELETE (la relecture fait foi)", async () => {
+  const panier = panierSimule("C1", { "1": 2 });
+  const sim = clientSimule({
+    ...panier.routes,
+    [retraitDe("1")]: () => {
+      // Chronodrive a retiré la ligne puis répondu en erreur : le DELETE ment, la relecture non.
+      panier.etat.delete("1");
+      throw new ErreurChronodrive(retraitDe("1"), "réponse HTTP 500");
+    },
+  });
+  const bilan = await viderPanier(sim.client, { simulation: false });
+  assert.equal(bilan.lignes[0].statut, "retiree");
+  assert.match(bilan.lignes[0].erreur ?? "", /réponse HTTP 500/);
+  assert.equal(bilan.vide, true);
+});
+
+test("vider : panier relu avec un autre identifiant (commande validée entre-temps) → non relu, jamais « vidé »", async () => {
+  const panier = panierSimule("C1", { "1": 2 });
+  const sim = clientSimule({
+    ...panier.routes,
+    "GET /v1/customers/me/carts": (_appel, n) => ({ content: [{ id: n === 1 ? "C1" : "C2" }] }),
+    "GET /v1/carts/C2": () => ({ id: "C2", items: [] }),
+  });
+  const bilan = await viderPanier(sim.client, { simulation: false });
+  assert.deepEqual(bilan.lignes.map((l) => l.statut), ["non_verifie"]);
+  assert.equal(bilan.relu, false);
+  assert.equal(bilan.vide, false);
+  assert.equal(bilan.restantes, null);
+  assert.equal(bilan.panierId, "C1");
+});
+
+test("vider : restantes = lignes du panier relu (null sans relecture, 0 si déjà vide, taille lue en simulation)", async () => {
+  const sim = clientSimule(panierSimule("C1", { "1": 2, "2": 1 }).routes);
+  assert.equal((await viderPanier(sim.client, { simulation: true })).restantes, 2);
+
+  const videe = clientSimule(panierSimule("C1", { "1": 2 }).routes);
+  assert.equal((await viderPanier(videe.client, { simulation: false })).restantes, 0);
+
+  const dejaVide = clientSimule(panierSimule("C1", {}).routes);
+  assert.equal((await viderPanier(dejaVide.client, { simulation: false })).restantes, 0);
+
+  const sansSortie = panierSimule("C1", { "1": 2, "2": 1 }, undefined, (id) => (id === "2" ? "sans_effet" : "retire"));
+  assert.equal((await viderPanier(clientSimule(sansSortie.routes).client, { simulation: false })).restantes, 1);
+
+  const panier = panierSimule("C1", { "1": 2 });
+  const nonRelu = clientSimule({
+    ...panier.routes,
+    "GET /v1/carts/C1": (appel, n) => {
+      if (n >= 2) throw new ErreurChronodrive("GET /v1/carts/C1", "HTTP 503");
+      return panier.routes["GET /v1/carts/C1"](appel, n);
+    },
+  });
+  assert.equal((await viderPanier(nonRelu.client, { simulation: false })).restantes, null);
+});
+
+test("vider : ajout concurrent pendant le vidage → restantes = 1, pas vidé, lignes lues « retiree »", async () => {
+  const panier = panierSimule("C1", { "1": 2 });
+  const sim = clientSimule({
+    ...panier.routes,
+    // Un produit absent de `lignes` apparaît au panier relu après le vidage.
+    "GET /v1/carts/C1": (appel, n) => {
+      const reponse = panier.routes["GET /v1/carts/C1"](appel, n) as { id: string; items: unknown[] };
+      return n >= 2 ? { ...reponse, items: [{ product: fiche("9"), quantity: 1 }] } : reponse;
+    },
+  });
+  const bilan = await viderPanier(sim.client, { simulation: false });
+  assert.deepEqual(bilan.lignes.map((l) => l.statut), ["retiree"]);
+  assert.equal(bilan.vide, false);
+  assert.equal(bilan.relu, true);
+  assert.equal(bilan.restantes, 1);
 });

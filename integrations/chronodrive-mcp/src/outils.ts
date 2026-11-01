@@ -16,7 +16,7 @@ import {
   type OptionsHorloge,
   type Produit,
 } from "./catalogue.ts";
-import { ErreurChronodrive } from "./client.ts";
+import { ErreurChronodrive, erreurDeConnexion } from "./client.ts";
 import { normaliserTerme, type Correspondance, type Correspondances, type EntreeCorrespondance } from "./correspondances.ts";
 import { ajouterLignes, lirePanierCourant, PRODUIT_INCONNU, type ResultatAjout } from "./panier.ts";
 
@@ -128,16 +128,6 @@ export type ResultatTerme = {
   recherche: ProduitPropose[];
   erreur: string | null;
 };
-
-// Erreurs de connexion : elles se répéteraient terme par terme (une tentative de login chacune),
-// donc elles interrompent tout l'appel de `chercher_produits`.
-const ETAPES_CONNEXION = new Set(["config", "config-front", "login", "authorize", "token", "GET /v1/customers/me"]);
-
-// Un 401 qui a survécu à l'unique reconnexion du client se répéterait aussi à chaque terme
-// (un login par terme) : même traitement.
-function erreurDeConnexion(e: unknown): boolean {
-  return e instanceof ErreurChronodrive && (ETAPES_CONNEXION.has(e.etape) || e.statut === 401);
-}
 
 const AVERTISSEMENT_CACHE = "cache des correspondances indisponible : résultats calculés sans lui (voir les journaux du NAS)";
 export const AVERTISSEMENT_PANIER = 'panier illisible : contrôle "déjà au panier" impossible';

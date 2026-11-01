@@ -580,3 +580,50 @@ test("chargerConfig : le fichier l'emporte sur l'environnement", () => {
   assert.throws(() => chargerConfig({ CHRONODRIVE_MODE: "VELO" }, chemin), /CHRONODRIVE_MODE/);
   assert.ok(!existsSync(join(dossier, "s.json")));
 });
+
+const R_LIGNE_PANIER = /^https:\/\/api\.chronodrive\.com\/v1\/carts\/C1\/items\/42$/;
+
+test("DELETE : méthode transmise, corps vide accepté (null)", async () => {
+  const sim = fetchSimule([...routesLogin(), { methode: "DELETE", motif: R_LIGNE_PANIER, reponse: () => new Response(null, { status: 204 }) }]);
+  const client = new ClientChronodrive(nouvelleConfig(), { fetch: sim.fetch, maintenant: horloge().maintenant });
+  const r = await client.appeler("DELETE", "/v1/carts/C1/items/42", { service: "CARTS" });
+  assert.equal(r, null);
+  const dernier = sim.appels.at(-1);
+  assert.equal(dernier?.methode, "DELETE");
+  assert.equal(dernier?.url.href, "https://api.chronodrive.com/v1/carts/C1/items/42");
+  assert.equal(dernier?.entetes.get("x-api-key"), CLES.CARTS);
+});
+
+test("DELETE : 401 de jeton → un seul login puis un seul rejeu", async () => {
+  // Session déjà ouverte (un GET d'abord) ; le 1er DELETE prend un 401, le rejeu passe.
+  const sim = fetchSimule([
+    ...routesLogin(),
+    { methode: "GET", motif: R_PANIERS, reponse: () => json({ content: [] }) },
+    { methode: "DELETE", motif: R_LIGNE_PANIER, reponse: (_a, n) => (n === 1 ? json({ message: "Unauthorized" }, 401) : new Response(null, { status: 204 })) },
+  ]);
+  const client = new ClientChronodrive(nouvelleConfig(), { fetch: sim.fetch, maintenant: horloge().maintenant });
+  await client.appeler("GET", "/v1/customers/me/carts", { service: "CUSTOMERS" });
+  const r = await client.appeler("DELETE", "/v1/carts/C1/items/42", { service: "CARTS" });
+  assert.equal(r, null);
+  assert.equal(sim.compter("POST", R_LOGIN), 2);
+  assert.equal(sim.compter("DELETE", R_LIGNE_PANIER), 2);
+  assert.equal(sim.appels.at(-1)?.entetes.get("authorization"), `Bearer ${JETON}-2`);
+});
+
+test("DELETE : second 401 remonte en erreur, sans boucle de login", async () => {
+  // Session déjà ouverte ; le DELETE prend un 401, une reconnexion, puis un second 401 : l'erreur remonte.
+  const sim = fetchSimule([
+    ...routesLogin(),
+    { methode: "GET", motif: R_PANIERS, reponse: () => json({ content: [] }) },
+    { methode: "DELETE", motif: R_LIGNE_PANIER, reponse: () => json({ message: "Unauthorized" }, 401) },
+  ]);
+  const client = new ClientChronodrive(nouvelleConfig(), { fetch: sim.fetch, maintenant: horloge().maintenant });
+  await client.appeler("GET", "/v1/customers/me/carts", { service: "CUSTOMERS" });
+  await assert.rejects(client.appeler("DELETE", "/v1/carts/C1/items/42", { service: "CARTS" }), (e: unknown) => {
+    assert.ok(e instanceof ErreurChronodrive);
+    assert.equal(e.statut, 401);
+    return true;
+  });
+  assert.equal(sim.compter("POST", R_LOGIN), 2);
+  assert.equal(sim.compter("DELETE", R_LIGNE_PANIER), 2);
+});
