@@ -66,7 +66,7 @@ Notes :
 
 ## Architecture retenue (ADR-12)
 
-1. `/courses` → « Constituer mon panier Chronodrive » (visible si un exécuteur est enregistré pour le foyer).
+1. `/courses` → « Remplir mon panier » (visible si un exécuteur est enregistré pour le foyer).
 2. OMQ crée une `demande_panier` et envoie un **webhook signé HMAC, sans donnée**, vers Hermes via **Tailscale Funnel** (un seul chemin exposé).
 3. Hermes lit la demande et la liste (non cochés, articles manuels compris) via le **MCP OMQ**.
 4. Pour chaque article : cache local des correspondances, puis favoris, puis recherche ; la cascade LLM de Hermes choisit produit et quantité.
@@ -160,5 +160,4 @@ Sources : `integrations/chronodrive-mcp/mesures/mapping-2026-10-31.md`, `run-202
 - **Limites connues** :
   - Hermes refuse `[SILENT]` sur un tour webhook : un court message Telegram part donc quand même quand il n'y a pas de demande ;
   - les outils d'écriture OMQ restent visibles du run webhook (risque accepté) ;
-  - Chronodrive reste joignable depuis Telegram et WhatsApp (reporté à #320) ;
-  - « Relancer pour les articles restants » reste affiché après « Tout décocher ».
+  - Chronodrive reste joignable depuis Telegram et WhatsApp (reporté à #320).

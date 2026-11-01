@@ -439,9 +439,11 @@ export async function supprimerDemandesPanier(request: APIRequestContext, foyerI
 }
 
 /**
- * Déplace une demande de panier sur une autre ancre (service_role). La route
- * vise toujours le cycle courant : c'est le seul moyen, en e2e, d'avoir la
- * demande d'un autre cycle (comme celle que l'assistant préparera, #320).
+ * Déplace une demande de panier sur une autre ancre (service_role), sans passer
+ * par un lancement : utile pour poser la demande d'un autre cycle (par exemple
+ * pour tester que `etat_panier(p_ancre)` la filtre, #320). Un lancement réel sur
+ * un autre cycle passe par la route (`{ ancre }`), le bouton de la carte ou
+ * l'outil MCP `lancer_demande_panier`.
  */
 export async function deplacerDemandePanier(request: APIRequestContext, id: string, ancre: string): Promise<void> {
   const { url, headers } = enTetesServiceRole();

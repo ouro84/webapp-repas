@@ -733,7 +733,9 @@ test("UI : cycle passé → bouton grisé, motif affiché, aucun appel (#320, RG
     // Le motif est relié au bouton (lecteurs d'écran).
     await expect(bouton).toHaveAccessibleDescription(MESSAGES_PANIER.OMQ04);
 
-    await bouton.click();
+    // `force` : Playwright attend sinon un bouton « activé » et considère
+    // `aria-disabled="true"` comme désactivé (timeout). Le clic doit être sans effet.
+    await bouton.click({ force: true });
     expect(appels).toHaveLength(0);
     expect(recues).toHaveLength(0);
   } finally {
@@ -873,7 +875,13 @@ test("UI : « Compléter mon panier » seulement avec un article coché, « Remp
     await expect(carte.getByRole("button", { name: "Remplir mon panier" })).toBeEnabled();
     expect(await carte.getByRole("button", { name: "Compléter mon panier" }).count()).toBe(0);
   } finally {
-    // Échec en cours de route : ne rien laisser de coché.
-    for (let i = 0; i < 3 && (await cochees.count()) > 0; i++) await cochees.first().click();
+    // Échec en cours de route : ne rien laisser de coché. On décoche puis on
+    // attend l'état observé (plus aucune case cochée), sans boucle à l'aveugle.
+    await expect(async () => {
+      if ((await cochees.count()) > 0) await cochees.first().click();
+      await expect(cochees).toHaveCount(0, { timeout: 1_000 });
+    })
+      .toPass({ timeout: 10_000 })
+      .catch((erreur) => console.warn("Nettoyage des coches impossible :", erreur));
   }
 });
