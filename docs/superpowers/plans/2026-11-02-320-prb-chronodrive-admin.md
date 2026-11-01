@@ -73,7 +73,7 @@
 - Produces:
   - `export const NOMS_OUTILS_ADMIN = ["vider_panier"] as const`
   - `export const LECTURE_SEULE_ADMIN = "Lecture seule : CHRONODRIVE_LECTURE_SEULE ne vaut pas '0', rien n’est retiré."`
-  - `export function creerServeurAdmin(deps: { client: () => Appelant; lectureSeule: boolean }): McpServer` — nom MCP `chronodrive-admin`.
+  - `export function creerServeurAdmin(deps: { client: () => Appelant; lectureSeule: boolean }): McpServer` — nom MCP `chronodrive-admin` (`Appelant` vient de `src/catalogue.ts`).
   - Outil `vider_panier`, entrée `{ confirmation?: string }`, `annotations: { destructiveHint: true, readOnlyHint: false }`. Sortie `structuredContent` : aperçu → `{ etape: "apercu", jeton, lignes: [{ libelle, marque, quantite }], message }` ; confirmation → `{ etape: "vidage", vide, relu, restantes, message }` où `message = formaterBilan(bilan)`.
 
 - [ ] **Step 1 : tests unitaires qui échouent** (`test/admin.test.ts`, serveur branché par `InMemoryTransport` comme `test/outils.test.ts`)
