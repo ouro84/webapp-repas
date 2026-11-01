@@ -230,8 +230,9 @@ describe("lirePlanning — ancre (#320, RG-85)", () => {
       { data: null, error: null },
     ]) {
       const { client, appels, rpcs } = mock({ foyers })
-      await expect(ancreDemandee(client, "2026-11-04", JEUDI)).rejects.toThrow()
-      await expect(ancreDemandee(client, "2026-11-04", JEUDI)).rejects.not.toBeInstanceOf(ErreurOutil)
+      const appel = ancreDemandee(client, "2026-11-04", JEUDI)
+      await expect(appel).rejects.toThrow()
+      await expect(appel).rejects.not.toBeInstanceOf(ErreurOutil)
       expect(appels.map((a) => a.table).filter((t) => t !== "foyers")).toEqual([])
       expect(rpcs).toEqual([])
     }

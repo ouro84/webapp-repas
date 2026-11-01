@@ -270,7 +270,6 @@ describe("affichagePanier", () => {
   })
 })
 
-
 describe("estActive", () => {
   it("vrai seulement pour en_attente et en_cours", () => {
     expect(estActive(null)).toBe(false)

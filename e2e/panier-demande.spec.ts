@@ -35,7 +35,7 @@ import {
   vieillirDemandePanier,
 } from "./helpers";
 import { MESSAGE_INJOIGNABLE, MESSAGES_PANIER } from "../lib/panier";
-import { cycleDecale } from "../lib/cycles";
+import { cycleDecale, joursDuCycle } from "../lib/cycles";
 
 const RUN = Date.now();
 const EMAIL_A = `claude-e2e-panier-a-${RUN}@example.com`;
@@ -286,14 +286,15 @@ function carteDe(page: Page): Locator {
   return page.getByRole("region", { name: "Panier Chronodrive" });
 }
 
-// /courses dans son état CHARGÉ, carte rendue avec ses deux lectures. La carte
-// n'est montée que dans l'état chargé (le compteur « n coché(s) sur m »
-// n'existe qu'avec une liste), puis décide de s'afficher avec `etat_panier` ET
-// le jour de courses du foyer (`foyers?select=jour_courses`, cycle courant).
-// On attend donc la liste, la réception COMPLÈTE des deux réponses (corps
-// compris : `waitForResponse` résout dès les en-têtes), puis deux frames pour
-// laisser React rendre. Après ce helper, la présence ou l'absence de la carte
-// se lit sans attente : c'est ce qui rend l'assertion d'absence probante.
+// /courses dans son état CHARGÉ, carte rendue. La carte n'est montée que dans
+// l'état chargé (le compteur « n coché(s) sur m » n'existe qu'avec une liste) ;
+// elle lit seulement `etat_panier` (ancre du cycle affiché), la page lit le jour
+// de courses du foyer (`foyers?select=jour_courses`) pour savoir quel cycle
+// afficher. On attend donc la liste, la réception COMPLÈTE de l'état du panier
+// et des lectures du jour de courses (corps compris : `waitForResponse` résout
+// dès les en-têtes), puis deux frames pour laisser React rendre. Après ce
+// helper, la présence ou l'absence de la carte se lit sans attente : c'est ce
+// qui rend l'assertion d'absence probante.
 async function ouvrirCourses(page: Page): Promise<void> {
   const lecturesJour: Request[] = [];
   const noterLecture = (req: Request) => {
@@ -307,8 +308,8 @@ async function ouvrirCourses(page: Page): Promise<void> {
     const reponseEtat = await etatLu;
     expect(reponseEtat.ok()).toBe(true);
     await reponseEtat.finished();
-    // La carte lance ses deux lectures dans le même effet : une fois l'état
-    // reçu, sa lecture du jour de courses est partie (celle de la page aussi).
+    // La page a lu le jour de courses avant de choisir le cycle (donc avant de
+    // monter la carte) : au moins une lecture est partie, on attend leur corps.
     expect(lecturesJour.length).toBeGreaterThan(0);
     for (const req of lecturesJour) {
       const reponse = await req.response();
@@ -711,6 +712,8 @@ test("UI : cycle suivant → bouton actif, clic → demande de CE cycle, webhook
 test("UI : cycle passé → bouton grisé, motif affiché, aucun appel (#320, RG-81)", async ({ request }) => {
   await supprimerDemandesPanier(request, foyerA);
   const { ancre } = await demandeTerminee(request);
+  // `demandeTerminee` passe par la route : le faux exécuteur a reçu son webhook.
+  recues.length = 0;
   // Deux cycles en arrière : terminé même si le cycle affiché par défaut est le
   // suivant (week-end, `ancreParDefaut`).
   const passe = cycleDecale(ancre, -2);
@@ -736,6 +739,9 @@ test("UI : cycle passé → bouton grisé, motif affiché, aucun appel (#320, RG
     // `force` : Playwright attend sinon un bouton « activé » et considère
     // `aria-disabled="true"` comme désactivé (timeout). Le clic doit être sans effet.
     await bouton.click({ force: true });
+    // Vérification d'absence : laisser passer les événements (un POST déclenché
+    // par erreur partirait après le clic) avant d'affirmer qu'aucun appel n'a eu lieu.
+    await pageA.waitForTimeout(300);
     expect(appels).toHaveLength(0);
     expect(recues).toHaveLength(0);
   } finally {
@@ -765,8 +771,8 @@ test("UI : échec affiché quand l’exécuteur répond 500, bouton réactivé (
 test("UI : aucun exécuteur → pas de carte (RG-81)", async ({ request }) => {
   expect((await etatPanier(request, EMAIL_B)).executeur).toBe(false);
   // B a un planning sur le cycle courant. Après ouvrirCourses, la liste est
-  // chargée, les deux lectures de la carte sont reçues et React a rendu : la
-  // même séquence montre la carte à A (témoin du premier test UI). Lecture
+  // chargée, l'état du panier et le jour de courses sont reçus et React a rendu :
+  // la même séquence montre la carte à A (témoin du premier test UI). Lecture
   // instantanée, sans poll, comme pour A.
   await ouvrirCourses(pageB);
   expect(await carteDe(pageB).count()).toBe(0);
@@ -787,6 +793,13 @@ test("route : { ancre d'un cycle terminé } → 409 OMQ04 sans webhook ; ancre m
   const refus = await demander({ ancre: cycleDecale(ancre, -2) });
   expect(refus.statut).toBe(409);
   expect(refus.corps.error).toBe(MESSAGES_PANIER.OMQ04);
+  // Une date en milieu d'un cycle terminé (ancre −2 + 3 jours) désigne ce cycle :
+  // la route la résout en ancre avant la RPC, sinon la garde de la base la lirait
+  // comme une ancre (cycle décalé de 3 jours) et pourrait l'accepter.
+  const milieu = joursDuCycle(cycleDecale(ancre, -2), 7)[3];
+  const refusMilieu = await demander({ ancre: milieu });
+  expect(refusMilieu.statut).toBe(409);
+  expect(refusMilieu.corps.error).toBe(MESSAGES_PANIER.OMQ04);
   const invalide = await demander({ ancre: "pas-une-date" });
   expect(invalide.statut).toBe(400);
   expect(invalide.corps.error).toBe("Cycle invalide.");

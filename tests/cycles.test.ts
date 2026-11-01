@@ -272,4 +272,16 @@ describe("cycleTermine (#320, RG-81)", () => {
   it("cycle en cours (aujourd'hui au milieu) → non terminé", () => {
     expect(cycleTermine("2026-10-27", 7, AUJOURDHUI)).toBe(false)
   })
+
+  it("cycle d'un jour : terminé dès le lendemain de l'ancre, pas le jour même", () => {
+    // Dernier jour = l'ancre elle-même.
+    expect(cycleTermine("2026-10-29", 1, AUJOURDHUI)).toBe(false)
+    expect(cycleTermine("2026-10-28", 1, AUJOURDHUI)).toBe(true)
+  })
+
+  it("cycle de 14 jours : le dernier jour est ancre + 13", () => {
+    // 16 oct + 13 = 29 oct (aujourd'hui) : encore en cours ; un jour plus tôt, terminé.
+    expect(cycleTermine("2026-10-16", 14, AUJOURDHUI)).toBe(false)
+    expect(cycleTermine("2026-10-15", 14, AUJOURDHUI)).toBe(true)
+  })
 })
