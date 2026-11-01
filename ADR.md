@@ -424,6 +424,12 @@ Respecte les CGV et le RGPD par construction, évite le blocage Cloudflare, ne c
   - **Expiration paresseuse** dans les RPC (`en_attente` 5 min, `en_cours` 30 min) : `pg_cron` n'est pas installé, et une tâche planifiée n'apporterait rien tant que personne ne lit l'état.
   - **Exécuteur en TypeScript exécuté directement par Node 26** (type stripping, conteneur `hermes`), sans étape de build ; cache des correspondances dans `node:sqlite`, sans dépendance native.
   - Découpage : PR1 socle (tables, RPC, outils MCP, route webhook), PR2 UI `/courses`, PR3 exécuteur. Le parcours « préparer mon cycle » (#320) réutilise ce socle via `lancer_demande_panier` (RG-85).
+- Précisions du grilling de #320 (2026-11-01) :
+  - **`lancer_demande_panier` passe par le webhook, comme le bouton** : le run se fait toujours dans la route `panier-omq`, restreinte aux MCP `chronodrive` et OMQ, jamais dans la conversation Telegram, qui voit tous les outils de Hermes. Écarté : demande passée directement `en_cours` et run dans la conversation (spec initiale de RG-85).
+  - **Panier d'un cycle à venir** : la demande porte l'ancre du cycle visé (courant ou à venir), depuis le bouton comme depuis l'assistant ; l'exécuteur lit et coche avec cette ancre (RG-81, RG-85).
+  - **Vider le panier hors run** (RG-82) : script `vider-panier.ts` sur le NAS, puis serveur MCP **séparé** `chronodrive-admin` (point d'entrée distinct, seul outil `vider_panier`, en deux temps), exposé sur Telegram seulement. Écarté : un drapeau d'environnement sur le serveur `chronodrive`, qu'une faute de frappe dans `config.yaml` suffirait à mal régler.
+  - **`chronodrive` exclu de Telegram et WhatsApp** par liste d'autorisation explicite (`platform_toolsets`) : Hermes n'a pas d'exclusion par plateforme.
+  - **Logo Chronodrive** affiché sur la carte de `/courses` : usage strictement personnel tant qu'il n'y a pas de partenariat. Il est à retirer avant toute ouverture publique sans partenariat (#310), conformément à l'étude (`docs/etudes/chronodrive.md` : ne pas laisser croire à un partenariat).
 
 ---
 

@@ -179,7 +179,7 @@ Une route dynamique ne prend pas `toolsets`. Pistes, selon ce que Hermes v0.21.5
 - une route **statique** `platforms.webhook.extra.routes.panier-omq` dans `config.yaml`, avec `toolsets` limité aux deux MCP, à la place de la route dynamique ; elle demande un redémarrage ;
 - ou `platform_toolsets.webhook` limité aux deux MCP : il s'applique à toutes les routes webhook, ce qui convient tant que `panier-omq` est la seule.
 
-Exclure aussi `chronodrive` des plateformes Telegram et WhatsApp si Hermes le permet (même mécanisme, `platform_toolsets.telegram` et `platform_toolsets.whatsapp`) : le panier ne doit être rempli que par le run webhook ou par une mesure lancée à la main. Si Hermes ne le permet pas, le noter dans `mesures/run-<date>.md`.
+`chronodrive` est exclu des plateformes Telegram et WhatsApp (#320, 2026-11-01) : le panier ne doit être rempli que par le run webhook ou par une mesure lancée à la main. `platform_toolsets.<plateforme>` est une **liste d'autorisation** : dès qu'elle nomme un serveur MCP (par son nom, pas `mcp-<nom>`), seuls les serveurs nommés passent. `telegram` et `whatsapp` listent donc leurs toolsets natifs, puis `"On Mange Quoi ?"`, `linkedin`, `dodojo` et `camofox-browser`, sans `chronodrive`. Tout nouveau serveur MCP doit y être ajouté à la main. Sauvegarde : `config.yaml.bak-avant-320-toolsets`. La config est relue à chaque tour, sans redémarrage d'après le code de Hermes ; vérifier sur Telegram (« liste tes outils MCP sans en appeler aucun ») qu'aucun `mcp__chronodrive__*` n'apparaît.
 
 Sauvegarder `config.yaml` avant (`config.yaml.bak-avant-308-toolsets`), puis redémarrer la gateway avec Arnaud (étape 6).
 
