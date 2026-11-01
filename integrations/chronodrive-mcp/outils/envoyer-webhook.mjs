@@ -1,4 +1,4 @@
-// Spike #307 — émet le webhook de réveil de Hermes, comme le fera OMQ (RG-81).
+// Outil #308 — signe et envoie un webhook de test à Hermes, comme OMQ (RG-81, Standard Webhooks).
 // Usage : node envoyer-webhook.mjs <url> <secret>
 // Corps sans donnée métier. Signature Standard Webhooks, celle que vérifie Hermes
 // (gateway/platforms/webhook.py) : base64 HMAC-SHA256 de "<id>.<timestamp>.<corps>",

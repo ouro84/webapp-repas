@@ -8,7 +8,7 @@ paths:
 
 # Exécuteur Chronodrive (#303, ADR-12)
 
-Protocole et mesures : `docs/etudes/chronodrive.md`. PoC du spike #307 : `integrations/chronodrive-mcp/spike/` (jetable, remplacé par #308).
+Protocole et mesures : `docs/etudes/chronodrive.md`. Le PoC du spike #307 n'existe plus dans le dépôt : protocole et mesures sont dans `docs/etudes/chronodrive.md` et `integrations/chronodrive-mcp/mesures/`. L'outil de signature d'un webhook de test est `integrations/chronodrive-mcp/outils/envoyer-webhook.mjs`.
 
 ## API Chronodrive
 

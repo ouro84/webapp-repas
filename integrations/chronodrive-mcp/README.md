@@ -23,7 +23,7 @@ Protocole de l'API et mesures : `docs/etudes/chronodrive.md`. Pièges : `.claude
 | `hermes/skills/omq/panier-chronodrive/SKILL.md` | Skill Hermes : procédure du run et du mode mesure. |
 | `hermes/route-webhook.md` | Route webhook `panier-omq`, secret, Funnel. |
 | `hermes/prompt-mesure.md` | Message de mesure du classement, en lecture seule. |
-| `spike/` | PoC du spike #307, gardé jusqu'à la fin de #308 puis supprimé. |
+| `outils/envoyer-webhook.mjs` | Signe et envoie un webhook de test comme OMQ (Standard Webhooks), pour la route de contrôle. |
 
 ## Tests en local
 
@@ -60,11 +60,11 @@ $D exec -u 1000 hermes sh -c '
 
 ### 2. Copier le code
 
-Copier le code sans `node_modules`, `test`, `spike` ni `mesures`. Depuis le PC, Git Bash, à la racine du dépôt :
+Copier le code sans `node_modules`, `test` ni `mesures`. Depuis le PC, Git Bash, à la racine du dépôt :
 
 ```sh
 tar -C integrations/chronodrive-mcp \
-    --exclude=node_modules --exclude=test --exclude=spike --exclude=mesures \
+    --exclude=node_modules --exclude=test --exclude=mesures \
     -cf - . \
   | ssh nas-hermes '/share/CACHEDEV1_DATA/.qpkg/container-station/bin/docker exec -i -u 1000 hermes \
       sh -c "mkdir -p /opt/data/chronodrive-mcp && tar -C /opt/data/chronodrive-mcp -xf -"'
@@ -192,11 +192,11 @@ $D exec -u 1000 hermes sh -c '
     --prompt "Liste les noms exacts de tous les outils dont tu disposes, un par ligne. N’en appelle aucun." \
     --deliver telegram --deliver-chat-id 8985917282 \
     --secret "$SECRET"
-  node /opt/data/chronodrive-spike/envoyer-webhook.mjs http://127.0.0.1:8644/webhooks/controle-outils "$SECRET"
+  node /tmp/envoyer-webhook.mjs http://127.0.0.1:8644/webhooks/controle-outils "$SECRET"
 '
 ```
 
-Le script `envoyer-webhook.mjs` signe comme OMQ ; s'il n'est plus dans `/opt/data/chronodrive-spike/`, le copier depuis `spike/` du dépôt. La réponse sur Telegram ne doit lister que des outils `mcp__chronodrive__*` et `mcp__On_Mange_Quoi____*`. Supprimer ensuite la route `controle-outils` (`hermes webhook --help` donne la sous-commande). Si la restriction passe par une route statique, faire le même contrôle avec une route statique de contrôle aux mêmes `toolsets`.
+Le script `envoyer-webhook.mjs` signe comme OMQ : le copier avant, depuis `outils/` du dépôt, dans `/tmp` du conteneur, puis le lancer de là. Depuis le PC, à la racine du dépôt : `ssh nas-hermes '/share/CACHEDEV1_DATA/.qpkg/container-station/bin/docker exec -i -u 1000 hermes sh -c "cat > /tmp/envoyer-webhook.mjs"' < integrations/chronodrive-mcp/outils/envoyer-webhook.mjs`. La réponse sur Telegram ne doit lister que des outils `mcp__chronodrive__*` et `mcp__On_Mange_Quoi____*`. Supprimer ensuite la route `controle-outils` (`hermes webhook --help` donne la sous-commande). Si la restriction passe par une route statique, faire le même contrôle avec une route statique de contrôle aux mêmes `toolsets`.
 
 ## Enregistrer l'exécuteur dans OMQ
 
@@ -224,22 +224,9 @@ Notes :
 - Le secret transite dans le corps de la requête HTTPS vers l'API de management.
 - Rotation : ré-enregistrer avec le nouveau secret. Le secret Vault existant est mis à jour.
 
-## Désinstaller le spike
+## Spike désinstallé
 
-Seulement après la validation du run réel (Task 8 de #308).
-
-1. L'entrée `chronodrive-spike` de `config.yaml` a déjà été remplacée à l'étape 4. Vérifier qu'elle n'y figure plus.
-2. Garder une archive, puis supprimer le dossier. Il contient aussi des instantanés de panier, `panier-*.json` :
-
-   ```sh
-   $D exec -u 1000 hermes sh -c '
-     cd /opt/data
-     tar czf chronodrive-spike.bak-308.tgz chronodrive-spike
-     rm -rf chronodrive-spike
-   '
-   ```
-
-3. Dans le dépôt, supprimer `integrations/chronodrive-mcp/spike/` et mettre à jour `.claude/rules/chronodrive.md`.
+Fait le 2026-11-01 : l'entrée `chronodrive-spike` a été retirée de `config.yaml`, le dossier a été archivé sur le NAS (`chronodrive-spike.bak-308.tgz`, avec les instantanés de panier) puis supprimé, et le dossier `spike` a été supprimé du dépôt.
 
 La session écrite par le spike dans `/opt/data/chronodrive-session.json` n'a pas d'empreinte `compte` : le nouveau MCP l'ignore, se connecte une fois de plus au premier appel, puis réécrit le fichier avec sa propre session. Il n'y a rien à garder : ce fichier peut être supprimé à tout moment, le MCP en recrée un à la connexion suivante.
 
