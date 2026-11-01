@@ -137,7 +137,8 @@ export async function proxy(request: NextRequest) {
       return NextResponse.redirect(urlPreservantCode("/bienvenue", request))
     }
     if (onboarde && (pathname === "/bienvenue" || isAuthRoute)) {
-      // Déjà connecté sur /login?suivant=… (#305) : retour à la demande OAuth.
+      // Déjà connecté sur /login?suivant=… (#305) : retour à la demande OAuth
+      // ou au lien profond /planning?cycle= (#320, RG-87).
       const suivant = isAuthRoute ? request.nextUrl.searchParams.get("suivant") : null
       return NextResponse.redirect(urlPreservantCode(cheminDeRetour(suivant), request))
     }
