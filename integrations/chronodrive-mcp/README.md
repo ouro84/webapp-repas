@@ -114,7 +114,7 @@ $D exec -u 1000 hermes rm -f /opt/data/chronodrive-correspondances.sqlite
 
 ### 4. Déclarer le MCP dans `config.yaml`
 
-Dans `/opt/data/config.yaml`, sous `mcp_servers`, remplacer l'entrée `chronodrive-spike` par :
+**Sauvegarder d'abord**, avant toute modification de `config.yaml` : `cp -p config.yaml config.yaml.bak-avant-320-prb` (dans `/opt/data`). Puis, sous `mcp_servers`, remplacer l'entrée `chronodrive-spike` par :
 
 ```yaml
   chronodrive:
@@ -131,7 +131,7 @@ Dans `/opt/data/config.yaml`, sous `mcp_servers`, remplacer l'entrée `chronodri
 
 Pour pouvoir vider le panier depuis Telegram (voir « Vider le panier (hors run) »), déclarer aussi le serveur séparé `chronodrive-admin` sous `mcp_servers`, **en trois temps** :
 
-1. **Sauvegarder d'abord** : `cp -p config.yaml config.yaml.bak-avant-320-prb`. Puis déclarer l'entrée **sans `env`**, donc en lecture seule. L'ajout d'un serveur sous `mcp_servers` se recharge à chaud : l'entrée est **chargée dès l'enregistrement du fichier**, sans redémarrage ni feu vert, avant toute vérification des surfaces qui l'exposent.
+1. Déclarer l'entrée **sans `env`** (sauvegarde faite en tête de cette étape), donc en lecture seule. L'ajout d'un serveur sous `mcp_servers` se recharge à chaud : l'entrée est **chargée dès l'enregistrement du fichier**, sans redémarrage ni feu vert, avant toute vérification des surfaces qui l'exposent.
 
    ```yaml
      chronodrive-admin:
@@ -143,7 +143,7 @@ Pour pouvoir vider le panier depuis Telegram (voir « Vider le panier (hors run)
 
    Sans `CHRONODRIVE_LECTURE_SEULE: '0'`, l'aperçu marche mais la confirmation est refusée sans appel API : aucun retrait n'est possible. Cette variable est celle de **ce** serveur ; celle de `chronodrive` reste indépendante.
 2. **Vérifier toutes les surfaces** (étape 8) : chaque `platform_toolsets.<plateforme>` de `config.yaml` (Home Assistant compris), les tâches cron et chaque route de `webhook_subscriptions.json`. Aucune ne doit laisser passer `vider_panier` ; seule `telegram` nomme `chronodrive-admin`.
-3. **Seulement après**, ajouter `env: {CHRONODRIVE_LECTURE_SEULE: '0'}` à l'entrée, dans le redémarrage déjà nécessaire pour `chronodrive` (étape 6), avec le feu vert explicite d'Arnaud. Un changement de code ou d'`env` de ce serveur exige en effet de redémarrer la gateway.
+3. **Seulement après**, ajouter `env: {CHRONODRIVE_LECTURE_SEULE: '0'}` à l'entrée, au redémarrage qui suit l'étape 8 (celui qui arme aussi `chronodrive`), avec le feu vert explicite d'Arnaud. Un changement de code ou d'`env` de ce serveur exige en effet de redémarrer la gateway.
 
 ### 5. Installer la skill
 
