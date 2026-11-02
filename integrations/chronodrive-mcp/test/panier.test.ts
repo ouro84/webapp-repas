@@ -727,3 +727,20 @@ test("vider : jetonAttendu d'un autre panier (commande validée) → ErreurPanie
   await assert.rejects(viderPanier(sim.client, { simulation: false, jetonAttendu }), ErreurPanierChange);
   assert.equal(sim.appels.filter((a) => a.methode === "DELETE").length, 0);
 });
+
+test("vider : panier vide et jetonAttendu d'un panier non vide → ErreurPanierChange, aucune écriture", async () => {
+  const panier = panierSimule("C1", {});
+  const sim = clientSimule(panier.routes);
+  await assert.rejects(
+    viderPanier(sim.client, { simulation: false, jetonAttendu: "0123456789abcdef" }),
+    (e: unknown) => e instanceof ErreurPanierChange && e.message === PANIER_CHANGE,
+  );
+  assert.equal(sim.appels.filter((a) => a.methode !== "GET").length, 0);
+});
+
+test("vider : jetonAttendu faux refusé aussi en simulation → ErreurPanierChange", async () => {
+  const panier = panierSimule("C1", { "1": 2 });
+  const sim = clientSimule(panier.routes);
+  await assert.rejects(viderPanier(sim.client, { simulation: true, jetonAttendu: "0123456789abcdef" }), ErreurPanierChange);
+  assert.equal(sim.appels.filter((a) => a.methode !== "GET").length, 0);
+});
