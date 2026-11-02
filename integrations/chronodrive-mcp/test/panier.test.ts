@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 
 import { chargerFavoris, DUREE_FAVORIS_MS, rechercher } from "../src/catalogue.ts";
 import { ErreurChronodrive } from "../src/client.ts";
-import { ajouterLignes, BUDGET_LOT_MS, lirePanierCourant, viderPanier } from "../src/panier.ts";
+import { ajouterLignes, BUDGET_LOT_MS, ErreurPanierChange, jetonPanier, lirePanierCourant, PANIER_CHANGE, viderPanier } from "../src/panier.ts";
 import { clientSimule, fiche, panierSimule, voir, type Route } from "./simulation.ts";
 
 const AJOUTS = "POST /v1/carts/p1/items";
@@ -670,4 +670,77 @@ test("vider : ajout concurrent pendant le vidage → restantes = 1, pas vidé, l
   assert.equal(bilan.vide, false);
   assert.equal(bilan.relu, true);
   assert.equal(bilan.restantes, 1);
+});
+
+// Jeton d'état du panier (#320, RG-82) : lie la confirmation de `vider_panier` à l'aperçu montré.
+const lignesDe = (...paires: [string, number][]) => new Map(paires);
+
+test("jetonPanier : 16 caractères hex, indépendant de l'ordre des lignes", () => {
+  const a = jetonPanier({ id: "C1", lignes: lignesDe(["1", 2], ["2", 1], ["10", 3]) });
+  const b = jetonPanier({ id: "C1", lignes: lignesDe(["10", 3], ["1", 2], ["2", 1]) });
+  assert.match(a, /^[0-9a-f]{16}$/);
+  assert.equal(a, b);
+});
+
+test("jetonPanier : change si une quantité change, si une ligne s'ajoute ou si l'id du panier change", () => {
+  const base = jetonPanier({ id: "C1", lignes: lignesDe(["1", 2], ["2", 1]) });
+  assert.notEqual(base, jetonPanier({ id: "C1", lignes: lignesDe(["1", 3], ["2", 1]) }));
+  assert.notEqual(base, jetonPanier({ id: "C1", lignes: lignesDe(["1", 2], ["2", 1], ["3", 1]) }));
+  assert.notEqual(base, jetonPanier({ id: "C2", lignes: lignesDe(["1", 2], ["2", 1]) }));
+});
+
+test("vider : le bilan porte le jeton du panier lu avant tout retrait (simulation comprise)", async () => {
+  const panier = panierSimule("C1", { "1": 2, "2": 1 });
+  const attendu = jetonPanier({ id: "C1", lignes: lignesDe(["1", 2], ["2", 1]) });
+  const simulation = await viderPanier(clientSimule(panier.routes).client, { simulation: true });
+  assert.equal(simulation.jeton, attendu);
+  const reel = await viderPanier(clientSimule(panierSimule("C1", { "1": 2, "2": 1 }).routes).client, { simulation: false });
+  assert.equal(reel.jeton, attendu);
+});
+
+test("vider : jetonAttendu d'un panier inchangé → vidage normal", async () => {
+  const panier = panierSimule("C1", { "1": 2, "2": 1 });
+  const sim = clientSimule(panier.routes);
+  const jetonAttendu = jetonPanier({ id: "C1", lignes: lignesDe(["1", 2], ["2", 1]) });
+  const bilan = await viderPanier(sim.client, { simulation: false, jetonAttendu });
+  assert.equal(sim.compter(retraitDe("1")), 1);
+  assert.equal(sim.compter(retraitDe("2")), 1);
+  assert.equal(bilan.vide, true);
+});
+
+test("vider : quantité changée depuis l'aperçu → ErreurPanierChange, aucun DELETE", async () => {
+  const panier = panierSimule("C1", { "1": 3, "2": 1 });
+  const sim = clientSimule(panier.routes);
+  const jetonAttendu = jetonPanier({ id: "C1", lignes: lignesDe(["1", 2], ["2", 1]) });
+  await assert.rejects(
+    viderPanier(sim.client, { simulation: false, jetonAttendu }),
+    (e: unknown) => e instanceof ErreurPanierChange && e.message === PANIER_CHANGE,
+  );
+  assert.equal(sim.appels.filter((a) => a.methode === "DELETE").length, 0);
+  assert.equal(panier.etat.size, 2);
+});
+
+test("vider : jetonAttendu d'un autre panier (commande validée) → ErreurPanierChange, aucun DELETE", async () => {
+  const panier = panierSimule("C2", { "1": 2, "2": 1 });
+  const sim = clientSimule(panier.routes);
+  const jetonAttendu = jetonPanier({ id: "C1", lignes: lignesDe(["1", 2], ["2", 1]) });
+  await assert.rejects(viderPanier(sim.client, { simulation: false, jetonAttendu }), ErreurPanierChange);
+  assert.equal(sim.appels.filter((a) => a.methode === "DELETE").length, 0);
+});
+
+test("vider : panier vide et jetonAttendu d'un panier non vide → ErreurPanierChange, aucune écriture", async () => {
+  const panier = panierSimule("C1", {});
+  const sim = clientSimule(panier.routes);
+  await assert.rejects(
+    viderPanier(sim.client, { simulation: false, jetonAttendu: "0123456789abcdef" }),
+    (e: unknown) => e instanceof ErreurPanierChange && e.message === PANIER_CHANGE,
+  );
+  assert.equal(sim.appels.filter((a) => a.methode !== "GET").length, 0);
+});
+
+test("vider : jetonAttendu faux refusé aussi en simulation → ErreurPanierChange", async () => {
+  const panier = panierSimule("C1", { "1": 2 });
+  const sim = clientSimule(panier.routes);
+  await assert.rejects(viderPanier(sim.client, { simulation: true, jetonAttendu: "0123456789abcdef" }), ErreurPanierChange);
+  assert.equal(sim.appels.filter((a) => a.methode !== "GET").length, 0);
 });

@@ -7,7 +7,8 @@ import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { codeSortie, formaterBilan, lireArguments } from "../src/vider-panier.ts";
+import { formaterBilan } from "../src/bilan-vidage.ts";
+import { codeSortie, lireArguments } from "../src/vider-panier.ts";
 import type { BilanVidage, LigneRetrait, StatutRetrait } from "../src/panier.ts";
 
 const SCRIPT = fileURLToPath(new URL("../src/vider-panier.ts", import.meta.url));
@@ -37,7 +38,7 @@ function ligne(id: string, statut: StatutRetrait, extra: Partial<LigneRetrait> =
   return { productId: id, libelle: `Produit ${id}`, marque: "Marque", quantite: 2, statut, erreur: null, ...extra };
 }
 function bilan(extra: Partial<BilanVidage>): BilanVidage {
-  return { panierId: "p1", simulation: false, lignes: [], vide: false, relu: true, restantes: 0, ...extra };
+  return { panierId: "p1", simulation: false, lignes: [], vide: false, relu: true, restantes: 0, jeton: "0123456789abcdef", ...extra };
 }
 
 test("arguments : aucun → vidage ; --simulation → simulation ; faute de frappe refusée", () => {
