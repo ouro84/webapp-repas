@@ -195,10 +195,32 @@ test("contrôle avant chaque action risquée, puis arrêt (RG-86)", () => {
   assert.match(SKILL, /Vérifie : `periode\.du` du cycle suivant, relu dans cette réponse d'OMQ, est postérieur à `periode\.au` du cycle en cours\. Sinon, arrête-toi et dis pourquoi/);
 });
 
-test("question de remplacement posée seule, réponse « remplacer »", () => {
+test("question de remplacement posée seule, trois réponses : « remplacer », « garder », « non »", () => {
   assert.ok(SKILL.includes("pose la question de remplacement **seule**"));
-  assert.ok(SKILL.includes("Réponds « remplacer » pour écraser le cycle, « non » pour arrêter."));
-  assert.match(SKILL, /un « oui » compris : elle est ambiguë/);
+  assert.ok(
+    SKILL.includes(
+      "Réponds « remplacer » pour écraser le cycle, « garder » pour garder ses repas et les ajuster, « non » pour arrêter.",
+    ),
+  );
+  assert.match(SKILL, /^\s+- « remplacer » : [^\n]*`generer_cycle\(ancre, remplacer: true\)`/m);
+  assert.match(SKILL, /^\s+- « non » : arrête le parcours, sans toucher au cycle\./m);
+  assert.match(SKILL, /un « oui » compris[^\n]*: elle est ambiguë/);
+});
+
+test("« garder » n'appelle jamais `generer_cycle` et suit les mêmes règles", () => {
+  const etape1 = /^\s+- « garder » : ([^\n]*)$/m.exec(SKILL);
+  assert.ok(etape1, "réponse « garder » absente de l'étape 1");
+  assert.ok(etape1[1].includes("tu n'appelles jamais `generer_cycle`"));
+  assert.ok(etape1[1].includes("un tiers des repas au plus"));
+  assert.ok(etape1[1].includes("tendances confirmées"));
+
+  const etape4 = /^\s+- Réponse « garder » : ([^\n]*)$/m.exec(SKILL);
+  assert.ok(etape4, "cas « garder » absent de l'étape 4");
+  assert.ok(etape4[1].includes("n'appelle jamais `generer_cycle`"));
+
+  assert.ok(ligneOutil("generer_cycle")[3].includes("tout appel après la réponse « garder »"));
+  // Le contrôle de `remplacer: true` reste intact.
+  assert.ok(controle("`generer_cycle` avec `remplacer: true`").includes("contient le mot « remplacer »"));
 });
 
 test("validations acceptées sur les mots exacts seulement", () => {

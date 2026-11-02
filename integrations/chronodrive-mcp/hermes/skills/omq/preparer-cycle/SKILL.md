@@ -40,7 +40,7 @@ Serveur OMQ « On Mange Quoi ? » : noms Hermes `mcp__On_Mange_Quoi____<outil>`.
 |-------|-----------|-------|----------|
 | OMQ `lire_planning` | sans argument (cycle en cours, étape 1 seulement) ; `ancre` pour le cycle préparé ; `semaine` (AAAA-Www) pour l'historique | étapes 1, 2, 4, 5, 8 | `semaine` et `ancre` ensemble |
 | OMQ `lire_liste_courses` | `ancre` toujours, `inclure_coches` facultatif | étapes 6 et 7 | sans `ancre` |
-| OMQ `generer_cycle` | `ancre` toujours = la date de début annoncée dans ton premier message ; `remplacer: true` seulement après la réponse « remplacer » | étape 4, une fois | sans `ancre` ; `remplacer: true` sans la réponse « remplacer » |
+| OMQ `generer_cycle` | `ancre` toujours = la date de début annoncée dans ton premier message ; `remplacer: true` seulement après la réponse « remplacer » | étape 4, une fois | sans `ancre` ; `remplacer: true` sans la réponse « remplacer » ; tout appel après la réponse « garder » |
 | OMQ `chercher_recettes` | `texte`, `temps_preparation`, `vegetarien`, `accompagnement`, `saison` | étape 4, trouver une recette qui suit une tendance | — |
 | OMQ `remplacer_repas` | `date` comprise entre `periode.du` et `periode.au` du cycle préparé, `creneau` (`midi` ou `soir`), `recette` (nom exact) | étape 4 (tendance confirmée), étape 5 (correction d'Arnaud) | une `date` hors du cycle préparé ; toute modification sans tendance ni demande d'Arnaud |
 | OMQ `marquer_restes` | `date` comprise entre `periode.du` et `periode.au` du cycle préparé, `creneau`, `restes` (`true` par défaut, `false` annule) | étapes 4 et 5, mêmes conditions | idem |
@@ -63,10 +63,11 @@ Hermes n'a pas d'outil `send_message` pour l'agent : un message WhatsApp part pa
 3. Sinon, le cycle préparé est le suivant. Appelle `lire_planning` avec `ancre` = le lendemain de `periode.au` du cycle en cours. Vérifie : `periode.du` du cycle suivant, relu dans cette réponse d'OMQ, est postérieur à `periode.au` du cycle en cours. Sinon, arrête-toi et dis pourquoi : ne touche à aucun cycle.
 4. Verrouille `ancre` = `periode.du` du cycle préparé, tel que relu dans OMQ. Toutes les lectures et écritures suivantes portent **cette même `ancre`**, sans dépendre du jour ni de l'heure.
 5. Annonce dans ton premier message les dates du cycle, jours en toutes lettres, et l'ancre : « Je prépare le cycle du vendredi 06/11 au jeudi 12/11 (ancre 2026-11-06). »
-6. Si le cycle préparé a déjà des repas, pose la question de remplacement **seule**, sans aucune autre question dans le message : « Le cycle du vendredi 06/11 au jeudi 12/11 a déjà 13 repas. Réponds « remplacer » pour écraser le cycle, « non » pour arrêter. » Attends la réponse.
-   - La réponse contient « remplacer » : continue à l'étape 2 ; tu génèreras avec `remplacer: true` à l'étape 4.
-   - La réponse est « non » : arrête le parcours, sans toucher au cycle.
-   - Toute autre réponse, un « oui » compris : elle est ambiguë. Repose la question avec les mêmes mots.
+6. Si le cycle préparé a déjà des repas, pose la question de remplacement **seule**, sans aucune autre question dans le message : « Le cycle du vendredi 06/11 au jeudi 12/11 a déjà 13 repas. Réponds « remplacer » pour écraser le cycle, « garder » pour garder ses repas et les ajuster, « non » pour arrêter. » Attends la réponse. Elle doit contenir un seul de ces trois mots :
+   - « remplacer » : continue à l'étape 2 ; à l'étape 4, tu génèreras avec `generer_cycle(ancre, remplacer: true)`.
+   - « garder » : continue à l'étape 2 ; à l'étape 4, tu n'appelles jamais `generer_cycle` : tu pars des repas existants du cycle et tu passes aux ajustements, avec les mêmes règles (tendances confirmées, un tiers des repas au plus).
+   - « non » : arrête le parcours, sans toucher au cycle.
+   - Toute autre réponse, un « oui » compris, ou une réponse qui contient plusieurs de ces mots : elle est ambiguë. Repose la question avec les mêmes mots.
 
 ## Étape 2 : découvrir les tendances
 
@@ -126,9 +127,10 @@ N'utilise jamais une tendance nouvelle avant la réponse d'Arnaud. Attends sa r�
 
 ## Étape 4 : générer et ajuster
 
-1. Génère : `generer_cycle` avec `ancre` = la date de début annoncée dans ton premier message.
-   - Cycle préparé sans repas : sans `remplacer`.
-   - Cycle préparé avec repas : avec `remplacer: true`, après le contrôle ci-dessous.
+1. Génère, selon le cas :
+   - Cycle préparé sans repas : `generer_cycle` avec `ancre` = la date de début annoncée dans ton premier message, sans `remplacer`.
+   - Réponse « remplacer » : `generer_cycle` avec la même `ancre` et `remplacer: true`, après le contrôle ci-dessous.
+   - Réponse « garder » : n'appelle jamais `generer_cycle`. Relis le planning (`lire_planning` avec `ancre`) et passe au point 2 avec les repas existants.
    - Si l'outil refuse parce que le cycle a déjà des repas, alors que tu n'as pas reçu « remplacer » : arrête-toi et reviens à la question de remplacement (étape 1, point 6).
 
    **Avant d'appeler `generer_cycle` avec `remplacer: true`, vérifie :**
