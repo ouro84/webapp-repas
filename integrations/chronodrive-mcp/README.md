@@ -303,9 +303,9 @@ La confirmation n'agit que si `CHRONODRIVE_LECTURE_SEULE` vaut `'0'` dans l'entr
 
 ## Préparer le cycle (skill `preparer-cycle`)
 
-La skill `preparer-cycle` (RG-85, RG-86) prépare le prochain cycle avec Arnaud sur Telegram (« prépare mon cycle ») : tendances du foyer sur 8 semaines confirmées par Arnaud, génération et ajustements, deux validations (« repas OK », « panier OK »), `lancer_demande_panier` puis, sur ordre explicite seulement, partage de la liste des repas sur WhatsApp. Elle ne voit aucun outil Chronodrive : le panier est rempli par le run webhook (`panier-chronodrive`). Ses contrôles sont des consignes, pas des gardes : seules les listes d’outils de l’étape 8 bornent l’agent.
+La skill `preparer-cycle` (RG-85, RG-86) prépare le prochain cycle avec Arnaud sur Telegram (« prépare mon cycle ») : tendances du foyer sur 8 semaines confirmées par Arnaud, génération et ajustements, deux validations (« repas OK », « panier OK »), `lancer_demande_panier` puis, sur ordre explicite seulement, partage de la liste des repas sur WhatsApp. Elle ne voit aucun outil du serveur `chronodrive` ; seul `vider_panier` (`chronodrive-admin`) est visible sur Telegram, et la skill se l’interdit. Le panier est rempli par le run webhook (`panier-chronodrive`). Ses contrôles sont des consignes, pas des gardes : seules les listes d’outils de l’étape 8 bornent l’agent.
 
-**Installation.** Même commande que l’étape 5 : la skill est copiée avec le dossier `omq`. Chemin final : `/opt/data/skills/omq/preparer-cycle/SKILL.md`. Copier aussi `outils/duree-machine.ts` dans `/opt/data/chronodrive-mcp/outils/`.
+**Installation.** Même commande que l’étape 5 : la skill est copiée avec le dossier `omq`. Chemin final : `/opt/data/skills/omq/preparer-cycle/SKILL.md`. `outils/duree-machine.ts` part avec la copie du code de l’étape 2, qui exclut seulement `node_modules`, `test` et `mesures` : la rejouer si l’outil est plus récent que le NAS.
 
 **Contact WhatsApp.** Le destinataire du partage se mémorise dans Hermes, avec Arnaud, jamais dans Git : une entrée `memory` « OMQ contact partage cycle : <prénom> → whatsapp:<numéro ou JID> » (numéro E.164 ou identifiant WhatsApp). L’envoi passe par `hermes send -t "whatsapp:<contact>" -f <fichier>` avec l’outil `terminal` : Hermes n’expose pas `send_message` à l’agent.
 
