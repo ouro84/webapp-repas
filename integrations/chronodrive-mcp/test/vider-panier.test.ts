@@ -7,7 +7,8 @@ import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { codeSortie, formaterBilan, lireArguments } from "../src/vider-panier.ts";
+import { formaterBilan } from "../src/bilan-vidage.ts";
+import { codeSortie, lireArguments } from "../src/vider-panier.ts";
 import type { BilanVidage, LigneRetrait, StatutRetrait } from "../src/panier.ts";
 
 const SCRIPT = fileURLToPath(new URL("../src/vider-panier.ts", import.meta.url));

@@ -5,10 +5,10 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
+import { formaterBilan } from "./bilan-vidage.ts";
 import type { Appelant } from "./catalogue.ts";
 import { ErreurOutil, messagePourLeLlm } from "./outils.ts";
 import { viderPanier } from "./panier.ts";
-import { formaterBilan } from "./vider-panier.ts";
 
 export const NOMS_OUTILS_ADMIN = ["vider_panier"] as const;
 

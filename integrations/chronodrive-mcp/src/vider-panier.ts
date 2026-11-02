@@ -1,6 +1,7 @@
 // Vide le panier Chronodrive courant (#320, RG-82). Jamais depuis un run Hermes : le run webhook ne voit
-// aucun outil de retrait (RG-82). Le serveur MCP séparé `chronodrive-admin` (src/admin.ts) l’expose à Telegram.
-// À lancer À LA MAIN sur le NAS ; Claude Code ne le lance que sur ordre explicite d'Arnaud. Jamais de commande, de créneau ni de paiement.
+// aucun outil de retrait (RG-82). Le serveur MCP séparé `chronodrive-admin` (src/admin.ts) expose le
+// vidage à Telegram (`vider_panier`). À lancer À LA MAIN sur le NAS ; Claude Code ne le lance que sur
+// ordre explicite d'Arnaud. Jamais de commande, de créneau ni de paiement.
 //
 // Usage : node src/vider-panier.ts [--simulation]
 //   --simulation  liste ce qui serait retiré, sans rien modifier.
@@ -8,9 +9,10 @@
 // 2 argument inconnu (refusé avant toute connexion).
 import { realpathSync } from "node:fs";
 import { pathToFileURL } from "node:url";
+import { formaterBilan } from "./bilan-vidage.ts";
 import { fabriqueClient } from "./client.ts";
 import { messagePourLeLlm } from "./outils.ts";
-import { viderPanier, type BilanVidage, type StatutRetrait } from "./panier.ts";
+import { viderPanier, type BilanVidage } from "./panier.ts";
 
 export function lireArguments(argv: string[]): { simulation: boolean } | { erreur: string } {
   let simulation = false;
@@ -19,32 +21,6 @@ export function lireArguments(argv: string[]): { simulation: boolean } | { erreu
     simulation = true;
   }
   return { simulation };
-}
-
-const STATUTS: Record<StatutRetrait, string> = {
-  simulee: "serait retiré",
-  retiree: "retiré",
-  toujours_au_panier: "toujours au panier",
-  non_tente: "non tenté (connexion interrompue)",
-  non_verifie: "retrait non vérifié",
-};
-
-export function formaterBilan(b: BilanVidage): string {
-  const lignes = b.lignes.map((l) => {
-    const produit = `${l.quantite} × ${l.libelle}${l.marque ? ` · ${l.marque}` : ""}`;
-    // Une ligne retirée n'affiche pas son erreur : le DELETE a pu échouer alors que la relecture
-    // montre la ligne partie, et c'est la relecture qui fait foi.
-    const erreur = l.erreur && l.statut !== "retiree" ? ` : ${l.erreur}` : "";
-    return `${produit} — ${STATUTS[l.statut]}${erreur}`;
-  });
-  const n = b.lignes.length;
-  let conclusion: string;
-  if (n === 0 && b.vide) conclusion = "Panier déjà vide.";
-  else if (b.simulation) conclusion = `Simulation : ${n} ligne(s) seraient retirées, rien n'a été modifié.`;
-  else if (b.vide) conclusion = `Panier vidé : ${n} ligne(s) retirée(s), panier relu vide.`;
-  else if (!b.relu) conclusion = "Panier non relu : vérifie dans l'appli Chronodrive.";
-  else conclusion = `Panier pas entièrement vidé : ${b.restantes ?? b.lignes.filter((l) => l.statut !== "retiree").length} ligne(s) restent, vérifie dans l'appli Chronodrive.`;
-  return [...lignes, conclusion].join("\n");
 }
 
 export function codeSortie(b: BilanVidage): 0 | 1 {
