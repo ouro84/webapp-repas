@@ -142,6 +142,88 @@ test("interdits explicites", () => {
   assert.match(SKILL, /`rapporter_panier`[^\n]*interdit/i);
 });
 
+// Ligne du tableau des outils, découpée en cellules : outil, arguments, usage, interdit.
+function ligneOutil(outil: string): string[] {
+  const ligne = SKILL.split("\n").find((l) => l.startsWith(`| OMQ \`${outil}\``));
+  assert.ok(ligne, `outil absent du tableau : ${outil}`);
+  return ligne.split("|").slice(1, -1).map((c) => c.trim());
+}
+
+// Un bloc « Avant d'appeler X, vérifie : » suivi, dans le même bloc, de l'arrêt.
+function controle(appel: string): string {
+  const debut = SKILL.indexOf(`**Avant d'appeler ${appel}, vérifie :**`);
+  assert.ok(debut >= 0, `contrôle absent avant ${appel}`);
+  const fin = SKILL.indexOf("Sinon, arrête-toi et dis pourquoi.", debut);
+  assert.ok(fin > debut && fin - debut < 1200, `contrôle de ${appel} sans arrêt`);
+  return SKILL.slice(debut, fin);
+}
+
+test("ancre verrouillée : jamais omise, jamais inventée (RG-85)", () => {
+  for (const outil of ["generer_cycle", "lancer_demande_panier", "lire_liste_courses", "cocher_article"]) {
+    const [, args, , interdit] = ligneOutil(outil);
+    assert.ok(args.includes("`ancre` toujours"), `${outil} : ancre toujours passée`);
+    assert.ok(interdit.includes("sans `ancre`"), `${outil} : appel sans ancre interdit`);
+  }
+  for (const outil of ["generer_cycle", "lancer_demande_panier"]) {
+    assert.ok(ligneOutil(outil)[1].includes("la date de début annoncée dans ton premier message"), outil);
+  }
+  assert.ok(SKILL.includes("passe toujours `ancre` = la date de début annoncée dans ton premier message"));
+  assert.ok(
+    SKILL.includes(
+      "Si tu ne retrouves pas l'étape 1 dans cette conversation (session reprise), recommence l'étape 1 ; n'invente jamais l'ancre.",
+    ),
+  );
+  assert.ok(SKILL.includes("ne prends jamais la date du jour"));
+});
+
+test("contrôle avant chaque action risquée, puis arrêt (RG-86)", () => {
+  const remplacer = controle("`generer_cycle` avec `remplacer: true`");
+  assert.ok(remplacer.includes("« remplacer »"), "le mot « remplacer » est exigé");
+
+  const panier = controle("`lancer_demande_panier`");
+  assert.ok(panier.includes("jamais la date du jour"), "ancre de l'étape 1, pas la date du jour");
+  assert.ok(panier.includes("`cycle.du` égal à `ancre`"), "liste relue sur le bon cycle");
+  assert.ok(panier.includes("« repas OK » puis « panier OK », dans cet ordre"), "deux validations ordonnées");
+
+  const modification = controle("`remplacer_repas`, `marquer_restes` ou `changer_personnes`");
+  assert.ok(modification.includes("`date` comprise entre `periode.du` et `periode.au` du cycle préparé"));
+
+  const envoi = controle("`hermes send`");
+  assert.ok(envoi.includes("le prénom de l'entrée est celui que nomme son ordre"), "destinataire nommé");
+
+  // Étape 1 : le cycle suivant relu dans OMQ, pas une date calculée de tête.
+  assert.match(SKILL, /Vérifie : `periode\.du` du cycle suivant, relu dans cette réponse d'OMQ, est postérieur à `periode\.au` du cycle en cours\. Sinon, arrête-toi et dis pourquoi/);
+});
+
+test("question de remplacement posée seule, réponse « remplacer »", () => {
+  assert.ok(SKILL.includes("pose la question de remplacement **seule**"));
+  assert.ok(SKILL.includes("Réponds « remplacer » pour écraser le cycle, « non » pour arrêter."));
+  assert.match(SKILL, /un « oui » compris : elle est ambiguë/);
+});
+
+test("validations acceptées sur les mots exacts seulement", () => {
+  assert.ok(
+    SKILL.includes(
+      "Une validation compte seulement si le message d'Arnaud contient « repas OK » ou « panier OK » (majuscules ou minuscules).",
+    ),
+  );
+  assert.ok(SKILL.includes("« ok », « vas-y », « oui », ne vaut pas : redemande avec les mots exacts"));
+  assert.ok(!SKILL.includes("ok pour les repas"), "plus de latitude sur la formule");
+});
+
+test("partage : ligne panier sûre, destinataire nommé", () => {
+  assert.ok(SKILL.includes("porte les dates de ce cycle"));
+  assert.ok(SKILL.includes("« Quelle ligne panier ?"));
+  assert.ok(SKILL.includes("Sans certitude, aucune ligne panier."));
+  assert.ok(SKILL.includes("« OMQ contact partage cycle : <prénom> → whatsapp:<numéro ou JID> »"));
+  assert.ok(SKILL.includes("N'envoie jamais à un contact qu'Arnaud n'a pas explicitement nommé ou confirmé."));
+});
+
+test("créneaux vides : énumération complète du cycle", () => {
+  assert.ok(SKILL.includes("Énumère chaque jour de `periode.du` à `periode.au`, midi puis soir"));
+  assert.ok(SKILL.includes("un créneau absent de `repas` s'écrit `/`"));
+});
+
 test("la skill se dit consigne, pas garde", () => {
   assert.match(SKILL, /pas une garde/);
 });
