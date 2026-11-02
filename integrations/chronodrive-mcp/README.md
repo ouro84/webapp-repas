@@ -307,7 +307,7 @@ La skill `preparer-cycle` (RG-85, RG-86) prépare le prochain cycle avec Arnaud 
 
 **Installation.** Même commande que l’étape 5 : la skill est copiée avec le dossier `omq`. Chemin final : `/opt/data/skills/omq/preparer-cycle/SKILL.md`. `outils/duree-machine.ts` part avec la copie du code de l’étape 2, qui exclut seulement `node_modules`, `test` et `mesures` : la rejouer si l’outil est plus récent que le NAS.
 
-**Contact WhatsApp.** Le destinataire du partage se mémorise dans Hermes, avec Arnaud, jamais dans Git : une entrée `memory` « OMQ contact partage cycle : <prénom> → whatsapp:<numéro ou JID> » (numéro E.164 ou identifiant WhatsApp). L’envoi passe par `hermes send -t "whatsapp:<contact>" -f <fichier>` avec l’outil `terminal` : Hermes n’expose pas `send_message` à l’agent.
+**Contact WhatsApp.** Le destinataire du partage se mémorise dans Hermes, avec Arnaud, jamais dans Git : une entrée `memory` « OMQ contact partage cycle : <prénom> → <numéro ou JID> » (numéro E.164 ou identifiant WhatsApp, sans préfixe). L’envoi passe par `hermes send -t "whatsapp:<numéro ou JID>" -f <fichier>` avec l’outil `terminal` : Hermes n’expose pas `send_message` à l’agent.
 
 **Mesure.** La durée machine d’un run est la somme des écarts « message d’Arnaud → réponse finale de l’assistant » sur la session Telegram, hors run panier (session webhook) et hors temps de lecture. Objectif : moins de 10 minutes. Dans le conteneur, depuis `/opt/data/chronodrive-mcp` (`$D` est défini plus haut) :
 

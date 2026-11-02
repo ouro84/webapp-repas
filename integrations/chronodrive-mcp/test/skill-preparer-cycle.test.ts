@@ -105,7 +105,7 @@ test("consignes RG-85 et RG-86 présentes", () => {
     "memory",
     "OMQ tendance confirmée :",
     "OMQ tendance rejetée :",
-    'hermes send -t "whatsapp:<contact>" -f',
+    'hermes send -t "whatsapp:<numéro ou JID>" -f',
   ]) {
     assert.ok(SKILL.includes(chaine), `consigne absente : ${chaine}`);
   }
@@ -167,29 +167,51 @@ test("ancre verrouillée : jamais omise, jamais inventée (RG-85)", () => {
   for (const outil of ["generer_cycle", "lancer_demande_panier"]) {
     assert.ok(ligneOutil(outil)[1].includes("la date de début annoncée dans ton premier message"), outil);
   }
-  assert.ok(SKILL.includes("passe toujours `ancre` = la date de début annoncée dans ton premier message"));
+  assert.ok(SKILL.includes("passe toujours `ancre` = la date de début annoncée dans ton premier message de ce run"));
   assert.ok(
     SKILL.includes(
-      "Si tu ne retrouves pas l'étape 1 dans cette conversation (session reprise), recommence l'étape 1 ; n'invente jamais l'ancre.",
+      "Si tu ne retrouves pas l'étape 1 dans ce run (session reprise), recommence l'étape 1 ; une étape 1 d'un run précédent ne compte pas ; n'invente jamais l'ancre.",
     ),
   );
   assert.ok(SKILL.includes("ne prends jamais la date du jour"));
 });
 
+test("« ce run » délimité : il commence à la dernière demande de préparer le cycle", () => {
+  assert.ok(SKILL.includes("Le run commence au dernier message d'Arnaud qui demande de préparer le cycle."));
+  // Plus aucune portée floue : « premier message » est toujours celui de ce run.
+  assert.equal(SKILL.match(/premier message(?! de ce run)/g), null, "« premier message » sans « de ce run »");
+  for (const flou of ["dans ce tour", "de cette conversation", "dans cette conversation,", "dans cette conversation ("]) {
+    assert.ok(!SKILL.includes(flou), `portée floue : ${flou}`);
+  }
+});
+
 test("contrôle avant chaque action risquée, puis arrêt (RG-86)", () => {
   const remplacer = controle("`generer_cycle` avec `remplacer: true`");
-  assert.ok(remplacer.includes("« remplacer »"), "le mot « remplacer » est exigé");
+  assert.ok(remplacer.includes("est exactement « remplacer », seule (règle « Réponse exacte »)"), "« remplacer » exact, seul");
 
   const panier = controle("`lancer_demande_panier`");
   assert.ok(panier.includes("jamais la date du jour"), "ancre de l'étape 1, pas la date du jour");
   assert.ok(panier.includes("`cycle.du` égal à `ancre`"), "liste relue sur le bon cycle");
   assert.ok(panier.includes("« repas OK » puis « panier OK », dans cet ordre"), "deux validations ordonnées");
+  assert.ok(panier.includes("les deux validations sont postérieures au début de ce run"), "validations de ce run");
+  assert.ok(
+    panier.includes(
+      "« panier OK » est dans un message d'Arnaud postérieur à ton message du placard (étape 6), et « repas OK » postérieur à ta dernière liste des repas (étape 5)",
+    ),
+    "chaque validation suit le message qu'elle valide",
+  );
 
   const modification = controle("`remplacer_repas`, `marquer_restes` ou `changer_personnes`");
   assert.ok(modification.includes("`date` comprise entre `periode.du` et `periode.au` du cycle préparé"));
 
   const envoi = controle("`hermes send`");
   assert.ok(envoi.includes("le prénom de l'entrée est celui que nomme son ordre"), "destinataire nommé");
+  assert.ok(
+    envoi.includes(
+      "Arnaud a donné l'ordre de partager dans ce run, et ses messages depuis cet ordre ne font que répondre à tes questions de l'étape 8 (ligne panier, destinataire, numéro) ; tout autre message annule l'ordre",
+    ),
+    "ordre de partage de ce run, annulé par tout autre message",
+  );
 
   // Étape 1 : le cycle suivant relu dans OMQ, pas une date calculée de tête.
   assert.match(SKILL, /Vérifie : `periode\.du` du cycle suivant, relu dans cette réponse d'OMQ, est postérieur à `periode\.au` du cycle en cours\. Sinon, arrête-toi et dis pourquoi/);
@@ -199,12 +221,14 @@ test("question de remplacement posée seule, trois réponses : « remplacer », 
   assert.ok(SKILL.includes("pose la question de remplacement **seule**"));
   assert.ok(
     SKILL.includes(
-      "Réponds « remplacer » pour écraser le cycle, « garder » pour garder ses repas et les ajuster, « non » pour arrêter.",
+      "« Le cycle du vendredi 06/11 au jeudi 12/11 (ancre 2026-11-06) a déjà 13 repas. Réponds « remplacer » pour écraser le cycle, « garder » pour garder ses repas et les ajuster, « non » pour arrêter. »",
     ),
+    "question de remplacement avec l'ancre",
   );
+  assert.ok(SKILL.includes("Attends la réponse, puis applique la règle « Réponse exacte » :"));
   assert.match(SKILL, /^\s+- « remplacer » : [^\n]*`generer_cycle\(ancre, remplacer: true\)`/m);
   assert.match(SKILL, /^\s+- « non » : arrête le parcours, sans toucher au cycle\./m);
-  assert.match(SKILL, /un « oui » compris[^\n]*: elle est ambiguë/);
+  assert.match(SKILL, /^\s+- Tout autre message : il est ambigu \(règle « Réponse exacte »\)\. Repose la question avec les mêmes mots\./m);
 });
 
 test("« garder » n'appelle jamais `generer_cycle` et suit les mêmes règles", () => {
@@ -220,24 +244,31 @@ test("« garder » n'appelle jamais `generer_cycle` et suit les mêmes règles",
 
   assert.ok(ligneOutil("generer_cycle")[3].includes("tout appel après la réponse « garder »"));
   // Le contrôle de `remplacer: true` reste intact.
-  assert.ok(controle("`generer_cycle` avec `remplacer: true`").includes("contient le mot « remplacer »"));
+  assert.ok(controle("`generer_cycle` avec `remplacer: true`").includes("est exactement « remplacer », seule"));
 });
 
-test("validations acceptées sur les mots exacts seulement", () => {
-  assert.ok(
-    SKILL.includes(
-      "Une validation compte seulement si le message d'Arnaud contient « repas OK » ou « panier OK » (majuscules ou minuscules).",
-    ),
-  );
-  assert.ok(SKILL.includes("« ok », « vas-y », « oui », ne vaut pas : redemande avec les mots exacts"));
-  assert.ok(!SKILL.includes("ok pour les repas"), "plus de latitude sur la formule");
+test("règle « Réponse exacte » écrite une fois, référencée aux étapes 1, 5 et 6", () => {
+  const regle =
+    "Une réponse n'est acceptée que si le message d'Arnaud, sans espaces autour, sans ponctuation et casse ignorée, vaut exactement `remplacer`, `garder`, `non`, `repas ok` ou `panier ok`";
+  assert.equal(SKILL.split(regle).length, 2, "règle écrite une seule fois");
+  assert.ok(SKILL.includes("Tout autre message (négation, phrase, plusieurs mots, « oui ») est ambigu : redemande avec le mot exact."));
+  assert.ok(SKILL.includes("`remplacer`, `garder` ou `non` à l'étape 1, `repas ok` à l'étape 5, `panier ok` à l'étape 6"));
+  assert.ok(SKILL.includes("attends la réponse « repas OK », selon la règle « Réponse exacte »"));
+  assert.ok(SKILL.includes("attends la réponse « panier OK », selon la règle « Réponse exacte »"));
+  // Plus de variantes répétées ni de « contient », qui laisserait passer « pas repas OK ».
+  for (const ancien of ["contient « repas OK »", "contient « panier OK »", "contient le mot", "ok pour les repas", "majuscules ou minuscules"]) {
+    assert.ok(!SKILL.includes(ancien), `ancienne formule : ${ancien}`);
+  }
 });
 
 test("partage : ligne panier sûre, destinataire nommé", () => {
   assert.ok(SKILL.includes("porte les dates de ce cycle"));
   assert.ok(SKILL.includes("« Quelle ligne panier ?"));
   assert.ok(SKILL.includes("Sans certitude, aucune ligne panier."));
-  assert.ok(SKILL.includes("« OMQ contact partage cycle : <prénom> → whatsapp:<numéro ou JID> »"));
+  // Entrée sans préfixe : le préfixe `whatsapp:` n'apparaît que dans la commande.
+  assert.ok(SKILL.includes("« OMQ contact partage cycle : <prénom> → <numéro ou JID> »"));
+  assert.ok(!SKILL.includes("→ whatsapp:"), "préfixe whatsapp: dans l'entrée mémoire");
+  assert.ok(SKILL.includes("« J'envoie à <prénom> ? »"), "confirmation du destinataire");
   assert.ok(SKILL.includes("N'envoie jamais à un contact qu'Arnaud n'a pas explicitement nommé ou confirmé."));
 });
 
