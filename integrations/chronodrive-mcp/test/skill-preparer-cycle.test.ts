@@ -196,7 +196,7 @@ test("contrôle avant chaque action risquée, puis arrêt (RG-86)", () => {
   assert.ok(panier.includes("les deux validations sont postérieures au début de ce run"), "validations de ce run");
   assert.ok(
     panier.includes(
-      "« panier OK » est dans un message d'Arnaud postérieur à ton message du placard (étape 6), et « repas OK » postérieur à ta dernière liste des repas (étape 5)",
+      "« panier OK » est dans un message d'Arnaud postérieur à ton dernier message du placard (étape 6), et « repas OK » postérieur à ton dernier message de liste des repas (étape 5)",
     ),
     "chaque validation suit le message qu'elle valide",
   );
@@ -251,7 +251,7 @@ test("règle « Réponse exacte » écrite une fois, référencée aux étapes 1
   const regle =
     "Une réponse n'est acceptée que si le message d'Arnaud, sans espaces autour, sans ponctuation et casse ignorée, vaut exactement `remplacer`, `garder`, `non`, `repas ok` ou `panier ok`";
   assert.equal(SKILL.split(regle).length, 2, "règle écrite une seule fois");
-  assert.ok(SKILL.includes("Tout autre message (négation, phrase, plusieurs mots, « oui ») est ambigu : redemande avec le mot exact."));
+  assert.ok(SKILL.includes("Tout autre message (négation, phrase, plusieurs mots, « oui ») est ambigu : redemande avec le mot exact, en rappelant qu'à l'étape 1 « non » arrête tout."));
   assert.ok(SKILL.includes("`remplacer`, `garder` ou `non` à l'étape 1, `repas ok` à l'étape 5, `panier ok` à l'étape 6"));
   assert.ok(SKILL.includes("attends la réponse « repas OK », selon la règle « Réponse exacte »"));
   assert.ok(SKILL.includes("attends la réponse « panier OK », selon la règle « Réponse exacte »"));
