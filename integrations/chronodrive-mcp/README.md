@@ -316,7 +316,9 @@ $D exec -u 1000 -w /opt/data/chronodrive-mcp hermes node outils/duree-machine.ts
 $D exec -u 1000 -w /opt/data/chronodrive-mcp hermes node outils/duree-machine.ts --db /opt/data/state.db --depuis <ISO> --jusqu-a <ISO>
 ```
 
-L’outil ne lit que `state.db`, en lecture seule. Codes de sortie : `0` mesure affichée, `1` base illisible, `2` argument invalide.
+`--session` est le mode précis : la session du run, refusée (code `2`) si elle est absente de `sessions` ou si sa source n’est pas `telegram`. La fenêtre `--depuis` / `--jusqu-a` compte toutes les sessions Telegram qui y ont un message, tours calculés session par session puis sommés : à réserver au cas où l’identifiant de session manque. Les dates portent un fuseau explicite, `Z` ou `±hh:mm` (`2026-11-02T19:00:00+01:00`), sinon code `2` ; les heures affichées sont celles de Paris. Chaque durée est arrondie à la seconde, et le total est la somme des durées affichées.
+
+L’outil ne lit que `state.db`, en lecture seule. Codes de sortie : `0` mesure affichée, `1` base illisible, `2` argument invalide (drapeau inconnu ou répété, valeur manquante, date sans fuseau, session absente ou hors Telegram).
 
 **Fichier de run.** Un fichier par run réel, `mesures/cycle-<ancre>.md`, d’après `mesures/cycle-gabarit.md`, rempli avec Arnaud après le run. Critère de réussite : 3 runs réels consécutifs réussis ; un run raté remet le compteur à zéro, et la skill est corrigée avant le suivant.
 

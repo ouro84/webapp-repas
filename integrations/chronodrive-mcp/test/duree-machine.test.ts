@@ -8,7 +8,7 @@ import { DatabaseSync } from "node:sqlite";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { lireArguments, lireMessages, toursDeSession } from "../outils/duree-machine.ts";
+import { formaterTours, lireArguments, lireMessages, toursDeSession, toursParSession } from "../outils/duree-machine.ts";
 
 const SCRIPT = fileURLToPath(new URL("../outils/duree-machine.ts", import.meta.url));
 
@@ -43,6 +43,7 @@ async function lancer(args: string[]): Promise<{ code: number | null; sortie: st
 }
 
 const m = (role: string, timestamp: number) => ({ role, timestamp });
+const ms = (session: string, role: string, timestamp: number) => ({ session, role, timestamp });
 
 test("toursDeSession : la réponse est le dernier assistant avant le user suivant", () => {
   const tours = toursDeSession([m("user", 0), m("assistant", 5), m("tool", 6), m("assistant", 20), m("user", 100), m("assistant", 130)]);
@@ -64,10 +65,49 @@ test("lireMessages : filtre par session, trié par timestamp", () => {
     [["a", "assistant", 30], ["a", "user", 10], ["b", "user", 15]],
   );
   try {
-    assert.deepEqual(lireMessages(chemin, { session: "a" }), [m("user", 10), m("assistant", 30)]);
+    assert.deepEqual(lireMessages(chemin, { session: "a" }), [ms("a", "user", 10), ms("a", "assistant", 30)]);
   } finally {
     rmSync(dossier, { recursive: true, force: true });
   }
+});
+
+test("lireMessages : une session absente ou non telegram est refusée", () => {
+  const { dossier, chemin } = creerBase([["t", "telegram"], ["w", "webhook"]], [["w", "user", 10], ["w", "assistant", 30]]);
+  try {
+    assert.throws(() => lireMessages(chemin, { session: "absente" }), /session absente introuvable/);
+    assert.throws(() => lireMessages(chemin, { session: "w" }), /session w de source webhook, pas telegram/);
+  } finally {
+    rmSync(dossier, { recursive: true, force: true });
+  }
+});
+
+test("toursParSession : deux sessions entrelacées comptent chacune leurs tours", () => {
+  // Sans regroupement, le user de b à 15 couperait le tour de a (0 → 30).
+  const tours = toursParSession([
+    ms("a", "user", 0),
+    ms("b", "user", 15),
+    ms("a", "assistant", 30),
+    ms("b", "assistant", 40),
+    ms("a", "user", 100),
+    ms("a", "assistant", 110),
+  ]);
+  assert.deepEqual(tours, [
+    { question: 0, reponse: 30, duree: 30 },
+    { question: 15, reponse: 40, duree: 25 },
+    { question: 100, reponse: 110, duree: 10 },
+  ]);
+});
+
+test("formaterTours : chaque durée arrondie une fois, total = somme des arrondis, heures de Paris", () => {
+  const base = Date.parse("2026-11-02T18:00:00Z") / 1000; // 19:00:00 à Paris (heure d'hiver)
+  const sortie = formaterTours([
+    { question: base, reponse: base + 10.4, duree: 10.4 },
+    { question: base + 60, reponse: base + 70.4, duree: 10.4 },
+    { question: base + 120, reponse: base + 130.4, duree: 10.4 },
+  ]).split("\n");
+  assert.equal(sortie[0], "19:00:00 → 19:00:10 : 10 s");
+  // 3 × 10 s affichées : le total vaut 30 s, pas Math.round(31,2) = 31 s.
+  assert.equal(sortie[3], "Durée machine : 0 min 30 s (objectif < 10 min : atteint)");
 });
 
 test("lireMessages : fenêtre depuis/jusqua, sessions telegram seulement (le run panier webhook est exclu)", () => {
@@ -83,7 +123,12 @@ test("lireMessages : fenêtre depuis/jusqua, sessions telegram seulement (le run
     ],
   );
   try {
-    assert.deepEqual(lireMessages(chemin, { depuis: 50, jusqua: 300 }), [m("user", 100), m("assistant", 120), m("user", 200), m("assistant", 230)]);
+    assert.deepEqual(lireMessages(chemin, { depuis: 50, jusqua: 300 }), [
+      ms("t", "user", 100),
+      ms("t", "assistant", 120),
+      ms("t", "user", 200),
+      ms("t", "assistant", 230),
+    ]);
   } finally {
     rmSync(dossier, { recursive: true, force: true });
   }
@@ -103,6 +148,28 @@ test("lireArguments : session ou fenêtre, rien d’autre", () => {
     ["--db", "x.db", "--inconnu", "1"],
     ["--db", "x.db", "--session"],
   ]) assert.ok("erreur" in lireArguments(mauvais), JSON.stringify(mauvais));
+});
+
+test("lireArguments : dates avec fuseau explicite (Z ou ±hh:mm) seulement", () => {
+  const ok = lireArguments(["--db", "x.db", "--depuis", "2026-11-02T19:00:00+01:00", "--jusqu-a", "2026-11-02T19:30:00.500Z"]);
+  assert.deepEqual(ok, {
+    db: "x.db",
+    filtre: { depuis: Date.parse("2026-11-02T18:00:00Z") / 1000, jusqua: Date.parse("2026-11-02T19:30:00.500Z") / 1000 },
+  });
+  for (const date of ["2026-11-02T19:00:00", "2026-11-02", "2026-11-02T19:00:00+0100", "2026-11-02 19:00:00Z"]) {
+    const r = lireArguments(["--db", "x.db", "--depuis", date, "--jusqu-a", "2026-11-02T20:00:00Z"]);
+    assert.ok("erreur" in r && r.erreur.includes("fuseau"), date);
+  }
+});
+
+test("lireArguments : une valeur qui commence par -- est refusée", () => {
+  const r = lireArguments(["--db", "--session", "s1"]);
+  assert.ok("erreur" in r && r.erreur.includes("valeur manquante pour --db"), JSON.stringify(r));
+});
+
+test("lireArguments : un drapeau répété est refusé", () => {
+  const r = lireArguments(["--db", "x.db", "--session", "s1", "--session", "s2"]);
+  assert.ok("erreur" in r && r.erreur.includes("--session donné deux fois"), JSON.stringify(r));
 });
 
 test("CLI : arguments manquants → code 2", async () => {
@@ -137,6 +204,36 @@ test("CLI : objectif dépassé à partir de 10 min", async () => {
     const r = await lancer(["--db", chemin, "--session", "s1"]);
     assert.equal(r.code, 0, r.erreurs);
     assert.ok(r.sortie.trimEnd().endsWith("Durée machine : 10 min 5 s (objectif < 10 min : dépassé)"), r.sortie);
+  } finally {
+    rmSync(dossier, { recursive: true, force: true });
+  }
+});
+
+test("CLI : session absente ou non telegram → code 2 avec message", async () => {
+  const { dossier, chemin } = creerBase([["w", "webhook"]], [["w", "user", 0], ["w", "assistant", 5]]);
+  try {
+    const absente = await lancer(["--db", chemin, "--session", "x"]);
+    assert.equal(absente.code, 2);
+    assert.match(absente.erreurs, /session x introuvable/);
+    assert.equal(absente.sortie, "");
+    const webhook = await lancer(["--db", chemin, "--session", "w"]);
+    assert.equal(webhook.code, 2);
+    assert.match(webhook.erreurs, /source webhook, pas telegram/);
+    assert.equal(webhook.sortie, "");
+  } finally {
+    rmSync(dossier, { recursive: true, force: true });
+  }
+});
+
+test("CLI : fenêtre, deux sessions telegram entrelacées", async () => {
+  const { dossier, chemin } = creerBase(
+    [["a", "telegram"], ["b", "telegram"]],
+    [["a", "user", 1000], ["b", "user", 1015], ["a", "assistant", 1030], ["b", "assistant", 1040]],
+  );
+  try {
+    const r = await lancer(["--db", chemin, "--depuis", "1970-01-01T00:00:00Z", "--jusqu-a", "1970-01-01T01:00:00Z"]);
+    assert.equal(r.code, 0, r.erreurs);
+    assert.ok(r.sortie.trimEnd().endsWith("Durée machine : 0 min 55 s (objectif < 10 min : atteint)"), r.sortie);
   } finally {
     rmSync(dossier, { recursive: true, force: true });
   }
