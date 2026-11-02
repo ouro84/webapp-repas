@@ -1,5 +1,6 @@
-// Contrôle de démarrage des MCP stdio (#308, #320) : `node src/mcp.ts` et `node src/mcp-admin.ts` répondent à `initialize` et
-// `tools/list` sans identifiants ni réseau, et stdout ne porte que du JSON-RPC.
+// Contrôle de démarrage des MCP stdio (#308, #320) : `node src/mcp.ts` et `node src/mcp-admin.ts`
+// répondent à `initialize` et `tools/list` sans identifiants ni réseau, et stdout ne porte que du
+// JSON-RPC.
 // Équivalent NAS : `CHRONODRIVE_ENV=/dev/null node src/mcp.ts` ; ici un fichier vide temporaire (Windows).
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -88,7 +89,7 @@ test("démarrage stdio : initialize, tools/list, lecture seule par défaut, stdo
   }
 });
 
-test("démarrage stdio de chronodrive-admin : vider_panier seul, confirmation refusée en lecture seule, stdout en JSON-RPC seulement", { timeout: 30_000 }, async () => {
+test("démarrage stdio de chronodrive-admin : vider_panier seul, confirmation refusée en lecture seule, aperçu sans identifiants en erreur, stdout en JSON-RPC seulement", { timeout: 30_000 }, async () => {
   const mcp = lancer(MCP_ADMIN);
   try {
     mcp.envoyer(INITIALIZE);
@@ -107,8 +108,16 @@ test("démarrage stdio de chronodrive-admin : vider_panier seul, confirmation re
     assert.equal(resultat.isError, true);
     assert.match(resultat.content[0].text, /^Lecture seule/);
 
+    // Aperçu sans identifiants : le client n'est créé qu'à cet appel, qui échoue en nommant la
+    // variable manquante (sans réseau, comme le script `--simulation`).
+    mcp.envoyer({ id: 4, method: "tools/call", params: { name: "vider_panier", arguments: {} } });
+    const apercu = await mcp.attendreReponse(4);
+    const sansIdentifiants = apercu.result as { isError?: boolean; content: { text: string }[] };
+    assert.equal(sansIdentifiants.isError, true);
+    assert.match(sansIdentifiants.content[0].text, /CHRONODRIVE_EMAIL/);
+
     const lignes = mcp.lignesCompletes();
-    assert.equal(lignes.length, 3, mcp.sortie());
+    assert.equal(lignes.length, 4, mcp.sortie());
     for (const ligne of lignes) assert.equal(JSON.parse(ligne).jsonrpc, "2.0");
   } finally {
     await mcp.arreter();
