@@ -1,6 +1,6 @@
-// Vide le panier Chronodrive courant (#320, RG-82). Jamais depuis un run Hermes ni par un outil MCP :
-// le run webhook ne voit aucun outil de retrait (RG-82). À lancer À LA MAIN sur le NAS ; Claude Code
-// ne le lance que sur ordre explicite d'Arnaud. Jamais de commande, de créneau ni de paiement.
+// Vide le panier Chronodrive courant (#320, RG-82). Jamais depuis un run Hermes : le run webhook ne voit
+// aucun outil de retrait (RG-82). Le serveur MCP séparé `chronodrive-admin` (src/admin.ts) l’expose à Telegram.
+// À lancer À LA MAIN sur le NAS ; Claude Code ne le lance que sur ordre explicite d'Arnaud. Jamais de commande, de créneau ni de paiement.
 //
 // Usage : node src/vider-panier.ts [--simulation]
 //   --simulation  liste ce qui serait retiré, sans rien modifier.

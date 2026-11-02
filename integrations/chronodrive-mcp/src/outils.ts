@@ -18,7 +18,7 @@ import {
 } from "./catalogue.ts";
 import { ErreurChronodrive, erreurDeConnexion } from "./client.ts";
 import { normaliserTerme, type Correspondance, type Correspondances, type EntreeCorrespondance } from "./correspondances.ts";
-import { ajouterLignes, lirePanierCourant, PRODUIT_INCONNU, type ResultatAjout } from "./panier.ts";
+import { ajouterLignes, ErreurPanierChange, lirePanierCourant, PRODUIT_INCONNU, type ResultatAjout } from "./panier.ts";
 
 export type CacheCorrespondances = Pick<Correspondances, "connues" | "memoriser" | "oublier">;
 
@@ -60,7 +60,7 @@ export class ErreurOutil extends Error {
 // d'une erreur étrangère on ne livre que le nom : son message ou sa cause peuvent porter une URL
 // avec `tkn`, un en-tête ou un jeton.
 export function messagePourLeLlm(e: unknown): string {
-  if (e instanceof ErreurOutil || e instanceof ErreurChronodrive) return e.message;
+  if (e instanceof ErreurOutil || e instanceof ErreurChronodrive || e instanceof ErreurPanierChange) return e.message;
   return `erreur inattendue de l'exécuteur Chronodrive (${e instanceof Error ? e.name : typeof e}) : réessayer plus tard ou vérifier les journaux du NAS`;
 }
 

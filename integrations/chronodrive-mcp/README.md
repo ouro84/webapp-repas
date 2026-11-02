@@ -19,7 +19,8 @@ Protocole de l'API et mesures : `docs/etudes/chronodrive.md`. Pièges : `.claude
 | `src/outils.ts` | Les 5 outils MCP : `chercher_produits`, `ajouter_au_panier`, `lire_panier`, `correspondances_connues`, `memoriser_correspondances`. `ajouter_au_panier` n'accepte, pour chaque ligne, qu'un produit proposé par `chercher_produits` pour le terme de cette ligne (`terme`, ou `terme_recherche` pour une reformulation cherchée dans un appel postérieur à celui de l'article) depuis moins de 30 min. Avec `quantite_omq` (quantité OMQ de l'article), la quantité est plafonnée au besoin calculé, jamais augmentée (`quantiteAjustee`). `chercher_produits` lit le panier courant une fois par appel et marque chaque produit renvoyé de `dansPanier` (indisponibles compris) : la skill reconnaît ainsi un article déjà au panier, quel que soit le produit qu'elle choisirait. |
 | `src/quantites.ts` | Lecture de la quantité OMQ et de la contenance (masse, volume, nombre) et plafond `min(demande, besoin)`. |
 | `src/mcp.ts` | Point d'entrée stdio (`node src/mcp.ts`), en lecture seule sauf si `CHRONODRIVE_LECTURE_SEULE` vaut `'0'`. |
-| `src/vider-panier.ts` | Script manuel qui vide le panier courant (jamais depuis un run Hermes ni par un outil MCP : le run webhook ne voit aucun outil de retrait, RG-82 ; Claude Code ne le lance que sur ordre explicite d'Arnaud) ; `--simulation` pour voir sans rien retirer. |
+| `src/vider-panier.ts` | Script manuel qui vide le panier courant (jamais depuis un run Hermes : le run webhook ne voit aucun outil de retrait, RG-82 ; Claude Code ne le lance que sur ordre explicite d'Arnaud) ; `--simulation` pour voir sans rien retirer. |
+| `src/admin.ts`, `src/mcp-admin.ts` | Serveur MCP séparé `chronodrive-admin` (`node src/mcp-admin.ts`), un seul outil `vider_panier`, en deux temps (aperçu puis confirmation), pour Telegram seulement (RG-82). |
 | `test/` | Tests `node --test`, Chronodrive simulé (`test/simulation.ts`). |
 | `hermes/skills/omq/panier-chronodrive/SKILL.md` | Skill Hermes : procédure du run et du mode mesure. |
 | `hermes/route-webhook.md` | Route webhook `panier-omq`, secret, Funnel. |
@@ -127,6 +128,20 @@ Dans `/opt/data/config.yaml`, sous `mcp_servers`, remplacer l'entrée `chronodri
 - Les outils apparaissent dans Hermes sous `mcp__chronodrive__<outil>`. Les outils OMQ apparaissent sous `mcp__On_Mange_Quoi____<outil>`.
 - Vérifier aussi que `platforms.webhook.extra.host` vaut `127.0.0.1`. Sinon le webhook est exposé au réseau local.
 
+Pour pouvoir vider le panier depuis Telegram (voir « Vider le panier (hors run) »), ajouter aussi le serveur séparé `chronodrive-admin` sous `mcp_servers` :
+
+```yaml
+  chronodrive-admin:
+    command: node
+    args:
+      - /opt/data/chronodrive-mcp/src/mcp-admin.ts
+    env: {CHRONODRIVE_LECTURE_SEULE: '0'}
+    enabled: true
+```
+
+- Sans `CHRONODRIVE_LECTURE_SEULE: '0'`, l'aperçu marche mais la confirmation est refusée sans appel API. Cette variable est celle de **ce** serveur : celle de `chronodrive` reste indépendante.
+- Un changement de code ou d'`env` de ce serveur exige de redémarrer la gateway (étape 6), avec Arnaud.
+
 ### 5. Installer la skill
 
 À faire avant le redémarrage, pour que la gateway la trouve au démarrage (sa prise en compte à chaud n'est pas vérifiée).
@@ -185,7 +200,7 @@ La route `panier-omq` est **dynamique** (`hermes webhook subscribe …`) et la C
 - **Sauvegarder avant de modifier** : `cp webhook_subscriptions.json webhook_subscriptions.json.bak-<motif>` (le fichier contient le secret, mode `600` ou `640`).
 - **Aucun redémarrage** : une route dynamique, et l'ajout ou le retrait d'un serveur MCP, sont rechargés à chaud. Seul un changement du **code** ou de l'`env` d'un serveur MCP exige de redémarrer la gateway (étape 6).
 
-`chronodrive` est exclu des plateformes Telegram et WhatsApp : le panier ne doit être rempli que par le run webhook ou par une mesure lancée à la main. `platform_toolsets.<plateforme>` est une **liste d'autorisation** : dès qu'elle nomme un serveur MCP (par son nom, pas `mcp-<nom>`), seuls les serveurs nommés passent. `telegram` et `whatsapp` listent donc leurs toolsets natifs, puis `"On Mange Quoi ?"`, `linkedin`, `dodojo` et `camofox-browser`, sans `chronodrive`. Tout nouveau serveur MCP doit y être ajouté à la main. Sauvegarde : `config.yaml.bak-avant-320-toolsets`. Cette liste est relue à chaque tour d'après le code de Hermes, sans redémarrage ; vérifier sur Telegram (« liste tes outils MCP sans en appeler aucun ») qu'aucun `mcp__chronodrive__*` n'apparaît.
+`chronodrive` est exclu des plateformes Telegram et WhatsApp : le panier ne doit être rempli que par le run webhook ou par une mesure lancée à la main. `platform_toolsets.<plateforme>` est une **liste d'autorisation** : dès qu'elle nomme un serveur MCP (par son nom, pas `mcp-<nom>`), seuls les serveurs nommés passent. `telegram` et `whatsapp` listent donc leurs toolsets natifs, puis `"On Mange Quoi ?"`, `linkedin`, `dodojo` et `camofox-browser`, sans `chronodrive`. Tout nouveau serveur MCP doit y être ajouté à la main. `telegram` (et lui seul) nomme en plus `chronodrive-admin`, par son nom : jamais `whatsapp`, ni les `toolsets` de la route `panier-omq` ni ceux de `controle-outils`. Sauvegarde : `config.yaml.bak-avant-320-toolsets`. Cette liste est relue à chaque tour d'après le code de Hermes, sans redémarrage ; vérifier sur Telegram (« liste tes outils MCP sans en appeler aucun ») qu'aucun `mcp__chronodrive__*` n'apparaît (seul `mcp__chronodrive-admin__vider_panier` y est attendu), et sur WhatsApp qu'aucun `mcp__chronodrive-admin__*` n'apparaît.
 
 **Vérifier ce que le run voit réellement**, avec une route de contrôle `controle-outils` qui porte **les mêmes `toolsets`** (même ajout à la main dans `webhook_subscriptions.json`, après sauvegarde), livrée en `log` et dont le prompt demande la liste des outils sans en appeler aucun :
 
@@ -238,7 +253,7 @@ Notes :
 
 ## Vider le panier (hors run)
 
-`src/vider-panier.ts` retire du panier Chronodrive courant toutes les lignes, une par une, puis relit le panier : un retrait n'est confirmé que par cette relecture. Il se lance à la main sur le NAS. **Jamais depuis un run Hermes ni par un outil MCP** : le run webhook ne voit aucun outil de retrait (RG-82). Claude Code ne le lance que sur ordre explicite d'Arnaud. Le script ne passe ni commande, ni créneau, ni paiement. Ne pas le lancer pendant un run de panier (carte « Panier en cours… » sur `/courses`) : RG-82 l'interdit.
+`src/vider-panier.ts` retire du panier Chronodrive courant toutes les lignes, une par une, puis relit le panier : un retrait n'est confirmé que par cette relecture. Il se lance à la main sur le NAS. **Jamais depuis un run Hermes** : le run webhook ne voit aucun outil de retrait (RG-82). Claude Code ne le lance que sur ordre explicite d'Arnaud. Le script ne passe ni commande, ni créneau, ni paiement. Ne pas le lancer pendant un run de panier (carte « Panier en cours… » sur `/courses`) : RG-82 l'interdit.
 
 Toujours commencer par la simulation, qui liste ce qui serait retiré sans rien modifier. Sur le NAS (`$D` est défini plus haut) :
 
@@ -255,7 +270,16 @@ Codes de sortie :
 | `1` | Panier pas entièrement vidé, panier non relu, ou erreur (connexion, configuration). Le bilan dit quoi vérifier dans l'appli Chronodrive. |
 | `2` | Argument inconnu : seul `--simulation` est accepté, et rien n'est lancé. |
 
-Le code se copie comme à l'étape 2. Le script lit le nouveau code à chaque lancement : **pas de redémarrage de la gateway pour lui**. Le MCP en cours garde l'ancien code jusqu'au prochain redémarrage, ce qui est compatible : le vidage n'y touche pas.
+Le code se copie comme à l'étape 2. Le script lit le nouveau code à chaque lancement : **pas de redémarrage de la gateway pour lui**.
+
+### Depuis Telegram : l'outil `vider_panier`
+
+Le serveur MCP séparé `chronodrive-admin` (`src/mcp-admin.ts`, étapes 4 et 8) expose un seul outil, `vider_panier`, réservé à Telegram. Le serveur `chronodrive` du run webhook n'a toujours aucun outil de retrait. L'outil se lance sur demande explicite d'Arnaud, jamais pendant un run de panier, et en deux temps :
+
+1. **Aperçu** : `vider_panier` sans `confirmation`. Rien n'est retiré ; l'outil renvoie les lignes du panier (libellé, marque, quantité) et un `jeton` lié à l'état du panier (identifiant du panier et lignes `productId` × quantité).
+2. **Confirmation** : après un « oui » explicite d'Arnaud, `vider_panier` avec `confirmation` = ce `jeton`. L'outil relit le panier et compare : si le panier a changé depuis l'aperçu (ajout à la main, commande validée), il refuse sans aucun retrait (« Le panier a changé depuis l’aperçu : relance vider_panier sans confirmation pour un nouvel aperçu. ») et il faut refaire un aperçu. Sinon il vide, relit, et renvoie le même bilan que le script.
+
+La confirmation n'agit que si `CHRONODRIVE_LECTURE_SEULE` vaut `'0'` dans l'entrée `env` de `chronodrive-admin` : sinon elle est refusée sans appel API, l'aperçu reste disponible. Un changement du **code** exige de redémarrer la gateway : le serveur `chronodrive` garde sinon l'ancien `panier.ts` en mémoire.
 
 ## Spike désinstallé
 
