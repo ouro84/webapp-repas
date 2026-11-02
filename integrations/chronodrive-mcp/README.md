@@ -27,6 +27,9 @@ Protocole de l'API et mesures : `docs/etudes/chronodrive.md`. Pièges : `.claude
 | `hermes/route-webhook.md` | Route webhook `panier-omq`, secret, Funnel. |
 | `hermes/prompt-mesure.md` | Message de mesure du classement, en lecture seule. |
 | `outils/envoyer-webhook.mjs` | Signe et envoie un webhook de test comme OMQ (Standard Webhooks), pour la route de contrôle. |
+| `hermes/skills/omq/preparer-cycle/SKILL.md` | Skill Hermes « préparer mon cycle » : tendances confirmées, ajustements, deux validations, panier et partage WhatsApp sur ordre (RG-85, RG-86). |
+| `outils/duree-machine.ts` | Mesure la durée machine d’un run de préparation de cycle, en lecture seule de `state.db` (RG-86). |
+| `mesures/cycle-gabarit.md` | Gabarit du fichier d’un run réel de préparation de cycle. |
 
 ## Tests en local
 
@@ -203,7 +206,17 @@ La route `panier-omq` est **dynamique** (`hermes webhook subscribe …`) et la C
 - **Sauvegarder avant de modifier** : `cp webhook_subscriptions.json webhook_subscriptions.json.bak-<motif>` (le fichier contient le secret, mode `600` ou `640`).
 - **Aucun redémarrage** : une route dynamique, et l'ajout ou le retrait d'un serveur MCP, sont rechargés à chaud. Seul un changement du **code** ou de l'`env` d'un serveur MCP exige de redémarrer la gateway (étape 6).
 
-`chronodrive` est exclu des plateformes Telegram et WhatsApp : le panier ne doit être rempli que par le run webhook ou par une mesure lancée à la main. `platform_toolsets.<plateforme>` est une **liste d'autorisation** : dès qu'elle nomme un serveur MCP (par son nom, pas `mcp-<nom>`), seuls les serveurs nommés passent. `telegram` et `whatsapp` listent donc leurs toolsets natifs, puis `"On Mange Quoi ?"`, `linkedin`, `dodojo` et `camofox-browser`, sans `chronodrive`. Tout nouveau serveur MCP doit y être ajouté à la main. `telegram` (et lui seul) nomme en plus `chronodrive-admin`, par son nom : jamais `whatsapp`, ni les `toolsets` de la route `panier-omq` ni ceux de `controle-outils`. Sauvegarde : `config.yaml.bak-avant-320-toolsets`.
+`chronodrive` est exclu des plateformes Telegram, WhatsApp, cron, homeassistant et discord (seule `cli` le nomme, pour les mesures manuelles) : le panier ne doit être rempli que par le run webhook ou par une mesure lancée à la main. `platform_toolsets.<plateforme>` est une **liste d'autorisation** : dès qu'elle nomme un serveur MCP (par son nom, pas `mcp-<nom>`), seuls les serveurs nommés passent. `telegram` et `whatsapp` listent donc leurs toolsets natifs, puis `"On Mange Quoi ?"`, `linkedin`, `dodojo` et `camofox-browser`, sans `chronodrive`. Tout nouveau serveur MCP doit y être ajouté à la main. `telegram` (et lui seul) nomme en plus `chronodrive-admin`, par son nom : jamais `whatsapp`, ni les `toolsets` de la route `panier-omq` ni ceux de `controle-outils`. Sauvegarde : `config.yaml.bak-avant-320-toolsets`.
+
+**État réel des surfaces** (sauvegardes : `config.yaml.bak-avant-320-toolsets`, `config.yaml.bak-avant-320-prb`). `platform_toolsets.cli`, `cron`, `homeassistant` et `discord` sont des **listes explicites**, comme `telegram` et `whatsapp` :
+
+- `cron`, `homeassistant` et `discord` ne nomment ni `chronodrive` ni `chronodrive-admin` : une tâche cron lit du contenu web non fiable, et aucune de ces surfaces ne doit remplir ni vider un panier ;
+- `cli` nomme `chronodrive` (mesures manuelles) mais pas `chronodrive-admin` ;
+- `telegram` nomme `chronodrive-admin` ; `whatsapp` ne nomme ni `chronodrive` ni `chronodrive-admin` ;
+- la route `panier-omq` garde `toolsets: ["chronodrive", "On Mange Quoi ?"]` ;
+- le préréglage `webhook` (une route sans `toolsets`) voit encore tous les serveurs MCP : **chaque route porte donc sa clé `toolsets`**.
+
+Un nouveau serveur MCP (ou `indeed`, réactivé) s’ajoute **à la main** à chacune de ces listes et à chaque route de `webhook_subscriptions.json`.
 
 **Avant d'armer `chronodrive-admin`** (étape 4, temps 3), contrôler **chaque surface** qui peut lui ouvrir un outil : tout `platform_toolsets.<plateforme>` présent dans `config.yaml` (Home Assistant compris), les tâches cron et chaque route de `webhook_subscriptions.json`. Aucune ne doit laisser passer `vider_panier` ; seule `telegram` nomme `chronodrive-admin`. Une plateforme dont la liste ne nomme aucun serveur MCP les voit tous.
 
@@ -287,6 +300,27 @@ Le serveur MCP séparé `chronodrive-admin` (`src/mcp-admin.ts`, étapes 4 et 8)
 2. **Confirmation** : après un « oui » explicite d'Arnaud, `vider_panier` avec `confirmation` = ce `jeton`. L'outil relit le panier et compare : si le panier a changé depuis l'aperçu (ajout à la main, commande validée), il refuse sans aucun retrait (« Le panier a changé depuis l’aperçu : relance vider_panier sans confirmation pour un nouvel aperçu. ») et il faut refaire un aperçu. Sinon il vide, relit, et renvoie le même bilan que le script.
 
 La confirmation n'agit que si `CHRONODRIVE_LECTURE_SEULE` vaut `'0'` dans l'entrée `env` de `chronodrive-admin` : sinon elle est refusée sans appel API, l'aperçu reste disponible. Un changement du **code** exige de redémarrer la gateway : les serveurs `chronodrive` et `chronodrive-admin` gardent sinon l'ancien code (`panier.ts`, `admin.ts`) en mémoire ; seul le script `src/vider-panier.ts` relit le code à chaque lancement.
+
+## Préparer le cycle (skill `preparer-cycle`)
+
+La skill `preparer-cycle` (RG-85, RG-86) prépare le prochain cycle avec Arnaud sur Telegram (« prépare mon cycle ») : tendances du foyer sur 8 semaines confirmées par Arnaud, génération et ajustements, deux validations (« repas OK », « panier OK »), `lancer_demande_panier` puis, sur ordre explicite seulement, partage de la liste des repas sur WhatsApp. Elle ne voit aucun outil du serveur `chronodrive` ; seul `vider_panier` (`chronodrive-admin`) est visible sur Telegram, et la skill se l’interdit. Le panier est rempli par le run webhook (`panier-chronodrive`). Ses contrôles sont des consignes, pas des gardes : seules les listes d’outils de l’étape 8 bornent l’agent.
+
+**Installation.** Même commande que l’étape 5 : la skill est copiée avec le dossier `omq`. Chemin final : `/opt/data/skills/omq/preparer-cycle/SKILL.md`. `outils/duree-machine.ts` part avec la copie du code de l’étape 2, qui exclut seulement `node_modules`, `test` et `mesures` : la rejouer si l’outil est plus récent que le NAS.
+
+**Contact WhatsApp.** Le destinataire du partage se mémorise dans Hermes, avec Arnaud, jamais dans Git : une entrée `memory` « OMQ contact partage cycle : <prénom> → <numéro ou JID> » (numéro E.164 ou identifiant WhatsApp, sans préfixe). L’envoi passe par `hermes send -t "whatsapp:<numéro ou JID>" -f <fichier>` avec l’outil `terminal` : Hermes n’expose pas `send_message` à l’agent.
+
+**Mesure.** La durée machine d’un run est la somme des écarts « message d’Arnaud → réponse finale de l’assistant » sur la session Telegram, hors run panier (session webhook) et hors temps de lecture. Objectif : moins de 10 minutes. Dans le conteneur, depuis `/opt/data/chronodrive-mcp` (`$D` est défini plus haut) :
+
+```sh
+$D exec -u 1000 -w /opt/data/chronodrive-mcp hermes node outils/duree-machine.ts --db /opt/data/state.db --session <id>
+$D exec -u 1000 -w /opt/data/chronodrive-mcp hermes node outils/duree-machine.ts --db /opt/data/state.db --depuis <ISO> --jusqu-a <ISO>
+```
+
+`--session` est le mode précis : la session du run, refusée (code `2`) si elle est absente de `sessions` ou si sa source n’est pas `telegram`. La fenêtre `--depuis` / `--jusqu-a` compte toutes les sessions Telegram qui y ont un message, tours calculés session par session puis sommés : à réserver au cas où l’identifiant de session manque. Les dates portent un fuseau explicite, `Z` ou `±hh:mm` (`2026-11-02T19:00:00+01:00`), sinon code `2` ; les heures affichées sont celles de Paris. Chaque durée est arrondie à la seconde, et le total est la somme des durées affichées.
+
+L’outil ne lit que `state.db`, en lecture seule. Codes de sortie : `0` mesure affichée, `1` base illisible, `2` argument invalide (drapeau inconnu ou répété, valeur manquante, date sans fuseau, session absente ou hors Telegram).
+
+**Fichier de run.** Un fichier par run réel, `mesures/cycle-<ancre>.md`, d’après `mesures/cycle-gabarit.md`, rempli avec Arnaud après le run. Critère de réussite : 3 runs réels consécutifs réussis ; un run raté remet le compteur à zéro, et la skill est corrigée avant le suivant.
 
 ## Spike désinstallé
 
