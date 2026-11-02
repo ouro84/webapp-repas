@@ -23,7 +23,8 @@ export type DependancesAdmin = {
 
 const DESCRIPTION = [
   "Vide le panier Chronodrive courant (retire toutes les lignes), en deux temps.",
-  "À n'utiliser que sur demande explicite de l'utilisateur sur Telegram, jamais pendant un run de panier.",
+  "À n'utiliser que sur demande explicite de l'utilisateur sur Telegram.",
+  "Si un remplissage du panier est peut-être en cours (carte « Panier en cours… » sur /courses), demande d'abord à l'utilisateur et attends le compte-rendu.",
   "1. Appelle d'abord SANS `confirmation` : rien n'est retiré, l'outil renvoie les lignes du panier et un `jeton`. Montre ces lignes à l'utilisateur et attends un « oui » explicite.",
   "2. Seulement après ce « oui », rappelle avec `confirmation` = le `jeton` reçu. Si le panier a changé depuis l'aperçu, le vidage est refusé : refais un aperçu.",
   "Ne passe ni commande ni créneau, et ne paie rien.",

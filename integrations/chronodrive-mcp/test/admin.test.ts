@@ -80,6 +80,27 @@ test("confirmation avec le bon jeton : lignes retirées, panier relu vide", asyn
   assert.deepEqual(suppressions().map((a) => a.chemin), ["/v1/carts/42/items/10", "/v1/carts/42/items/11"]);
 });
 
+test("confirmation avec le jeton du panier vide : étape vidage, « Panier déjà vide. », aucune suppression", async () => {
+  const { vider, suppressions } = await demarrer(panierSimule("42", {}).routes);
+  const jeton = jetonPanier({ id: "42", lignes: new Map() });
+  const r = await vider({ confirmation: jeton });
+  assert.equal(r.isError, undefined);
+  assert.equal(r.structuredContent?.etape, "vidage");
+  assert.equal(r.structuredContent?.vide, true);
+  assert.equal(r.structuredContent?.message, "Panier déjà vide.");
+  assert.equal(suppressions().length, 0);
+});
+
+test("description : consigne actionnable si un remplissage est peut-être en cours", async () => {
+  const { mcp } = await demarrer(panierSimule("42", { "10": 2 }).routes);
+  const { tools } = await mcp.listTools();
+  const description = tools[0].description ?? "";
+  assert.match(description, /remplissage du panier est peut-être en cours/);
+  assert.match(description, /Panier en cours…/);
+  assert.match(description, /attends le compte-rendu/);
+  assert.doesNotMatch(description, /jamais pendant un run/);
+});
+
 test("confirmation normalisée : espaces et majuscules ignorés", async () => {
   const { vider, suppressions } = await demarrer(panierSimule("42", { "10": 2, "11": 1 }).routes);
   const r = await vider({ confirmation: `  ${jetonDuPanier().toUpperCase()}\n` });
