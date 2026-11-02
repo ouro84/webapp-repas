@@ -2,6 +2,7 @@
 // Protocole : docs/etudes/chronodrive.md, « Protocole relevé ». Pièges : .claude/rules/chronodrive.md.
 // Aucune commande ici (RG-82) : `POST v1/carts/{id}/items` (ajout) et, hors run seulement,
 // `DELETE v1/carts/{id}/items/{productId}` (vidage, #320).
+import { createHash } from "node:crypto";
 import { produitVu, versProduit, type Appelant, type OptionsHorloge, type Produit } from "./catalogue.ts";
 import { ErreurChronodrive, erreurDeConnexion } from "./client.ts";
 import { plafonnerQuantite, type QuantiteAjustee } from "./quantites.ts";
@@ -261,15 +262,39 @@ export type LigneRetrait = {
 // validée pendant le script).
 // `restantes` : nombre de lignes du panier relu après le vidage (ajout concurrent compris), `null`
 // sans relecture ; en simulation, la taille du panier lu.
-export type BilanVidage = { panierId: string; simulation: boolean; lignes: LigneRetrait[]; vide: boolean; relu: boolean; restantes: number | null };
+// `jeton` : jeton d'état (jetonPanier) du panier lu avant tout retrait.
+export type BilanVidage = { panierId: string; simulation: boolean; lignes: LigneRetrait[]; vide: boolean; relu: boolean; restantes: number | null; jeton: string };
+
+export const PANIER_CHANGE = "Le panier a changé depuis l’aperçu : relance vider_panier sans confirmation pour un nouvel aperçu.";
+
+// Refus de `viderPanier` quand le panier lu n'est plus celui de l'aperçu (RG-82, #320) : levée
+// avant tout DELETE.
+export class ErreurPanierChange extends Error {
+  constructor() {
+    super(PANIER_CHANGE);
+    this.name = "ErreurPanierChange";
+  }
+}
+
+// Jeton d'état du panier (#320, RG-82) : SHA-256 tronqué à 16 hex de l'id du panier et des lignes
+// `productId:quantité` triées par `productId` (indépendant de l'ordre de lecture). Il lie la
+// confirmation de `vider_panier` à l'aperçu montré : un panier modifié ou remplacé change le jeton.
+export function jetonPanier(panier: { id: string; lignes: Map<string, number> }): string {
+  const lignes = [...panier.lignes].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([productId, quantite]) => `${productId}:${quantite}`);
+  return createHash("sha256").update(JSON.stringify([panier.id, lignes])).digest("hex").slice(0, 16);
+}
 
 // Vidage du panier courant (#320, RG-82), réservé au hors run : un DELETE par ligne, en série
 // (ordre déterministe, pas de rafale vers Chronodrive). Un retrait n'est confirmé que par la
 // relecture du panier, jamais par la réponse du DELETE (2xx sans effet possible). Une erreur sur
 // une ligne n'arrête pas les autres, sauf une erreur de connexion (les lignes suivantes restent
 // « non tentées » : sinon chacune retenterait un login). En simulation, aucun DELETE.
-export async function viderPanier(client: Appelant, options: { simulation: boolean }): Promise<BilanVidage> {
+// `jetonAttendu` (vidage confirmé après aperçu) : si le jeton du panier lu ne correspond pas,
+// `ErreurPanierChange` est levée avant toute requête d'écriture.
+export async function viderPanier(client: Appelant, options: { simulation: boolean; jetonAttendu?: string }): Promise<BilanVidage> {
   const avant = await lirePanierCourant(client);
+  const jeton = jetonPanier(avant);
+  if (options.jetonAttendu !== undefined && options.jetonAttendu !== jeton) throw new ErreurPanierChange();
   const lignes: LigneRetrait[] = [...avant.lignes].map(([productId, quantite]) => ({
     productId,
     libelle: avant.produits.get(productId)?.libelle ?? productId,
@@ -279,7 +304,7 @@ export async function viderPanier(client: Appelant, options: { simulation: boole
     erreur: null,
   }));
   if (options.simulation || lignes.length === 0) {
-    return { panierId: avant.id, simulation: options.simulation, lignes, vide: lignes.length === 0, relu: true, restantes: avant.lignes.size };
+    return { panierId: avant.id, simulation: options.simulation, lignes, vide: lignes.length === 0, relu: true, restantes: avant.lignes.size, jeton };
   }
 
   const tentees: LigneRetrait[] = [];
@@ -301,8 +326,8 @@ export async function viderPanier(client: Appelant, options: { simulation: boole
   // ne se confirme.
   if (!apres || apres.id !== avant.id) {
     for (const ligne of tentees) ligne.statut = "non_verifie";
-    return { panierId: avant.id, simulation: false, lignes, vide: false, relu: false, restantes: null };
+    return { panierId: avant.id, simulation: false, lignes, vide: false, relu: false, restantes: null, jeton };
   }
   for (const ligne of tentees) ligne.statut = apres.lignes.has(ligne.productId) ? "toujours_au_panier" : "retiree";
-  return { panierId: avant.id, simulation: false, lignes, vide: apres.lignes.size === 0, relu: true, restantes: apres.lignes.size };
+  return { panierId: avant.id, simulation: false, lignes, vide: apres.lignes.size === 0, relu: true, restantes: apres.lignes.size, jeton };
 }
