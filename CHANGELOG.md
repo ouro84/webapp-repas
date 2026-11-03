@@ -7,7 +7,14 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+### Modifié
+
+- Cartes repas du planning : Changer, Sélectionner et Restes sont visibles directement, sans passer par le menu « Actions » (#334).
+- Vue Cycle : régénérer un cycle qui contient déjà des repas demande maintenant une confirmation, car les repas et les coches de tout le foyer sont remplacés sans retour possible (#334).
+
 ### Corrigé
+
+- Liste de courses : le bouton « Générer mon cycle » n’apparaît plus quand la liste est remplie. Un clic involontaire, juste à côté de « Tout décocher », régénérait tout le cycle et effaçait les coches du foyer (#334).
 
 - Panier Chronodrive : une date en milieu de cycle envoyée directement à l’API est désormais résolue sur le bon cycle, donc un cycle terminé reste refusé et un cycle hors plage donne une erreur (#320).
 - Un planning ne peut plus contenir une recette d'un autre foyer, même par un appel direct à l'API (#306). Une date de début de cycle impossible (comme le 30 février) est désormais refusée.

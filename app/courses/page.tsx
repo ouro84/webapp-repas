@@ -39,7 +39,6 @@ import {
   ChevronRight,
   Pencil,
   Plus,
-  Sparkles,
   Trash2,
   Users,
 } from "lucide-react";
@@ -500,9 +499,8 @@ function ContenuCourses() {
           type="button"
           onClick={() => void genererMonCycle()}
           disabled={enGeneration}
-          className="inline-flex items-center gap-2 rounded-full bg-primary px-8 py-4 text-lg font-medium text-white transition hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100 disabled:cursor-not-allowed disabled:opacity-60"
+          className="rounded-full bg-primary px-8 py-4 text-lg font-medium text-white transition hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          <Sparkles aria-hidden="true" className="size-5" />
           {enGeneration ? "Génération…" : "Générer mon cycle"}
         </button>
         {/* Article manuel (#216) : une liste de courses ad hoc n'a pas besoin
@@ -605,16 +603,10 @@ function ContenuCourses() {
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
-          {/* Régénérer le cycle affiché (#259) — invalide les coches (RG-13). */}
-          <button
-            type="button"
-            onClick={() => void genererMonCycle()}
-            disabled={enGeneration}
-            className="relative inline-flex items-center gap-1.5 rounded-full border border-brand-200 px-4 py-2 text-sm font-medium text-brand-700 transition after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            <Sparkles aria-hidden="true" className="size-4" />
-            {enGeneration ? "Génération…" : "Générer mon cycle"}
-          </button>
+          {/* Pas de « Générer mon cycle » ici (#334) : liste remplie, une
+              régénération écraserait le cycle et purgerait les coches du foyer
+              (RG-56) sans annulation possible — un misclic à côté de « Tout
+              décocher » coûtait toute la liste. Régénérer passe par /planning. */}
           {aDesCoches(liste, coches) && (
             <button
               type="button"

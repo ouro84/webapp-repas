@@ -27,6 +27,36 @@ test("« Générer mon cycle » est accessible et fonctionne depuis la vue Cycle
   await expect(page.locator("main li").first()).toBeVisible({ timeout: 20_000 });
 });
 
+// #334 : régénérer un cycle déjà rempli écrase les repas et purge les coches du
+// foyer, sans undo → confirmation (miroir de RG-74 côté MCP). Cycle vide :
+// génération directe (test précédent, aucune modale).
+test("régénérer un cycle déjà rempli depuis la vue Cycle demande confirmation (#334)", async ({
+  page,
+}) => {
+  await page.goto("/planning");
+  await page.getByRole("button", { name: "Cycle" }).click();
+  await page.getByRole("button", { name: "Générer mon cycle" }).click();
+  await expect(page.locator("main li").first()).toBeVisible({ timeout: 20_000 });
+  const recettesAvant = await page
+    .locator("main button[aria-label^='Voir la recette']")
+    .allTextContents();
+
+  // Annuler : rien ne change.
+  await page.getByRole("button", { name: "Générer mon cycle" }).click();
+  const modale = page.getByRole("dialog", { name: "Régénérer ce cycle ?" });
+  await expect(modale).toBeVisible();
+  await modale.getByRole("button", { name: "Annuler" }).click();
+  await expect(modale).not.toBeVisible();
+  expect(
+    await page.locator("main button[aria-label^='Voir la recette']").allTextContents()
+  ).toEqual(recettesAvant);
+
+  // Confirmer : le cycle est régénéré.
+  await page.getByRole("button", { name: "Générer mon cycle" }).click();
+  await modale.getByRole("button", { name: "Régénérer" }).click();
+  await expect(page.getByText("Cycle généré").last()).toBeVisible({ timeout: 20_000 });
+});
+
 test("le lien « Liste de courses → » depuis la vue Cycle conserve la même fenêtre", async ({
   page,
 }) => {

@@ -41,7 +41,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Sparkles } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import {
   ancreParDefaut,
@@ -159,6 +159,8 @@ export function VuePlanningCycle({
   // vue Semaine, mais jugée par jour édité (comparaison de date directe, pas
   // d'offsetAffiche : la vue Cycle n'a pas de notion de "semaine affichée" unique).
   const [confirmation, setConfirmation] = useState<{ executer: () => void } | null>(null);
+  // Confirmation avant de régénérer un cycle déjà rempli (#334).
+  const [confirmationGeneration, setConfirmationGeneration] = useState(false);
   // Réglages (#217) : pilotent le filtre live des créneaux désactivés. Défaut
   // tant que non chargés = comportement antérieur (tout actif).
   const [reglages, setReglages] = useState<ReglagesGeneration>(REGLAGES_DEFAUT);
@@ -578,11 +580,15 @@ export function VuePlanningCycle({
         </button>
         <button
           type="button"
-          onClick={() => void genererMonCycle()}
+          // Cycle déjà rempli → confirmation (#334, miroir de RG-74 côté MCP) :
+          // la régénération écrase les repas et purge les coches du foyer, sans
+          // annulation possible. Cycle vide → génération directe.
+          onClick={() =>
+            aDesRepas ? setConfirmationGeneration(true) : void genererMonCycle()
+          }
           disabled={enGeneration || verrouAffiche}
-          className="relative inline-flex items-center gap-1.5 rounded-full border border-brand-200 px-4 py-2 text-sm font-medium text-brand-700 transition after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100 disabled:cursor-not-allowed disabled:opacity-60"
+          className="relative rounded-full border border-brand-200 px-4 py-2 text-sm font-medium text-brand-700 transition after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          <Sparkles aria-hidden="true" className="size-4" />
           {enGeneration || verrouAffiche ? "Génération…" : "Générer mon cycle"}
         </button>
         <Link
@@ -689,6 +695,21 @@ export function VuePlanningCycle({
             action();
           }}
           onAnnuler={() => setConfirmation(null)}
+        />
+      )}
+
+      {/* Régénération d'un cycle déjà rempli (#334) : action rare, destructive
+          et partagée par tout le foyer, sans undo multi-semaines. */}
+      {confirmationGeneration && (
+        <ConfirmationModale
+          titre="Régénérer ce cycle ?"
+          message="Les repas déjà prévus sur ce cycle seront remplacés, et les articles cochés de la liste de courses seront décochés pour tout le foyer."
+          libelleConfirmer="Régénérer"
+          onConfirmer={() => {
+            setConfirmationGeneration(false);
+            void genererMonCycle();
+          }}
+          onAnnuler={() => setConfirmationGeneration(false)}
         />
       )}
     </div>
