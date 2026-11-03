@@ -7,6 +7,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 
 import { ErreurChronodrive } from "../src/client.ts";
+import { PRODUIT_INCONNU } from "../src/panier.ts";
 import { signerJeton } from "../src/jetons.ts";
 import { normaliserTerme, type Correspondance, type EntreeCorrespondance } from "../src/correspondances.ts";
 import { creerServeur, favorisPour, JETON_INVALIDE, NOMS_OUTILS, type CacheCorrespondances, type Dependances } from "../src/outils.ts";
@@ -966,6 +967,51 @@ test("jetons : une ligne refusée par les jetons ne compte pas comme doublon", a
   assert.equal(envoyee.erreur, null);
   assert.equal(envoyee.confirme, true);
   assert.equal(sim.compter("POST /v1/carts/p1/items"), 1);
+});
+
+test("jetons : deux lignes d'un même lot avec deux demandes différentes → chaque ligne jugée seule", async () => {
+  const { sim, jeton, ligne, envoyer } = await preparerJetons();
+  const [lait, beurre] = await envoyer([
+    ligne("lait", "10", [jeton("lait")]),
+    ligne("beurre", "20", [jeton("beurre", { demande: AUTRE_DEMANDE })]),
+  ]);
+  assert.equal(lait.erreur, null);
+  assert.equal(lait.confirme, true);
+  assert.equal(beurre.erreur, null);
+  assert.equal(beurre.confirme, true);
+  assert.equal(sim.compter("POST /v1/carts/p1/items"), 2);
+});
+
+test("jetons : lot entièrement refusé par les jetons → ni client, ni login, ni lecture du panier", async () => {
+  const sim = clientSimule({});
+  let clientsCrees = 0;
+  const { appelerBrut } = await demarrer({
+    client: () => {
+      clientsCrees++;
+      return sim.client;
+    },
+  });
+  const lignes = [
+    { terme: "lait", productId: "10", quantite: 1, jetons: ["pas-un-jeton"] },
+    { terme: "beurre", productId: "20", quantite: 1, jetons: [signerJeton(SECRET_JETONS, DEMANDE, "lait", EXP_LOINTAINE)] },
+  ];
+  const resultats = lignesAjout(await appelerBrut("ajouter_au_panier", { lignes }));
+  assert.deepEqual(resultats.map((r) => [r.terme, r.confirme, r.erreur]), [
+    ["lait", false, JETON_INVALIDE],
+    ["beurre", false, JETON_INVALIDE],
+  ]);
+  assert.equal(sim.appels.length, 0);
+  assert.equal(clientsCrees, 0);
+});
+
+test("jetons : lot entièrement refusé par la garde `propose` → aucune relecture du panier", async () => {
+  const { sim, jeton, ligne, envoyer } = await preparerJetons();
+  const avant = sim.appels.length;
+  // Jetons valides, mais produit 99 jamais proposé : refus sans lecture du panier.
+  const [lait] = await envoyer([ligne("lait", "99", [jeton("lait")])]);
+  assert.equal(lait.confirme, false);
+  assert.equal(lait.erreur, PRODUIT_INCONNU);
+  assert.equal(sim.appels.length, avant);
 });
 
 test("ajouter_au_panier : deux appels parallèles sont exécutés l'un après l'autre", async () => {

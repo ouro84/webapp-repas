@@ -19,7 +19,7 @@ import {
 import { ErreurChronodrive, erreurDeConnexion } from "./client.ts";
 import { normaliserTerme, type Correspondance, type Correspondances, type EntreeCorrespondance } from "./correspondances.ts";
 import { lireJeton, verifierJeton } from "./jetons.ts";
-import { ajouterLignes, ErreurPanierChange, lirePanierCourant, PRODUIT_INCONNU, type ResultatAjout } from "./panier.ts";
+import { ajouterLignes, ErreurPanierChange, lirePanierCourant, PRODUIT_INCONNU, refuserLot, type ResultatAjout } from "./panier.ts";
 
 export type CacheCorrespondances = Pick<Correspondances, "connues" | "memoriser" | "oublier">;
 
@@ -220,13 +220,13 @@ export function creerServeur(deps: Dependances): McpServer {
   }
 
   // Garde des jetons d'une ligne (#330, RG-83) : l'article doit venir d'une demande OMQ prise par ce
-  // run. Le jeton ne porte pas le libellé, seulement sa signature : `chronodrive` ne peut donc
-  // vérifier la SIGNATURE d'un jeton que contre `terme`. Pour une ligne fusionnée, au moins un jeton
-  // doit vérifier `terme` (signature + expiration) ; les autres doivent avoir un format et une
-  // expiration valides et la même demande, mais leur signature n'est pas contrôlable (libellé
-  // inconnu). Sans conséquence : seul le jeton de `terme` autorise l'ajout. Pourquoi : un modèle
-  // léger a sauté prendre_demande_panier et rempli le vrai panier (#330) ; un jeton d'une demande
-  // précédente expire (30 min) et ne couvre de toute façon que son propre libellé.
+  // run. Le jeton ne porte pas le libellé, seulement sa signature : `chronodrive` ne peut vérifier la
+  // SIGNATURE d'un jeton que contre `terme`. Pour une ligne fusionnée, au moins un jeton doit vérifier
+  // `terme` (signature + expiration) ; les autres (co-jetons) doivent avoir un format et une
+  // expiration valides et la même demande, mais leur signature n'est pas lue : n'importe quel MAC hex
+  // de 32 caractères passe pour un co-jeton. Sans conséquence : seul le jeton de `terme` autorise
+  // l'ajout. Pourquoi : sans demande prise, aucun jeton n'est signé, donc rien ne part chez Chronodrive ;
+  // un jeton d'une demande précédente expire (30 min) et ne couvre que son propre libellé.
   function jetonsValides(secret: string, jetons: string[], t: string, maintenant: number): boolean {
     const lus = jetons.map((j) => lireJeton(j, maintenant));
     const demandes = new Set<string>();
@@ -434,23 +434,27 @@ export function creerServeur(deps: Dependances): McpServer {
         throw new ErreurOutil("OMQ_WEBHOOK_SECRET absent de chronodrive.env : aucun ajout possible sans vérifier les jetons de la demande OMQ");
       }
       return enSerie(async () => {
-        const client = deps.client();
         // Horloge lue après l'attente dans la file : un lot précédent long ne doit pas faire valider un jeton expiré.
         const maintenant = instant();
-        // Garde des jetons (#330), puis garde par terme (`propose`). Un produit jamais vu en recherche
-        // ou en favoris (même s'il est dans le panier) garde le refus « produit inconnu » ; un produit
-        // vu pour un autre terme, ou avec une reformulation non valable, est « non proposé ».
-        const aEnvoyer = lignes.map(({ terme: t, terme_recherche, productId, quantite, quantite_omq: quantiteOmq, jetons }) => {
-          if (!jetonsValides(secret, jetons, t, maintenant)) return { productId, quantite, refus: JETON_INVALIDE };
+        // Garde des jetons (#330) avant tout client : un lot sans aucun jeton valide ne crée ni client
+        // (donc aucun login) ni lecture du panier.
+        const jetonOk = lignes.map(({ terme: t, jetons }) => jetonsValides(secret, jetons, t, maintenant));
+        const client = jetonOk.some(Boolean) ? deps.client() : null;
+        // Puis garde par terme (`propose`). Un produit jamais vu en recherche ou en favoris (même s'il
+        // est dans le panier) garde le refus « produit inconnu » ; un produit vu pour un autre terme,
+        // ou avec une reformulation non valable, est « non proposé ».
+        const aEnvoyer = lignes.map(({ terme: t, terme_recherche, productId, quantite, quantite_omq: quantiteOmq }, i) => {
+          if (!client || !jetonOk[i]) return { productId, quantite, refus: JETON_INVALIDE };
           if (propose(client, t, terme_recherche, productId)) return { productId, quantite, quantiteOmq };
           return { productId, quantite, refus: produitVu(client, productId, horloge) ? PRODUIT_NON_PROPOSE : PRODUIT_INCONNU };
         });
-        const bilan = await ajouterLignes(client, aEnvoyer, horloge);
+        // Tout est refusé : aucune lecture du panier ni appel à Chronodrive.
+        const bilan = client === null || aEnvoyer.every((l) => l.refus) ? refuserLot(aEnvoyer) : await ajouterLignes(client, aEnvoyer, horloge);
         const resultats: (ResultatAjout & { terme: string })[] = bilan.resultats.map((r, i) => ({ terme: lignes[i].terme, ...r }));
         // Libellé tiré de la fiche du panier relu après l'ajout, sinon de la fiche vue ; jamais du
         // productId (il sert à retrouver le produit par recherche). Sans libellé, rien n'est mémorisé.
         const confirmes: EntreeCorrespondance[] = resultats.flatMap((r) => {
-          if (!r.confirme) return [];
+          if (!r.confirme || client === null) return [];
           const libelle = bilan.produits.get(r.productId)?.libelle || produitVu(client, r.productId, horloge)?.libelle;
           return libelle ? [{ terme: r.terme, productId: r.productId, libelle }] : [];
         });

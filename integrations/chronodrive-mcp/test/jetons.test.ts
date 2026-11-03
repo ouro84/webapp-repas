@@ -92,6 +92,15 @@ test("formats invalides : format", () => {
   }
 });
 
+test("demande_id qui n'est pas un uuid : format, même signé avec le bon secret", () => {
+  const v = vecteurs[0];
+  for (const id of ["pas-un-uuid", "0b9f3a52-6c1e-4d7a-9a1f-2e5c7d8b4a1", "0B9F3A52-6C1E-4D7A-9A1F-2E5C7D8B4A10", "../etc/passwd"]) {
+    const signe = signerJeton(v.secret, id, v.libelle, v.exp);
+    assert.deepEqual(verifierJeton(v.secret, signe, v.libelle, (v.exp - 1) * 1000), { ok: false, raison: "format" }, id);
+    assert.deepEqual(lireJeton(signe, (v.exp - 1) * 1000), { ok: false, raison: "format" }, id);
+  }
+});
+
 // `lireJeton` : format, expiration et demande, sans signature (le libellé d'un co-jeton de ligne
 // fusionnée est inconnu de chronodrive).
 test("lireJeton : jeton bien formé et non expiré → demandeId, signature non contrôlée", () => {

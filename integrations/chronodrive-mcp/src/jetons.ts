@@ -33,13 +33,16 @@ export function signerJeton(secret: string, demandeId: string, libelle: string, 
   return `${demandeId}.${exp}.${mac(secret, demandeId, libelle, exp)}`;
 }
 
+// uuid en minuscules, forme de `demande_panier.id::text` côté Postgres.
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
 // Découpe `<demande_id>.<exp>.<mac>` ; null si le format est invalide. Un uuid contient des tirets
 // mais pas de points : exactement trois parties.
 function decouper(jeton: string): { demandeId: string; exp: number; mac: string } | null {
   const parties = jeton.split(".");
   if (parties.length !== 3) return null;
   const [demandeId, expTexte, macTexte] = parties;
-  if (demandeId === "" || !/^\d{1,15}$/.test(expTexte) || !/^[0-9a-f]{32}$/.test(macTexte)) return null;
+  if (!UUID.test(demandeId) || !/^\d{1,15}$/.test(expTexte) || !/^[0-9a-f]{32}$/.test(macTexte)) return null;
   return { demandeId, exp: Number(expTexte), mac: macTexte };
 }
 

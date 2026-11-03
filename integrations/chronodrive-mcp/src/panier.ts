@@ -107,6 +107,23 @@ type Envoi = {
   erreurPost: string | null;
 };
 
+// Lot dont toutes les lignes sont refusées par l'appelant (`refus`) : rien n'est lu ni envoyé, donc
+// ni login ni GET (#330). `avant` et `apres` valent 0, le panier n'ayant pas été lu ; seule `erreur`
+// compte sur une ligne refusée.
+export function refuserLot(lignes: LigneAjout[]): BilanAjout {
+  const resultats = lignes.map((ligne): ResultatAjout => ({
+    productId: String(ligne.productId),
+    demande: ligne.quantite,
+    avant: 0,
+    apres: 0,
+    confirme: false,
+    returnType: null,
+    erreur: ligne.refus ?? null,
+    quantiteAjustee: null,
+  }));
+  return { resultats, produits: new Map() };
+}
+
 // Ajout par lot. Le panier est relu avant, un POST par ligne (le POST incrémente), puis le panier
 // est relu une fois (une seconde tentative si cette relecture échoue). Un ajout n'est confirmé que
 // par l'écart de quantité du produit entre les deux lectures (RG-83), jamais au `returnType`
