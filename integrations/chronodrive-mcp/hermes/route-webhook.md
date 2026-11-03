@@ -21,7 +21,7 @@ Si `hermes` n'est pas dans le `PATH` du conteneur, utiliser `/opt/hermes/.venv/b
 ## Prérequis
 
 - La skill est installée dans `/opt/data/skills/omq/panier-chronodrive/SKILL.md` (cf. `README.md`).
-- Les MCP `chronodrive` et `OMQ exécuteur` sont déclarés dans `config.yaml` et la gateway a redémarré depuis (`README.md`, « Durcissement #330 »).
+- Le MCP `chronodrive` est déclaré dans `config.yaml` et la gateway a redémarré depuis la mise à jour de son code (phase A) ; le serveur `OMQ exécuteur` est déclaré en phase B, après le merge, et se recharge à chaud sans redémarrage (`README.md`, « Durcissement #330 »).
 - La plateforme webhook écoute en local seulement (`platforms.webhook.extra.host: 127.0.0.1`, port `8644`). Vérification depuis le NAS (le conteneur est en réseau host) : `curl -s http://127.0.0.1:8644/health` répond `{"status":"ok","platform":"webhook"}`.
 - Le secret `OMQ_WEBHOOK_SECRET` est dans `/opt/data/chronodrive.env` (mode `600`), sans guillemets. Celui du spike est un secret **brut** et il est conservé. Depuis #330, le MCP `chronodrive` le **lit** aussi, pour vérifier les jetons des articles : il doit être identique côté OMQ, route Hermes et `chronodrive.env`.
 

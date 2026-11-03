@@ -979,7 +979,7 @@ test("executeur : prendre → articles du cycle de la demande, chaque jeton = HM
   expect(prise.articles.length).toBeGreaterThan(0);
   expect(prise.cycle.libelle).toBeTruthy();
 
-  // exp = pris_le + 30 min, à la seconde près (arrondi de l'epoch en base).
+  // exp = pris_le + 30 min, tronquée à la seconde en base (floor) ; tolérance ±1 s : précision de pris_le.
   const exp = Math.floor(Date.parse(prise.expire_le) / 1000);
   const pris = Date.parse(await prisLe(request, EMAIL_A, demandeId)) / 1000;
   expect(Math.abs(exp - (pris + 30 * 60))).toBeLessThanOrEqual(1);

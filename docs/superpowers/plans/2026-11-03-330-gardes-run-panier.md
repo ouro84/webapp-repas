@@ -286,14 +286,18 @@ Contenu :
   - Sur une erreur « Aucune demande de panier prise » ou « jeton OMQ invalide », s'arrêter sans réessayer.
   - Le mode mesure ne change pas (`lire_liste_courses` du serveur général, en `cli`).
 - **`route-webhook.md`.** `toolsets: ["chronodrive", "OMQ exécuteur"]`, avec une explication de l'isolement (#330).
-- **README, nouvelle section « Durcissement #330 ».** Procédure en ordre strict, avec les sauvegardes `config.yaml.bak-avant-330` et `webhook_subscriptions.json.bak-avant-330` :
-  1. Copier le code de `chronodrive-mcp` sur le NAS. Sauvegarde : `/opt/data/chronodrive-mcp.bak-avant-330.tgz`.
-  2. Vérifier que `OMQ_WEBHOOK_SECRET` est dans `chronodrive.env`. Il est désormais **lu** par le MCP : mettre à jour la ligne du tableau des variables. La rotation est couplée.
-  3. Déclarer sous `mcp_servers` le serveur `OMQ exécuteur` (url `https://<prod>/api/mcp/executeur`, OAuth comme « On Mange Quoi ? »), puis faire le login OAuth en collant l'URL de retour.
-  4. `platform_toolsets` : ajouter `OMQ exécuteur` à `cli` seulement. Vérifier qu'il est absent de `telegram`, `whatsapp`, `cron`, `homeassistant` et `discord`.
-  5. Route `panier-omq` : `toolsets: ["chronodrive", "OMQ exécuteur"]`.
-  6. Installer la skill 1.2.0.
-  7. Redémarrer la gateway, **seulement après le feu vert explicite d'Arnaud** (piège du classifieur, `chronodrive.md`).
+- **README, nouvelle section « Durcissement #330 ».** Procédure de référence : la section « Durcissement #330 » du README (le plan n'en est que le résumé). Deux phases autour du merge, avec les sauvegardes `config.yaml.bak-avant-330` et `webhook_subscriptions.json.bak-avant-330` :
+  - **Phase A, avant le merge :**
+    1. Copier le code de `chronodrive-mcp` sur le NAS, depuis la branche de la PR (`git switch feat/330-gardes-run-panier` avant le `tar`). Sauvegarde : `/opt/data/chronodrive-mcp.bak-avant-330.tgz`.
+    2. Vérifier que `OMQ_WEBHOOK_SECRET` est dans `chronodrive.env`. Il est désormais **lu** par le MCP : mettre à jour la ligne du tableau des variables. La rotation est couplée.
+    3. Redémarrer la gateway, **seulement après le feu vert explicite d'Arnaud** (piège du classifieur, `chronodrive.md`) : le nouveau `chronodrive` refuse tout ajout sans jeton, même avec l'ancienne skill.
+  - **Merge** : migration prod et déploiement Vercel, vérifiés par les commandes de la section « Merge » du README.
+  - **Phase B, après le merge :**
+    4. Déclarer sous `mcp_servers` le serveur `OMQ exécuteur` (url `https://<prod>/api/mcp/executeur`, OAuth comme « On Mange Quoi ? »), puis faire le login OAuth en collant l'URL de retour.
+    5. `platform_toolsets` : ajouter `OMQ exécuteur` à `cli` seulement. Vérifier qu'il est absent de `telegram`, `whatsapp`, `cron`, `homeassistant` et `discord`.
+    6. Route `panier-omq` : `toolsets: ["chronodrive", "OMQ exécuteur"]`, contrôlée par la route `controle-outils`.
+    7. Installer la skill 1.2.0.
+  - **Aucune demande de panier entre le début de la phase A et la fin de la phase B** (bouton de `/courses`, `lancer_demande_panier`, `preparer-cycle`).
 
 - [ ] **Étape 1 : rédiger les trois fichiers.**
 - [ ] **Étape 2 : contrôle croisé.** `grep -n "lire_liste_courses\|cocher_article(" integrations/chronodrive-mcp/hermes/skills/omq/panier-chronodrive/SKILL.md`. Attendu : aucune occurrence hors du mode mesure.
@@ -325,10 +329,13 @@ Contenu :
 
 ---
 
-### Après le merge (manuel, avec Arnaud)
+### Déploiement et après le merge (manuel, avec Arnaud)
 
-1. `migrate-prod` OK (CI), et Vercel prod READY.
-2. Procédure NAS du README, section « Durcissement #330 ». La fenêtre de panne du bouton dure jusqu'à la fin de ce point.
+Procédure de référence : section « Durcissement #330 » du README.
+
+0. **Avant le merge, phase A** (code `chronodrive` sur le NAS depuis la branche de la PR, vérification de `OMQ_WEBHOOK_SECRET`, redémarrage de la gateway sur feu vert d'Arnaud). Aucune demande de panier à partir d'ici et jusqu'à la fin de la phase B.
+1. Merge, puis `migrate-prod` OK (CI) et Vercel prod READY, vérifiés par les commandes de la section « Merge » du README.
+2. **Phase B** (serveur « OMQ exécuteur » et login OAuth, `platform_toolsets` `cli`, `toolsets` de la route, skill 1.2.0). La fenêtre de panne du bouton dure jusqu'à la fin de ce point.
 3. **Run piégé en `cli`.** Les refus doivent être lisibles :
    - `cocher_article_demande` sans `prendre` → OMQ05 ;
    - `ajouter_au_panier` sans jeton → rejet du schéma ;

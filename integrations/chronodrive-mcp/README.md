@@ -270,7 +270,7 @@ Un run Hermes a un jour sauté `prendre_demande_panier`, inventé une `ancre`, c
    '
    ```
 
-   La copie s’applique tout de suite au disque, mais le MCP garde l’ancien code en mémoire jusqu’au redémarrage de l’étape 3.
+   Le code du durcissement n’est pas encore sur `main` : faire l’archive `tar` depuis la branche de la PR #330, `git switch feat/330-gardes-run-panier` avant la commande `tar` de l’étape 2 d’« Installation sur le NAS » (sinon l’archive contiendrait l’ancien code). La copie s’applique tout de suite au disque, mais le MCP garde l’ancien code en mémoire jusqu’au redémarrage de l’étape 3.
 2. **Vérifier `OMQ_WEBHOOK_SECRET`.** Lecture seule, sans afficher le secret. Les droits du fichier, puis l’empreinte SHA-256 (12 premiers hex) de la valeur telle que `parseEnv` (`node:util`, comme `src/client.ts`) la lit dans `chronodrive.env`, comparée à celle du secret stocké pour la route `panier-omq` :
 
    ```sh
@@ -296,6 +296,18 @@ Un run Hermes a un jour sauté `prendre_demande_panier`, inventé une `ancre`, c
 #### Merge
 
 Merge de la PR #330 : migration des jetons appliquée sur la base de prod (RPC `demande_panier_en_cours` et `signer_jetons_panier`) et déploiement Vercel (endpoint `/api/mcp/executeur`). Vérifier que les deux sont en place avant la phase B : sans eux, `prendre_demande_panier` n’existe pas encore côté OMQ.
+
+- **Migration prod** (lecture seule ; `SUPABASE_ACCESS_TOKEN` en variable d’environnement, jamais affiché) : les deux fonctions doivent être listées.
+
+  ```sh
+  node scripts/query-supabase.mjs gabyhlcwahzquolwxmgd "select proname from pg_proc where proname in ('signer_jetons_panier','demande_panier_en_cours')"
+  ```
+- **Vercel** : l’endpoint exécuteur doit répondre `401` (jeton requis), et la metadata de ressource protégée doit avoir un `resource` qui finit par `/api/mcp/executeur`.
+
+  ```sh
+  curl -s -o /dev/null -w '%{http_code}' https://webapp-repas.vercel.app/api/mcp/executeur
+  curl -s https://webapp-repas.vercel.app/.well-known/oauth-protected-resource/api/mcp/executeur
+  ```
 
 #### Phase B : après le merge (serveur « OMQ exécuteur », toolsets, skill)
 

@@ -31,7 +31,8 @@ export type Dependances = {
   cache: () => CacheCorrespondances;
   lectureSeule: boolean;
   // Secret des jetons de la demande OMQ (#330), relu à chaque appel d'`ajouter_au_panier` ; null =
-  // aucun ajout possible. Refus par défaut : sans secret, rien ne prouve que l'article vient d'une demande OMQ.
+  // aucun ajout possible. Refus par défaut : sans secret, les jetons émis par OMQ pour la demande
+  // prise ne se vérifient pas.
   secretJetons: () => string | null;
   journal?: (message: string) => void;
   maintenant?: () => number;
