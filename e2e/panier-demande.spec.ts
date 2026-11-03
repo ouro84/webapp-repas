@@ -185,6 +185,9 @@ function texte(appel: Awaited<ReturnType<typeof appelerOutilMcp>>): string {
 // Les outils de l'exécuteur vivent sur l'endpoint dédié, pas sur /api/mcp (#330).
 const MCP_EXECUTEUR = "/api/mcp/executeur";
 
+// Préfixe de la `raison` d'une prise sans demande : la skill s'y fie pour s'arrêter (#330).
+const RAISON_AUCUNE_DEMANDE = expect.stringMatching(/^Aucune demande en attente/);
+
 type ArticleDemande = {
   libelle: string;
   quantite: string;
@@ -624,7 +627,7 @@ test("prendre puis rapporter → terminee, rapport lu par etat_panier (RG-84)", 
 });
 
 test("prendre sans demande → { demande: null } (RG-81)", async ({ request }) => {
-  expect(await prendre(request, jetonA)).toMatchObject({ demande: null });
+  expect(await prendre(request, jetonA)).toMatchObject({ demande: null, raison: RAISON_AUCUNE_DEMANDE });
 });
 
 test("exécuteur en 500 → 502, demande echec/injoignable, nouvelle demande possible (RG-81)", async ({ request }) => {
@@ -670,7 +673,7 @@ test("en_attente vieillie de 6 min → echec/non_prise à la lecture (RG-83)", a
   await etatPanier(request, EMAIL_A);
   expect(await lireDemande(request, EMAIL_A, demandeId)).toMatchObject({ statut: "echec", cause_echec: "non_prise" });
   // Expirée, elle ne se prend plus.
-  expect(await prendre(request, jetonA)).toMatchObject({ demande: null });
+  expect(await prendre(request, jetonA)).toMatchObject({ demande: null, raison: RAISON_AUCUNE_DEMANDE });
 });
 
 test("rapport tardif : accepté sans demande plus récente, refusé après une nouvelle demande (RG-83)", async ({
@@ -708,7 +711,7 @@ test("isolation foyer : un autre compte ne prend ni ne rapporte la demande (RG-7
   const demandeId = await demanderOk();
 
   // B (autre foyer) : rien à prendre, rapport refusé, rien de visible.
-  expect(await prendre(request, jetonB)).toMatchObject({ demande: null });
+  expect(await prendre(request, jetonB)).toMatchObject({ demande: null, raison: RAISON_AUCUNE_DEMANDE });
   const refuse = await rapporter(request, jetonB, demandeId);
   expect(refuse.resultat?.isError).toBe(true);
   expect(texte(refuse)).toBe(MESSAGES_PANIER.OMQ03);
@@ -972,6 +975,7 @@ test("executeur : prendre → articles du cycle de la demande, chaque jeton = HM
   expect(demande, `prise sans liste : ${raison}`).not.toBeNull();
   const prise = demande!;
   expect(prise.id).toBe(demandeId);
+  expect(prise.ancre).toBe((await lireDemande(request, EMAIL_A, demandeId))?.ancre);
   expect(prise.articles.length).toBeGreaterThan(0);
   expect(prise.cycle.libelle).toBeTruthy();
 
@@ -1038,13 +1042,15 @@ test("executeur : demande sur le cycle suivant, cocher_article_demande → coche
     expect(await nombreCoches(request, suivant)).toBe(cochesSuivant + 1);
     expect(await nombreCoches(request, courante)).toBe(cochesCourant);
   } finally {
-    // Ne rien laisser de coché sur le cycle suivant.
-    await appelerOutilMcp(request, jetonA, "cocher_article", {
-      libelle: article!.libelle,
-      quantite: article!.quantite,
-      coche: false,
-      ancre: suivant,
-    });
+    // Ne rien laisser de coché, ni sur le cycle suivant ni (si la garde a échoué) sur le courant.
+    for (const ancre of [suivant, courante]) {
+      await appelerOutilMcp(request, jetonA, "cocher_article", {
+        libelle: article!.libelle,
+        quantite: article!.quantite,
+        coche: false,
+        ancre,
+      });
+    }
   }
 });
 

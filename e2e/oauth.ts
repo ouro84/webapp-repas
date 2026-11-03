@@ -124,7 +124,7 @@ async function postMcp(
 }
 
 /** Corps JSON-RPC d'une réponse MCP, servie en JSON ou en SSE (`data:`). */
-async function lireJsonRpc(reponse: APIResponse): Promise<{ result?: ResultatOutil }> {
+async function lireJsonRpc<R = ResultatOutil>(reponse: APIResponse): Promise<{ result?: R }> {
   const texte = await reponse.text();
   const ligne = texte.split("\n").find((l) => l.startsWith("data:"));
   return JSON.parse(ligne ? ligne.slice(5) : texte);
@@ -168,9 +168,7 @@ export async function listerOutilsMcp(
   );
   const reponse = await postMcp(request, jeton, "tools/list", {}, chemin);
   if (reponse.status() !== 200) throw new Error(`tools/list de ${chemin} : HTTP ${reponse.status()}`);
-  const texte = await reponse.text();
-  const ligne = texte.split("\n").find((l) => l.startsWith("data:"));
-  const corps = JSON.parse(ligne ? ligne.slice(5) : texte) as { result?: { tools?: Array<{ name: string }> } };
+  const corps = await lireJsonRpc<{ tools?: Array<{ name: string }> }>(reponse);
   return (corps.result?.tools ?? []).map((t) => t.name);
 }
 
