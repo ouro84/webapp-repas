@@ -38,7 +38,8 @@ Store `lib/theme.ts` (`useSyncExternalStore`, clé localStorage `theme` ∈ clai
 - Nom « On mange quoi ? », baseline « La question du soir a enfin sa réponse ». Logo `components/ui/logo.tsx` : `fill="currentColor"`, `aria-hidden`, couleur via `text-brand-*`. Favicon `app/icon.svg` (couleurs en dur, hors contexte CSS).
 - **Logo Chronodrive** (`components/ui/logo-chronodrive.tsx`) : symbole « app » du sprite officiel de l’enseigne, monochrome, SVG inline en `currentColor` + `aria-hidden`, couleur via `text-*` du parent ; il remplace une icône générique dans le titre de la carte Panier Chronodrive. Ne pas redessiner sa géométrie : elle vient du sprite (`var(--icon-color)` → `currentColor`). Pourquoi : un logo de marque tiers reste fidèle à l’original, et `currentColor` le suit en dark mode sans variante dédiée.
 - **Icônes : SVG inline ou `lucide-react`**, jamais d'emoji ni de glyphe Unicode (y compris `↑↓`).
-- Icônes déjà prises, à éviter pour un nouvel usage : `Leaf` (végé), `TreeDeciduous` (automne), `Wheat`/`Carrot` (accompagnement), `CookingPot` (restes), `RefreshCw`/`Search`/`MoreHorizontal` (actions de slot), `SlidersHorizontal` (réglages), `HelpCircle` (aide), `Heart`/`Ban` (préférences), `CalendarDays`/`ShoppingCart`/`BookOpen`/`Clock` (nav), `Eye`/`PenLine` (droits du consentement OAuth).
+- **Pas de `Sparkles`** (ni d'icône « magie IA ») devant un libellé de génération. Pourquoi : jugé « IA générique » par le propriétaire du produit (#334) ; le libellé suffit.
+- Icônes déjà prises, à éviter pour un nouvel usage : `Leaf` (végé), `TreeDeciduous` (automne), `Wheat`/`Carrot` (accompagnement), `CookingPot` (restes), `RefreshCw`/`Search` (actions de slot), `SlidersHorizontal` (réglages), `HelpCircle` (aide), `Heart`/`Ban` (préférences), `CalendarDays`/`ShoppingCart`/`BookOpen`/`Clock` (nav), `Eye`/`PenLine` (droits du consentement OAuth).
 
 ## Nav (`components/ui/nav.tsx`)
 
@@ -71,7 +72,7 @@ Store `lib/theme.ts` (`useSyncExternalStore`, clé localStorage `theme` ∈ clai
 
 ## Carte de slot du planning (`components/planning/slot-repas.tsx`)
 
-- Les actions Changer / Sélectionner / Restes sont repliées derrière un bouton « Plus d'actions » (`aria-expanded`, `MoreHorizontal`), replié par défaut à chaque montage. Les variantes « restes » et « créneau désactivé » n'ont pas ce toggle.
+- Les actions Changer / Sélectionner / Restes sont **toujours visibles**, sans disclosure : Changer en icône seule (`RefreshCw`), Sélectionner et Restes libellés ; à `lg`, libellés masqués (`lg:hidden`) et `title` en infobulle. Noms accessibles inchangés (`aria-label`). Pourquoi : un toggle « Actions » (#210) coûtait un tap de plus sur des actions utilisées à chaque visite (#334) ; la ligne tient à 320 px.
 - La légende des badges est affichée **une fois** en tête de `/planning`, pas par carte.
 - Déclencheur de la fiche recette = le **nom du plat** (`<button>`), pas la carte entière, pour éviter d'imbriquer des interactifs.
 

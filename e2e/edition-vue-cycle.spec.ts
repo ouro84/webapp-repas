@@ -40,7 +40,6 @@ test("changer un repas depuis la vue Cycle persiste au reload", async ({ page })
   await page.getByRole("button", { name: "Générer mon cycle" }).click();
   await expect(page.locator("main li").first()).toBeVisible({ timeout: 20_000 });
 
-  await page.getByRole("button", { name: /^Plus d'actions/ }).first().click();
   const nomAvant = await page
     .locator("main button[aria-label^='Voir la recette']")
     .first()
@@ -180,7 +179,6 @@ test("marquer un repas en restes depuis la vue Cycle persiste au reload", async 
   await page.getByRole("button", { name: "Générer mon cycle" }).click();
   await expect(page.locator("main li").first()).toBeVisible({ timeout: 20_000 });
 
-  await page.getByRole("button", { name: /^Plus d'actions/ }).first().click();
   await page.getByRole("button", { name: /^Marquer/ }).first().click();
   await confirmerSiModaleJourPasse(page);
   await expect(page.getByText("Repas marqué « Restes »")).toBeVisible();
@@ -210,7 +208,6 @@ test("cycle chevauchant deux semaines ISO — éditer vendredi/samedi/dimanche n
   await expect(page.locator("main li")).toHaveCount(7, { timeout: 20_000 });
 
   const carteVendredi = page.locator("main li").filter({ hasText: /^Vendredi/ });
-  await carteVendredi.getByRole("button", { name: /^Plus d'actions/ }).first().click();
   await carteVendredi.getByRole("button", { name: /^Changer/ }).first().click();
   await confirmerSiModaleJourPasse(page);
   await expect(page.getByText("Recette remplacée")).toBeVisible();
@@ -239,6 +236,11 @@ test("édition en vue Cycle bloquée pendant « Générer mon cycle » (#301)", 
   const carte = page.locator("main li").first();
   const n = await lirePersonnes(carte);
   await page.getByRole("button", { name: "Générer mon cycle" }).click();
+  // Cycle déjà rempli → confirmation avant de régénérer (#334).
+  await page
+    .getByRole("dialog", { name: "Régénérer ce cycle ?" })
+    .getByRole("button", { name: "Régénérer" })
+    .click();
   await expect(page.getByRole("button", { name: "Génération…" })).toBeVisible();
   let appelsSlots = 0;
   page.on("request", (req) => {

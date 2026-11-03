@@ -150,4 +150,8 @@ test("« Générer mon cycle » remplit la liste depuis l'état vide (#259)", as
   // La liste se peuple : compteur de progression + au moins un article cochable.
   await expect(page.getByText(/coché.? sur [1-9]/)).toBeVisible({ timeout: 20_000 });
   await expect(page.getByTestId("categories-courses").locator("li").first()).toBeVisible();
+
+  // Liste remplie : plus de bouton de (re)génération (#334) — un misclic à
+  // côté de « Tout décocher » écrasait le cycle et purgeait les coches.
+  await expect(page.getByRole("button", { name: "Générer mon cycle" })).toHaveCount(0);
 });

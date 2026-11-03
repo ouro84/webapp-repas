@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { CookingPot, MoreHorizontal, RefreshCw, Search } from "lucide-react";
+import { CookingPot, RefreshCw, Search } from "lucide-react";
 import { BadgeTemps } from "@/components/planning/badge-temps";
 import { BadgeVegetarien } from "@/components/ui/badge-vegetarien";
 import { BadgeAccompagnement } from "@/components/ui/badge-accompagnement";
@@ -43,13 +43,6 @@ export function SlotRepas({
   // Spin one-shot de l'icône « changer » (#69, P17) : incrémenté au clic →
   // re-monte l'icône (key) pour rejouer la rotation. 0 au montage = pas de spin.
   const [spin, setSpin] = useState(0);
-  // Densité (#210 distill, audit critique) : les 3 actions (Changer/
-  // Sélectionner/Restes) étaient TOUJOURS visibles sur les 14 cartes de la
-  // semaine — repliées par défaut derrière un disclosure « Plus d'actions »,
-  // révélées au clic. Replié = comportement par défaut à chaque montage (pas
-  // de persistance voulue : la densité doit revenir au minimum à chaque
-  // ouverture de /planning).
-  const [actionsOuvertes, setActionsOuvertes] = useState(false);
   // Style unifié des actions de slot (#210, audit #51) : chip discret (icône +
   // libellé) au lieu de liens-texte hétérogènes — toutes les actions ont le même
   // traitement et un fond au survol qui les fait lire comme des contrôles. Zone
@@ -142,66 +135,56 @@ export function SlotRepas({
         )}
       </div>
       {/* Actions (contrôles) — ligne dédiée + style unifié (#210, audit #51) :
-          séparées des badges par un filet, toutes au même traitement icône+libellé.
+          séparées des badges par un filet. Toujours visibles (#334) : le
+          disclosure « Actions » de #210 coûtait un tap de plus sur des actions
+          utilisées à chaque visite. La densité est tenue autrement : Changer en
+          icône seule (l'action « magique », reconnaissable au ↻), Sélectionner
+          et Restes libellés — une ligne à 320 px. À `lg` (colonnes de ~125 px),
+          libellés masqués, `title` en infobulle.
           a11y : aria-labels contextualisés (des paires de boutons identiques sont
           indiscernables au lecteur d'écran) ; icônes décoratives ; le libellé
           visible est contenu dans le nom accessible (WCAG 2.5.3). */}
       <div className="mt-2 flex flex-wrap items-center gap-1 border-t border-brand-100/70 pt-2">
-        {/* Disclosure (#210 distill) : réplié par défaut, révèle les 3 actions
-            au clic — remplace l'exposition permanente des 3 boutons sur
-            chacune des 14 cartes de la semaine. */}
         <button
           type="button"
-          onClick={() => setActionsOuvertes((v) => !v)}
-          aria-expanded={actionsOuvertes}
-          aria-label={`Plus d'actions pour le ${slotNom}`}
+          onClick={() => {
+            setSpin((s) => s + 1);
+            onChanger();
+          }}
+          aria-label={`Changer le ${slotNom}`}
+          title="Changer"
           className={styleAction}
         >
-          <MoreHorizontal aria-hidden="true" className="size-3.5" />
-          Actions
+          {/* key={spin} : chaque clic re-monte l'icône → rejoue la rotation
+              360°. spin>0 garde le tout premier rendu sans rotation. (#69) */}
+          <RefreshCw
+            key={spin}
+            aria-hidden="true"
+            className={`size-4 ${spin > 0 ? "motion-safe:animate-spin-once" : ""}`}
+          />
         </button>
-        {actionsOuvertes && (
-          <>
-            <button
-              type="button"
-              onClick={() => {
-                setSpin((s) => s + 1);
-                onChanger();
-              }}
-              aria-label={`Changer le ${slotNom}`}
-              className={styleAction}
-            >
-              {/* key={spin} : chaque clic re-monte l'icône → rejoue la rotation
-                  360°. spin>0 garde le tout premier rendu sans rotation. (#69) */}
-              <RefreshCw
-                key={spin}
-                aria-hidden="true"
-                className={`size-3.5 ${spin > 0 ? "motion-safe:animate-spin-once" : ""}`}
-              />
-              Changer
-            </button>
-            {/* Sélection manuelle (US-06) : ouvre le sélecteur de recettes */}
-            <button
-              type="button"
-              onClick={onSelectionner}
-              aria-label={`Sélectionner le ${slotNom}`}
-              className={styleAction}
-            >
-              <Search aria-hidden="true" className="size-3.5" />
-              Sélectionner
-            </button>
-            {/* Marquer en « restes » (US-12) : pas de cuisine ce repas-là */}
-            <button
-              type="button"
-              onClick={() => onChangerRestes(true)}
-              aria-label={`Marquer le ${slotNom} en restes`}
-              className={styleAction}
-            >
-              <IconeRestes />
-              Restes
-            </button>
-          </>
-        )}
+        {/* Sélection manuelle (US-06) : ouvre le sélecteur de recettes */}
+        <button
+          type="button"
+          onClick={onSelectionner}
+          aria-label={`Sélectionner le ${slotNom}`}
+          title="Sélectionner"
+          className={styleAction}
+        >
+          <Search aria-hidden="true" className="size-3.5" />
+          <span className="lg:hidden">Sélectionner</span>
+        </button>
+        {/* Marquer en « restes » (US-12) : pas de cuisine ce repas-là */}
+        <button
+          type="button"
+          onClick={() => onChangerRestes(true)}
+          aria-label={`Marquer le ${slotNom} en restes`}
+          title="Restes"
+          className={styleAction}
+        >
+          <IconeRestes />
+          <span className="lg:hidden">Restes</span>
+        </button>
       </div>
       {/* Nombre de personnes (US-07) : la liste de courses se met à l'échelle */}
       <StepperPersonnes

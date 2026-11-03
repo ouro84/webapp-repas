@@ -70,18 +70,15 @@ test("la génération affiche un planning de 7 jours avec leurs 14 repas", async
 
   // 14 repas : un déjeuner ET un dîner chaque jour (#3) — un bouton de
   // remplacement par slot.
-  // Un déclencheur « Plus d'actions » par slot (#210 distill) — Changer/
-  // Sélectionner/Restes sont repliés par défaut, révélés au clic.
+  // Changer/Sélectionner/Restes visibles d'emblée sur chaque slot (#334 :
+  // plus de disclosure « Actions », un tap de moins).
   await expect(
     page
-      .getByRole("button", { name: /^Plus d'actions pour le/ })
+      .getByRole("button", { name: /^Changer le/ })
       .filter({ visible: true })
   ).toHaveCount(14);
 
   // Les déjeuners de semaine existent désormais (US-01, RG-01).
-  await page
-    .getByRole("button", { name: "Plus d'actions pour le déjeuner de lundi" })
-    .click();
   await expect(
     page.getByRole("button", { name: "Changer le déjeuner de lundi" })
   ).toBeVisible();
@@ -110,10 +107,10 @@ test("la bascule « Cycle » affiche la vue planning calée sur le cycle (#260)"
   await page.getByRole("button", { name: "Cycle", exact: true }).click();
   await expect(page.getByText(/^Courses du /)).toBeVisible();
   await expect(page.locator("main ul > li").first()).toBeVisible();
-  // Lecture seule : pas de bouton d'édition de slot dans la vue cycle.
+  // Vue Cycle éditable (RG-57, #283) : actions de slot visibles d'emblée (#334).
   await expect(
-    page.getByRole("button", { name: /^Changer le/ })
-  ).toHaveCount(0);
+    page.getByRole("button", { name: /^Changer le/ }).first()
+  ).toBeVisible();
 
   // Retour en vue Semaine → la grille hebdomadaire revient (7 jours).
   await page.getByRole("button", { name: "Semaine", exact: true }).click();
@@ -214,11 +211,6 @@ test("modifier une semaine passée demande confirmation (US-14, RG-24)", async (
   await page
     .locator("main ul > li")
     .first()
-    .getByRole("button", { name: "Plus d'actions pour le dîner de lundi" })
-    .click();
-  await page
-    .locator("main ul > li")
-    .first()
     .getByRole("button", { name: "Changer le dîner de lundi" })
     .click();
   await expect(modale).toBeVisible();
@@ -263,9 +255,6 @@ test("marquer un repas en « restes » l'exclut de la liste de courses (US-12)",
   // Marquer le dîner de lundi en « restes » (bouton de la card, sur /planning).
   await page.getByRole("link", { name: "← Planning" }).click();
   await page.waitForURL("**/planning");
-  await carteLundi
-    .getByRole("button", { name: "Plus d'actions pour le dîner de lundi" })
-    .click();
   await carteLundi
     .getByRole("button", { name: "Marquer le dîner de lundi en restes" })
     .click();
@@ -347,9 +336,6 @@ test("l'utilisateur peut remplacer un repas sans toucher au reste du planning", 
   const mardiAvant = await carteMardi.innerText();
 
   await carteLundi
-    .getByRole("button", { name: "Plus d'actions pour le dîner de lundi" })
-    .click();
-  await carteLundi
     .getByRole("button", { name: "Changer le dîner de lundi" })
     .click();
 
@@ -379,9 +365,6 @@ test("sélectionner manuellement une recette remplace le slot visé, le reste es
   const mardiAvant = await carteMardi.innerText();
 
   await carteLundi
-    .getByRole("button", { name: "Plus d'actions pour le dîner de lundi" })
-    .click();
-  await carteLundi
     .getByRole("button", { name: "Sélectionner le dîner de lundi" })
     .click();
 
@@ -406,9 +389,6 @@ test("sélectionner manuellement une recette remplace le slot visé, le reste es
   // Doublon éclairé (RG-15) : la recette posée sur lundi est signalée
   // quand on rouvre le sélecteur pour un autre slot.
   await carteMardi
-    .getByRole("button", { name: "Plus d'actions pour le dîner de mardi" })
-    .click();
-  await carteMardi
     .getByRole("button", { name: "Sélectionner le dîner de mardi" })
     .click();
   await expect(
@@ -425,9 +405,6 @@ test("la recherche du sélecteur filtre la liste et gère l'absence de résultat
   await page.getByRole("button", { name: "Générer mon planning" }).click();
   await expect(page.locator("main ul > li")).toHaveCount(7);
 
-  await page
-    .getByRole("button", { name: "Plus d'actions pour le dîner de lundi" })
-    .click();
   await page
     .getByRole("button", { name: "Sélectionner le dîner de lundi" })
     .click();
@@ -463,12 +440,6 @@ test("fermer le sélecteur avec Échap ne modifie pas le planning", async ({
   // peut courir avant l'apparition des cartes sur un backend distant lent).
   await expect(page.locator("main ul > li")).toHaveCount(7);
   const carteLundi = page.locator("main ul > li").first();
-  // Ouvrir le disclosure d'actions AVANT de capturer l'instantané : sinon la
-  // comparaison finale (innerText intégral) verrait le seul fait d'avoir
-  // révélé Changer/Sélectionner/Restes comme une « modification » du planning.
-  await carteLundi
-    .getByRole("button", { name: "Plus d'actions pour le dîner de lundi" })
-    .click();
   const lundiAvant = await carteLundi.innerText();
 
   await carteLundi
@@ -522,9 +493,6 @@ test("une sélection manuelle conserve les coches de la liste de courses (RG-15/
       .last()
       .innerText()
   ).trim();
-  await carteLundi
-    .getByRole("button", { name: "Plus d'actions pour le dîner de lundi" })
-    .click();
   await carteLundi
     .getByRole("button", { name: "Sélectionner le dîner de lundi" })
     .click();
