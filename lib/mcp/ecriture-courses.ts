@@ -99,9 +99,24 @@ export async function cocherArticle(
   args: { libelle: string; coche?: boolean; quantite?: string; ancre?: string },
   aujourdhui: Date = new Date()
 ): Promise<CochageMcp> {
-  const coche = args.coche !== false
   const cycle = args.ancre !== undefined ? await ancreDemandee(supabase, args.ancre, aujourdhui) : undefined
-  const { ancre, liste, coches } = await chargerListeCoursesCycle(supabase, { aujourdhui, ancre: cycle })
+  return cocherArticleDansCycle(supabase, args, cycle, aujourdhui)
+}
+
+/**
+ * Cœur de `cocher_article` sur une ancre DÉJÀ résolue (ou, si `undefined`, le
+ * cycle courant). N'appelle jamais `ancreDemandee` : l'exécuteur de panier
+ * (#330, RG-83) coche exactement le cycle de sa demande, même si le jour de
+ * courses change pendant le run (une re-résolution viserait un autre cycle).
+ */
+export async function cocherArticleDansCycle(
+  supabase: ClientSupabase,
+  args: { libelle: string; coche?: boolean; quantite?: string },
+  ancreCycle: string | undefined,
+  aujourdhui: Date = new Date()
+): Promise<CochageMcp> {
+  const coche = args.coche !== false
+  const { ancre, liste, coches } = await chargerListeCoursesCycle(supabase, { aujourdhui, ancre: ancreCycle })
   let articles = [...liste.normal.flatMap((l) => l.ingredients), ...liste.fondDePlacard]
   if (args.quantite !== undefined) {
     const voulue = args.quantite.trim()

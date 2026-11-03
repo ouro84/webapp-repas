@@ -7,12 +7,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 const m = vi.hoisted(() => ({
   resoudreAncreCycle: vi.fn(),
   chargerListeCoursesCycle: vi.fn(),
-  cocherArticle: vi.fn(),
+  cocherArticleDansCycle: vi.fn(),
 }))
 
 vi.mock("@/lib/ancre-cycle", () => ({ resoudreAncreCycle: m.resoudreAncreCycle }))
 vi.mock("@/lib/liste-courses-cycle", () => ({ chargerListeCoursesCycle: m.chargerListeCoursesCycle }))
-vi.mock("@/lib/mcp/ecriture-courses", () => ({ cocherArticle: m.cocherArticle }))
+vi.mock("@/lib/mcp/ecriture-courses", () => ({ cocherArticleDansCycle: m.cocherArticleDansCycle }))
 vi.mock("@/lib/supabase/client", () => ({
   createClient: vi.fn(() => {
     throw new Error("client navigateur interdit côté serveur")
@@ -200,7 +200,7 @@ describe("prendreDemandeExecuteur (#330, RG-83)", () => {
 
   it("prendre : signer_jetons_panier lève OMQ05 (demande expirée entre prise et signature) → ErreurOutil OMQ05", async () => {
     liste([{ categorie: "legumes-fruits", ingredients: [ing("Tomates", 2, "piece")] }])
-    const { client } = creerSupabaseMock({
+    const { client, rpcs } = creerSupabaseMock({
       rpc: {
         ...rpcPrise({ id: DEMANDE, ancre: ANCRE, pris_le: "2026-11-03T11:00:00Z" }),
         signer_jetons_panier: { data: null, error: { message: "Demande de panier non en cours", code: "OMQ05" } },
@@ -209,6 +209,8 @@ describe("prendreDemandeExecuteur (#330, RG-83)", () => {
     const promesse = prendreDemandeExecuteur(client, AUJOURDHUI)
     await expect(promesse).rejects.toBeInstanceOf(ErreurOutil)
     await expect(promesse).rejects.toThrow(MESSAGES_PANIER.OMQ05)
+    // Demande déjà expirée : rien à rapporter.
+    expect(rpcs.some((r) => r.nom === "rapporter_panier")).toBe(false)
   })
 
   it("prendre : autre erreur de signer_jetons_panier → exception non ErreurOutil", async () => {
@@ -217,11 +219,78 @@ describe("prendreDemandeExecuteur (#330, RG-83)", () => {
       rpc: {
         ...rpcPrise({ id: DEMANDE, ancre: ANCRE, pris_le: "2026-11-03T11:00:00Z" }),
         signer_jetons_panier: { data: null, error: { message: "boom", code: "XX000" } },
+        rapporter_panier: { data: { statut: "echec", rapport_tardif: false }, error: null },
       },
     })
     const promesse = prendreDemandeExecuteur(client, AUJOURDHUI)
     await expect(promesse).rejects.toThrow("boom")
     await expect(promesse).rejects.not.toBeInstanceOf(ErreurOutil)
+  })
+
+  const MOTIF_INTERNE =
+    "Erreur interne d’OMQ pendant la préparation du panier : relance le panier depuis /courses."
+
+  it("prendre : lecture de la liste en échec après la prise → rapporter_panier echec, erreur d'origine relancée", async () => {
+    m.chargerListeCoursesCycle.mockRejectedValue(new Error("lecture impossible"))
+    const { client, rpcs } = creerSupabaseMock({
+      rpc: {
+        ...rpcPrise({ id: DEMANDE, ancre: ANCRE, pris_le: "2026-11-03T11:00:00Z" }),
+        rapporter_panier: { data: { statut: "echec", rapport_tardif: false }, error: null },
+      },
+    })
+    const promesse = prendreDemandeExecuteur(client, AUJOURDHUI)
+    await expect(promesse).rejects.toThrow("lecture impossible")
+    await expect(promesse).rejects.not.toBeInstanceOf(ErreurOutil)
+    const rapports = rpcs.filter((r) => r.nom === "rapporter_panier")
+    expect(rapports).toHaveLength(1)
+    expect(rapports[0].args).toEqual({
+      p_demande: DEMANDE,
+      p_statut: "echec",
+      p_rapport: { ajoutes: [], a_choisir: [], introuvables: [] },
+      p_motif: MOTIF_INTERNE,
+    })
+  })
+
+  it("prendre : résolution de l'ancre qui lève (lecture stricte du jour de courses) → rapport echec, erreur relancée", async () => {
+    m.resoudreAncreCycle.mockRejectedValue(new Error("foyer illisible"))
+    const { client, rpcs } = creerSupabaseMock({
+      rpc: {
+        ...rpcPrise({ id: DEMANDE, ancre: ANCRE, pris_le: "2026-11-03T11:00:00Z" }),
+        rapporter_panier: { data: { statut: "echec", rapport_tardif: false }, error: null },
+      },
+    })
+    await expect(prendreDemandeExecuteur(client, AUJOURDHUI)).rejects.toThrow("foyer illisible")
+    expect(rpcs.find((r) => r.nom === "rapporter_panier")?.args).toMatchObject({
+      p_statut: "echec",
+      p_motif: MOTIF_INTERNE,
+    })
+  })
+
+  it("prendre : le rapport d'échec échoue lui-même → erreur d'origine relancée, échec du rapport loggé", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {})
+    m.chargerListeCoursesCycle.mockRejectedValue(new Error("lecture impossible"))
+    const { client } = creerSupabaseMock({
+      rpc: {
+        ...rpcPrise({ id: DEMANDE, ancre: ANCRE, pris_le: "2026-11-03T11:00:00Z" }),
+        rapporter_panier: { data: null, error: { message: "rapport refusé", code: "XX000" } },
+      },
+    })
+    await expect(prendreDemandeExecuteur(client, AUJOURDHUI)).rejects.toThrow("lecture impossible")
+    expect(log).toHaveBeenCalledOnce()
+    log.mockRestore()
+  })
+
+  it("prendre : signer_jetons_panier renvoie un nombre de jetons différent du nombre d'articles → Error explicite, rapport echec", async () => {
+    liste([{ categorie: "legumes-fruits", ingredients: [ing("Tomates", 2, "piece"), ing("Poireaux", 3, "piece")] }])
+    const { client, rpcs } = creerSupabaseMock({
+      rpc: {
+        ...rpcPrise({ id: DEMANDE, ancre: ANCRE, pris_le: "2026-11-03T11:00:00Z" }),
+        signer_jetons_panier: { data: { expire_le: EXPIRE_LE, jetons: ["un-seul"] }, error: null },
+        rapporter_panier: { data: { statut: "echec", rapport_tardif: false }, error: null },
+      },
+    })
+    await expect(prendreDemandeExecuteur(client, AUJOURDHUI)).rejects.toThrow(/2 articles, 1 jetons/)
+    expect(rpcs.some((r) => r.nom === "rapporter_panier")).toBe(true)
   })
 })
 
@@ -233,7 +302,7 @@ describe("cocherArticleDemande (#330, RG-83)", () => {
     const promesse = cocherArticleDemande(client, { libelle: "lait" }, AUJOURDHUI)
     await expect(promesse).rejects.toBeInstanceOf(ErreurOutil)
     await expect(promesse).rejects.toThrow(MESSAGES_PANIER.OMQ05)
-    expect(m.cocherArticle).not.toHaveBeenCalled()
+    expect(m.cocherArticleDansCycle).not.toHaveBeenCalled()
     expect(rpcs.map((r) => r.nom)).toEqual(["demande_panier_en_cours"])
     expect(appels).toEqual([])
   })
@@ -247,8 +316,8 @@ describe("cocherArticleDemande (#330, RG-83)", () => {
     await expect(promesse).rejects.not.toBeInstanceOf(ErreurOutil)
   })
 
-  it("cocher_article_demande → cocherArticle appelé avec ancre = demande.ancre, jamais celle du jour", async () => {
-    m.cocherArticle.mockResolvedValue({ modifie: true, article: { nom: "lait", quantite: "1 L", manuel: false, coche: true } })
+  it("cocher_article_demande → cocherArticleDansCycle appelé avec demande.ancre telle quelle, sans re-résolution, jamais celle du jour", async () => {
+    m.cocherArticleDansCycle.mockResolvedValue({ modifie: true, article: { nom: "lait", quantite: "1 L", manuel: false, coche: true } })
     const { client } = creerSupabaseMock({
       rpc: { demande_panier_en_cours: { data: { id: DEMANDE, ancre: ANCRE, pris_le: "2026-11-03T11:00:00Z" }, error: null } },
     })
@@ -256,11 +325,15 @@ describe("cocherArticleDemande (#330, RG-83)", () => {
     const resultat = await cocherArticleDemande(client, { libelle: "lait", quantite: "1 L" }, AUJOURDHUI)
 
     // Jamais de `coche: false` : cet outil ne décoche pas.
-    expect(m.cocherArticle).toHaveBeenCalledWith(
+    // Ancre passée telle quelle, jamais re-résolue : si le jour de courses change
+    // pendant le run, la coche ne doit pas partir sur un autre cycle (RG-83).
+    expect(m.cocherArticleDansCycle).toHaveBeenCalledWith(
       client,
-      { libelle: "lait", quantite: "1 L", ancre: ANCRE },
+      { libelle: "lait", quantite: "1 L" },
+      ANCRE,
       AUJOURDHUI
     )
+    expect(m.resoudreAncreCycle).not.toHaveBeenCalled()
     expect(resultat).toEqual({ modifie: true, article: { nom: "lait", quantite: "1 L", manuel: false, coche: true } })
   })
 
@@ -269,7 +342,7 @@ describe("cocherArticleDemande (#330, RG-83)", () => {
       { nom: "Lait", quantite: "1 L", manuel: false, coche: false },
       { nom: "Lait", quantite: "500 mL", manuel: false, coche: false },
     ]
-    m.cocherArticle.mockResolvedValue({ modifie: false, candidats })
+    m.cocherArticleDansCycle.mockResolvedValue({ modifie: false, candidats })
     const { client, appels } = creerSupabaseMock({
       rpc: { demande_panier_en_cours: { data: { id: DEMANDE, ancre: ANCRE, pris_le: "2026-11-03T11:00:00Z" }, error: null } },
     })
