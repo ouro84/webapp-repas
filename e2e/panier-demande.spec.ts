@@ -1,8 +1,8 @@
 // Parcours #308 (US-53, RG-80→84) — socle de la demande de panier, de bout en
 // bout : bouton (route POST /api/panier/demande, session à cookies) → webhook
-// signé vers l'exécuteur du foyer → outils MCP prendre_demande_panier et
-// rapporter_panier joués par un « exécuteur » (jeton OAuth) → état lu par
-// etat_panier.
+// signé vers l'exécuteur du foyer → outils MCP prendre_demande_panier,
+// cocher_article_demande et rapporter_panier (endpoint dédié /api/mcp/executeur,
+// #330) joués par un « exécuteur » (jeton OAuth) → état lu par etat_panier.
 //
 // L'exécuteur est un récepteur HTTP local (127.0.0.1, port libre) dans le
 // process Playwright : le serveur Next local lui POSTe le webhook. Il note
@@ -14,8 +14,8 @@
 // les clients n'ont aucune écriture sur ces tables.
 // #320 : le panier vise le cycle AFFICHÉ (courant ou à venir), la base refuse un
 // cycle terminé (OMQ04, RG-81) et `etat_panier(p_ancre)` isole le rapport par cycle.
-// Prérequis staging : migrations 20261031120000_demande_panier et
-// 20261101120000_panier_multi_cycle appliquées,
+// Prérequis staging : migrations 20261031120000_demande_panier,
+// 20261101120000_panier_multi_cycle et 20261103120000_jetons_panier appliquées,
 // OAuth Server + DCR, site_url = http://localhost:3000.
 
 import { createHmac, randomBytes } from "node:crypto";
@@ -24,7 +24,7 @@ import type { AddressInfo } from "node:net";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import type { APIRequestContext, BrowserContext, Locator, Page, Request } from "@playwright/test";
 import { test, expect } from "./fixtures";
-import { appelerOutilMcp, autoriser, connecter, inscrire, jetonMotDePasse } from "./oauth";
+import { appelerOutilMcp, autoriser, connecter, inscrire, jetonMotDePasse, listerOutilsMcp } from "./oauth";
 import {
   demandesPanierActives,
   deplacerDemandePanier,
@@ -182,20 +182,76 @@ function texte(appel: Awaited<ReturnType<typeof appelerOutilMcp>>): string {
   return appel.resultat?.content.map((c) => c.text).join("") ?? "";
 }
 
+// Les outils de l'exécuteur vivent sur l'endpoint dédié, pas sur /api/mcp (#330).
+const MCP_EXECUTEUR = "/api/mcp/executeur";
+
+type ArticleDemande = {
+  libelle: string;
+  quantite: string;
+  rayon: string;
+  placard: boolean;
+  manuel: boolean;
+  jeton: string;
+};
+type DemandePrise = {
+  id: string;
+  ancre: string;
+  cycle: { du: string; au: string; libelle: string };
+  expire_le: string;
+  articles: ArticleDemande[];
+};
+
 async function prendre(request: APIRequestContext, jeton: string) {
-  const appel = await appelerOutilMcp(request, jeton, "prendre_demande_panier");
+  const appel = await appelerOutilMcp(request, jeton, "prendre_demande_panier", {}, MCP_EXECUTEUR);
   expect(appel.statut).toBe(200);
   expect(appel.resultat?.isError).toBeFalsy();
-  return appel.resultat!.structuredContent as { demande: { id: string; ancre: string } | null };
+  return appel.resultat!.structuredContent as { demande: DemandePrise | null; raison?: string };
+}
+
+// Jeton attendu pour un libellé : recalcul local, jumeau de signer_jetons_panier (#330).
+function jetonAttendu(demandeId: string, exp: number, libelle: string): string {
+  const cle = SECRET.startsWith("whsec_") ? Buffer.from(SECRET.slice(6), "base64") : Buffer.from(SECRET);
+  const sousCle = createHmac("sha256", cle).update("jetons-panier").digest();
+  const cleLibelle = libelle.normalize("NFC").trim().replace(/\s+/g, " ").toLocaleLowerCase("fr");
+  const mac = createHmac("sha256", sousCle).update(`${demandeId}|${cleLibelle}|${exp}`).digest("hex").slice(0, 32);
+  return `${demandeId}.${exp}.${mac}`;
+}
+
+// `pris_le` d'une demande, lu sous RLS (la lecture `lireDemande` ne le sélectionne pas).
+async function prisLe(request: APIRequestContext, email: string, id: string): Promise<string> {
+  const jeton = await sessionDe(request, email);
+  const r = await request.get(`${lireEnvLocal("NEXT_PUBLIC_SUPABASE_URL")}/rest/v1/demande_panier?id=eq.${id}&select=pris_le`, {
+    headers: { apikey: lireEnvLocal("NEXT_PUBLIC_SUPABASE_ANON_KEY"), Authorization: `Bearer ${jeton}` },
+  });
+  expect(r.ok()).toBe(true);
+  const [{ pris_le }] = (await r.json()) as Array<{ pris_le: string }>;
+  expect(pris_le).toBeTruthy();
+  return pris_le;
+}
+
+// Nombre d'articles cochés d'un cycle, lus par l'endpoint général (lecture seule).
+async function nombreCoches(request: APIRequestContext, ancre?: string): Promise<number> {
+  const lecture = await appelerOutilMcp(request, jetonA, "lire_liste_courses", {
+    inclure_coches: true,
+    ...(ancre ? { ancre } : {}),
+  });
+  expect(lecture.resultat?.isError).toBeFalsy();
+  const liste = lecture.resultat!.structuredContent as {
+    categories: Array<{ articles: Array<{ coche?: boolean }> }>;
+    a_verifier_au_placard: Array<{ coche?: boolean }>;
+  };
+  const articles = [...liste.categories.flatMap((c) => c.articles), ...liste.a_verifier_au_placard];
+  return articles.filter((a) => a.coche === true).length;
 }
 
 function rapporter(request: APIRequestContext, jeton: string, demandeId: string, statut = "terminee", motif?: string) {
-  return appelerOutilMcp(request, jeton, "rapporter_panier", {
-    demande_id: demandeId,
-    statut,
-    ...(motif ? { motif } : {}),
-    ...RAPPORT,
-  });
+  return appelerOutilMcp(
+    request,
+    jeton,
+    "rapporter_panier",
+    { demande_id: demandeId, statut, ...(motif ? { motif } : {}), ...RAPPORT },
+    MCP_EXECUTEUR
+  );
 }
 
 /** Une demande prise puis rapportée « terminee » ; renvoie son id et son ancre. */
@@ -568,7 +624,7 @@ test("prendre puis rapporter → terminee, rapport lu par etat_panier (RG-84)", 
 });
 
 test("prendre sans demande → { demande: null } (RG-81)", async ({ request }) => {
-  expect(await prendre(request, jetonA)).toEqual({ demande: null });
+  expect(await prendre(request, jetonA)).toMatchObject({ demande: null });
 });
 
 test("exécuteur en 500 → 502, demande echec/injoignable, nouvelle demande possible (RG-81)", async ({ request }) => {
@@ -614,7 +670,7 @@ test("en_attente vieillie de 6 min → echec/non_prise à la lecture (RG-83)", a
   await etatPanier(request, EMAIL_A);
   expect(await lireDemande(request, EMAIL_A, demandeId)).toMatchObject({ statut: "echec", cause_echec: "non_prise" });
   // Expirée, elle ne se prend plus.
-  expect(await prendre(request, jetonA)).toEqual({ demande: null });
+  expect(await prendre(request, jetonA)).toMatchObject({ demande: null });
 });
 
 test("rapport tardif : accepté sans demande plus récente, refusé après une nouvelle demande (RG-83)", async ({
@@ -652,7 +708,7 @@ test("isolation foyer : un autre compte ne prend ni ne rapporte la demande (RG-7
   const demandeId = await demanderOk();
 
   // B (autre foyer) : rien à prendre, rapport refusé, rien de visible.
-  expect(await prendre(request, jetonB)).toEqual({ demande: null });
+  expect(await prendre(request, jetonB)).toMatchObject({ demande: null });
   const refuse = await rapporter(request, jetonB, demandeId);
   expect(refuse.resultat?.isError).toBe(true);
   expect(texte(refuse)).toBe(MESSAGES_PANIER.OMQ03);
@@ -903,6 +959,108 @@ test("MCP lancer_demande_panier : cycle terminé refusé, cycle suivant → webh
   expect(second.resultat?.isError).toBe(true);
   expect(texte(second)).toBe(MESSAGES_PANIER.OMQ02);
   expect(recues).toHaveLength(1);
+});
+
+// --- Gardes du run de panier (#330, RG-83, RG-85) : endpoint /api/mcp/executeur ---
+
+test("executeur : prendre → articles du cycle de la demande, chaque jeton = HMAC recalculé avec SECRET, exp = pris_le + 30 min (#330)", async ({
+  request,
+}) => {
+  const avant = Date.now();
+  const demandeId = await demanderOk();
+  const { demande, raison } = await prendre(request, jetonA);
+  expect(demande, `prise sans liste : ${raison}`).not.toBeNull();
+  const prise = demande!;
+  expect(prise.id).toBe(demandeId);
+  expect(prise.articles.length).toBeGreaterThan(0);
+  expect(prise.cycle.libelle).toBeTruthy();
+
+  // exp = pris_le + 30 min, à la seconde près (arrondi de l'epoch en base).
+  const exp = Math.floor(Date.parse(prise.expire_le) / 1000);
+  const pris = Date.parse(await prisLe(request, EMAIL_A, demandeId)) / 1000;
+  expect(Math.abs(exp - (pris + 30 * 60))).toBeLessThanOrEqual(1);
+  expect(Math.abs(exp * 1000 - (avant + 30 * 60_000))).toBeLessThan(5 * 60_000);
+
+  for (const article of prise.articles) {
+    expect(article.jeton, article.libelle).toBe(jetonAttendu(demandeId, exp, article.libelle));
+  }
+});
+
+test("executeur : cocher_article_demande sans demande prise → refus lisible OMQ05, aucune coche (#330)", async ({
+  request,
+}) => {
+  // Aucune demande en_cours : celles des tests précédents sont closes ou expirées.
+  await supprimerDemandesPanier(request, foyerA);
+  const avant = await nombreCoches(request);
+
+  const refus = await appelerOutilMcp(request, jetonA, "cocher_article_demande", { libelle: "tomates" }, MCP_EXECUTEUR);
+  expect(refus.resultat?.isError).toBe(true);
+  expect(texte(refus)).toBe(MESSAGES_PANIER.OMQ05);
+
+  expect(await nombreCoches(request)).toBe(avant);
+});
+
+test("executeur : demande sur le cycle suivant, cocher_article_demande → coche sur CE cycle, pas sur le courant (#330)", async ({
+  request,
+}) => {
+  await supprimerDemandesPanier(request, foyerA);
+  // L'ancre du cycle affiché se lit sur une demande prise (cf. e2e.md), puis le
+  // cycle suivant reçoit son planning : sans liste, la prise se rapporterait seule.
+  const { ancre: courante } = await demandeTerminee(request);
+  const suivant = cycleDecale(courante, 1);
+  const generation = await appelerOutilMcp(request, jetonA, "generer_cycle", { ancre: suivant, remplacer: true });
+  expect(generation.resultat?.isError).toBeFalsy();
+
+  const demandeId = await demanderOk(suivant);
+  const { demande, raison } = await prendre(request, jetonA);
+  expect(demande, `prise sans liste : ${raison}`).not.toBeNull();
+  expect(demande!.id).toBe(demandeId);
+  expect(demande!.ancre).toBe(suivant);
+
+  // Un article au libellé unique dans la liste : un homonyme renverrait des candidats.
+  const cle = (l: string) => l.normalize("NFC").trim().replace(/\s+/g, " ").toLocaleLowerCase("fr");
+  const article = demande!.articles.find((a) => demande!.articles.filter((b) => cle(b.libelle) === cle(a.libelle)).length === 1);
+  expect(article, "aucun article au libellé unique").toBeDefined();
+
+  const cochesCourant = await nombreCoches(request, courante);
+  const cochesSuivant = await nombreCoches(request, suivant);
+  try {
+    const appel = await appelerOutilMcp(
+      request,
+      jetonA,
+      "cocher_article_demande",
+      { libelle: article!.libelle, quantite: article!.quantite },
+      MCP_EXECUTEUR
+    );
+    expect(appel.resultat?.isError).toBeFalsy();
+    expect(appel.resultat?.structuredContent).toMatchObject({ modifie: true });
+
+    expect(await nombreCoches(request, suivant)).toBe(cochesSuivant + 1);
+    expect(await nombreCoches(request, courante)).toBe(cochesCourant);
+  } finally {
+    // Ne rien laisser de coché sur le cycle suivant.
+    await appelerOutilMcp(request, jetonA, "cocher_article", {
+      libelle: article!.libelle,
+      quantite: article!.quantite,
+      coche: false,
+      ancre: suivant,
+    });
+  }
+});
+
+test("MCP général : prendre_demande_panier absent de tools/list (#330)", async ({ request }) => {
+  const general = await listerOutilsMcp(request, jetonA);
+  expect(general).not.toContain("prendre_demande_panier");
+  expect(general).not.toContain("rapporter_panier");
+  expect(general).toContain("cocher_article");
+  expect(general).toContain("lancer_demande_panier");
+
+  // L'endpoint dédié n'expose que le parcours de l'exécuteur.
+  expect((await listerOutilsMcp(request, jetonA, MCP_EXECUTEUR)).sort()).toEqual([
+    "cocher_article_demande",
+    "prendre_demande_panier",
+    "rapporter_panier",
+  ]);
 });
 
 // Dernier du fichier : il coche un article dans l'UI (il le décoche avant de
