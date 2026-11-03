@@ -583,7 +583,6 @@ function planifierPush(): void {
 // dernier écrit en base gagne (acceptable pour une coche). `courses_dirty`
 // signale simplement « des opérations restent à pousser » (file hors-ligne).
 // ---------------------------------------------------------------------------
-let hydratationCochesEnCours = false;
 let flushCochesEnCours = false;
 let reFlushCochesDemande = false;
 let minuteurCoches: ReturnType<typeof setTimeout> | null = null;
@@ -673,10 +672,17 @@ async function flusherCoches(): Promise<void> {
   }
 }
 
-// À chaque écriture locale des coches (hors hydratation et hors application d'un
-// event distant) : marque `dirty` et planifie un flush débounce.
+// À chaque écriture locale des coches (hors application d'un état distant) :
+// marque `dirty` et planifie un flush débounce.
+//
+// Seul `applicationDistanteEnCours` filtre : toute écriture interne à la synchro
+// (blob distant, event temps réel, purge après génération) le pose. Une écriture
+// de l'utilisateur passe TOUJOURS, y compris pendant l'hydratation d'un cycle :
+// un ancien drapeau « hydratation en cours » l'ignorait sur toute la durée du
+// chargement (planning, coches, articles manuels) — la coche restait locale,
+// jamais poussée, puis l'hydratation suivante l'écrasait par la base vide.
 function surChangementCoches(): void {
-  if (hydratationCochesEnCours || applicationDistanteEnCours) return;
+  if (applicationDistanteEnCours) return;
   localStorage.setItem(CLE_DIRTY_COCHES, "1");
   if (flushCochesEnCours) {
     reFlushCochesDemande = true;
@@ -1415,8 +1421,17 @@ async function chargerCycleDansCache(
   ancre: string,
   longueur: number
 ): Promise<void> {
-  hydratationCochesEnCours = true;
   try {
+    // Changement d'ancre : les coches locales sont celles de l'ANCIEN cycle
+    // (déjà poussées — la navigation passe par attendreSync). On les retire
+    // tout de suite, sinon une coche posée avant l'arrivée des coches distantes
+    // marquerait dirty un blob « ancien cycle + nouvelle coche », poussé sous la
+    // NOUVELLE ancre. Des coches non poussées (dirty, ex. rechargement hors
+    // ligne) font foi et sont gardées (dirty-first, cf. plus bas).
+    if (lireCycleAffiche()?.ancre !== ancre && !estDirtyCoches()) {
+      cochesConnues = {};
+      appliquerBlobDistant({});
+    }
     const semaines = semainesDuCycle(ancre, longueur);
     const resultats = await Promise.all(
       semaines.map((s) => chargerPlanningDistant(s))
@@ -1458,7 +1473,12 @@ async function chargerCycleDansCache(
     if (estDirtyCoches()) {
       void flusherCoches(); // des coches locales non poussées font foi
     } else {
-      appliquerBlobDistant(await chargerCochesDistantes(ancre));
+      const distant = await chargerCochesDistantes(ancre);
+      // L'utilisateur a pu cocher PENDANT la lecture réseau → ses coches locales
+      // font foi (le flush les pousse) ; ne pas les écraser par le serveur.
+      // Miroir de la garde de `hydraterCoches`.
+      if (estDirtyCoches()) void flusherCoches();
+      else appliquerBlobDistant(distant);
     }
     // Articles manuels (#216) : scopés par la même ancre, pas de dirty-first
     // (aucune file offline — chaque mutation écrit en base immédiatement).
@@ -1466,8 +1486,6 @@ async function chargerCycleDansCache(
     definirEtat("synchronise");
   } catch (erreur) {
     console.error("Chargement du cycle échoué.", erreur);
-  } finally {
-    hydratationCochesEnCours = false;
   }
   // (Ré)abonne le temps réel des coches à l'ancre désormais affichée + le
   // temps réel du PLANNING sur les 1-2 semaines du cycle (alerte US-21, #259)
