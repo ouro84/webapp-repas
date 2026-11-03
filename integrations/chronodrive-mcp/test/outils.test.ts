@@ -7,8 +7,10 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 
 import { ErreurChronodrive } from "../src/client.ts";
+import { PRODUIT_INCONNU } from "../src/panier.ts";
+import { signerJeton } from "../src/jetons.ts";
 import { normaliserTerme, type Correspondance, type EntreeCorrespondance } from "../src/correspondances.ts";
-import { creerServeur, favorisPour, NOMS_OUTILS, type CacheCorrespondances, type Dependances } from "../src/outils.ts";
+import { creerServeur, favorisPour, JETON_INVALIDE, NOMS_OUTILS, type CacheCorrespondances, type Dependances } from "../src/outils.ts";
 import { clientSimule, fiche, panierSimule, type Route } from "./simulation.ts";
 import { versProduit } from "../src/catalogue.ts";
 
@@ -54,11 +56,31 @@ function cacheSimule(initial: Record<string, { productId: string; libelle: strin
 
 type Resultat = { isError?: boolean; content: { type: string; text: string }[]; structuredContent?: Record<string, unknown> };
 
+// Jetons de la demande OMQ (#330, RG-83) : secret de test, deux demandes, expiration lointaine (2100)
+// pour les tests qui ne s'intéressent pas à la garde.
+const SECRET_JETONS = "secret-de-test-jetons";
+const DEMANDE = "11111111-1111-4111-8111-111111111111";
+const AUTRE_DEMANDE = "22222222-2222-4222-8222-222222222222";
+const EXP_LOINTAINE = 4_102_444_800;
+
+// `appeler` complète d'office les lignes d'`ajouter_au_panier` qui n'ont pas de `jetons` par le jeton
+// valide de leur `terme` ; `appelerBrut` envoie les arguments tels quels (tests de la garde).
+function avecJetons(nom: string, args: Record<string, unknown>): Record<string, unknown> {
+  if (nom !== "ajouter_au_panier" || !Array.isArray(args.lignes)) return args;
+  const lignes = args.lignes.map((l: Record<string, unknown>) =>
+    typeof l?.terme === "string" && !("jetons" in l)
+      ? { ...l, jetons: [signerJeton(SECRET_JETONS, DEMANDE, l.terme, EXP_LOINTAINE)] }
+      : l,
+  );
+  return { ...args, lignes };
+}
+
 async function demarrer(deps: Partial<Dependances> & Pick<Dependances, "client">) {
   const journal: string[] = [];
   const serveur = creerServeur({
     cache: () => cacheSimule().cache,
     lectureSeule: false,
+    secretJetons: () => SECRET_JETONS,
     journal: (m) => journal.push(m),
     ...deps,
   });
@@ -66,9 +88,10 @@ async function demarrer(deps: Partial<Dependances> & Pick<Dependances, "client">
   await serveur.connect(cote);
   const mcp = new Client({ name: "test", version: "0.0.0" });
   await mcp.connect(autre);
-  const appeler = async (nom: string, args: Record<string, unknown> = {}) =>
+  const appelerBrut = async (nom: string, args: Record<string, unknown> = {}) =>
     (await mcp.callTool({ name: nom, arguments: args })) as Resultat;
-  return { mcp, appeler, journal };
+  const appeler = (nom: string, args: Record<string, unknown> = {}) => appelerBrut(nom, avecJetons(nom, args));
+  return { mcp, appeler, appelerBrut, journal };
 }
 
 type ResultatTerme = {
@@ -761,10 +784,11 @@ test("client remplacé (config relue) entre la recherche et l'ajout : lignes ref
   assert.equal(avant.compter("POST /v1/carts/p1/items"), 0);
 });
 
-test("ajouter_au_panier : schéma — quantité entière 1..20, 20 lignes au plus", async () => {
+test("ajouter_au_panier : schéma — quantité entière 1..20, 20 lignes au plus, 1 à 10 jetons", async () => {
   const sim = clientSimule({});
-  const { appeler } = await demarrer({ client: () => sim.client });
-  const ligne = { terme: "lait", productId: "10", quantite: 1 };
+  const { appelerBrut } = await demarrer({ client: () => sim.client });
+  const jeton = signerJeton(SECRET_JETONS, DEMANDE, "lait", EXP_LOINTAINE);
+  const ligne = { terme: "lait", productId: "10", quantite: 1, jetons: [jeton] };
 
   for (const lignes of [
     [{ ...ligne, quantite: 21 }],
@@ -772,13 +796,222 @@ test("ajouter_au_panier : schéma — quantité entière 1..20, 20 lignes au plu
     [{ ...ligne, quantite: 1.5 }],
     [{ ...ligne, terme_recherche: "x".repeat(201) }],
     [{ ...ligne, quantite_omq: "x".repeat(101) }],
+    [{ ...ligne, jetons: [] }],
+    [{ ...ligne, jetons: Array(11).fill(jeton) }],
+    [{ ...ligne, jetons: ["x".repeat(121)] }],
+    [{ ...ligne, jetons: [42] }],
     [],
     Array(21).fill(ligne),
   ]) {
-    const r = await appeler("ajouter_au_panier", { lignes });
+    const r = await appelerBrut("ajouter_au_panier", { lignes });
     assert.equal(r.isError, true, JSON.stringify(lignes).slice(0, 80));
   }
+  // Sans `jetons`, la ligne est refusée par le schéma, avant tout appel.
+  const { jetons: _jetons, ...sansJetons } = ligne;
+  assert.equal((await appelerBrut("ajouter_au_panier", { lignes: [sansJetons] })).isError, true);
   assert.equal(sim.appels.length, 0);
+});
+
+// --- Jetons de la demande OMQ (#330, RG-83) ---------------------------------------------------
+
+type LigneJeton = { terme: string; productId: string; quantite: number; jetons: string[] };
+
+// Lait (10) et beurre (20) proposés par chercher_produits, horloge injectée : seule la garde des jetons varie.
+async function preparerJetons(deps: Partial<Dependances> = {}) {
+  const h = { t: 1_800_000_000_000 };
+  const panier = panierSimule("p1", {});
+  const sim = clientSimule({
+    ...panier.routes,
+    ...routesFavoris([produit("10", "Lait demi-écrémé"), produit("20", "Beurre doux")]),
+  });
+  const serveur = await demarrer({ client: () => sim.client, maintenant: () => h.t, ...deps });
+  termes(await serveur.appeler("chercher_produits", { termes: ["lait", "beurre"] }));
+  const valide = h.t / 1000 + 1800;
+  const jeton = (libelle: string, options: { exp?: number; demande?: string } = {}) =>
+    signerJeton(SECRET_JETONS, options.demande ?? DEMANDE, libelle, options.exp ?? valide);
+  const ligne = (t: string, productId: string, jetons: string[]): LigneJeton => ({ terme: t, productId, quantite: 1, jetons });
+  const envoyer = async (lignes: LigneJeton[]) => lignesAjout(await serveur.appelerBrut("ajouter_au_panier", { lignes }));
+  return { ...serveur, sim, h, jeton, ligne, envoyer, expire: h.t / 1000 - 1 };
+}
+
+test("jetons : ajout avec jeton valide → envoyé", async () => {
+  const { sim, jeton, ligne, envoyer } = await preparerJetons();
+  const [lait] = await envoyer([ligne("lait", "10", [jeton("lait")])]);
+  assert.equal(lait.erreur, null);
+  assert.equal(lait.confirme, true);
+  assert.equal(sim.compter("POST /v1/carts/p1/items"), 1);
+});
+
+test("jetons : terme recopié avec une autre casse que le libellé du jeton → accepté (cleJeton)", async () => {
+  // Les espaces doublés sont couverts par les vecteurs partagés (test/jetons.test.ts).
+  const { jeton, ligne, envoyer } = await preparerJetons();
+  const [lait] = await envoyer([ligne("LAIT", "10", [jeton("lait")])]);
+  assert.equal(lait.erreur, null);
+  assert.equal(lait.confirme, true);
+});
+
+test("jetons : ajout sans secret, écriture armée → ErreurOutil, aucun appel API", async () => {
+  const sim = clientSimule({});
+  let clientsCrees = 0;
+  const { appelerBrut } = await demarrer({
+    client: () => {
+      clientsCrees++;
+      return sim.client;
+    },
+    secretJetons: () => null,
+  });
+  const jeton = signerJeton(SECRET_JETONS, DEMANDE, "lait", EXP_LOINTAINE);
+  const r = await appelerBrut("ajouter_au_panier", { lignes: [{ terme: "lait", productId: "10", quantite: 1, jetons: [jeton] }] });
+  assert.equal(r.isError, true);
+  assert.equal(
+    r.content[0].text,
+    "OMQ_WEBHOOK_SECRET absent de chronodrive.env : aucun ajout possible sans vérifier les jetons de la demande OMQ",
+  );
+  assert.equal(sim.appels.length, 0);
+  assert.equal(clientsCrees, 0);
+});
+
+test("jetons : lecture seule → refus lecture seule inchangé, même sans secret", async () => {
+  const sim = clientSimule({});
+  const { appelerBrut } = await demarrer({ client: () => sim.client, lectureSeule: true, secretJetons: () => null });
+  const jeton = signerJeton(SECRET_JETONS, DEMANDE, "lait", EXP_LOINTAINE);
+  const r = await appelerBrut("ajouter_au_panier", { lignes: [{ terme: "lait", productId: "10", quantite: 1, jetons: [jeton] }] });
+  assert.equal(r.isError, true);
+  assert.match(r.content[0].text, /lecture seule/);
+  assert.doesNotMatch(r.content[0].text, /OMQ_WEBHOOK_SECRET/);
+  assert.equal(sim.appels.length, 0);
+});
+
+test("jetons : le secret est relu à chaque appel", async () => {
+  let secret: string | null = null;
+  const { sim, jeton, ligne, envoyer, appelerBrut } = await preparerJetons({ secretJetons: () => secret });
+  const lignes = [ligne("lait", "10", [jeton("lait")])];
+  assert.equal((await appelerBrut("ajouter_au_panier", { lignes })).isError, true);
+  assert.equal(sim.compter("POST /v1/carts/p1/items"), 0);
+  secret = SECRET_JETONS;
+  const [lait] = await envoyer(lignes);
+  assert.equal(lait.confirme, true);
+});
+
+test("jetons : jeton expiré → ligne refusée sans envoi, les autres lignes passent", async () => {
+  const { sim, jeton, ligne, expire, envoyer } = await preparerJetons();
+  const [lait, beurre] = await envoyer([
+    ligne("lait", "10", [jeton("lait", { exp: expire })]),
+    ligne("beurre", "20", [jeton("beurre")]),
+  ]);
+  assert.equal(lait.erreur, JETON_INVALIDE);
+  assert.equal(lait.confirme, false);
+  assert.equal(beurre.erreur, null);
+  assert.equal(beurre.confirme, true);
+  assert.equal(sim.compter("POST /v1/carts/p1/items"), 1);
+});
+
+test("jetons : jeton d'un autre terme seul → refusée", async () => {
+  const { sim, jeton, ligne, envoyer } = await preparerJetons();
+  const [lait] = await envoyer([ligne("lait", "10", [jeton("beurre")])]);
+  assert.equal(lait.erreur, JETON_INVALIDE);
+  assert.equal(sim.compter("POST /v1/carts/p1/items"), 0);
+});
+
+test("jetons : jeton d'une demande précédente (expiré) qui ne signe pas le terme → refusée", async () => {
+  const { sim, jeton, ligne, expire, envoyer } = await preparerJetons();
+  const [lait] = await envoyer([ligne("lait", "10", [jeton("beurre", { demande: AUTRE_DEMANDE, exp: expire })])]);
+  assert.equal(lait.erreur, JETON_INVALIDE);
+  assert.equal(sim.compter("POST /v1/carts/p1/items"), 0);
+});
+
+test("jetons : jeton mal formé → refusée, sans que le message cite le jeton", async () => {
+  const { sim, ligne, envoyer } = await preparerJetons();
+  const [lait] = await envoyer([ligne("lait", "10", ["pas-un-jeton"])]);
+  assert.equal(lait.erreur, JETON_INVALIDE);
+  assert.doesNotMatch(String(lait.erreur), /pas-un-jeton/);
+  assert.equal(sim.compter("POST /v1/carts/p1/items"), 0);
+});
+
+test("jetons : ligne fusionnée, aucun jeton ne vérifie terme → refusée", async () => {
+  const { sim, jeton, ligne, envoyer } = await preparerJetons();
+  const [lait] = await envoyer([ligne("lait", "10", [jeton("poireaux"), jeton("carottes")])]);
+  assert.equal(lait.erreur, JETON_INVALIDE);
+  assert.equal(sim.compter("POST /v1/carts/p1/items"), 0);
+});
+
+test("jetons : ligne fusionnée, jeton de terme valide, co-jeton expiré → refusée", async () => {
+  const { sim, jeton, ligne, expire, envoyer } = await preparerJetons();
+  const [lait] = await envoyer([ligne("lait", "10", [jeton("lait"), jeton("lait demi-écrémé", { exp: expire })])]);
+  assert.equal(lait.erreur, JETON_INVALIDE);
+  assert.equal(sim.compter("POST /v1/carts/p1/items"), 0);
+});
+
+test("jetons : ligne fusionnée, deux jetons valides de la même demande → envoyée", async () => {
+  const { sim, jeton, ligne, envoyer } = await preparerJetons();
+  const [lait] = await envoyer([ligne("lait", "10", [jeton("lait"), jeton("lait demi-écrémé")])]);
+  assert.equal(lait.erreur, null);
+  assert.equal(lait.confirme, true);
+  assert.equal(sim.compter("POST /v1/carts/p1/items"), 1);
+});
+
+test("jetons : jetons de deux demandes différentes → refusée", async () => {
+  const { sim, jeton, ligne, envoyer } = await preparerJetons();
+  const [lait] = await envoyer([ligne("lait", "10", [jeton("lait"), jeton("lait demi-écrémé", { demande: AUTRE_DEMANDE })])]);
+  assert.equal(lait.erreur, JETON_INVALIDE);
+  assert.equal(sim.compter("POST /v1/carts/p1/items"), 0);
+});
+
+test("jetons : une ligne refusée par les jetons ne compte pas comme doublon", async () => {
+  const { sim, jeton, ligne, expire, envoyer } = await preparerJetons();
+  const [refusee, envoyee] = await envoyer([
+    ligne("lait", "10", [jeton("lait", { exp: expire })]),
+    ligne("lait", "10", [jeton("lait")]),
+  ]);
+  assert.equal(refusee.erreur, JETON_INVALIDE);
+  assert.equal(envoyee.erreur, null);
+  assert.equal(envoyee.confirme, true);
+  assert.equal(sim.compter("POST /v1/carts/p1/items"), 1);
+});
+
+test("jetons : deux lignes d'un même lot avec deux demandes différentes → chaque ligne jugée seule", async () => {
+  const { sim, jeton, ligne, envoyer } = await preparerJetons();
+  const [lait, beurre] = await envoyer([
+    ligne("lait", "10", [jeton("lait")]),
+    ligne("beurre", "20", [jeton("beurre", { demande: AUTRE_DEMANDE })]),
+  ]);
+  assert.equal(lait.erreur, null);
+  assert.equal(lait.confirme, true);
+  assert.equal(beurre.erreur, null);
+  assert.equal(beurre.confirme, true);
+  assert.equal(sim.compter("POST /v1/carts/p1/items"), 2);
+});
+
+test("jetons : lot entièrement refusé par les jetons → ni client, ni login, ni lecture du panier", async () => {
+  const sim = clientSimule({});
+  let clientsCrees = 0;
+  const { appelerBrut } = await demarrer({
+    client: () => {
+      clientsCrees++;
+      return sim.client;
+    },
+  });
+  const lignes = [
+    { terme: "lait", productId: "10", quantite: 1, jetons: ["pas-un-jeton"] },
+    { terme: "beurre", productId: "20", quantite: 1, jetons: [signerJeton(SECRET_JETONS, DEMANDE, "lait", EXP_LOINTAINE)] },
+  ];
+  const resultats = lignesAjout(await appelerBrut("ajouter_au_panier", { lignes }));
+  assert.deepEqual(resultats.map((r) => [r.terme, r.confirme, r.erreur]), [
+    ["lait", false, JETON_INVALIDE],
+    ["beurre", false, JETON_INVALIDE],
+  ]);
+  assert.equal(sim.appels.length, 0);
+  assert.equal(clientsCrees, 0);
+});
+
+test("jetons : lot entièrement refusé par la garde `propose` → aucune relecture du panier", async () => {
+  const { sim, jeton, ligne, envoyer } = await preparerJetons();
+  const avant = sim.appels.length;
+  // Jetons valides, mais produit 99 jamais proposé : refus sans lecture du panier.
+  const [lait] = await envoyer([ligne("lait", "99", [jeton("lait")])]);
+  assert.equal(lait.confirme, false);
+  assert.equal(lait.erreur, PRODUIT_INCONNU);
+  assert.equal(sim.appels.length, avant);
 });
 
 test("ajouter_au_panier : deux appels parallèles sont exécutés l'un après l'autre", async () => {

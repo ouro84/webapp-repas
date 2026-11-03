@@ -30,6 +30,8 @@ beforeEach(() => {
 describe("sansSession (#305)", () => {
   it("sansSession : /api/mcp et /.well-known/* vrais ; /api/planning/generer, /oauth/consent faux", () => {
     expect(sansSession("/api/mcp")).toBe(true)
+    expect(sansSession("/api/mcp/executeur")).toBe(true) // #330
+    expect(sansSession("/.well-known/oauth-protected-resource/api/mcp/executeur")).toBe(true)
     expect(sansSession("/.well-known/oauth-protected-resource/api/mcp")).toBe(true)
     expect(sansSession("/api/planning/generer")).toBe(false)
     expect(sansSession("/oauth/consent")).toBe(false)

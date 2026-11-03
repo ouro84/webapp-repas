@@ -18,7 +18,8 @@ import {
 } from "./catalogue.ts";
 import { ErreurChronodrive, erreurDeConnexion } from "./client.ts";
 import { normaliserTerme, type Correspondance, type Correspondances, type EntreeCorrespondance } from "./correspondances.ts";
-import { ajouterLignes, ErreurPanierChange, lirePanierCourant, PRODUIT_INCONNU, type ResultatAjout } from "./panier.ts";
+import { lireJeton, verifierJeton } from "./jetons.ts";
+import { ajouterLignes, ErreurPanierChange, lirePanierCourant, PRODUIT_INCONNU, refuserLot, type ResultatAjout } from "./panier.ts";
 
 export type CacheCorrespondances = Pick<Correspondances, "connues" | "memoriser" | "oublier">;
 
@@ -29,6 +30,10 @@ export type Dependances = {
   client: () => AppelantRecherche;
   cache: () => CacheCorrespondances;
   lectureSeule: boolean;
+  // Secret des jetons de la demande OMQ (#330), relu à chaque appel d'`ajouter_au_panier` ; null =
+  // aucun ajout possible. Refus par défaut : sans secret, les jetons émis par OMQ pour la demande
+  // prise ne se vérifient pas.
+  secretJetons: () => string | null;
   journal?: (message: string) => void;
   maintenant?: () => number;
 };
@@ -46,6 +51,8 @@ const RECHERCHE_MAX = 8;
 // Recherche de vérification d'une correspondance du cache, par son libellé.
 const TAILLE_VERIFICATION = 20;
 
+export const JETON_INVALIDE =
+  "jeton OMQ invalide ou expiré pour cet article : reprends les jetons renvoyés par prendre_demande_panier";
 export const PRODUIT_NON_PROPOSE = "produit non proposé pour cet article : relance chercher_produits pour ce terme";
 
 // Erreur destinée au LLM, rédigée ici : son message est sûr.
@@ -213,6 +220,25 @@ export function creerServeur(deps: Dependances): McpServer {
     return a !== undefined && frais(a);
   }
 
+  // Garde des jetons d'une ligne (#330, RG-83) : l'article doit venir d'une demande OMQ prise par ce
+  // run. Le jeton ne porte pas le libellé, seulement sa signature : `chronodrive` ne peut vérifier la
+  // SIGNATURE d'un jeton que contre `terme`. Pour une ligne fusionnée, au moins un jeton doit vérifier
+  // `terme` (signature + expiration) ; les autres (co-jetons) doivent avoir un format et une
+  // expiration valides et la même demande, mais leur signature n'est pas lue : n'importe quel MAC hex
+  // de 32 caractères passe pour un co-jeton. Sans conséquence : seul le jeton de `terme` autorise
+  // l'ajout. Pourquoi : sans demande prise, aucun jeton n'est signé, donc rien ne part chez Chronodrive ;
+  // un jeton d'une demande précédente expire (30 min) et ne couvre que son propre libellé.
+  function jetonsValides(secret: string, jetons: string[], t: string, maintenant: number): boolean {
+    const lus = jetons.map((j) => lireJeton(j, maintenant));
+    const demandes = new Set<string>();
+    for (const l of lus) {
+      if (!l.ok) return false;
+      demandes.add(l.demandeId);
+    }
+    if (demandes.size !== 1) return false;
+    return jetons.some((j) => verifierJeton(secret, j, t, maintenant).ok);
+  }
+
   // Un seul lot d'ajout à la fois : deux lots parallèles entremêleraient leurs relectures
   // avant/après du panier, et l'écart de quantité ne serait plus attribuable (RG-83).
   let file: Promise<unknown> = Promise.resolve();
@@ -357,6 +383,7 @@ export function creerServeur(deps: Dependances): McpServer {
       "Ajoute un lot de produits au panier Chronodrive (20 lignes au plus, un même productId une seule fois par lot).",
       "La quantité S'AJOUTE à celle déjà présente. Le panier est relu avant et après :",
       "`confirme: true` seulement si la quantité du produit a réellement augmenté (`avant` → `apres`) ; `erreur` explique un refus ou un ajout partiel.",
+      "Chaque ligne porte `jetons`, le `jeton` de chaque article OMQ qu'elle couvre (un seul en général, plusieurs pour des articles fusionnés). Sans jeton valide, la ligne est refusée sans envoi.",
       "Seul un produit renvoyé par chercher_produits depuis moins de 30 min POUR CE TERME est accepté : copier l'`id` depuis le résultat du terme de cet article,",
       "et passer `terme_recherche` quand le produit vient d'une reformulation, cherchée dans un appel de chercher_produits POSTÉRIEUR à celui du terme.",
       "Sinon la ligne est refusée sans envoi (« produit non proposé pour cet article »).",
@@ -378,6 +405,11 @@ export function creerServeur(deps: Dependances): McpServer {
               .describe(
                 "Reformulation passée à chercher_produits, dans un appel postérieur à celui de `terme`, quand le produit vient de son résultat (ex. « poireau » pour « poireaux »)",
               ),
+            jetons: z
+              .array(z.string().trim().max(120))
+              .min(1)
+              .max(10)
+              .describe("jeton de chaque article OMQ couvert par cette ligne, recopié tel quel depuis prendre_demande_panier"),
             productId: z.string().trim().min(1).max(50).describe("`id` d'un produit renvoyé par chercher_produits pour ce terme"),
             quantite: z.number().int().min(1).max(20),
             quantite_omq: z
@@ -398,21 +430,32 @@ export function creerServeur(deps: Dependances): McpServer {
       if (deps.lectureSeule) {
         throw new ErreurOutil("lecture seule (CHRONODRIVE_LECTURE_SEULE n'est pas '0') : aucun ajout au panier, aucun appel à Chronodrive");
       }
+      const secret = deps.secretJetons();
+      if (secret === null) {
+        throw new ErreurOutil("OMQ_WEBHOOK_SECRET absent de chronodrive.env : aucun ajout possible sans vérifier les jetons de la demande OMQ");
+      }
       return enSerie(async () => {
-        const client = deps.client();
-        // Garde par terme (`propose`). Un produit jamais vu en recherche ou en favoris (même s'il est
-        // dans le panier) garde le refus « produit inconnu » ; un produit vu pour un autre terme, ou
-        // avec une reformulation non valable, est « non proposé ».
-        const aEnvoyer = lignes.map(({ terme: t, terme_recherche, productId, quantite, quantite_omq: quantiteOmq }) => {
+        // Horloge lue après l'attente dans la file : un lot précédent long ne doit pas faire valider un jeton expiré.
+        const maintenant = instant();
+        // Garde des jetons (#330) avant tout client : un lot sans aucun jeton valide ne crée ni client
+        // (donc aucun login) ni lecture du panier.
+        const jetonOk = lignes.map(({ terme: t, jetons }) => jetonsValides(secret, jetons, t, maintenant));
+        const client = jetonOk.some(Boolean) ? deps.client() : null;
+        // Puis garde par terme (`propose`). Un produit jamais vu en recherche ou en favoris (même s'il
+        // est dans le panier) garde le refus « produit inconnu » ; un produit vu pour un autre terme,
+        // ou avec une reformulation non valable, est « non proposé ».
+        const aEnvoyer = lignes.map(({ terme: t, terme_recherche, productId, quantite, quantite_omq: quantiteOmq }, i) => {
+          if (!client || !jetonOk[i]) return { productId, quantite, refus: JETON_INVALIDE };
           if (propose(client, t, terme_recherche, productId)) return { productId, quantite, quantiteOmq };
           return { productId, quantite, refus: produitVu(client, productId, horloge) ? PRODUIT_NON_PROPOSE : PRODUIT_INCONNU };
         });
-        const bilan = await ajouterLignes(client, aEnvoyer, horloge);
+        // Tout est refusé : aucune lecture du panier ni appel à Chronodrive.
+        const bilan = client === null || aEnvoyer.every((l) => l.refus) ? refuserLot(aEnvoyer) : await ajouterLignes(client, aEnvoyer, horloge);
         const resultats: (ResultatAjout & { terme: string })[] = bilan.resultats.map((r, i) => ({ terme: lignes[i].terme, ...r }));
         // Libellé tiré de la fiche du panier relu après l'ajout, sinon de la fiche vue ; jamais du
         // productId (il sert à retrouver le produit par recherche). Sans libellé, rien n'est mémorisé.
         const confirmes: EntreeCorrespondance[] = resultats.flatMap((r) => {
-          if (!r.confirme) return [];
+          if (!r.confirme || client === null) return [];
           const libelle = bilan.produits.get(r.productId)?.libelle || produitVu(client, r.productId, horloge)?.libelle;
           return libelle ? [{ terme: r.terme, productId: r.productId, libelle }] : [];
         });

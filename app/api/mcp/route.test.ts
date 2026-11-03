@@ -19,7 +19,6 @@ const m = vi.hoisted(() => ({
   ajouterRecette: vi.fn(),
   ajouterArticleCourses: vi.fn(),
   cocherArticle: vi.fn(),
-  prendreDemandePanier: vi.fn(),
   lancerDemandePanierMcp: vi.fn(),
   limitePanier: vi.fn(),
   rapporterPanier: vi.fn(),
@@ -48,7 +47,6 @@ vi.mock("@/lib/mcp/ecriture-courses", () => ({
 }))
 vi.mock("@/lib/mcp/recherche-recettes", () => ({ chercherRecettes: m.chercherRecettes }))
 vi.mock("@/lib/mcp/panier", () => ({
-  prendreDemandePanier: m.prendreDemandePanier,
   lancerDemandePanierMcp: m.lancerDemandePanierMcp,
   rapporterPanier: m.rapporterPanier,
 }))
@@ -128,7 +126,7 @@ describe("POST /api/mcp — authentification (RG-71)", () => {
 })
 
 describe("POST /api/mcp — outils (US-51, RG-78)", () => {
-  it("jeton valide : tools/list expose exactement les 4 lectures, les 8 écritures (#306, #320) et les 2 outils de l’exécuteur de panier (#308)", async () => {
+  it("jeton valide : tools/list expose exactement les 4 lectures et les 8 écritures (#306, #320), sans les outils de l’exécuteur de panier (#330)", async () => {
     const reponse = await appeler("tools/list")
     expect(reponse.status).toBe(200)
     const { result } = await lire(reponse)
@@ -145,8 +143,6 @@ describe("POST /api/mcp — outils (US-51, RG-78)", () => {
       "lire_planning",
       "lire_recette",
       "marquer_restes",
-      "prendre_demande_panier",
-      "rapporter_panier",
       "remplacer_repas",
     ])
   })
@@ -354,20 +350,8 @@ describe("POST /api/mcp — chercher_recettes (#320, RG-85)", () => {
   })
 })
 
-describe("POST /api/mcp — outils de l'exécuteur de panier (#308, RG-81→84)", () => {
+describe("POST /api/mcp — panier : lancement par l’assistant (#320, #330)", () => {
   const DEMANDE = "11111111-1111-4111-8111-111111111111"
-  const RAPPORT = {
-    ajoutes: [{ article: "lait", produit: "Lait demi-écrémé 1 L", marque: "Lactel", quantite: 2 }],
-    a_choisir: [],
-    introuvables: [{ article: "estragon" }],
-  }
-
-  it("prendre_demande_panier : client par jeton, résultat relayé", async () => {
-    m.prendreDemandePanier.mockResolvedValue({ demande: null })
-    const { result } = await lire(await appeler("tools/call", { name: "prendre_demande_panier", arguments: {} }))
-    expect(m.prendreDemandePanier).toHaveBeenCalledWith({ jeton: "jwt-oauth" })
-    expect(result?.structuredContent).toEqual({ demande: null })
-  })
 
   it("lancer_demande_panier : client par jeton, utilisateur, arguments et date de Paris transmis (#320, RG-85)", async () => {
     m.lancerDemandePanierMcp.mockResolvedValue({ demande_id: DEMANDE, ancre: "2026-11-05" })
@@ -393,7 +377,7 @@ describe("POST /api/mcp — outils de l'exécuteur de panier (#308, RG-81→84)"
     ])
   })
 
-  it("cocher_article transmet `ancre` ; sa description et celle de prendre_demande_panier la citent (#320, RG-85)", async () => {
+  it("cocher_article transmet `ancre` ; sa description et celle de lancer_demande_panier la citent (#320, RG-85)", async () => {
     m.cocherArticle.mockResolvedValue({ modifie: true, article: {} })
     await appeler("tools/call", { name: "cocher_article", arguments: { libelle: "lait", ancre: "2026-11-05" } })
     expect(m.cocherArticle).toHaveBeenCalledWith({ jeton: "jwt-oauth" }, { libelle: "lait", ancre: "2026-11-05" }, expect.any(Date))
@@ -401,54 +385,15 @@ describe("POST /api/mcp — outils de l'exécuteur de panier (#308, RG-81→84)"
     const description = (nom: string) =>
       (result?.tools as Array<{ name: string; description: string }>).find((t) => t.name === nom)!.description
     expect(description("cocher_article")).toContain("`ancre`")
-    expect(description("prendre_demande_panier")).toContain("`ancre` à lire_liste_courses et à cocher_article")
     expect(description("lancer_demande_panier")).toContain("accord explicite")
   })
 
-  it("rapporter_panier : arguments transmis tels quels", async () => {
-    m.rapporterPanier.mockResolvedValue({ statut: "terminee", rapport_tardif: false })
-    const args = { demande_id: DEMANDE, statut: "terminee", ...RAPPORT }
-    const { result } = await lire(await appeler("tools/call", { name: "rapporter_panier", arguments: args }))
-    expect(result?.isError).toBeFalsy()
-    expect(m.rapporterPanier).toHaveBeenCalledWith({ jeton: "jwt-oauth" }, args)
-    expect(result?.structuredContent).toEqual({ statut: "terminee", rapport_tardif: false })
-  })
-
-  it("rapporter_panier : un prix, plus de 3 candidats ou un motif de plus de 500 caractères sont refusés avant l'outil (RG-84)", async () => {
-    const avecPrix = {
-      demande_id: DEMANDE,
-      statut: "terminee",
-      ...RAPPORT,
-      ajoutes: [{ ...RAPPORT.ajoutes[0], prix: 1.29 }],
-    }
-    const tropDeCandidats = {
-      demande_id: DEMANDE,
-      statut: "terminee",
-      ...RAPPORT,
-      a_choisir: [{ article: "farine", raison: "formats", candidats: ["a", "b", "c", "d"] }],
-    }
-    const motifTropLong = { demande_id: DEMANDE, statut: "echec", motif: "x".repeat(501), ...RAPPORT }
-    for (const args of [avecPrix, tropDeCandidats, motifTropLong]) {
-      const { result, error } = await lire(await appeler("tools/call", { name: "rapporter_panier", arguments: args }))
-      expect(result?.isError === true || error !== undefined).toBe(true)
-    }
-    expect(m.rapporterPanier).not.toHaveBeenCalled()
-  })
-
-  it("les descriptions guident l'exécuteur : réservé, arrêt sur null, ancre, une fois, listes requises, 3 candidats, cocher avant", async () => {
+  it("l’endpoint général n’expose plus prendre_demande_panier ni rapporter_panier (#330)", async () => {
     const { result } = await lire(await appeler("tools/list"))
-    const description = (nom: string) =>
-      (result?.tools as Array<{ name: string; description: string }>).find((t) => t.name === nom)!.description
-    for (const nom of ["prendre_demande_panier", "rapporter_panier"]) {
-      expect(description(nom).startsWith("Réservé à l’exécuteur de panier du foyer, réveillé par le webhook")).toBe(true)
-      expect(description(nom)).toContain("ne l’appelle jamais pour consulter l’état d’un panier")
-    }
-    expect(description("prendre_demande_panier")).toContain("`demande: null`")
-    expect(description("prendre_demande_panier")).toContain("lire_liste_courses")
-    expect(description("rapporter_panier")).toContain("une seule fois")
-    expect(description("rapporter_panier")).toContain("3 candidats au plus")
-    expect(description("rapporter_panier")).toContain("cocher_article")
-    expect(description("rapporter_panier")).toContain("ni aucun prix")
-    expect(description("rapporter_panier")).toContain("même en échec")
+    const noms = (result?.tools as Array<{ name: string }>).map((t) => t.name)
+    expect(noms).not.toContain("prendre_demande_panier")
+    expect(noms).not.toContain("rapporter_panier")
+    expect(noms).toContain("cocher_article")
+    expect(noms).toContain("lancer_demande_panier")
   })
 })

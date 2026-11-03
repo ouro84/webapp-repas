@@ -75,7 +75,7 @@ test("démarrage stdio : initialize, tools/list, lecture seule par défaut, stdo
     assert.ok(!noms.includes("vider_panier"));
 
     // Lecture seule par défaut : sans CHRONODRIVE_LECTURE_SEULE='0', l'ajout est refusé sans appel.
-    mcp.envoyer({ id: 3, method: "tools/call", params: { name: "ajouter_au_panier", arguments: { lignes: [{ terme: "lait", productId: "10", quantite: 1 }] } } });
+    mcp.envoyer({ id: 3, method: "tools/call", params: { name: "ajouter_au_panier", arguments: { lignes: [{ terme: "lait", productId: "10", quantite: 1, jetons: ["jeton"] }] } } });
     const ajout = await mcp.attendreReponse(3);
     const resultat = ajout.result as { isError?: boolean; content: { text: string }[] };
     assert.equal(resultat.isError, true);

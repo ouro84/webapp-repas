@@ -149,8 +149,8 @@ describe("schemaRapport (RG-84)", () => {
 })
 
 describe("MESSAGES_PANIER", () => {
-  it("couvre OMQ01, OMQ02, OMQ03 et OMQ04 en français non vide", () => {
-    for (const code of ["OMQ01", "OMQ02", "OMQ03", "OMQ04"] as const) {
+  it("couvre OMQ01 à OMQ05 en français non vide", () => {
+    for (const code of ["OMQ01", "OMQ02", "OMQ03", "OMQ04", "OMQ05"] as const) {
       expect(MESSAGES_PANIER[code].length).toBeGreaterThan(10)
     }
   })

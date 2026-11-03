@@ -67,17 +67,31 @@ type Env = Record<string, string | undefined>;
 
 const CHEMIN_ENV_PAR_DEFAUT = "/opt/data/chronodrive.env";
 
-// Le fichier `KEY=valeur` (mode 600 sur le NAS) l'emporte sur l'environnement. Fichier absent :
-// l'environnement seul. Les erreurs nomment la variable, jamais sa valeur.
-export function chargerConfig(env: Env = process.env, chemin: string = env.CHRONODRIVE_ENV ?? CHEMIN_ENV_PAR_DEFAUT): Config {
-  let fichier: Env = {};
+// Variables du fichier `KEY=valeur` ; absent : aucune. Les erreurs nomment le chemin, jamais une valeur.
+function lireFichierEnv(chemin: string): Env {
   try {
-    fichier = parseEnv(readFileSync(chemin, "utf8"));
+    return parseEnv(readFileSync(chemin, "utf8"));
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code !== "ENOENT") {
       throw new ErreurChronodrive("config", `lecture de ${chemin} impossible (${(e as NodeJS.ErrnoException).code ?? "erreur"})`);
     }
+    return {};
   }
+}
+
+// Secret de signature des jetons de la demande OMQ (#330), le même `OMQ_WEBHOOK_SECRET` que celui du
+// webhook, avec la même règle que `chargerConfig` : le fichier l'emporte sur l'environnement. Absent
+// ou vide : null, et `ajouter_au_panier` refuse alors tout ajout. Relu à chaque appel d'outil (mcp.ts) :
+// le fichier est petit, et une rotation du secret vaut au prochain ajout. Jamais loggé ni dans une erreur.
+export function lireSecretJetons(env: Env = process.env, chemin: string = env.CHRONODRIVE_ENV ?? CHEMIN_ENV_PAR_DEFAUT): string | null {
+  const secret = lireFichierEnv(chemin).OMQ_WEBHOOK_SECRET ?? env.OMQ_WEBHOOK_SECRET;
+  return secret ? secret : null;
+}
+
+// Le fichier `KEY=valeur` (mode 600 sur le NAS) l'emporte sur l'environnement. Fichier absent :
+// l'environnement seul. Les erreurs nomment la variable, jamais sa valeur.
+export function chargerConfig(env: Env = process.env, chemin: string = env.CHRONODRIVE_ENV ?? CHEMIN_ENV_PAR_DEFAUT): Config {
+  const fichier = lireFichierEnv(chemin);
   const lire = (nom: string) => fichier[nom] ?? env[nom];
   const requise = (nom: string) => {
     const valeur = lire(nom);

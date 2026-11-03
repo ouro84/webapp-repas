@@ -5,7 +5,7 @@
 // exactement `'0'` ; absente, vide ou toute autre valeur, il est refusé sans appel API.
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 
-import { fabriqueClient } from "./client.ts";
+import { fabriqueClient, lireSecretJetons } from "./client.ts";
 import { cheminCache, Correspondances } from "./correspondances.ts";
 import { creerServeur } from "./outils.ts";
 
@@ -19,6 +19,8 @@ const serveur = creerServeur({
   client: fabriqueClient(),
   cache: () => (cache ??= new Correspondances(cheminCache())),
   lectureSeule: process.env.CHRONODRIVE_LECTURE_SEULE !== "0",
+  // Relu à chaque ajout, comme le client : une rotation du secret vaut sans redémarrage (#330).
+  secretJetons: () => lireSecretJetons(),
 });
 
 process.on("exit", () => {

@@ -109,21 +109,22 @@ async function postMcp(
   request: APIRequestContext,
   jeton: string | null,
   methode: string,
-  params: unknown
+  params: unknown,
+  chemin = "/api/mcp"
 ): Promise<APIResponse> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     Accept: "application/json, text/event-stream",
   };
   if (jeton) headers.Authorization = `Bearer ${jeton}`;
-  return request.post("/api/mcp", {
+  return request.post(chemin, {
     headers,
     data: { jsonrpc: "2.0", id: ++idJsonRpc, method: methode, params },
   });
 }
 
 /** Corps JSON-RPC d'une réponse MCP, servie en JSON ou en SSE (`data:`). */
-async function lireJsonRpc(reponse: APIResponse): Promise<{ result?: ResultatOutil }> {
+async function lireJsonRpc<R = ResultatOutil>(reponse: APIResponse): Promise<{ result?: R }> {
   const texte = await reponse.text();
   const ligne = texte.split("\n").find((l) => l.startsWith("data:"));
   return JSON.parse(ligne ? ligne.slice(5) : texte);
@@ -133,16 +134,42 @@ export async function appelerOutilMcp(
   request: APIRequestContext,
   jeton: string | null,
   nom: string,
-  args: Record<string, unknown> = {}
+  args: Record<string, unknown> = {},
+  chemin = "/api/mcp"
 ): Promise<{ statut: number; resultat?: ResultatOutil; reponse: APIResponse }> {
-  await postMcp(request, jeton, "initialize", {
-    protocolVersion: "2025-06-18",
-    capabilities: {},
-    clientInfo: { name: "e2e-omq", version: "1" },
-  });
-  const reponse = await postMcp(request, jeton, "tools/call", { name: nom, arguments: args });
+  await postMcp(
+    request,
+    jeton,
+    "initialize",
+    {
+      protocolVersion: "2025-06-18",
+      capabilities: {},
+      clientInfo: { name: "e2e-omq", version: "1" },
+    },
+    chemin
+  );
+  const reponse = await postMcp(request, jeton, "tools/call", { name: nom, arguments: args }, chemin);
   if (reponse.status() !== 200) return { statut: reponse.status(), reponse };
   return { statut: 200, resultat: (await lireJsonRpc(reponse)).result, reponse };
+}
+
+/** Noms des outils annoncés par `tools/list` d'un endpoint MCP (#330). */
+export async function listerOutilsMcp(
+  request: APIRequestContext,
+  jeton: string | null,
+  chemin = "/api/mcp"
+): Promise<string[]> {
+  await postMcp(
+    request,
+    jeton,
+    "initialize",
+    { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "e2e-omq", version: "1" } },
+    chemin
+  );
+  const reponse = await postMcp(request, jeton, "tools/list", {}, chemin);
+  if (reponse.status() !== 200) throw new Error(`tools/list de ${chemin} : HTTP ${reponse.status()}`);
+  const corps = await lireJsonRpc<{ tools?: Array<{ name: string }> }>(reponse);
+  return (corps.result?.tools ?? []).map((t) => t.name);
 }
 
 /** Jeton de session web (mot de passe) d'un compte — pour préparer des données. */

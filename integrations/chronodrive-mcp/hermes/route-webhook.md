@@ -21,9 +21,9 @@ Si `hermes` n'est pas dans le `PATH` du conteneur, utiliser `/opt/hermes/.venv/b
 ## Prérequis
 
 - La skill est installée dans `/opt/data/skills/omq/panier-chronodrive/SKILL.md` (cf. `README.md`).
-- Le MCP `chronodrive` est déclaré dans `config.yaml` et la gateway a redémarré depuis.
+- Le MCP `chronodrive` est déclaré dans `config.yaml` et la gateway a redémarré depuis la mise à jour de son code (phase A) ; le serveur `OMQ exécuteur` est déclaré en phase B, après le merge, et se recharge à chaud sans redémarrage (`README.md`, « Durcissement #330 »).
 - La plateforme webhook écoute en local seulement (`platforms.webhook.extra.host: 127.0.0.1`, port `8644`). Vérification depuis le NAS (le conteneur est en réseau host) : `curl -s http://127.0.0.1:8644/health` répond `{"status":"ok","platform":"webhook"}`.
-- Le secret `OMQ_WEBHOOK_SECRET` est dans `/opt/data/chronodrive.env` (mode `600`), sans guillemets. Celui du spike est un secret **brut** et il est conservé.
+- Le secret `OMQ_WEBHOOK_SECRET` est dans `/opt/data/chronodrive.env` (mode `600`), sans guillemets. Celui du spike est un secret **brut** et il est conservé. Depuis #330, le MCP `chronodrive` le **lit** aussi, pour vérifier les jetons des articles : il doit être identique côté OMQ, route Hermes et `chronodrive.env`.
 
 ## 1. Secret de la route
 
@@ -52,7 +52,10 @@ $D exec -u 1000 hermes sh -c '
 - **Skill** : `--skills` prend une liste séparée par des virgules ; ici une seule skill, `panier-chronodrive`.
 - **Livraison** : `telegram`, chat `8985917282` (canal maison d'Arnaud). Limite connue : un run sans demande à traiter répond `[SILENT]`, mais Hermes refuse ce marqueur sur un tour webhook (« silence marker rejected on a user turn ») et un court message part quand même sur Telegram.
 - **Secret** : pendant l'exécution de la commande, `--secret "$SECRET"` est visible un court instant dans `/proc/*/cmdline` du conteneur. C'est accepté : seul l'utilisateur du conteneur y a accès.
-- **Outils du run** : sans `toolsets`, le run voit tous les MCP activés. La clé `toolsets: ["chronodrive", "On Mange Quoi ?"]` s'ajoute **à la main** à la route `panier-omq` dans `/opt/data/webhook_subscriptions.json` (sauvegarde `webhook_subscriptions.json.bak-<motif>` avant), avec les **noms** des serveurs : `mcp-<nom>` est ignoré sans erreur. Rechargée à chaud, sans redémarrage. À faire et à vérifier avant de passer `CHRONODRIVE_LECTURE_SEULE` à `'0'` : `README.md`, étape 8.
+- **Outils du run** : sans `toolsets`, le run voit tous les MCP activés. La clé `toolsets: ["chronodrive", "OMQ exécuteur"]` s’ajoute **à la main** à la route `panier-omq` dans `/opt/data/webhook_subscriptions.json` (sauvegarde `webhook_subscriptions.json.bak-<motif>` avant), avec les **noms** des serveurs : `mcp-<nom>` est ignoré sans erreur. Rechargée à chaud, sans redémarrage. À faire et à vérifier avant de passer `CHRONODRIVE_LECTURE_SEULE` à `'0'` : `README.md`, étape 8.
+  - **Pourquoi « OMQ exécuteur » et plus « On Mange Quoi ? » (#330)** : « OMQ exécuteur » est l’endpoint `/api/mcp/executeur` d’OMQ, qui n’expose que `prendre_demande_panier`, `cocher_article_demande` et `rapporter_panier`. Le run ne voit donc plus le serveur général, ni `lire_liste_courses`, ni `cocher_article(ancre)` : il ne peut plus choisir une `ancre`, il coche sur le cycle de la demande qu’il a prise. Un modèle léger avait sauté la prise, inventé une `ancre` et rempli le vrai panier.
+  - **Isolement** : le serveur général « On Mange Quoi ? » est **absent** de la liste `toolsets` de la route, et `OMQ exécuteur` est absent des listes `platform_toolsets` de `telegram`, `whatsapp`, `cron`, `homeassistant` et `discord` (seule `cli` le nomme, pour les mesures et les recettes manuelles). Un nom de serveur mal orthographié est **ignoré en silence** : si plus aucun nom de la liste n’est reconnu, la route voit **tous** les MCP activés, pas aucun. Un nom reconnu en moins (« OMQ exécuteur » mal écrit à côté d’un `chronodrive` correct) laisse le run sans outil pour prendre la demande : il échoue au lieu de remplir un panier. La garde des jetons côté `chronodrive` tient dans tous les cas (rien n’est ajouté sans jeton valide), et la route de contrôle `controle-outils` (README, étape 8) détecte l’écart en listant les outils réellement visibles.
+  - **Garde côté `chronodrive`** : même avec un `toolsets` mal posé, `ajouter_au_panier` refuse toute ligne sans le jeton de la demande prise (`jetons`), et tout ajout si `OMQ_WEBHOOK_SECRET` manque dans `chronodrive.env` (README, « Durcissement #330 »).
 
 ### Contrôle
 
@@ -106,6 +109,8 @@ Suivre la section « Enregistrer l'exécuteur » du `README.md`. Le même secret
 3. Ré-enregistrer l'exécuteur dans OMQ avec le nouveau secret. Le secret Vault existant est alors mis à jour.
 
 Entre les étapes 2 et 3, les webhooks d'OMQ sont refusés en 401 : la demande passe en échec « exécuteur injoignable ». C'est sans conséquence, il suffit de relancer.
+
+Depuis #330, le MCP `chronodrive` lit ce même secret dans `chronodrive.env` pour vérifier les jetons des articles (relu à chaque appel, sans redémarrage). La rotation est donc **couplée** : OMQ (étape 3), route Hermes (étape 2) et `chronodrive.env` (étape 1) changent ensemble. Les jetons pris avant la rotation sont signés avec l'ancien secret et sont refusés : ne pas faire la rotation pendant un run de panier.
 
 ## Supprimer la route
 

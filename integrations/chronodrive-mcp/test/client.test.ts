@@ -7,7 +7,7 @@ import { mkdtempSync, mkdirSync, readFileSync, readdirSync, statSync, utimesSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { ClientChronodrive, ErreurChronodrive, chargerConfig, fabriqueClient, type Config } from "../src/client.ts";
+import { ClientChronodrive, ErreurChronodrive, chargerConfig, fabriqueClient, lireSecretJetons, type Config } from "../src/client.ts";
 
 const EMAIL = "arnaud.test@example.org";
 const MOT_DE_PASSE = "M0t-de-passe!secret";
@@ -626,4 +626,42 @@ test("DELETE : second 401 remonte en erreur, sans boucle de login", async () => 
   });
   assert.equal(sim.compter("POST", R_LOGIN), 2);
   assert.equal(sim.compter("DELETE", R_LIGNE_PANIER), 2);
+});
+
+test("lireSecretJetons : le fichier l'emporte sur l'environnement, absente ou vide → null", () => {
+  const dossier = mkdtempSync(join(tmpdir(), "chronodrive-secret-"));
+  const chemin = join(dossier, "chronodrive.env");
+  writeFileSync(chemin, "CHRONODRIVE_EMAIL=a@example.org\nOMQ_WEBHOOK_SECRET=secret-du-fichier\n");
+  assert.equal(lireSecretJetons({ OMQ_WEBHOOK_SECRET: "secret-de-l-environnement" }, chemin), "secret-du-fichier");
+
+  // Variable absente du fichier : l'environnement prend le relais.
+  writeFileSync(chemin, "CHRONODRIVE_EMAIL=a@example.org\n");
+  assert.equal(lireSecretJetons({ OMQ_WEBHOOK_SECRET: "secret-de-l-environnement" }, chemin), "secret-de-l-environnement");
+
+  // Absente partout, ou vide : null (aucun ajout possible).
+  assert.equal(lireSecretJetons({}, chemin), null);
+  assert.equal(lireSecretJetons({ OMQ_WEBHOOK_SECRET: "" }, chemin), null);
+  writeFileSync(chemin, "OMQ_WEBHOOK_SECRET=\n");
+  assert.equal(lireSecretJetons({ OMQ_WEBHOOK_SECRET: "secret-de-l-environnement" }, chemin), null);
+
+  // Fichier absent : l'environnement seul.
+  assert.equal(lireSecretJetons({ OMQ_WEBHOOK_SECRET: "secret-env" }, join(dossier, "absent.env")), "secret-env");
+  assert.equal(lireSecretJetons({}, join(dossier, "absent.env")), null);
+});
+
+test("lireSecretJetons : secret au format whsec_ lu tel quel (décodé par jetons.ts)", () => {
+  const dossier = mkdtempSync(join(tmpdir(), "chronodrive-secret-"));
+  const chemin = join(dossier, "chronodrive.env");
+  writeFileSync(chemin, 'OMQ_WEBHOOK_SECRET="whsec_c2VjcmV0"\n');
+  assert.equal(lireSecretJetons({}, chemin), "whsec_c2VjcmV0");
+});
+
+test("lireSecretJetons : lecture impossible → ErreurChronodrive sans valeur de secret", () => {
+  const dossier = mkdtempSync(join(tmpdir(), "chronodrive-secret-"));
+  // Un dossier à la place du fichier : EISDIR, pas ENOENT.
+  assert.throws(() => lireSecretJetons({ OMQ_WEBHOOK_SECRET: "secret-env" }, dossier), (e: unknown) => {
+    assert.ok(e instanceof ErreurChronodrive);
+    assert.doesNotMatch(e.message, /secret-env/);
+    return true;
+  });
 });
