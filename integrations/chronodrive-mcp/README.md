@@ -254,9 +254,11 @@ Un run Hermes a un jour sauté `prendre_demande_panier`, inventé une `ancre`, c
 - Le run ne voit plus le serveur général « On Mange Quoi ? » mais le serveur `OMQ exécuteur` (endpoint `/api/mcp/executeur` d’OMQ), qui n’a que `prendre_demande_panier`, `cocher_article_demande` (sans `ancre`) et `rapporter_panier`. Ce serveur gère lui-même « cycle changé » et « liste vide ».
 - `prendre_demande_panier` renvoie un `jeton` par article, signé par OMQ avec `OMQ_WEBHOOK_SECRET` et valable 30 min (`pris_le + 30 min`). `ajouter_au_panier` exige ces jetons (`jetons` sur chaque ligne) et les vérifie avec le même secret, lu dans `chronodrive.env`. Sans jeton valide, rien n’est envoyé à Chronodrive.
 
-**Prérequis.** La PR #330 est mergée et déployée en prod (endpoint `/api/mcp/executeur` et migration des jetons appliquée sur la base de prod) : sinon `prendre_demande_panier` n’existe pas encore côté OMQ. **Toute opération sur le NAS se fait avec Arnaud.** Pas de demande de panier entre les étapes 3 et 7, et aucune de ces étapes ne touche à `CHRONODRIVE_LECTURE_SEULE`. `$D` est défini en tête de « Installation sur le NAS ».
+**Deux phases autour du merge.** Le code de `chronodrive` passe **avant** le merge : le nouveau code échoue fermé avec l’ancienne skill (`jetons` est requis par le schéma de `ajouter_au_panier`), donc plus aucun ajout n’est possible, même si un modèle léger sautait la prise ou inventait une `ancre`. Faire l’inverse (merge d’abord, NAS ensuite) rouvrirait le chemin de l’incident : tant que le NAS garde la skill 1.1.0, la route avec « On Mange Quoi ? » et l’ancien `chronodrive` sans jetons, `prendre_demande_panier` disparaît de `/api/mcp` mais `lire_liste_courses(ancre)`, `cocher_article(ancre)` et `ajouter_au_panier` restent appelables.
 
-**Ordre strict.** Le code vient avant la skill : avec l’ancien code, la skill 1.2.0 ne serait protégée par aucun jeton. Chaque étape qui modifie le NAS commence par sa sauvegarde, sans écraser une sauvegarde déjà prise (`[ -e … ] ||`).
+**Aucune demande de panier entre le début de la phase A et la fin de la phase B** : ni le bouton de `/courses`, ni `lancer_demande_panier` depuis Telegram, ni `preparer-cycle`. Aucune des étapes ci-dessous ne touche à `CHRONODRIVE_LECTURE_SEULE`. **Toute opération sur le NAS se fait avec Arnaud.** `$D` est défini en tête de « Installation sur le NAS ». Chaque étape qui modifie le NAS commence par sa sauvegarde, sans écraser une sauvegarde déjà prise (`[ -e … ] ||`).
+
+#### Phase A : avant le merge (code `chronodrive` et secret)
 
 1. **Copier le code de `chronodrive-mcp`.** Sauvegarde du dossier, puis copie et `npm ci` comme à l’étape 2 d’« Installation sur le NAS » (même commande `tar` depuis le PC) :
 
@@ -268,18 +270,36 @@ Un run Hermes a un jour sauté `prendre_demande_panier`, inventé une `ancre`, c
    '
    ```
 
-   La copie s’applique tout de suite au disque, mais le MCP garde l’ancien code en mémoire jusqu’à l’étape 7.
-2. **Vérifier `OMQ_WEBHOOK_SECRET` dans `chronodrive.env`.** Lecture seule, sans afficher le secret :
+   La copie s’applique tout de suite au disque, mais le MCP garde l’ancien code en mémoire jusqu’au redémarrage de l’étape 3.
+2. **Vérifier `OMQ_WEBHOOK_SECRET`.** Lecture seule, sans afficher le secret. Les droits du fichier, puis l’empreinte SHA-256 (12 premiers hex) de la valeur telle que `parseEnv` (`node:util`, comme `src/client.ts`) la lit dans `chronodrive.env`, comparée à celle du secret stocké pour la route `panier-omq` :
 
    ```sh
    $D exec -u 1000 hermes sh -c '
-     grep -c "^OMQ_WEBHOOK_SECRET=" /opt/data/chronodrive.env
      stat -c "%a %U" /opt/data/chronodrive.env
+     node -e "
+       const { parseEnv } = require(\"node:util\");
+       const { readFileSync } = require(\"node:fs\");
+       const { createHash } = require(\"node:crypto\");
+       const h = (s) => createHash(\"sha256\").update(String(s)).digest(\"hex\").slice(0, 12);
+       const lu = parseEnv(readFileSync(\"/opt/data/chronodrive.env\", \"utf8\")).OMQ_WEBHOOK_SECRET;
+       const abonnements = JSON.parse(readFileSync(\"/opt/data/webhook_subscriptions.json\", \"utf8\"));
+       const route = abonnements[\"panier-omq\"] ?? (abonnements.routes ?? {})[\"panier-omq\"];
+       console.log(\"chronodrive.env (parseEnv) :\", lu === undefined ? \"ABSENT\" : h(lu));
+       console.log(\"route panier-omq (secret)  :\", route?.secret === undefined ? \"ABSENT\" : h(route.secret));
+     "
    '
    ```
 
-   Attendu : `1`, puis `600 1000`. C’est le secret déjà enregistré dans OMQ (Vault) et dans la route `panier-omq`, à l’identique : le MCP l’utilise maintenant pour **vérifier** les jetons qu’OMQ signe avec (tableau des variables, étape 3 d’« Installation sur le NAS »). Une rotation change donc les trois endroits ensemble (`hermes/route-webhook.md`), hors run : les jetons déjà pris deviennent invalides.
-3. **Déclarer le serveur `OMQ exécuteur` sous `mcp_servers`.** Sauvegarde de `config.yaml` d’abord :
+   Attendu : `600 1000`, puis **deux empreintes identiques** (aucune « ABSENT »). Si le JSON de Hermes range le secret ailleurs, adapter l’accès à `route` sans jamais afficher le secret. C’est le secret déjà enregistré dans OMQ (Vault) et dans la route `panier-omq`, à l’identique : le MCP l’utilise maintenant pour **vérifier** les jetons qu’OMQ signe avec (tableau des variables, étape 3 d’« Installation sur le NAS »). Des guillemets ou des espaces dans `chronodrive.env` font différer ce que lit `parseEnv` de ce que `sed` a passé à la CLI : c’est ce que la comparaison détecte, et un simple `grep -c` ne le voit pas. Une rotation change les trois endroits ensemble (`hermes/route-webhook.md`), hors run : les jetons déjà pris deviennent invalides.
+3. **Redémarrer la gateway, seulement après le feu vert explicite d’Arnaud.** Elle porte aussi Telegram, WhatsApp, Home Assistant et le cron : prévenir Arnaud et attendre son accord, sans le déduire d’un accord sur une autre étape. Sans ce feu vert, le classifieur de Hermes bloque la commande et on ne le contourne pas. Puis, comme à l’étape 6 d’« Installation sur le NAS » (`$D exec hermes s6-svc -t /run/service/gateway-default`) et avec ses vérifications : Hermes liste les outils `chronodrive`, Telegram répond, WhatsApp est reconnecté. Le MCP `chronodrive` tourne alors avec le nouveau code : il refuse tout ajout sans jeton valide, y compris avec la skill 1.1.0 encore en place.
+
+#### Merge
+
+Merge de la PR #330 : migration des jetons appliquée sur la base de prod (RPC `demande_panier_en_cours` et `signer_jetons_panier`) et déploiement Vercel (endpoint `/api/mcp/executeur`). Vérifier que les deux sont en place avant la phase B : sans eux, `prendre_demande_panier` n’existe pas encore côté OMQ.
+
+#### Phase B : après le merge (serveur « OMQ exécuteur », toolsets, skill)
+
+4. **Déclarer le serveur `OMQ exécuteur` sous `mcp_servers`.** Sauvegarde de `config.yaml` d’abord :
 
    ```sh
    $D exec -u 1000 hermes sh -c '
@@ -288,16 +308,26 @@ Un run Hermes a un jour sauté `prendre_demande_panier`, inventé une `ancre`, c
    '
    ```
 
-   Puis, sous `mcp_servers`, une entrée `OMQ exécuteur` : recopier celle de « On Mange Quoi ? » (même bloc d’authentification OAuth) en ne changeant que l’URL :
+   Puis, sous `mcp_servers`, une entrée `OMQ exécuteur` : recopier celle de « On Mange Quoi ? » (même bloc d’authentification OAuth) en ne changeant que l’URL. Le dépôt ne documente pas ce bloc, il se lit dans le `config.yaml` du NAS :
 
    ```yaml
      "OMQ exécuteur":
        url: https://webapp-repas.vercel.app/api/mcp/executeur
        enabled: true
+       # + bloc d'authentification identique à « On Mange Quoi ? »
    ```
 
-   Faire ensuite, avec Arnaud, le login OAuth de ce serveur comme pour « On Mange Quoi ? » : Hermes donne une URL d’autorisation, Arnaud la valide (écran de consentement OMQ), puis on colle dans Hermes l’URL de retour du navigateur. L’ajout se recharge à chaud, sans redémarrage : le serveur est chargé dès l’enregistrement du fichier, d’où l’étape 4 tout de suite après.
-4. **`platform_toolsets` : ajouter `OMQ exécuteur` à `cli` seulement.** Même sauvegarde que l’étape 3, à reprendre telle quelle si cette étape se fait dans une autre session :
+   Faire ensuite, avec Arnaud, le login OAuth de ce serveur comme pour « On Mange Quoi ? » : Hermes donne une URL d’autorisation, Arnaud la valide (écran de consentement OMQ), puis on colle dans Hermes l’URL de retour du navigateur. L’ajout se recharge à chaud, sans redémarrage : le serveur est chargé dès l’enregistrement du fichier, d’où l’étape 5 tout de suite après.
+5. **`platform_toolsets` : ajouter `OMQ exécuteur` à `cli` seulement.** Même sauvegarde que l’étape 4, à reprendre telle quelle si cette étape se fait dans une autre session. Dans `config.yaml`, ajouter la ligne `- "OMQ exécuteur"` à la liste de `cli`, en laissant ses autres entrées :
+
+   ```yaml
+   platform_toolsets:
+     cli:
+       # … entrées existantes, inchangées …
+       - "OMQ exécuteur"
+   ```
+
+   Puis contrôler :
 
    ```sh
    $D exec -u 1000 hermes sh -c '
@@ -308,7 +338,7 @@ Un run Hermes a un jour sauté `prendre_demande_panier`, inventé une `ancre`, c
    ```
 
    Relire ensuite le bloc `platform_toolsets` plateforme par plateforme : `OMQ exécuteur` doit être **absent** de `telegram`, `whatsapp`, `cron`, `homeassistant` et `discord`, et présent dans `cli` (le `grep` ne doit donner que l’entrée de `mcp_servers` et la ligne de `cli`). Pourquoi : `platform_toolsets.<plateforme>` est une liste d’autorisation ; une plateforme qui nommerait ce serveur donnerait à un message Telegram ou à une tâche cron la prise et le rapport de demandes de panier. Ces plateformes gardent « On Mange Quoi ? » : le serveur général a perdu `prendre_demande_panier` et `rapporter_panier`.
-5. **Route `panier-omq` : `toolsets: ["chronodrive", "OMQ exécuteur"]`.** Sauvegarde, puis modification à la main de la clé `toolsets` de la route dans `webhook_subscriptions.json` (rechargée à chaud, sans redémarrage ; noms de serveurs, jamais `mcp-<nom>`) :
+6. **Route `panier-omq` : `toolsets: ["chronodrive", "OMQ exécuteur"]`.** Sauvegarde, puis modification à la main de la clé `toolsets` de la route dans `webhook_subscriptions.json` (rechargée à chaud, sans redémarrage ; noms de serveurs, jamais `mcp-<nom>`) :
 
    ```sh
    $D exec -u 1000 hermes sh -c '
@@ -318,7 +348,7 @@ Un run Hermes a un jour sauté `prendre_demande_panier`, inventé une `ancre`, c
    ```
 
    Vérifier avec la route de contrôle `controle-outils` de l’étape 8 (mêmes `toolsets`, sauvegarde avant de toucher au fichier, route supprimée ensuite) : la liste ne doit contenir que les outils `chronodrive` et `prendre_demande_panier`, `cocher_article_demande`, `rapporter_panier`.
-6. **Installer la skill 1.2.0.** Sauvegarde de la skill en place (une archive hors du dossier `skills`, pour que Hermes ne la charge pas comme une seconde skill), puis la commande de l’étape 5 d’« Installation sur le NAS » :
+7. **Installer la skill 1.2.0.** Sauvegarde de la skill en place (une archive hors du dossier `skills`, pour que Hermes ne la charge pas comme une seconde skill), puis la commande de l’étape 5 d’« Installation sur le NAS » :
 
    ```sh
    $D exec -u 1000 hermes sh -c '
@@ -329,7 +359,8 @@ Un run Hermes a un jour sauté `prendre_demande_panier`, inventé une `ancre`, c
    ```
 
    Contrôler ensuite que `/opt/data/skills/omq/panier-chronodrive/SKILL.md` porte `version: 1.2.0`.
-7. **Redémarrer la gateway, seulement après le feu vert explicite d’Arnaud.** Elle porte aussi Telegram, WhatsApp, Home Assistant et le cron : prévenir Arnaud et attendre son accord, sans le déduire d’un accord sur une autre étape. Sans ce feu vert, le classifieur de Hermes bloque la commande et on ne le contourne pas. Puis, comme à l’étape 6 d’« Installation sur le NAS » (`$D exec hermes s6-svc -t /run/service/gateway-default`) et avec ses vérifications : Hermes liste les outils `chronodrive` **et** les trois outils d’`OMQ exécuteur`, Telegram répond, WhatsApp est reconnecté. Le MCP `chronodrive` tourne alors avec le code de l’étape 1.
+
+**Second redémarrage : non requis en principe.** Les étapes 4 à 6 se rechargent à chaud : ajout d’un serveur sous `mcp_servers`, liste `platform_toolsets` relue à chaque tour, route dynamique de `webhook_subscriptions.json`. La prise en compte à chaud de la skill n’est en revanche pas vérifiée (étape 5 d’« Installation sur le NAS ») : si le premier run ou la route de contrôle montre que la skill 1.2.0 n’est pas celle utilisée, un second redémarrage de la gateway est nécessaire, avec un nouveau feu vert d’Arnaud. La phase B est finie quand `controle-outils` ne liste que les outils attendus et que la skill 1.2.0 est active ; les demandes de panier peuvent reprendre alors.
 
 **Retour arrière** (avec Arnaud) : remettre `config.yaml.bak-avant-330` et `webhook_subscriptions.json.bak-avant-330`, extraire `chronodrive-mcp.bak-avant-330.tgz` dans `/opt/data` et `skills-omq.bak-avant-330.tgz` dans `/opt/data/skills`, puis redémarrer la gateway avec le même feu vert. L’ancien code ne vérifie plus aucun jeton : ne repasser `CHRONODRIVE_LECTURE_SEULE` à `'0'` qu’avec Arnaud.
 

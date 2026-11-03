@@ -30,6 +30,7 @@ Le serveur général « On Mange Quoi ? » (noms Hermes `mcp__On_Mange_Quoi____<
 | OMQ exécuteur | `prendre_demande_panier` | aucun | une fois, **en premier** ; sans lui, aucun autre outil du run | **interdit** |
 | OMQ exécuteur | `cocher_article_demande` | `libelle`, `quantite` (toujours passée, même vide) ; **pas d'`ancre`** | après chaque lot d'ajout | **interdit** |
 | OMQ exécuteur | `rapporter_panier` | `demande_id`, `statut`, `motif`, `ajoutes`, `a_choisir`, `introuvables` | une seule fois, à la fin (une correction permise après une erreur de validation) | **interdit** |
+| On Mange Quoi ? (serveur général) | `lire_liste_courses` | aucun | **interdit** | une fois, au début (section « Mesure ») |
 | `chronodrive` | `chercher_produits` | `termes` (liste de textes) | par lots de 10 termes | par lots de 10 termes |
 | `chronodrive` | `ajouter_au_panier` | `lignes` : `[{terme, terme_recherche, productId, quantite, quantite_omq, jetons}]` (`terme_recherche` seulement après une reformulation ; `quantite_omq` toujours ; `jetons` toujours, 1 à 10 textes) | par lots, articles « haute » seulement | **interdit** |
 | `chronodrive` | `lire_panier` | aucun | facultatif, pour diagnostiquer (« déjà au panier » se lit sur `dansPanier`, étape 3) | facultatif |
@@ -121,7 +122,7 @@ La quantité **s'ajoute** à celle déjà présente dans le panier. Chaque résu
   - Réponse `modifie: true` : coché.
   - Réponse `modifie: false` avec `candidats` : rappelle `cocher_article_demande` avec la `quantite` exacte du bon candidat.
   - Réponse `modifie: false` avec `article` : il était déjà coché, rien à faire.
-  - Erreur « Aucune demande de panier prise » : ne la réessaie pas, ne coche plus rien et n'ajoute plus aucun lot. Ce cas ne doit pas arriver après une prise réussie : passe à « Échec technique » avec le motif « demande OMQ non prise ».
+  - Erreur « Aucune demande de panier prise » : ne la réessaie pas, ne coche plus rien et n'ajoute plus aucun lot. Ce cas ne doit pas arriver après une prise réussie : n'appelle pas `rapporter_panier` (OMQ le refuserait, aucune demande n'est en cours), envoie seulement le message Telegram « Panier Chronodrive en échec : demande OMQ non prise. » avec ce qui a déjà été ajouté, puis arrête-toi.
   - **Autre erreur** (l'outil échoue, ce n'est pas une réponse avec `candidats`) : n'ajoute plus aucun lot. Finis de cocher les autres lignes confirmées du lot, puis passe à « Échec technique » avec le motif « coche OMQ impossible ». Pourquoi : un article ajouté mais non coché reviendrait « à choisir » (déjà au panier) à la relance (RG-83).
 - Une ligne dont l'`erreur` commence par « ajout envoyé mais panier non relu » ou par « ajout peut-être appliqué » est un **Échec technique** : l'ajout a peut-être eu lieu, sans preuve (Chronodrive a pu l'appliquer en retard). Ne lance plus aucun lot, finis de cocher les lignes confirmées du lot, puis suis « Échec technique » avec le motif « ajout Chronodrive non confirmé, à vérifier dans le panier ». Ces lignes vont dans `a_choisir`, avec la raison « ajout non confirmé, à vérifier dans le panier ».
 - Une ligne dont l'`erreur` commence par « jeton OMQ invalide ou expiré » n'a pas été envoyée : le jeton ne vient pas de la prise de ce run, ou a expiré. **Ne la relance pas** (ni avec un autre jeton, ni après un nouvel appel à `chercher_produits`), **ne rappelle pas `prendre_demande_panier`** et n'ajoute plus aucun lot. Finis de cocher les lignes confirmées du lot, puis suis « Échec technique » avec le motif « jeton OMQ refusé : run interrompu ». La ligne refusée va dans `a_choisir`, avec la raison « ajout non envoyé : jeton OMQ refusé » et le produit choisi comme seul candidat.
@@ -180,9 +181,9 @@ Ces cas arrêtent le run, une fois la demande prise :
 - une ligne d'ajout revient avec « ajout envoyé mais panier non relu » ou « ajout peut-être appliqué » (étape 5) ;
 - une ligne d'ajout revient avec « jeton OMQ invalide ou expiré » (étape 5) ;
 - `cocher_article_demande` échoue (étape 5) ;
-- `rapporter_panier` ou un autre outil OMQ échoue.
+- un outil OMQ autre que `rapporter_panier` échoue, hors refus « Aucune demande de panier prise » (voir plus bas).
 
-Ne relance pas l'appel en erreur : le client Chronodrive refait déjà lui-même la connexion une fois. Une erreur « Aucune demande de panier prise » ou « jeton OMQ invalide ou expiré » ne se réessaie jamais : OMQ la renverrait à l'identique.
+Ne relance pas l'appel en erreur : le client Chronodrive refait déjà lui-même la connexion une fois. Une erreur « Aucune demande de panier prise » (OMQ05) ou « jeton OMQ invalide ou expiré » ne se réessaie jamais : OMQ la renverrait à l'identique. **Après un refus OMQ05 (Aucune demande de panier prise) ou un refus de `rapporter_panier` (hors erreur de validation, étape 6), ne rapporte pas et ne rappelle pas `rapporter_panier` : message Telegram seul, puis arrête-toi.** Pourquoi : sans demande en cours, ou avec une demande déjà close, un rapport est refusé à l'identique.
 
 1. Appelle `rapporter_panier` avec `statut: "echec"` et `motif`, une phrase lisible par le foyer (500 caractères au plus), par exemple :
    - « Connexion à Chronodrive impossible » ;
