@@ -29,10 +29,20 @@ describe("/.well-known/oauth-protected-resource (RFC 9728)", () => {
   })
 
   it("tout autre suffixe garde resource = <origine>/api/mcp (#330)", async () => {
-    for (const chemin of ["/.well-known/oauth-protected-resource/api/mcp/autre", "/.well-known/oauth-protected-resource/n-importe-quoi"]) {
+    for (const chemin of ["/.well-known/oauth-protected-resource/api/mcp/autre", "/.well-known/oauth-protected-resource/n-importe-quoi", "/.well-known/oauth-protected-resource/constructor", "/.well-known/oauth-protected-resource/__proto__", "/.well-known/oauth-protected-resource/toString"]) {
       const corps = await (await GET(new Request(`https://omq.test${chemin}`))).json()
       expect(corps.resource).toBe("https://omq.test/api/mcp")
     }
+  })
+
+  it("avec le contexte Next (params catch-all), le suffixe vient de params, pas de l’URL (#330)", async () => {
+    const req = new Request("https://omq.test/.well-known/oauth-protected-resource")
+    const exec = await GET(req, { params: Promise.resolve({ ressource: ["api", "mcp", "executeur"] }) })
+    expect((await exec.json()).resource).toBe("https://omq.test/api/mcp/executeur")
+    const herite = await GET(req, { params: Promise.resolve({ ressource: ["constructor"] }) })
+    expect((await herite.json()).resource).toBe("https://omq.test/api/mcp")
+    const sans = await GET(req, { params: Promise.resolve({}) })
+    expect((await sans.json()).resource).toBe("https://omq.test/api/mcp")
   })
 
   it("OPTIONS renvoie les en-têtes CORS", () => {

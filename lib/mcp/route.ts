@@ -23,7 +23,7 @@ export function creerRouteMcp(
   nom: string,
   cheminRessource: string
 ): (req: Request) => Promise<Response> {
-  const serveur = createMcpHandler((server) => enregistrer(server), { serverInfo: { name: nom, version } })
+  const serveur = createMcpHandler(enregistrer, { serverInfo: { name: nom, version } })
 
   async function avecQuota(req: Request): Promise<Response> {
     const userId = req.auth?.extra?.userId

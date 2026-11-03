@@ -12,17 +12,27 @@ import { getPublicOrigin, metadataCorsOptionsRequestHandler, protectedResourceHa
 import { emetteurOAuth } from "@/lib/mcp/auth"
 
 // Ressources MCP connues, par suffixe d'URL après /oauth-protected-resource/.
-const RESSOURCES: Record<string, string> = {
-  "api/mcp": "/api/mcp",
-  "api/mcp/executeur": "/api/mcp/executeur",
-}
+// Une `Map` et non un littéral : `RESSOURCES["constructor"]` renverrait un membre
+// hérité d'Object.
+const RESSOURCES = new Map<string, string>([
+  ["api/mcp", "/api/mcp"],
+  ["api/mcp/executeur", "/api/mcp/executeur"],
+])
 
 const PREFIXE = "/.well-known/oauth-protected-resource/"
 
-export function GET(req: Request): Response {
+type Contexte = { params?: Promise<{ ressource?: string[] }> }
+
+// Suffixe demandé : segments du catch-all Next quand le contexte est fourni,
+// sinon (appel direct, tests) lu dans l'URL.
+async function suffixeDemande(req: Request, ctx?: Contexte): Promise<string> {
+  if (ctx?.params) return ((await ctx.params).ressource ?? []).join("/")
   const { pathname } = new URL(req.url)
-  const suffixe = pathname.startsWith(PREFIXE) ? pathname.slice(PREFIXE.length).replace(/\/+$/, "") : ""
-  const chemin = RESSOURCES[suffixe] ?? "/api/mcp"
+  return pathname.startsWith(PREFIXE) ? pathname.slice(PREFIXE.length).replace(/\/+$/, "") : ""
+}
+
+export async function GET(req: Request, ctx?: Contexte): Promise<Response> {
+  const chemin = RESSOURCES.get(await suffixeDemande(req, ctx)) ?? "/api/mcp"
   return protectedResourceHandler({
     authServerUrls: [emetteurOAuth()],
     resourceUrl: `${getPublicOrigin(req)}${chemin}`,

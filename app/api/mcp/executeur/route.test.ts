@@ -165,6 +165,6 @@ describe("POST /api/mcp/executeur — outils (#330)", () => {
       "Coche l'article juste après son ajout confirmé au panier. Le cycle vient de la demande prise : il n'y a pas d'`ancre`."
     )
     expect(description("rapporter_panier")).toContain("cocher_article_demande")
-    expect(description("rapporter_panier")).not.toContain("cocher_article ")
+    expect(description("rapporter_panier")).not.toMatch(/cocher_article(?!_demande)/)
   })
 })
