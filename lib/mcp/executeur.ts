@@ -50,7 +50,8 @@ const MOTIF_CYCLE_CHANGE =
   "Le cycle de courses a changé depuis la demande : relance le panier depuis /courses."
 const RAISON_LISTE_VIDE = "Liste de courses vide : rien à ajouter, compte-rendu envoyé."
 
-const RAPPORT_VIDE: RapportPanier = { ajoutes: [], a_choisir: [], introuvables: [] }
+// Fabrique, pas constante : les listes ne doivent jamais être partagées par référence entre deux rapports.
+const rapportVide = (): RapportPanier => ({ ajoutes: [], a_choisir: [], introuvables: [] })
 
 type DemandeEnCours = { id: string; ancre: string; pris_le: string }
 
@@ -89,7 +90,7 @@ export async function prendreDemandeExecuteur(
           demande_id: demande.id,
           statut: "echec",
           motif: MOTIF_ERREUR_INTERNE,
-          ...RAPPORT_VIDE,
+          ...rapportVide(),
         })
       } catch (erreurRapport) {
         // Best effort : l'erreur d'origine reste celle qui remonte.
@@ -113,7 +114,7 @@ async function preparerPrise(
       demande_id: demande.id,
       statut: "echec",
       motif: MOTIF_CYCLE_CHANGE,
-      ...RAPPORT_VIDE,
+      ...rapportVide(),
     })
     return { demande: null, raison: MOTIF_CYCLE_CHANGE }
   }
@@ -132,7 +133,7 @@ async function preparerPrise(
     await rapporterPanier(supabase, {
       demande_id: demande.id,
       statut: "terminee",
-      ...RAPPORT_VIDE,
+      ...rapportVide(),
     })
     return { demande: null, raison: RAISON_LISTE_VIDE }
   }

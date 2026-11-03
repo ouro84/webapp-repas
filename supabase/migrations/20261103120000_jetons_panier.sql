@@ -83,8 +83,9 @@ begin
     raise exception 'Aucun foyer rattaché à l''utilisateur courant';
   end if;
 
-  if p_cles is null or cardinality(p_cles) > 500 then
-    raise exception 'Liste de clés d''articles invalide (500 au plus)'
+  -- Un élément NULL serait signé comme une clé vide (concaténation NULL) : refusé.
+  if p_cles is null or cardinality(p_cles) > 500 or array_position(p_cles, null) is not null then
+    raise exception 'Liste de clés d''articles invalide (500 au plus, aucune clé NULL)'
       using errcode = '22023';
   end if;
 
@@ -127,7 +128,9 @@ begin
   v_sous_cle := hmac(convert_to('jetons-panier', 'UTF8'), v_cle, 'sha256');
 
   -- RG-83 : un run dure au plus 30 min depuis la prise de la demande.
-  v_exp := extract(epoch from v_pris_le + interval '30 minutes')::bigint;
+  -- Troncature (pas d'arrondi) : `exp` ne dépasse jamais pris_le + 30 min, et `chronodrive`
+  -- lit le même nombre entier de secondes.
+  v_exp := floor(extract(epoch from v_pris_le + interval '30 minutes'))::bigint;
 
   select coalesce(jsonb_agg(
            p_demande::text || '.' || v_exp::text || '.' ||

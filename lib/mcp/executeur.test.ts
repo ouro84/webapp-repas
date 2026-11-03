@@ -158,6 +158,26 @@ describe("prendreDemandeExecuteur (#330, RG-83)", () => {
     expect(m.chargerListeCoursesCycle).not.toHaveBeenCalled()
   })
 
+  it("prendre : les listes vides du rapport ne sont jamais partagées entre deux appels", async () => {
+    m.resoudreAncreCycle.mockResolvedValue({ ok: true, ancre: "2026-11-05" })
+    const config = {
+      rpc: {
+        ...rpcPrise({ id: DEMANDE, ancre: ANCRE, pris_le: "2026-11-03T11:00:00Z" }),
+        rapporter_panier: { data: { statut: "echec", rapport_tardif: false }, error: null },
+      },
+    }
+    const premier = creerSupabaseMock(config)
+    await prendreDemandeExecuteur(premier.client, AUJOURDHUI)
+    const rapport = premier.rpcs[1].args as { p_rapport: { ajoutes: string[]; a_choisir: string[]; introuvables: string[] } }
+    rapport.p_rapport.ajoutes.push("pollution")
+    rapport.p_rapport.a_choisir.push("pollution")
+    rapport.p_rapport.introuvables.push("pollution")
+
+    const second = creerSupabaseMock(config)
+    await prendreDemandeExecuteur(second.client, AUJOURDHUI)
+    expect(second.rpcs[1].args).toMatchObject({ p_rapport: { ajoutes: [], a_choisir: [], introuvables: [] } })
+  })
+
   it("prendre, ancre hors plage (résolution en échec) → même rapport en échec", async () => {
     m.resoudreAncreCycle.mockResolvedValue({ ok: false, motif: "hors_plage" })
     const { client, rpcs } = creerSupabaseMock({
