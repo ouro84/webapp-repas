@@ -39,16 +39,21 @@ Store `lib/theme.ts` (`useSyncExternalStore`, clé localStorage `theme` ∈ clai
 - **Logo Chronodrive** (`components/ui/logo-chronodrive.tsx`) : symbole « app » du sprite officiel de l’enseigne, monochrome, SVG inline en `currentColor` + `aria-hidden`, couleur via `text-*` du parent ; il remplace une icône générique dans le titre de la carte Panier Chronodrive. Ne pas redessiner sa géométrie : elle vient du sprite (`var(--icon-color)` → `currentColor`). Pourquoi : un logo de marque tiers reste fidèle à l’original, et `currentColor` le suit en dark mode sans variante dédiée.
 - **Icônes : SVG inline ou `lucide-react`**, jamais d'emoji ni de glyphe Unicode (y compris `↑↓`).
 - **Pas de `Sparkles`** (ni d'icône « magie IA ») devant un libellé de génération. Pourquoi : jugé « IA générique » par le propriétaire du produit (#334) ; le libellé suffit.
-- Icônes déjà prises, à éviter pour un nouvel usage : `Leaf` (végé), `TreeDeciduous` (automne), `Wheat`/`Carrot` (accompagnement), `CookingPot` (restes), `RefreshCw`/`Search` (actions de slot), `SlidersHorizontal` (réglages), `HelpCircle` (aide), `Heart`/`Ban` (préférences), `CalendarDays`/`ShoppingCart`/`BookOpen`/`Clock` (nav), `Eye`/`PenLine` (droits du consentement OAuth).
+- Icônes déjà prises, à éviter pour un nouvel usage : `Leaf` (végé), `TreeDeciduous` (automne), `Wheat`/`Carrot` (accompagnement), `CookingPot` (restes), `RefreshCw`/`Search` (actions de slot), `SlidersHorizontal` (réglages), `HelpCircle` (aide), `Heart`/`Ban` (préférences), `CalendarDays`/`ShoppingCart`/`BookOpen`/`ChefHat` (onglets de nav), `Eye`/`PenLine` (droits du consentement OAuth).
 
 ## Nav (`components/ui/nav.tsx`)
 
 - **État actif via `estActif(pathname, href)`** : `/` en égalité stricte, les sections en `startsWith` (sinon le logo paraîtrait actif partout). Logo actif : pastille `bg-brand-50` + `aria-current="page"`.
 - **Nav applicative réservée aux connectés** : sinon (login, signup, `/`, `/aide`) elle se réduit au logo + « Aide », pour éviter des liens qui rebondissent vers `/login`. Signal : `useEstConnecte()` (`lib/session.ts`, snapshot initial `null`) ; tant qu'il vaut `null`, on retombe sur `ROUTES_PROTEGEES` (le proxy y garantit la session), d'où pas de scintillement.
 - **Nav masquée sur `/bienvenue` et `/oauth/*`** (parcours focalisés : onboarding, consentement OAuth #305). Ces écrans portent le logo en tête pour l'ancrage de marque.
-- **Budget de largeur mobile saturé.** Les liens de section passent par `LienSection` : icône seule sous `sm:`, libellé à partir de `sm:`. Pourquoi : sans `flex-wrap` ni `overflow-x: hidden` global (volontaire, un débordement doit rester visible), 4 libellés texte faisaient déborder le `body` à 390 px.
-  - `aria-label={label}` reste posé en permanence : le libellé masqué par `hidden` sort de l'arbre d'accessibilité. Le nom accessible est donc identique aux deux paliers, et les e2e `getByRole("link", { name })` en dépendent.
-  - Tout nouveau lien de nav passe par `LienSection` avec une icône et se re-mesure à **320 px** (marge ~20 px).
+- **Deux barres (#335).** `NavBar` (haut, sticky) : logo + nom complet, aide, avatar à toutes les largeurs ; sections libellées (`LienSection`) à partir de `md:` seulement. `OngletsBas` (bas, fixe, `md:hidden`) : Ce soir · Planning · Courses · Recettes, icône + libellé. Pourquoi : la barre du haut ne peut pas porter 4 libellés + marque + aide + avatar à 390 px (débordement du `body`, pas de `overflow-x: hidden` global, volontaire) ; les icônes seules étaient illisibles et un burger cachait les destinations quotidiennes.
+  - Une section est définie **une fois** dans `sections()` et rendue par les deux barres ; l'ordre diffère (desktop inchangé, mobile par fréquence d'usage).
+  - Le nom accessible d'un lien de section = son libellé visible, identique dans les deux barres : les e2e `getByRole("link", { name })` marchent aux deux paliers, car la barre masquée est en `display:none` (hors arbre d'accessibilité).
+  - Les deux `<nav>` ont des noms distincts : « Navigation principale » (haut) et « Sections » (bas).
+  - `OngletsBas` est monté **en fin de `<body>`** (`app/layout.tsx`) avec un espaceur dans le flux : pied de page et bandeau cookies restent au-dessus. `data-onglets-bas` remonte les toasts via `--decalage-toasts` (`globals.css`, `:root:has(…)` sous 48rem), passé à `offset`/`mobileOffset` du `Toaster`.
+  - `viewportFit: "cover"` (sinon `env(safe-area-inset-*)` vaut 0 et la barre passe sous l'indicateur d'accueil iOS) : la nav compense le haut, le `<body>` les côtés, `OngletsBas` le bas.
+  - Tout nouvel onglet se re-mesure à **320 px** (e2e `nav-mobile.spec`, libellés non tronqués) ; au-delà de 4-5 onglets, revoir le modèle plutôt que rétrécir.
+- **Logo connecté → `/ce-soir`**, et le proxy redirige un connecté de `/` vers `/ce-soir` (#335, RG-88) : `/` n'est plus que la vitrine publique.
 
 ## Animations et micro-interactions
 

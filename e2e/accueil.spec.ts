@@ -3,6 +3,10 @@
 
 import { test, expect } from "./fixtures";
 
+// Vitrine publique : un connecté est redirigé vers /ce-soir (#335, cf.
+// nav-mobile.spec.ts) → contexte vierge, déconnecté.
+test.use({ storageState: { cookies: [], origins: [] } });
+
 test("l'accueil affiche le nom et la baseline de marque (#59)", async ({
   page,
 }) => {

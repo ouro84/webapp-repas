@@ -4,7 +4,7 @@ import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import { Toaster } from "sonner";
 import "./globals.css";
-import { NavBar } from "@/components/ui/nav";
+import { NavBar, OngletsBas } from "@/components/ui/nav";
 import { AlerteModifPlanning } from "@/components/ui/alerte-modif-planning";
 import { InvitationEnAttente } from "@/components/ui/invitation-en-attente";
 import { BandeauCookies } from "@/components/ui/bandeau-cookies";
@@ -54,6 +54,10 @@ export const metadata: Metadata = {
 // d'où le complément côté sélecteur via l'API visualViewport (lib/clavier.ts).
 export const viewport: Viewport = {
   interactiveWidget: "resizes-content",
+  // Barre d'onglets fixe en bas (#335) : sans `cover`, `env(safe-area-inset-*)`
+  // vaut toujours 0 et la barre passerait sous l'indicateur d'accueil iOS. En
+  // contrepartie, la nav compense le haut et le <body> les côtés (paysage).
+  viewportFit: "cover",
   // Barre système (#71/#72) : vert brand en clair, charbon sombre en dark
   // (suit prefers-color-scheme de l'OS ; le toggle manuel ne pilote pas cette
   // meta, c'est un détail mineur acceptable).
@@ -85,7 +89,7 @@ export default function RootLayout({
         body en flex flex-col h-full : la NavBar prend sa hauteur naturelle,
         le contenu (children) remplit le reste via flex-1 sur chaque page.
       */}
-      <body className="flex min-h-full flex-col">
+      <body className="flex min-h-full flex-col pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
         {/* Anti-FOUC dark mode (#72) : pose data-theme avant le paint du body. */}
         <script dangerouslySetInnerHTML={{ __html: SCRIPT_THEME }} />
         {/* Skip link (WCAG 2.4.1) : visible uniquement au focus clavier,
@@ -101,8 +105,12 @@ export default function RootLayout({
           Notifications toast (sonner) — aux couleurs du design system via les
           variables CSS émises par le @theme de globals.css.
         */}
+        {/* Décalage bas = `--decalage-toasts` (globals.css) : au-dessus de la
+            barre d'onglets quand elle est affichée (#335), défaut sinon. */}
         <Toaster
           position="bottom-center"
+          offset={{ bottom: "var(--decalage-toasts)" }}
+          mobileOffset={{ bottom: "var(--decalage-toasts)" }}
           toastOptions={{
             style: {
               background: "var(--color-surface)",
@@ -123,6 +131,9 @@ export default function RootLayout({
         {/* Bandeau cookies (#236, US-30) — non bloquant, se rend lui-même en
             null tant qu'un choix (accepter/refuser) n'a pas été fait. */}
         <BandeauCookies />
+        {/* Barre d'onglets mobile (#335) — en dernier dans le flux : son
+            espaceur garde pied de page et bandeau cookies au-dessus d'elle. */}
+        <OngletsBas />
         {/* Vercel Analytics : mesure d'audience, sans cookie */}
         <Analytics />
         {/* Vercel Speed Insights : mesure des Core Web Vitals en réel */}

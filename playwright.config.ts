@@ -93,5 +93,8 @@ export default defineConfig({
     reuseExistingServer: !process.env.CI,
     // Marge pour le `next build` à froid en CI (compilation complète avant start).
     timeout: 180_000,
+    // Masque l'indicateur de dev Next, posé sur le 1er onglet du bas (#335,
+    // cf. next.config.ts). Fusionné avec process.env par Playwright.
+    env: { OMQ_E2E: "1" },
   },
 });

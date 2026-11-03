@@ -138,6 +138,15 @@
 /* Base : fond crème + texte vert très foncé (plus chaleureux que noir pur) */
 :root {
   color-scheme: light;
+  /* Décalage bas des toasts (sonner, app/layout.tsx) — 24px = défaut sonner. */
+  --decalage-toasts: 24px;
+}
+/* Barre d'onglets mobile affichée (#335, `OngletsBas`, md:hidden → < 48rem) :
+   les toasts remontent au-dessus d'elle (64px + marge + indicateur iOS). */
+@media (width < 48rem) {
+  :root:has([data-onglets-bas]) {
+    --decalage-toasts: calc(4.5rem + env(safe-area-inset-bottom));
+  }
 }
 body {
   background-color: var(--color-canvas);

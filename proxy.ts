@@ -136,6 +136,14 @@ export async function proxy(request: NextRequest) {
     if (!onboarde && pathname !== "/bienvenue") {
       return NextResponse.redirect(urlPreservantCode("/bienvenue", request))
     }
+    // Accueil d'un connecté (#335) : « / » est la vitrine publique (hero +
+    // « Générer mon planning »), sans objet une fois le compte ouvert. Logo,
+    // lien partagé ou favori ouvrent directement le prochain repas, quelle que
+    // soit l'heure (/ce-soir s'adapte : « Ce midi », repas du lendemain…).
+    // urlPreservantCode garde un éventuel lien d'invitation (?code=).
+    if (onboarde && pathname === "/") {
+      return NextResponse.redirect(urlPreservantCode("/ce-soir", request))
+    }
     if (onboarde && (pathname === "/bienvenue" || isAuthRoute)) {
       // Déjà connecté sur /login?suivant=… (#305) : retour à la demande OAuth
       // ou au lien profond /planning?cycle= (#320, RG-87).

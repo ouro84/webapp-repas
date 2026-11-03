@@ -75,6 +75,12 @@ const nextConfig: NextConfig = {
   // Sans effet en production.
   allowedDevOrigins: ["10.0.0.18"],
 
+  // Indicateur de dev Next (bas-gauche) masqué pour les e2e locaux (#335) : il
+  // recouvre le 1er onglet de la barre du bas (« Ce soir ») et intercepte les
+  // clics. `OMQ_E2E` est posé par le webServer de playwright.config.ts ; la CI
+  // tourne en `next start`, sans indicateur. Dev normal inchangé.
+  ...(process.env.OMQ_E2E ? { devIndicators: false as const } : {}),
+
   async headers() {
     return [{ source: "/:path*", headers: ENTETES_AVEC_CSP }];
   },

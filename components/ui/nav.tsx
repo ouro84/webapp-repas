@@ -1,19 +1,27 @@
 "use client";
 
-// Barre de navigation persistante — Client Component.
+// Navigation persistante — Client Components.
 //
 // Pourquoi "use client" ici ?
 // usePathname() lit l'URL courante dans le navigateur. C'est un hook React
 // qui ne peut pas s'exécuter côté serveur — d'où le Client Component.
-// Le layout.tsx parent reste lui un Server Component : seul ce petit morceau
-// interactif est "client".
+// Le layout.tsx parent reste lui un Server Component : seuls ces morceaux
+// interactifs sont "client".
+//
+// Deux barres (#335) :
+// - `NavBar` (haut, sticky) : marque + aide + profil à toutes les largeurs ;
+//   liens de section libellés à partir de `md:` seulement.
+// - `OngletsBas` (bas, fixe, sous `md:`) : les 4 destinations du quotidien,
+//   icône + libellé, sous le pouce. Remplace l'ex-nav mobile en icônes seules,
+//   illisible pour un nouvel utilisateur (6 cibles sur 7 sans texte) ; un
+//   burger aurait caché ces destinations derrière un tap de plus.
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   BookOpen,
   CalendarDays,
-  Clock,
+  ChefHat,
   HelpCircle,
   ShoppingCart,
   type LucideIcon,
@@ -24,16 +32,6 @@ import { useProfil } from "@/lib/profil";
 import { useEstConnecte } from "@/lib/session";
 import { libelleMomentActuel } from "@/lib/prochain-repas";
 import { estCheminOAuth } from "@/lib/redirection";
-
-// Chaque section porte une icône : sous `sm:` la nav n'affiche QUE l'icône
-// (cf. LienSection). Le libellé texte des 4 sections + le wordmark + l'aide +
-// l'avatar dépassaient la largeur d'un mobile 390 px → débordement horizontal
-// du body (la barre n'a ni wrap ni scroll interne).
-const LIENS: { href: string; label: string; Icone: LucideIcon }[] = [
-  { href: "/planning", label: "Planning", Icone: CalendarDays },
-  { href: "/courses", label: "Courses", Icone: ShoppingCart },
-  { href: "/recettes", label: "Recettes", Icone: BookOpen },
-];
 
 // Routes protégées (cf. proxy.ts) : le proxy y garantit une session → on peut
 // afficher la nav complète sans attendre le signal d'auth client (pas de
@@ -50,127 +48,109 @@ function estActif(pathname: string, href: string): boolean {
   return href === "/" ? pathname === "/" : pathname.startsWith(href);
 }
 
-// Lien de section (Planning / Courses / Recettes / Ce soir).
-//
-// Mobile-first : sous `sm:` seule l'ICÔNE est rendue — les 4 libellés texte,
-// additionnés au logo, à l'aide et à l'avatar, dépassaient 390 px de large et
-// faisaient déborder le body horizontalement (la barre n'a ni `flex-wrap` ni
-// scroll interne). Le texte réapparaît dès `sm:`.
-//
-// A11y : `aria-label` est posé EN PERMANENCE, pas seulement en icône. Le span
-// de libellé est masqué par `hidden` (= `display:none`), qui le retire aussi de
-// l'arbre d'accessibilité → sans aria-label le lien serait anonyme sur mobile
-// (l'icône est `aria-hidden`). Corollaire : le nom accessible reste identique
-// aux deux paliers, donc les e2e `getByRole("link", { name })` sont inchangés.
-function LienSection({
-  href,
-  label,
-  Icone,
-  actif,
-}: {
-  href: string;
-  label: string;
-  Icone: LucideIcon;
-  actif: boolean;
-}) {
+// Signal partagé par les deux barres.
+// - `masquee` : parcours focalisés, sans nav — tunnel d'onboarding (#22 PR2,
+//   aucune échappatoire tant que l'onboarding n'est pas terminé) et
+//   consentement OAuth (#305, une seule décision : autoriser ou refuser).
+// - `navApp` : nav applicative (sections + avatar) réservée aux connectés
+//   (#207). Tant que le signal d'auth est indéterminé (null), on retombe sur
+//   « suis-je sur une route protégée ? » : le proxy y garantit la session.
+function useEtatNav() {
+  const pathname = usePathname();
+  const estConnecte = useEstConnecte();
+  const masquee = pathname === "/bienvenue" || estCheminOAuth(pathname);
+  const surRouteProtegee = ROUTES_PROTEGEES.some((r) => pathname.startsWith(r));
+  return { pathname, masquee, navApp: estConnecte ?? surRouteProtegee };
+}
+
+type Section = { href: string; label: string; Icone: LucideIcon };
+
+// Sections de l'app. Libellé « Ce soir »/« Ce midi » dynamique (#279/#280) :
+// la page /ce-soir affiche le prochain repas ACTIF, qui peut être le déjeuner —
+// un libellé figé sur « Ce soir » serait faux le midi. Même seuil que
+// lib/prochain-repas.ts. Toque plutôt qu'horloge (#335) : `Clock` se lisait
+// « historique » ou « minuteur ».
+function sections(): Record<"ceSoir" | "planning" | "courses" | "recettes", Section> {
+  return {
+    ceSoir: { href: "/ce-soir", label: libelleMomentActuel(new Date()), Icone: ChefHat },
+    planning: { href: "/planning", label: "Planning", Icone: CalendarDays },
+    courses: { href: "/courses", label: "Courses", Icone: ShoppingCart },
+    recettes: { href: "/recettes", label: "Recettes", Icone: BookOpen },
+  };
+}
+
+// Lien de section de la barre du haut (`md:` et plus) : libellé texte seul,
+// la largeur n'y est pas contrainte.
+function LienSection({ href, label, actif }: Section & { actif: boolean }) {
   return (
     <Link
       href={href}
-      aria-label={label}
       aria-current={actif ? "page" : undefined}
       // after:-inset-y-2 : étend la zone tactile verticale à ≥ 44px
       // (inset-x-0 pour ne pas chevaucher le lien voisin, gap-1)
-      className={`relative flex items-center rounded-full px-3 py-1.5 text-sm font-medium transition-colors after:absolute after:inset-x-0 after:-inset-y-2 after:content-[''] sm:px-4 ${
+      className={`relative flex items-center whitespace-nowrap rounded-full px-4 py-1.5 text-sm font-medium transition-colors after:absolute after:inset-x-0 after:-inset-y-2 after:content-[''] ${
         actif ? "bg-primary text-white" : "text-brand-700 hover:bg-brand-50"
       }`}
     >
-      <Icone className="size-5 sm:hidden" aria-hidden="true" />
-      <span className="hidden whitespace-nowrap sm:inline">{label}</span>
+      {label}
     </Link>
   );
 }
 
 export function NavBar() {
-  const pathname = usePathname();
+  const { pathname, masquee, navApp } = useEtatNav();
   const accueil = estActif(pathname, "/");
   const profil = useProfil();
-  const estConnecte = useEstConnecte();
-  // Libellé dynamique (#suite #279/#280) : la page /ce-soir affiche le
-  // prochain repas ACTIF, qui peut être le déjeuner — un lien figé sur
-  // « Ce soir » serait faux le midi. Même seuil que lib/prochain-repas.ts.
-  const libelleCeSoir = libelleMomentActuel(new Date());
 
-  // Parcours focalisés, sans nav : tunnel d'onboarding (#22 PR2, aucune
-  // échappatoire tant que l'onboarding n'est pas terminé) et consentement
-  // OAuth (#305, une seule décision à prendre : autoriser ou refuser).
-  if (pathname === "/bienvenue" || estCheminOAuth(pathname)) return null;
+  if (masquee) return null;
 
-  // Nav applicative (liens de section + avatar) réservée aux connectés (#207).
-  // Tant que le signal d'auth est indéterminé (null), on retombe sur « suis-je
-  // sur une route protégée ? » : le proxy y garantit la session → nav complète
-  // sans attendre, donc aucun scintillement sur le chemin chaud.
-  const surRouteProtegee = ROUTES_PROTEGEES.some((r) => pathname.startsWith(r));
-  const afficherNavApp = estConnecte ?? surRouteProtegee;
+  const { ceSoir, planning, courses, recettes } = sections();
 
   return (
     <header role="banner">
       <nav
         aria-label="Navigation principale"
-        className="sticky top-0 z-50 border-b border-brand-100 bg-surface/90 backdrop-blur-sm"
+        // pt safe-area : PWA iOS en `viewportFit: "cover"` (#335).
+        className="sticky top-0 z-50 border-b border-brand-100 bg-surface/90 pt-[env(safe-area-inset-top)] backdrop-blur-sm"
       >
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
-          {/* Logo / accueil */}
+        <div className="mx-auto flex max-w-5xl items-center justify-between gap-2 px-4 py-3">
           {/* Logo / accueil — état actif sur « / » (#73, P20) : pastille de fond
-              (bg-brand-50), cohérente avec les liens actifs. La pilule entoure
-              le logo ET le wordmark, donc l'indice reste perceptible sur mobile
-              où le wordmark est masqué (sm:) et seul le mark subsiste.
-              aria-current annonce la page courante aux lecteurs d'écran. */}
+              (bg-brand-50), cohérente avec les liens actifs. aria-current
+              annonce la page courante aux lecteurs d'écran. Connecté, il mène
+              directement à /ce-soir (#335) : « / » n'est plus que la vitrine
+              publique (le proxy y redirige aussi un accès direct). Wordmark
+              visible à toutes les largeurs : la barre du haut n'a plus que
+              l'aide et l'avatar à côté. */}
           <Link
-            href="/"
+            href={navApp ? ceSoir.href : "/"}
             aria-label="On mange quoi ? — accueil"
             aria-current={accueil ? "page" : undefined}
-            className={`flex items-center gap-2 rounded-full px-2 py-1 font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 ${
+            className={`flex min-w-0 items-center gap-2 rounded-full px-2 py-1 font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 ${
               accueil
                 ? "bg-brand-50 text-brand-900"
                 : "text-brand-700 hover:text-brand-600"
             }`}
           >
-            <Logo className="size-6" />
+            <Logo className="size-6 shrink-0" />
             {/* Wordmark en Fredoka (#66, P14) — signature de marque */}
-            <span className="hidden font-display text-[1.05rem] sm:inline">
+            <span className="truncate font-display text-[1.05rem]">
               On mange quoi&nbsp;?
             </span>
           </Link>
 
-          {/* Liens de navigation */}
-          <div className="flex items-center gap-1">
-            {afficherNavApp ? (
+          <div className="flex shrink-0 items-center gap-1">
+            {navApp ? (
               <>
-                {LIENS.map(({ href, label, Icone }) => (
-                  <LienSection
-                    key={href}
-                    href={href}
-                    label={label}
-                    Icone={Icone}
-                    actif={estActif(pathname, href)}
-                  />
-                ))}
-                {/* Lien « Ce soir »/« Ce midi » (#suite #279/#280) : sorti de la
-                    boucle générique ci-dessus car son libellé est calculé
-                    (heure réelle), pas un texte statique — même style/logique
-                    active que les liens de section. */}
-                <LienSection
-                  href="/ce-soir"
-                  label={libelleCeSoir}
-                  Icone={Clock}
-                  actif={estActif(pathname, "/ce-soir")}
-                />
+                {/* Sections en haut à partir de `md:` seulement ; en dessous,
+                    elles vivent dans OngletsBas. Ordre desktop inchangé. */}
+                <div className="hidden items-center gap-1 md:flex">
+                  {[planning, courses, recettes, ceSoir].map((s) => (
+                    <LienSection key={s.href} {...s} actif={estActif(pathname, s.href)} />
+                  ))}
+                </div>
                 {/* Raccourci aide (audit critique, #97) : distinct de l'avatar —
                     déconnecté, la nav garde un vrai lien texte « Aide » (cf.
-                    branche ci-dessous), mais il disparaissait entièrement une
-                    fois connecté, reporté à un lien texte enfoui en bas de
-                    /profil. Icône seule (place limitée à côté des 4 sections +
-                    l'avatar), même style tactile que les liens de section. */}
+                    branche ci-dessous). Icône seule, même style tactile. */}
                 <Link
                   href="/aide"
                   aria-label="Aide"
@@ -220,5 +200,58 @@ export function NavBar() {
         </div>
       </nav>
     </header>
+  );
+}
+
+// Barre d'onglets du bas (#335), sous `md:` uniquement. Ordre = fréquence
+// d'usage : Ce soir (page d'arrivée, cf. proxy) · Planning · Courses ·
+// Recettes. Montée en fin de <body> (cf. app/layout.tsx) : l'espaceur, dans le
+// flux, garde le pied de page et le bandeau cookies au-dessus de la barre.
+// `data-onglets-bas` sert aussi de signal CSS pour remonter les toasts
+// (`--decalage-toasts`, app/globals.css).
+export function OngletsBas() {
+  const { pathname, masquee, navApp } = useEtatNav();
+  if (masquee || !navApp) return null;
+
+  const { ceSoir, planning, courses, recettes } = sections();
+
+  return (
+    <>
+      <div aria-hidden="true" className="h-[calc(4rem+env(safe-area-inset-bottom))] shrink-0 md:hidden" />
+      <nav
+        aria-label="Sections"
+        data-onglets-bas=""
+        className="fixed inset-x-0 bottom-0 z-40 border-t border-brand-100 bg-surface pb-[env(safe-area-inset-bottom)] md:hidden"
+      >
+        <ul className="mx-auto flex max-w-md">
+          {[ceSoir, planning, courses, recettes].map(({ href, label, Icone }) => {
+            const actif = estActif(pathname, href);
+            return (
+              <li key={href} className="min-w-0 flex-1">
+                <Link
+                  href={href}
+                  aria-current={actif ? "page" : undefined}
+                  className={`flex h-16 flex-col items-center justify-center gap-0.5 text-xs font-semibold transition-colors focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand-600 ${
+                    actif ? "text-brand-900" : "text-brand-700"
+                  }`}
+                >
+                  {/* Pastille d'état actif autour de l'icône (convention des
+                      barres d'onglets mobiles) : l'état se lit sans la couleur
+                      du texte seule. */}
+                  <span
+                    className={`flex h-7 w-14 items-center justify-center rounded-full transition-colors ${
+                      actif ? "bg-brand-100" : ""
+                    }`}
+                  >
+                    <Icone className="size-5" aria-hidden="true" />
+                  </span>
+                  <span className="max-w-full truncate px-1">{label}</span>
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      </nav>
+    </>
   );
 }
