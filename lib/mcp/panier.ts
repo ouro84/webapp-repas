@@ -1,12 +1,13 @@
-// Outils MCP du panier : prendre_demande_panier et rapporter_panier (#308, US-53,
-// RG-81→84), appelés par l'exécuteur du foyer (Hermes), et lancer_demande_panier
-// (#320, RG-85), appelé par l'assistant de l'utilisateur.
+// Outils MCP du panier : rapporter_panier (#308, US-53, RG-83, RG-84), appelé par
+// l'exécuteur du foyer (Hermes) sur /api/mcp/executeur, et lancer_demande_panier
+// (#320, RG-85), appelé par l'assistant de l'utilisateur sur /api/mcp. La prise de
+// la demande (`prendre_demande_panier`) vit dans `lib/mcp/executeur.ts` (#330).
 //
-// Sous le propre jeton OAuth de l'appelant : RLS
-// mon_foyer() (RG-71), jamais `service_role`. Toute la logique (expiration
-// paresseuse, une seule demande active, rapport tardif) vit dans les RPC
-// `prendre_demande_panier` et `rapporter_panier` ; ce module ne fait que
-// traduire leurs réponses et leurs codes d'erreur pour l'assistant.
+// Sous le propre jeton OAuth de l'appelant : RLS mon_foyer() (RG-71), jamais
+// `service_role`. Toute la logique (expiration paresseuse, une seule demande
+// active, rapport tardif) vit dans les RPC `rapporter_panier` et
+// `creer_demande_panier` ; ce module ne fait que traduire leurs réponses et
+// leurs codes d'erreur pour l'assistant.
 
 import { ErreurOutil } from "@/lib/mcp/erreurs"
 import { ancreDemandee } from "@/lib/mcp/lecture"
@@ -16,23 +17,6 @@ import { MESSAGES_PANIER, type RapportPanier } from "@/lib/panier"
 import { creerEtEnvoyerDemande, MESSAGE_TROP_DE_DEMANDES } from "@/lib/panier-demande"
 import { limitePanier } from "@/lib/rate-limit"
 import type { ClientSupabase } from "@/lib/supabase/types"
-
-export type DemandePrise = { id: string; ancre: string }
-
-/**
- * `prendre_demande_panier` : passe la plus ancienne demande `en_attente` du
- * foyer en `en_cours` et la renvoie. `{ demande: null }` s'il n'y a rien à
- * faire (webhook forgé, demande expirée, autre foyer) : l'exécuteur s'arrête.
- */
-export async function prendreDemandePanier(
-  supabase: ClientSupabase
-): Promise<{ demande: DemandePrise | null }> {
-  const { data, error } = await supabase.rpc("prendre_demande_panier")
-  if (error) throw new Error(`Prise de la demande de panier impossible : ${error.message}`)
-  if (!data) return { demande: null }
-  const { id, ancre } = data as DemandePrise
-  return { demande: { id, ancre } }
-}
 
 export type ArgsRapport = {
   demande_id: string

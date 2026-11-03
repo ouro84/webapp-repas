@@ -1,4 +1,4 @@
-// Outils MCP prendre_demande_panier, rapporter_panier (#308, RG-81→84) et
+// Outils MCP rapporter_panier (#308, RG-83, RG-84) et
 // lancer_demande_panier (#320, RG-85). Client injecté ; client navigateur
 // mocké pour lever (RG-71).
 
@@ -24,7 +24,7 @@ vi.mock("@/lib/supabase/client", () => ({
 }))
 
 import { ErreurOutil } from "@/lib/mcp/erreurs"
-import { lancerDemandePanierMcp, prendreDemandePanier, rapporterPanier } from "@/lib/mcp/panier"
+import { lancerDemandePanierMcp, rapporterPanier } from "@/lib/mcp/panier"
 import { MESSAGES_PANIER, type RapportPanier } from "@/lib/panier"
 import { creerSupabaseMock } from "@/tests/fixtures/supabase-mock"
 
@@ -35,30 +35,6 @@ const RAPPORT: RapportPanier = {
   a_choisir: [{ article: "farine", raison: "plusieurs formats", candidats: ["T45 1 kg", "T55 1 kg"] }],
   introuvables: [{ article: "estragon" }],
 }
-
-describe("prendreDemandePanier (RG-81)", () => {
-  it("prendre : null → { demande: null }", async () => {
-    const { client, rpcs } = creerSupabaseMock({ rpc: { prendre_demande_panier: { data: null, error: null } } })
-    expect(await prendreDemandePanier(client)).toEqual({ demande: null })
-    expect(rpcs.map((r) => r.nom)).toEqual(["prendre_demande_panier"])
-  })
-
-  it("prendre : renvoie id et ancre", async () => {
-    const { client } = creerSupabaseMock({
-      rpc: { prendre_demande_panier: { data: { id: DEMANDE, ancre: "2026-10-29" }, error: null } },
-    })
-    expect(await prendreDemandePanier(client)).toEqual({ demande: { id: DEMANDE, ancre: "2026-10-29" } })
-  })
-
-  it("prendre : erreur PostgREST → exception (masquée par le serveur)", async () => {
-    const { client } = creerSupabaseMock({
-      rpc: { prendre_demande_panier: { data: null, error: { message: "boom" } } },
-    })
-    const promesse = prendreDemandePanier(client)
-    await expect(promesse).rejects.toThrow("boom")
-    await expect(promesse).rejects.not.toBeInstanceOf(ErreurOutil)
-  })
-})
 
 describe("rapporterPanier (RG-83, RG-84)", () => {
   it("rapporter : transmet statut, rapport et motif à la RPC", async () => {

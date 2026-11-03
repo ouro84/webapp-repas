@@ -19,6 +19,22 @@ describe("/.well-known/oauth-protected-resource (RFC 9728)", () => {
     }
   })
 
+  it("le chemin suffixé de l’endpoint exécuteur renvoie resource = <origine>/api/mcp/executeur (#330)", async () => {
+    const reponse = await GET(new Request("https://omq.test/.well-known/oauth-protected-resource/api/mcp/executeur"))
+    expect(reponse.status).toBe(200)
+    const corps = await reponse.json()
+    expect(corps.resource).toBe("https://omq.test/api/mcp/executeur")
+    expect(corps.resource.endsWith("/api/mcp/executeur")).toBe(true)
+    expect(corps.authorization_servers).toEqual(["https://ref.supabase.co/auth/v1"])
+  })
+
+  it("tout autre suffixe garde resource = <origine>/api/mcp (#330)", async () => {
+    for (const chemin of ["/.well-known/oauth-protected-resource/api/mcp/autre", "/.well-known/oauth-protected-resource/n-importe-quoi"]) {
+      const corps = await (await GET(new Request(`https://omq.test${chemin}`))).json()
+      expect(corps.resource).toBe("https://omq.test/api/mcp")
+    }
+  })
+
   it("OPTIONS renvoie les en-têtes CORS", () => {
     const reponse = OPTIONS()
     expect(reponse.headers.get("Access-Control-Allow-Origin")).toBe("*")

@@ -3,7 +3,7 @@
 //
 // Chaque appel d'outil crée un client Supabase « par jeton » avec le jeton
 // OAuth de la requête (RG-71 : RLS mon_foyer(), jamais `service_role`) et
-// délègue à lib/mcp/lecture.ts, lib/mcp/ecriture-*.ts ou lib/mcp/panier.ts, avec la date du jour
+// délègue à lib/mcp/lecture.ts, lib/mcp/ecriture-*.ts, lib/mcp/panier.ts ou lib/mcp/executeur.ts (#330), avec la date du jour
 // à Paris (le serveur est en UTC). Noms d'outils en français `snake_case`.
 
 import type { CallToolResult, McpServer } from "@modelcontextprotocol/server"
@@ -15,7 +15,8 @@ import { chercherRecettes } from "@/lib/mcp/recherche-recettes"
 import { changerPersonnes, genererCycle, marquerRestesRepas, remplacerRepas } from "@/lib/mcp/ecriture-planning"
 import { ajouterRecette } from "@/lib/mcp/ecriture-recettes"
 import { ajouterArticleCourses, cocherArticle } from "@/lib/mcp/ecriture-courses"
-import { lancerDemandePanierMcp, prendreDemandePanier, rapporterPanier } from "@/lib/mcp/panier"
+import { cocherArticleDemande, prendreDemandeExecuteur } from "@/lib/mcp/executeur"
+import { lancerDemandePanierMcp, rapporterPanier } from "@/lib/mcp/panier"
 import { schemaRapport } from "@/lib/panier"
 import { limiteGeneration } from "@/lib/rate-limit"
 import { aujourdhuiParis } from "@/lib/semaines"
@@ -291,18 +292,35 @@ export function enregistrerOutilsEcriture(server: McpServer): void {
     async (args, ctx) =>
       executer(ctx, (supabase, userId) => lancerDemandePanierMcp(supabase, userId, args, aujourdhuiParis()))
   )
+}
 
-  // Outils de l'exécuteur de panier (#308, RG-81→84) : appelés par Hermes, pas
-  // par un humain. OMQ ne parle jamais à l'enseigne (RG-80).
+// Outils de l'exécuteur de panier (#308, #330, RG-81→84), sur l'endpoint dédié
+// /api/mcp/executeur : appelés par Hermes, pas par un humain. OMQ ne parle
+// jamais à l'enseigne (RG-80).
+export function enregistrerOutilsExecuteur(server: McpServer): void {
   server.registerTool(
     "prendre_demande_panier",
     {
       title: "Prendre la demande de panier",
       description:
-        "Réservé à l’exécuteur de panier du foyer, réveillé par le webhook : ne l’appelle jamais pour consulter l’état d’un panier. À appeler au réveil, dès réception du webhook « demande_panier » d'OMQ, avant toute autre action. Prend la demande de panier en attente du foyer et la marque en cours. Si la réponse est `demande: null`, il n'y a rien à faire : arrête-toi sans rien faire d'autre (webhook rejoué, demande expirée ou déjà prise). Sinon, `demande.id` sert à rapporter_panier, et `demande.ancre` (AAAA-MM-JJ) désigne le cycle de courses à traiter : passe-la en `ancre` à lire_liste_courses et à cocher_article.",
+        "À appeler en premier, avant toute autre action. Renvoie la demande et la liste à mettre au panier. Chaque article porte un `jeton` à recopier tel quel dans `jetons` de ajouter_au_panier. `demande: null` → arrête-toi.",
       inputSchema: z.object({}),
     },
-    async (_args, ctx) => executer(ctx, (supabase) => prendreDemandePanier(supabase))
+    async (_args, ctx) => executer(ctx, (supabase) => prendreDemandeExecuteur(supabase, aujourdhuiParis()))
+  )
+
+  server.registerTool(
+    "cocher_article_demande",
+    {
+      title: "Cocher un article de la demande",
+      description:
+        "Coche l'article juste après son ajout confirmé au panier. Le cycle vient de la demande prise : il n'y a pas d'`ancre`.",
+      inputSchema: z.object({
+        libelle: z.string().describe("Libellé de l'article, tel que renvoyé par prendre_demande_panier."),
+        quantite: z.string().optional().describe("Quantité exacte de l'article, ex. « 200 g », pour départager des homonymes."),
+      }),
+    },
+    async (args, ctx) => executer(ctx, (supabase) => cocherArticleDemande(supabase, args, aujourdhuiParis()))
   )
 
   server.registerTool(
@@ -310,7 +328,7 @@ export function enregistrerOutilsEcriture(server: McpServer): void {
     {
       title: "Rapporter le panier préparé",
       description:
-        "Réservé à l’exécuteur de panier du foyer, réveillé par le webhook : ne l’appelle jamais pour consulter l’état d’un panier. À appeler une seule fois, en fin de run, pour la demande prise par prendre_demande_panier. Avant de rapporter, coche chaque article dans OMQ avec cocher_article juste après l'avoir ajouté au panier de l'enseigne, pas en fin de run. `ajoutes` : articles mis au panier (produit, marque, quantité). `a_choisir` : articles à trancher par le foyer, avec la raison et 3 candidats au plus. `introuvables` : articles absents de l'enseigne. Les trois listes sont requises, même en échec : envoie des listes vides si rien n'a été fait. N'envoie aucun identifiant de produit ni aucun prix : ils sont refusés. `statut: \"echec\"` exige `motif`, une phrase lisible par le foyer. Si l'outil répond que la demande ne peut plus recevoir de rapport, arrête-toi sans réessayer.",
+        "Réservé à l’exécuteur de panier du foyer, réveillé par le webhook : ne l’appelle jamais pour consulter l’état d’un panier. À appeler une seule fois, en fin de run, pour la demande prise par prendre_demande_panier. Avant de rapporter, coche chaque article dans OMQ avec cocher_article_demande juste après l'avoir ajouté au panier de l'enseigne, pas en fin de run. `ajoutes` : articles mis au panier (produit, marque, quantité). `a_choisir` : articles à trancher par le foyer, avec la raison et 3 candidats au plus. `introuvables` : articles absents de l'enseigne. Les trois listes sont requises, même en échec : envoie des listes vides si rien n'a été fait. N'envoie aucun identifiant de produit ni aucun prix : ils sont refusés. `statut: \"echec\"` exige `motif`, une phrase lisible par le foyer. Si l'outil répond que la demande ne peut plus recevoir de rapport, arrête-toi sans réessayer.",
       inputSchema: schemaRapport.extend({
         demande_id: z.uuid().describe("Identifiant renvoyé par prendre_demande_panier (`demande.id`)."),
         statut: z
