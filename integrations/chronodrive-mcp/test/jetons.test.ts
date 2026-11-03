@@ -4,7 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { cleJeton, signerJeton, verifierJeton } from "../src/jetons.ts";
+import { cleJeton, lireJeton, signerJeton, verifierJeton } from "../src/jetons.ts";
 
 type Vecteur = { secret: string; demande_id: string; libelle: string; cle: string; exp: number; jeton: string };
 
@@ -89,5 +89,27 @@ test("formats invalides : format", () => {
   ];
   for (const jeton of cas) {
     assert.deepEqual(verifierJeton(v.secret, jeton, v.libelle, 0), { ok: false, raison: "format" }, jeton);
+  }
+});
+
+// `lireJeton` : format, expiration et demande, sans signature (le libellé d'un co-jeton de ligne
+// fusionnée est inconnu de chronodrive).
+test("lireJeton : jeton bien formé et non expiré → demandeId, signature non contrôlée", () => {
+  const v = vecteurs[0];
+  assert.deepEqual(lireJeton(v.jeton, (v.exp - 1) * 1000), { ok: true, demandeId: v.demande_id });
+  // Pile à exp : encore valide ; une milliseconde de plus : expiré.
+  assert.equal(lireJeton(v.jeton, v.exp * 1000).ok, true);
+  assert.deepEqual(lireJeton(v.jeton, v.exp * 1000 + 1), { ok: false, raison: "expire" });
+  // Un mac altéré mais bien formé passe : la signature n'est pas lue.
+  const [id, exp, mac] = v.jeton.split(".");
+  const altere = `${id}.${exp}.${mac.slice(0, -1)}${mac.endsWith("0") ? "1" : "0"}`;
+  assert.deepEqual(lireJeton(altere, (v.exp - 1) * 1000), { ok: true, demandeId: v.demande_id });
+});
+
+test("lireJeton : formats invalides → format (mêmes cas que verifierJeton)", () => {
+  const v = vecteurs[0];
+  const [id, exp, mac] = v.jeton.split(".");
+  for (const jeton of ["abc", "", `${id}.${exp}`, `${id}.${exp}.${mac}.extra`, `${id}.12abc.${mac}`, `${id}.${exp}.${mac.toUpperCase()}`, `.${exp}.${mac}`]) {
+    assert.deepEqual(lireJeton(jeton, 0), { ok: false, raison: "format" }, jeton);
   }
 });

@@ -33,20 +33,25 @@ export function signerJeton(secret: string, demandeId: string, libelle: string, 
   return `${demandeId}.${exp}.${mac(secret, demandeId, libelle, exp)}`;
 }
 
+// Découpe `<demande_id>.<exp>.<mac>` ; null si le format est invalide. Un uuid contient des tirets
+// mais pas de points : exactement trois parties.
+function decouper(jeton: string): { demandeId: string; exp: number; mac: string } | null {
+  const parties = jeton.split(".");
+  if (parties.length !== 3) return null;
+  const [demandeId, expTexte, macTexte] = parties;
+  if (demandeId === "" || !/^\d{1,15}$/.test(expTexte) || !/^[0-9a-f]{32}$/.test(macTexte)) return null;
+  return { demandeId, exp: Number(expTexte), mac: macTexte };
+}
+
 export function verifierJeton(
   secret: string,
   jeton: string,
   terme: string,
   maintenantMs: number,
 ): VerificationJeton {
-  // Un uuid contient des tirets mais pas de points : exactement trois parties.
-  const parties = jeton.split(".");
-  if (parties.length !== 3) return { ok: false, raison: "format" };
-  const [demandeId, expTexte, macRecu] = parties;
-  if (demandeId === "" || !/^\d{1,15}$/.test(expTexte) || !/^[0-9a-f]{32}$/.test(macRecu)) {
-    return { ok: false, raison: "format" };
-  }
-  const exp = Number(expTexte);
+  const lu = decouper(jeton);
+  if (!lu) return { ok: false, raison: "format" };
+  const { demandeId, exp, mac: macRecu } = lu;
 
   // Signature d'abord : un jeton forgé ne doit pas apprendre s'il aurait expiré.
   const attendu = Buffer.from(mac(secret, demandeId, terme, exp), "utf8");
@@ -56,4 +61,17 @@ export function verifierJeton(
   }
   if (maintenantMs > exp * 1000) return { ok: false, raison: "expire" };
   return { ok: true, demandeId };
+}
+
+// Lecture d'un jeton SANS contrôle de signature : format, expiration, demande. Pour les co-jetons
+// d'une ligne fusionnée de `ajouter_au_panier`, dont le libellé est inconnu de chronodrive (le
+// jeton ne le porte pas) : seul le jeton de `terme` est vérifié par `verifierJeton`.
+export function lireJeton(
+  jeton: string,
+  maintenantMs: number,
+): { ok: true; demandeId: string } | { ok: false; raison: "format" | "expire" } {
+  const lu = decouper(jeton);
+  if (!lu) return { ok: false, raison: "format" };
+  if (maintenantMs > lu.exp * 1000) return { ok: false, raison: "expire" };
+  return { ok: true, demandeId: lu.demandeId };
 }
