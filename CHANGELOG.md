@@ -14,6 +14,7 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ### Corrigé
 
+- Liste de courses : une case cochée juste après l’ouverture de la liste, pendant son chargement, n’était pas enregistrée et disparaissait au retour sur la liste (#339).
 - Liste de courses : le bouton « Générer mon cycle » n’apparaît plus quand la liste est remplie. Un clic involontaire, juste à côté de « Tout décocher », régénérait tout le cycle et effaçait les coches du foyer (#334).
 
 - Panier Chronodrive : une date en milieu de cycle envoyée directement à l’API est désormais résolue sur le bon cycle, donc un cycle terminé reste refusé et un cycle hors plage donne une erreur (#320).
