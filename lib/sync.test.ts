@@ -465,3 +465,74 @@ describe("appliquerGenerationCycle — écriture atomique sauvegarder_cycle (#30
     expect(localStorage.getItem("courses_cochees")).toBe(coches);
   });
 });
+
+describe("coche posée pendant l'hydratation d'un cycle (/courses)", () => {
+  // Régression : `chargerCycleDansCache` levait un drapeau d'hydratation pendant
+  // TOUT le chargement (planning, coches, articles manuels) et
+  // `surChangementCoches` ignorait toute écriture de coche tant qu'il était levé.
+  // Une coche faite pendant ce temps (ex. pendant la lecture des articles
+  // manuels) restait locale, jamais marquée dirty ni poussée — puis l'hydratation
+  // suivante l'écrasait par la base vide : coche perdue.
+  it("marque la coche dirty et la pousse sous l'ancre du cycle", async () => {
+    let libererArticles!: (v: unknown[]) => void;
+    persistance.chargerArticlesManuelsDistants.mockReturnValue(
+      new Promise((r) => {
+        libererArticles = r;
+      })
+    );
+    const { useSyncCourses } = await chargerSync();
+    const { storeCoches } = await import("@/lib/stockage");
+    const { renderHook, waitFor } = await import("@testing-library/react");
+
+    renderHook(() => useSyncCourses("2026-07-13"));
+    // Hydratation arrivée jusqu'aux articles manuels (coches distantes lues).
+    await waitFor(() => expect(persistance.chargerArticlesManuelsDistants).toHaveBeenCalled());
+
+    // L'utilisateur coche un article PENDANT la lecture des articles manuels.
+    storeCoches.ecrire(JSON.stringify({ "agneau|g": 300 }));
+    expect(localStorage.getItem("courses_dirty")).toBe("1");
+
+    libererArticles([]);
+    await waitFor(
+      () =>
+        expect(persistance.cocherArticleDistant).toHaveBeenCalledWith(
+          "2026-07-13",
+          "agneau|g",
+          300
+        ),
+      { timeout: 3000 }
+    );
+  });
+});
+
+describe("changement de cycle : les coches de l'ancien cycle ne fuient pas", () => {
+  it("une coche posée avant l'arrivée des coches distantes ne pousse que la nouvelle coche", async () => {
+    // Cycle précédent affiché, avec une coche déjà synchronisée.
+    localStorage.setItem("cycle_affiche", JSON.stringify({ ancre: "2026-07-06", longueur: 7 }));
+    localStorage.setItem("courses_cochees", JSON.stringify({ "lait|l": 1 }));
+    let libererCoches!: (v: Record<string, number>) => void;
+    persistance.chargerCochesDistantes.mockReturnValue(
+      new Promise((r) => {
+        libererCoches = r;
+      })
+    );
+    const { useSyncCourses } = await chargerSync();
+    const { storeCoches } = await import("@/lib/stockage");
+    const { renderHook, waitFor } = await import("@testing-library/react");
+
+    renderHook(() => useSyncCourses("2026-07-13"));
+    await waitFor(() => expect(persistance.chargerCochesDistantes).toHaveBeenCalledWith("2026-07-13"));
+
+    // L'ancien blob a été retiré dès le changement d'ancre.
+    expect(localStorage.getItem("courses_cochees")).toBeNull();
+    // Coche sur le NOUVEAU cycle pendant la lecture des coches distantes.
+    storeCoches.ecrire(JSON.stringify({ "pain|piece": 2 }));
+    libererCoches({});
+
+    await waitFor(
+      () => expect(persistance.cocherArticleDistant).toHaveBeenCalledWith("2026-07-13", "pain|piece", 2),
+      { timeout: 3000 }
+    );
+    expect(persistance.cocherArticleDistant).not.toHaveBeenCalledWith("2026-07-13", "lait|l", 1);
+  });
+});
