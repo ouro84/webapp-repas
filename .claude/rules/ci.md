@@ -39,6 +39,11 @@ Le job `playwright-cache` peuple le cache **une fois** ; `e2e` fait `actions/cac
 - Exception : `SUPABASE_ACCESS_TOKEN` (portée compte entier) est **dans le coffre Actions uniquement**, car le keep-alive ne tourne que sur `schedule` / `workflow_dispatch`.
 - Les secrets Upstash ne sont pas en CI (rate-limit volontairement NO-OP, cf. `next-react.md`).
 
+## Dependabot : majeures ignorées
+
+- `eslint` et `typescript` majeurs sont dans `ignore` (`.github/dependabot.yml`), chacun avec sa condition de retrait en commentaire. Pourquoi : leur majeure casse `eslint-config-next` / typescript-eslint, et une PR rouge ignorée pourrit des mois.
+- TS 7 est surveillé par `veille-typescript-7.yml` (mensuel, ~1 min) : il ouvre une issue quand typescript-eslint accepte 7.0.0. Retirer l'ignore et supprimer ce workflow dans la même PR.
+
 ## Incidents connus
 
 - **GitHub peut ne pas créer le run `push` d'un merge**, donc `migrate-prod` ne tourne pas et la prod reste en retard sur un code déjà déployé par Vercel. Relancer `gh workflow run CI --ref main`, puis vérifier le schéma prod via `scripts/query-supabase.mjs`.

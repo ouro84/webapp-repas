@@ -1,0 +1,70 @@
+# Veille TypeScript 7 — rappelle de retirer l'ignore Dependabot le moment venu
+#
+# `.github/dependabot.yml` ignore les majeures de `typescript` : TS 7 n'est pas
+# supporté par typescript-eslint (peer `typescript <6.1.0`), utilisé par
+# eslint-config-next. Ce workflow lit chaque mois le peer `typescript` de la
+# dernière version de typescript-eslint publiée sur npm. Dès qu'il accepte
+# 7.0.0, il ouvre une issue (une seule : pas de doublon tant qu'elle est
+# ouverte) pour retirer l'ignore.
+#
+# Fin de vie : supprimer ce fichier dans la PR qui retire l'ignore.
+
+name: Veille TypeScript 7
+
+on:
+  schedule:
+    # Le 1er de chaque mois, 08:00 UTC (fréquence mensuelle suffisante)
+    - cron: "0 8 1 * *"
+  workflow_dispatch: # déclenchement manuel pour test
+
+permissions:
+  issues: write
+
+jobs:
+  verifier:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Vérifier le support de TS 7 par typescript-eslint
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TITRE: "Retirer l'ignore Dependabot de TypeScript 7"
+        run: |
+          set -euo pipefail
+
+          version="$(npm view typescript-eslint@latest version)"
+          plage="$(npm view typescript-eslint@latest peerDependencies.typescript)"
+          echo "typescript-eslint ${version} : peer typescript = '${plage}'"
+
+          # semver -r affiche la version et sort en 0 si elle satisfait la plage,
+          # sort en 1 sinon. Version épinglée pour un résultat reproductible.
+          if ! npx --yes semver@7.7.2 -r "${plage}" 7.0.0 > /dev/null; then
+            echo "TS 7 pas encore supporté. Rien à faire ce mois-ci."
+            exit 0
+          fi
+
+          echo "TS 7 supporté par typescript-eslint ${version}."
+
+          existante="$(gh issue list --state open --search "in:title \"${TITRE}\"" --json number --jq '.[0].number // empty')"
+          if [ -n "${existante}" ]; then
+            echo "Issue #${existante} déjà ouverte, pas de doublon."
+            exit 0
+          fi
+
+          # Heredoc quoté : les backticks Markdown ne sont pas interprétés par
+          # le shell. Les deux valeurs dynamiques passent par printf.
+          gabarit="$(cat <<'EOF'
+          typescript-eslint %s accepte désormais TypeScript 7 (peer `typescript: '%s'`).
+
+          À faire, dans une seule PR :
+          1. Retirer la règle `ignore` de `typescript` dans `.github/dependabot.yml`.
+          2. Supprimer `.github/workflows/veille-typescript-7.yml` et son entrée dans `.claude/rules/ci.md`.
+          3. Vérifier que `eslint-config-next` tire bien cette version de typescript-eslint, puis laisser Dependabot ouvrir la PR TS 7 et exiger une CI verte (lint, `tsc`, `next build`, e2e).
+
+          Ouvert automatiquement par le workflow « Veille TypeScript 7 ».
+          EOF
+          )"
+          # shellcheck disable=SC2059
+          corps="$(printf "${gabarit}" "${version}" "${plage}")"
+          gh issue create --title "${TITRE}" --label chore --body "${corps}"
