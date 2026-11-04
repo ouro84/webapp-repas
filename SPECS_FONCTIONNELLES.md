@@ -783,6 +783,17 @@ Réduire à zéro l'effort de planification hebdomadaire des repas, du choix des
 > **When** je demande à l'assistant de prévenir un proche  
 > **Then** il lui envoie la liste des repas dans le format que j'ai défini, avec le lien vers le planning du cycle, et ne le fait jamais sans mon ordre (RG-86)
 
+### US-55 — Trouver son chemin sur mobile (#335)
+
+> **En tant que** nouvel utilisateur qui n'utilise l'app que sur son téléphone, je veux **voir où mènent les boutons de navigation**, sans avoir à deviner le sens d'une icône.
+
+> **Given** je suis connecté, sur un écran de moins de 768 px  
+> **Then** une barre d'onglets en bas d'écran affiche **Ce soir · Planning · Courses · Recettes**, chacun avec une icône et son libellé, l'onglet de la page courante mis en évidence ; le haut d'écran affiche le nom de l'app, l'aide et mon profil (RG-88)
+
+> **Given** je suis connecté  
+> **When** j'ouvre l'adresse de l'app ou je touche le logo  
+> **Then** j'arrive sur le prochain repas (/ce-soir), quelle que soit l'heure (RG-88)
+
 ---
 
 ## 5. Modèle de données
@@ -998,6 +1009,13 @@ Le planning s'affiche en grille 7 colonnes (une par jour). Chaque cellule contie
 ### RG-08 — Vue mobile (< 768px)
 
 Le planning s'affiche en liste verticale : une ligne par jour, avec les slots empilés verticalement pour le week-end.
+
+### RG-88 — Navigation mobile et page d'arrivée (US-55, #335)
+
+- **Sous 768 px**, les sections vivent dans une **barre d'onglets fixe en bas d'écran**, icône + libellé : Ce soir (libellé « Ce midi » avant 14 h) · Planning · Courses · Recettes, dans l'ordre de fréquence d'usage. Pas de menu burger : il cacherait des destinations quotidiennes derrière un tap de plus. Le haut d'écran garde le logo et le nom de l'app, l'aide et le profil. Les notifications s'affichent au-dessus de la barre ; la barre respecte la zone de l'indicateur d'accueil des iPhone.
+- **À partir de 768 px**, rien ne change : sections libellées dans la barre du haut, pas de barre d'onglets.
+- **Page d'arrivée d'un connecté** : l'adresse racine `/` redirige vers `/ce-soir` (le logo y mène aussi directement) ; `/` reste la vitrine des visiteurs non connectés. Un code d'invitation présent dans l'URL est conservé par la redirection.
+- La barre d'onglets n'apparaît ni déconnecté, ni pendant l'onboarding (`/bienvenue`), ni sur l'écran de consentement d'un assistant (`/oauth/*`).
 
 ### RG-09 — États de l'interface
 

@@ -500,7 +500,14 @@ test("une sélection manuelle conserve les coches de la liste de courses (RG-15/
   await selecteur
     .getByRole("searchbox", { name: "Rechercher une recette" })
     .fill(nomRecetteLundi);
-  await selecteur.locator("ul button", { hasText: nomRecetteLundi }).first().click();
+  // Nom EXACT, pas `hasText` (sous-chaîne) : « Omelette » matcherait aussi
+  // « Omelette aux champignons » → autre recette, quantités changées, coche
+  // légitimement invalidée (RG-12) — échec aléatoire selon la génération.
+  await selecteur
+    .locator("ul button")
+    .filter({ has: page.getByText(nomRecetteLundi, { exact: true }) })
+    .first()
+    .click();
   await expect(page.getByText("Recette remplacée")).toBeVisible();
 
   // La coche a survécu au remplacement (pas de réinitialisation, RG-13).
