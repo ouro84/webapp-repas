@@ -223,6 +223,9 @@ export type ArticleManuel = {
   categorie: CategorieIngredient;
   fondDePlacard: boolean;
   coche: boolean;
+  // `updated_at` serveur : ordonne les échos Realtime (un écho pas plus récent
+  // est ignoré). Absent = inconnu, tout écho s'applique.
+  majLe?: string;
 };
 
 // Forme DB (snake_case) de la table `article_manuel`.
@@ -237,6 +240,7 @@ export type DbArticleManuel = {
   fond_de_placard: boolean;
   coche: boolean;
   cree_le: string;
+  updated_at: string; // horloge serveur (trigger set_updated_at)
 };
 
 export type LignesCourses = {

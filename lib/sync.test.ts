@@ -26,15 +26,26 @@ const persistance = vi.hoisted(() => ({
   purgerCyclesAvant: vi.fn(),
   sauvegarderSlotsDistant: vi.fn(),
   sauvegarderCycleDistant: vi.fn(),
+  basculerCocheArticleManuelDistant: vi.fn(),
+  viderCochesArticlesManuelsDistantes: vi.fn(),
+  creerArticleManuelDistant: vi.fn(),
 }));
 vi.mock("@/lib/persistance", () => persistance);
 
-// Client Supabase Realtime — stub no-op (les abonnements sont fire-and-forget
-// dans hydrater/chargerSemaineDansCache ; on ne teste pas le temps réel ici).
+// Rappels `postgres_changes` enregistrés par les abonnements : un test peut
+// ainsi rejouer un événement Realtime (ex. l'écho d'une écriture).
+type RappelRealtime = { filtre: { table?: string }; rappel: (payload: unknown) => void };
+const realtime = vi.hoisted(() => ({ rappels: [] as RappelRealtime[] }));
+
+// Client Supabase Realtime — stub (les abonnements sont fire-and-forget dans
+// hydrater/chargerSemaineDansCache) ; les rappels sont seulement mémorisés.
 vi.mock("@/lib/supabase/client", () => ({
   createClient: () => {
     const canal: Record<string, unknown> = {};
-    canal.on = () => canal;
+    canal.on = (_type: string, filtre: RappelRealtime["filtre"], rappel: RappelRealtime["rappel"]) => {
+      realtime.rappels.push({ filtre, rappel });
+      return canal;
+    };
     canal.subscribe = () => canal;
     canal.presenceState = () => ({});
     canal.track = async () => {};
@@ -64,6 +75,7 @@ async function chargerSync() {
 
 beforeEach(() => {
   localStorage.clear();
+  realtime.rappels.length = 0;
   for (const fn of Object.values(persistance)) fn.mockReset();
   persistance.chargerFoyerId.mockResolvedValue("foyer-1");
   persistance.chargerCochesDistantes.mockResolvedValue({});
@@ -534,5 +546,365 @@ describe("changement de cycle : les coches de l'ancien cycle ne fuient pas", () 
       { timeout: 3000 }
     );
     expect(persistance.cocherArticleDistant).not.toHaveBeenCalledWith("2026-07-13", "lait|l", 1);
+  });
+});
+
+describe("coche d'un article manuel : clics rapides et échos Realtime", () => {
+  // Régression (e2e « cocher puis tout décocher un article manuel ») : chaque
+  // clic lançait son UPDATE sans attendre le précédent, et l'écho Realtime de
+  // chaque écriture était appliqué tel quel. L'écho d'une écriture dépassée
+  // redécochait l'article à l'écran, et deux UPDATE validés dans le désordre
+  // laissaient en base l'inverse du dernier geste.
+  const ANCRE = "2026-07-13";
+
+  function differe() {
+    let resoudre!: () => void;
+    let rejeter!: (erreur: Error) => void;
+    const promesse = new Promise<void>((r, j) => {
+      resoudre = r;
+      rejeter = j;
+    });
+    return { promesse, resoudre, rejeter };
+  }
+
+  async function preparer() {
+    persistance.chargerArticlesManuelsDistants.mockResolvedValue([
+      {
+        id: "a1",
+        libelle: "Sacs poubelle",
+        quantite: null,
+        unite: null,
+        categorie: "autre",
+        fondDePlacard: false,
+        coche: false,
+      },
+    ]);
+    const sync = await chargerSync();
+    const { renderHook, waitFor, act } = await import("@testing-library/react");
+    renderHook(() => sync.useSyncCourses(ANCRE));
+    const { result } = renderHook(() => sync.useArticlesManuels());
+    await waitFor(() => expect(result.current).toHaveLength(1));
+    await waitFor(() =>
+      expect(realtime.rappels.some((r) => r.filtre.table === "article_manuel")).toBe(true)
+    );
+    const coche = () => result.current[0].coche;
+    const echo = (valeur: boolean) =>
+      act(() => {
+        const abonnement = realtime.rappels.find((r) => r.filtre.table === "article_manuel")!;
+        abonnement.rappel({
+          eventType: "UPDATE",
+          new: {
+            id: "a1",
+            foyer_id: "foyer-1",
+            ancre: ANCRE,
+            libelle: "Sacs poubelle",
+            categorie: "autre",
+            fond_de_placard: false,
+            coche: valeur,
+          },
+          old: {},
+        });
+      });
+    return { sync, waitFor, act, coche, echo };
+  }
+
+  it("l'écho Realtime d'une écriture dépassée ne redécoche pas l'article", async () => {
+    persistance.basculerCocheArticleManuelDistant.mockReturnValue(new Promise(() => {}));
+    const { sync, act, coche, echo } = await preparer();
+
+    act(() => {
+      void sync.basculerCocheArticleManuel("a1"); // coché
+      void sync.basculerCocheArticleManuel("a1"); // décoché
+      void sync.basculerCocheArticleManuel("a1"); // coché
+    });
+    echo(false); // écho du 2e clic, arrivé après le 3e
+
+    expect(coche()).toBe(true);
+  });
+
+  it("des clics rapides n'envoient qu'une écriture à la fois, et la dernière valeur gagne", async () => {
+    const ecritures: ReturnType<typeof differe>[] = [];
+    persistance.basculerCocheArticleManuelDistant.mockImplementation(() => {
+      const d = differe();
+      ecritures.push(d);
+      return d.promesse;
+    });
+    const { sync, waitFor, act, coche } = await preparer();
+
+    act(() => {
+      void sync.basculerCocheArticleManuel("a1"); // coché
+      void sync.basculerCocheArticleManuel("a1"); // décoché
+    });
+    expect(persistance.basculerCocheArticleManuelDistant).toHaveBeenCalledTimes(1);
+    expect(persistance.basculerCocheArticleManuelDistant).toHaveBeenLastCalledWith("a1", true);
+
+    ecritures[0].resoudre();
+    await waitFor(() =>
+      expect(persistance.basculerCocheArticleManuelDistant).toHaveBeenCalledTimes(2)
+    );
+    expect(persistance.basculerCocheArticleManuelDistant).toHaveBeenLastCalledWith("a1", false);
+    ecritures[1].resoudre();
+    await act(async () => {});
+    expect(persistance.basculerCocheArticleManuelDistant).toHaveBeenCalledTimes(2);
+    expect(coche()).toBe(false);
+  });
+
+  it("« Tout décocher » pendant une coche en vol finit décoché en base", async () => {
+    const premiere = differe();
+    persistance.basculerCocheArticleManuelDistant
+      .mockReturnValueOnce(premiere.promesse)
+      .mockResolvedValue(undefined);
+    persistance.viderCochesArticlesManuelsDistantes.mockResolvedValue([]);
+    const { sync, waitFor, act, coche } = await preparer();
+
+    act(() => {
+      void sync.basculerCocheArticleManuel("a1"); // coché, écriture en vol
+    });
+    await act(async () => {
+      await sync.viderCochesArticlesManuels();
+    });
+    premiere.resoudre(); // l'UPDATE « coché » est validé APRÈS le décochage global
+
+    await waitFor(() =>
+      expect(persistance.basculerCocheArticleManuelDistant).toHaveBeenLastCalledWith("a1", false)
+    );
+    expect(coche()).toBe(false);
+  });
+
+  it("une coche posée pendant « Tout décocher » en vol n'est écrite qu'après lui", async () => {
+    const vidage = differe();
+    persistance.viderCochesArticlesManuelsDistantes.mockReturnValue(vidage.promesse.then(() => []));
+    persistance.basculerCocheArticleManuelDistant.mockResolvedValue(undefined);
+    const { sync, waitFor, act } = await preparer();
+
+    act(() => {
+      void sync.viderCochesArticlesManuels();
+      void sync.basculerCocheArticleManuel("a1"); // coché juste après
+    });
+    expect(persistance.basculerCocheArticleManuelDistant).not.toHaveBeenCalled();
+
+    vidage.resoudre();
+    await waitFor(() =>
+      expect(persistance.basculerCocheArticleManuelDistant).toHaveBeenCalledWith("a1", true)
+    );
+  });
+
+  it("échec d'écriture : la coche revient au dernier état confirmé et l'erreur remonte", async () => {
+    persistance.basculerCocheArticleManuelDistant.mockRejectedValue(new Error("réseau"));
+    const { sync, act, coche } = await preparer();
+
+    let erreur: unknown;
+    await act(async () => {
+      await sync.basculerCocheArticleManuel("a1").catch((e: unknown) => {
+        erreur = e;
+      });
+    });
+
+    expect(erreur).toBeInstanceOf(Error);
+    expect(coche()).toBe(false);
+  });
+});
+
+describe("articles manuels : lecture du cycle concurrente d'une saisie", () => {
+  // Régression (e2e « cocher puis tout décocher un article manuel ») : la
+  // lecture des articles manuels lancée par le chargement de /courses pouvait
+  // revenir APRÈS un ajout ou une coche de l'utilisateur, et remplaçait tout
+  // le store par son instantané périmé : coche effacée, ou article ajouté qui
+  // disparaissait. Même schéma que la coche perdue de #339, côté articles.
+  const ANCRE = "2026-07-13";
+  const SACS = {
+    id: "a1",
+    libelle: "Sacs poubelle",
+    quantite: null,
+    unite: null,
+    categorie: "autre" as const,
+    fondDePlacard: false,
+    coche: false,
+  };
+
+  async function demarrerLecturePendante() {
+    let libererLecture!: (liste: (typeof SACS)[]) => void;
+    persistance.chargerArticlesManuelsDistants.mockReturnValueOnce(
+      new Promise((r) => {
+        libererLecture = r;
+      })
+    );
+    persistance.creerArticleManuelDistant.mockResolvedValue(SACS);
+    persistance.basculerCocheArticleManuelDistant.mockReturnValue(new Promise(() => {}));
+    const sync = await chargerSync();
+    const { renderHook, waitFor, act } = await import("@testing-library/react");
+    renderHook(() => sync.useSyncCourses(ANCRE));
+    const { result } = renderHook(() => sync.useArticlesManuels());
+    await waitFor(() => expect(persistance.chargerArticlesManuelsDistants).toHaveBeenCalled());
+    await act(async () => {
+      await sync.ajouterArticleManuel({
+        libelle: "Sacs poubelle",
+        quantite: null,
+        unite: null,
+        categorie: "autre",
+        fondDePlacard: false,
+      });
+    });
+    return { sync, result, waitFor, act, libererLecture };
+  }
+
+  it("une coche posée pendant la lecture n'est pas écrasée par son résultat", async () => {
+    persistance.chargerArticlesManuelsDistants.mockResolvedValue([SACS]);
+    const { sync, result, waitFor, act, libererLecture } = await demarrerLecturePendante();
+
+    act(() => {
+      void sync.basculerCocheArticleManuel("a1"); // coché, écriture en vol
+    });
+    await act(async () => {
+      libererLecture([SACS]); // instantané lu avant la coche
+    });
+
+    await waitFor(() => expect(result.current).toHaveLength(1));
+    expect(result.current[0].coche).toBe(true);
+  });
+
+  it("un article ajouté pendant une lecture qui ne le contient pas reste affiché", async () => {
+    persistance.chargerArticlesManuelsDistants.mockResolvedValue([SACS]);
+    const { result, act, libererLecture } = await demarrerLecturePendante();
+
+    await act(async () => {
+      libererLecture([]); // lecture partie avant l'insertion
+    });
+    await act(async () => {});
+
+    expect(result.current.map((a) => a.id)).toEqual(["a1"]);
+  });
+});
+
+describe("articles manuels : ajout déjà rapporté par la lecture du cycle", () => {
+  // Régression : une lecture partie juste après l'insertion rapporte déjà
+  // l'article ; `ajouterArticleManuel` l'ajoutait une seconde fois (même id,
+  // même clé React) et la case affichée ne suivait plus l'état du store.
+  it("n'ajoute pas un second exemplaire d'un article déjà présent", async () => {
+    const sacs = {
+      id: "a1",
+      libelle: "Sacs poubelle",
+      quantite: null,
+      unite: null,
+      categorie: "autre" as const,
+      fondDePlacard: false,
+      coche: false,
+    };
+    let libererCreation!: (article: typeof sacs) => void;
+    persistance.creerArticleManuelDistant.mockReturnValue(
+      new Promise((r) => {
+        libererCreation = r;
+      })
+    );
+    persistance.chargerArticlesManuelsDistants.mockResolvedValue([sacs]);
+    const sync = await chargerSync();
+    const { renderHook, waitFor, act } = await import("@testing-library/react");
+    renderHook(() => sync.useSyncCourses("2026-07-13"));
+    const { result } = renderHook(() => sync.useArticlesManuels());
+    await waitFor(() => expect(result.current).toHaveLength(1)); // lecture : déjà là
+
+    await act(async () => {
+      const ajout = sync.ajouterArticleManuel({
+        libelle: "Sacs poubelle",
+        quantite: null,
+        unite: null,
+        categorie: "autre",
+        fondDePlacard: false,
+      });
+      libererCreation(sacs);
+      await ajout;
+    });
+
+    expect(result.current.map((a) => a.id)).toEqual(["a1"]);
+  });
+});
+
+describe("articles manuels : ordre des échos Realtime (horloge serveur updated_at)", () => {
+  // Régression : le temps réel ne garantit pas l'ordre de livraison. L'écho
+  // INSERT de la création (coche false) arrivait APRÈS l'écho de la coche, une
+  // fois l'écriture terminée, et redécochait l'article. Un écho n'est appliqué
+  // que s'il est strictement plus récent que l'état connu.
+  const ANCRE = "2026-07-13";
+  const T_CREATION = "2026-07-13T10:00:00.000+00:00";
+  const T_COCHE = "2026-07-13T10:00:01.000+00:00";
+  const T_AUTRE_MEMBRE = "2026-07-13T10:00:05.000+00:00";
+
+  async function preparer() {
+    persistance.chargerArticlesManuelsDistants.mockResolvedValue([
+      {
+        id: "a1",
+        libelle: "Sacs poubelle",
+        quantite: null,
+        unite: null,
+        categorie: "autre",
+        fondDePlacard: false,
+        coche: false,
+        majLe: T_CREATION,
+      },
+    ]);
+    const sync = await chargerSync();
+    const { renderHook, waitFor, act } = await import("@testing-library/react");
+    renderHook(() => sync.useSyncCourses(ANCRE));
+    const { result } = renderHook(() => sync.useArticlesManuels());
+    await waitFor(() => expect(result.current).toHaveLength(1));
+    await waitFor(() =>
+      expect(realtime.rappels.some((r) => r.filtre.table === "article_manuel")).toBe(true)
+    );
+    const echo = (eventType: "INSERT" | "UPDATE", coche: boolean, updatedAt: string) =>
+      act(() => {
+        realtime.rappels
+          .find((r) => r.filtre.table === "article_manuel")!
+          .rappel({
+            eventType,
+            new: {
+              id: "a1",
+              foyer_id: "foyer-1",
+              ancre: ANCRE,
+              libelle: "Sacs poubelle",
+              categorie: "autre",
+              fond_de_placard: false,
+              coche,
+              updated_at: updatedAt,
+            },
+            old: {},
+          });
+      });
+    return { sync, result, act, echo };
+  }
+
+  it("l'écho INSERT tardif de la création ne redécoche pas un article coché depuis", async () => {
+    persistance.basculerCocheArticleManuelDistant.mockResolvedValue(T_COCHE);
+    const { sync, result, act, echo } = await preparer();
+
+    await act(async () => {
+      await sync.basculerCocheArticleManuel("a1"); // écriture terminée
+    });
+    echo("INSERT", false, T_CREATION); // livré après coup
+
+    expect(result.current[0].coche).toBe(true);
+  });
+
+  it("l'écho d'une coche antérieure ne contredit pas « Tout décocher »", async () => {
+    persistance.basculerCocheArticleManuelDistant.mockResolvedValue(T_COCHE);
+    persistance.viderCochesArticlesManuelsDistantes.mockResolvedValue([
+      { id: "a1", majLe: "2026-07-13T10:00:02.000+00:00" },
+    ]);
+    const { sync, result, act, echo } = await preparer();
+
+    await act(async () => {
+      await sync.basculerCocheArticleManuel("a1");
+      await sync.viderCochesArticlesManuels();
+    });
+    echo("UPDATE", true, T_COCHE); // écho de la coche, livré après le décochage
+
+    expect(result.current[0].coche).toBe(false);
+  });
+
+  it("un changement plus récent d'un autre membre est appliqué", async () => {
+    const { result, echo } = await preparer();
+
+    echo("UPDATE", true, T_AUTRE_MEMBRE);
+
+    expect(result.current[0].coche).toBe(true);
   });
 });

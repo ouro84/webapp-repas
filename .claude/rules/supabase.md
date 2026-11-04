@@ -36,7 +36,7 @@ paths:
 - **Écritures directes sous RLS** quand une opération = une ligne : coches (`etat_courses_article`), `article_manuel`, `recette`, `recette_masquee`, `recette_preference`.
 - **Les RPC de planning refusent un `recette_id` hors catalogue global et hors foyer** (`exiger_recettes_visibles`, appelée avant toute écriture par `sauvegarder_planning` / `sauvegarder_slots` / `sauvegarder_cycle`). Pourquoi : `SECURITY DEFINER` contourne la RLS de `recette` ; sans ce contrôle, un client plaçait la recette d'un autre foyer dans son planning. Une recette masquée reste acceptée.
 - **Grants d'une nouvelle RPC** : `revoke execute … from public` **et** `from anon`, puis `grant … to authenticated`. Pourquoi : Supabase accorde explicitement `execute` à `anon` sur les nouvelles fonctions du schéma `public`, que `revoke from public` ne retire pas.
-- `planning.version` est incrémenté par la RPC ; `updated_at` est posé par trigger (cf. `sync-planning.md`).
+- `planning.version` est incrémenté par la RPC ; `updated_at` est posé par trigger `set_updated_at()` (cf. `sync-planning.md`), comme sur `etat_courses_article`, `cycle_courses` et `article_manuel`. Une écriture directe dont le client doit ordonner les échos Realtime relit cette colonne (`.select("updated_at")`, cf. `courses-cycle.md`).
 - **PostgREST rejette tout `UPDATE` sans clause WHERE** (`21000: UPDATE requires a WHERE clause`), même quand la RLS bornerait déjà le résultat. Ajouter un filtre qui matche les lignes visibles (ex. `.not("id","is",null)`).
 
 ## Fonctions `SECURITY DEFINER`
