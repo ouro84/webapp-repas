@@ -27,6 +27,14 @@ updates:
       # règle quand eslint-config-next supportera ESLint 10.
       - dependency-name: "eslint"
         update-types: ["version-update:semver-major"]
+      # TypeScript 7 (portage natif Go) casse l'outillage : typescript-eslint
+      # (utilisé par eslint-config-next) déclare le peer `typescript <6.1.0`
+      # (PR #286 fermée, CI rouge). Les patchs 6.0.x passent toujours par le
+      # groupe. Retirer cette règle quand typescript-eslint acceptera TS 7 :
+      # le workflow `veille-typescript-7.yml` ouvre alors une issue, et il est
+      # à supprimer dans la même PR.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
 
   # GitHub Actions (.github/workflows)
   - package-ecosystem: "github-actions"
