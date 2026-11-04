@@ -100,7 +100,11 @@ describe("cocherArticle (RG-77, RG-10, RG-12)", () => {
     liste([ing("Bougies", 0, "piece", { categorie: "autre", source: "manuel", id: "a1", coche: false })])
     const { client, appels } = mock()
     await cocherArticle(client, { libelle: "bougies" }, JEUDI)
-    expect(appels.find((a) => a.table === "article_manuel")!.ops).toEqual([["update", { coche: true }], ["eq", "id", "a1"]])
+    expect(appels.find((a) => a.table === "article_manuel")!.ops).toEqual([
+      ["update", { coche: true }],
+      ["eq", "id", "a1"],
+      ["select", "updated_at"],
+    ])
   })
 
   it("coche: false décoche (delete de la ligne)", async () => {
@@ -156,7 +160,11 @@ describe("cocherArticle (RG-77, RG-10, RG-12)", () => {
     const { client, appels } = mock()
     const resultat = await cocherArticle(client, { libelle: "piles" }, JEUDI)
     expect(resultat).toMatchObject({ modifie: true })
-    expect(appels.find((a) => a.table === "article_manuel")!.ops).toEqual([["update", { coche: true }], ["eq", "id", "a2"]])
+    expect(appels.find((a) => a.table === "article_manuel")!.ops).toEqual([
+      ["update", { coche: true }],
+      ["eq", "id", "a2"],
+      ["select", "updated_at"],
+    ])
   })
 
   it("homonymes indiscernables tous déjà cochés : modifie false, rien écrit", async () => {

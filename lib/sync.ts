@@ -305,11 +305,45 @@ export function useArticlesManuels(): ArticleManuel[] {
 // résolu pour une ancre quittée entre-temps (navigation rapide) est ignoré.
 let ancreArticlesManuelsChargee: string | null = null;
 
+// Écriture de coche en vol, par article : une seule à la fois. `voulu` suit le
+// dernier geste, `confirme` la dernière valeur validée en base.
+type EcritureCoche = { voulu: boolean; confirme: boolean };
+const ecrituresCoche = new Map<string, EcritureCoche>();
+// « Tout décocher » en vol : une écriture de coche attend sa fin.
+let vidageCochesEnVol: Promise<unknown> | null = null;
+
+// Incrémenté à chaque saisie locale (ajout, modification, coche, suppression,
+// « Tout décocher ») : une lecture distante qui chevauche une saisie est périmée.
+let saisiesArticlesManuels = 0;
+
+// Lectures au plus : la première, plus deux relectures si l'utilisateur saisit
+// pendant la lecture. Au-delà, on applique quand même (coches en vol protégées).
+const LECTURES_ARTICLES_MAX = 3;
+
+/** Charge les articles manuels de l'ancre dans le store.
+ *
+ *  La lecture peut revenir APRÈS un ajout ou une coche de l'utilisateur (elle
+ *  part pendant le chargement de /courses, liste déjà utilisable). Pourquoi
+ *  ne pas l'appliquer telle quelle : son instantané périmé effaçait la coche
+ *  ou l'article ajouté (même schéma que la coche perdue de #339). Donc :
+ *  relecture si une saisie a eu lieu pendant la lecture, et coche locale
+ *  conservée pour un article dont l'écriture de coche est encore en vol. */
 async function chargerArticlesManuelsDansCache(ancre: string): Promise<void> {
   ancreArticlesManuelsChargee = ancre;
   try {
-    const liste = await chargerArticlesManuelsDistants(ancre);
-    if (ancreArticlesManuelsChargee === ancre) definirArticlesManuels(liste);
+    for (let lecture = 1; ; lecture++) {
+      const saisiesAvant = saisiesArticlesManuels;
+      const liste = await chargerArticlesManuelsDistants(ancre);
+      if (ancreArticlesManuelsChargee !== ancre) return;
+      if (saisiesAvant !== saisiesArticlesManuels && lecture < LECTURES_ARTICLES_MAX) continue;
+      definirArticlesManuels(
+        liste.map((article) => {
+          const local = articlesManuels.find((a) => a.id === article.id);
+          return local && ecrituresCoche.has(article.id) ? { ...article, coche: local.coche } : article;
+        })
+      );
+      return;
+    }
   } catch (erreur) {
     console.error("Chargement des articles manuels échoué.", erreur);
   }
@@ -320,7 +354,15 @@ export async function ajouterArticleManuel(saisie: SaisieArticleManuel): Promise
   const ancre = ancreActive();
   if (ancre === null) return;
   const cree = await creerArticleManuelDistant(ancre, saisie);
-  definirArticlesManuels([...articlesManuels, cree]);
+  saisiesArticlesManuels++;
+  // Upsert par id, comme `surEventArticleManuel` : la lecture du cycle (ou
+  // l'écho INSERT) a pu rapporter l'article avant le retour de l'insertion.
+  // Un doublon partageait la clé React et la case ne suivait plus l'état.
+  definirArticlesManuels(
+    articlesManuels.some((a) => a.id === cree.id)
+      ? articlesManuels.map((a) => (a.id === cree.id ? cree : a))
+      : [...articlesManuels, cree]
+  );
 }
 
 /** Modifie un article manuel EN PLACE (RG-43 bis) : conserve id et coché. */
@@ -328,12 +370,14 @@ export async function modifierArticleManuel(
   id: string,
   saisie: SaisieArticleManuel
 ): Promise<void> {
-  await modifierArticleManuelDistant(id, saisie);
+  const majLe = await modifierArticleManuelDistant(id, saisie);
+  saisiesArticlesManuels++;
   definirArticlesManuels(
     articlesManuels.map((a) =>
       a.id === id
         ? {
             ...a,
+            majLe: majLe ?? a.majLe,
             libelle: saisie.libelle,
             quantite: saisie.quantite,
             unite: saisie.unite,
@@ -345,24 +389,74 @@ export async function modifierArticleManuel(
   );
 }
 
-/** Bascule l'état coché d'un article manuel (colonne dédiée, indépendante du
- *  blob de coches RG-12). Optimiste : revert local si l'écriture échoue. */
-export async function basculerCocheArticleManuel(id: string): Promise<void> {
-  const article = articlesManuels.find((a) => a.id === id);
-  if (!article) return;
-  const coche = !article.coche;
+// Horloge serveur d'un article (`updated_at`), en ms ; 0 = inconnue.
+function majArticle(article: ArticleManuel | undefined): number {
+  return article?.majLe ? Date.parse(article.majLe) : 0;
+}
+
+// Retient l'`updated_at` renvoyé par une de nos écritures : tout écho qui
+// n'est pas plus récent sera ignoré. Ce n'est pas une saisie : pas de
+// `saisiesArticlesManuels++`, la coche et les champs ne changent pas.
+function retenirMajArticle(id: string, majLe: string | null | undefined): void {
+  if (!majLe) return;
+  const local = articlesManuels.find((a) => a.id === id);
+  if (!local || Date.parse(majLe) <= majArticle(local)) return;
+  definirArticlesManuels(articlesManuels.map((a) => (a.id === id ? { ...a, majLe } : a)));
+}
+
+function definirCocheLocale(id: string, coche: boolean): void {
+  saisiesArticlesManuels++;
   definirArticlesManuels(articlesManuels.map((a) => (a.id === id ? { ...a, coche } : a)));
+}
+
+/** Bascule l'état coché d'un article manuel (colonne dédiée, indépendante du
+ *  blob de coches RG-12). Optimiste : la coche locale change tout de suite.
+ *
+ *  Une seule écriture en vol par article : des clics rapides sont regroupés
+ *  et seule la dernière valeur voulue part ensuite, dans l'ordre. Pourquoi :
+ *  des UPDATE concurrents peuvent être validés dans le désordre, et la base
+ *  gardait alors l'inverse du dernier geste. Pendant l'écriture, les échos
+ *  Realtime ne touchent pas la coche (`surEventArticleManuel`).
+ *
+ *  Échec : revert au dernier état confirmé, puis rethrow. Seul l'appel qui a
+ *  ouvert l'écriture le reçoit (un clic regroupé résout tout de suite), pour
+ *  un seul toast par échec. */
+export function basculerCocheArticleManuel(id: string): Promise<void> {
+  const article = articlesManuels.find((a) => a.id === id);
+  if (!article) return Promise.resolve();
+  const coche = !article.coche;
+  definirCocheLocale(id, coche);
+  const enVol = ecrituresCoche.get(id);
+  if (enVol) {
+    enVol.voulu = coche;
+    return Promise.resolve();
+  }
+  const ecriture: EcritureCoche = { voulu: coche, confirme: article.coche };
+  ecrituresCoche.set(id, ecriture);
+  return ecrireCocheEnSerie(id, ecriture);
+}
+
+async function ecrireCocheEnSerie(id: string, ecriture: EcritureCoche): Promise<void> {
   try {
-    await basculerCocheArticleManuelDistant(id, coche);
+    while (ecriture.voulu !== ecriture.confirme) {
+      if (vidageCochesEnVol) await vidageCochesEnVol.catch(() => {});
+      const valeur = ecriture.voulu;
+      const majLe = await basculerCocheArticleManuelDistant(id, valeur);
+      ecriture.confirme = valeur;
+      retenirMajArticle(id, majLe);
+    }
   } catch (erreur) {
-    definirArticlesManuels(articlesManuels.map((a) => (a.id === id ? { ...a, coche: !coche } : a)));
+    definirCocheLocale(id, ecriture.confirme);
     throw erreur;
+  } finally {
+    ecrituresCoche.delete(id);
   }
 }
 
 /** Supprime un article manuel (RG-42). */
 export async function supprimerArticleManuel(id: string): Promise<void> {
   await supprimerArticleManuelDistant(id);
+  saisiesArticlesManuels++;
   definirArticlesManuels(articlesManuels.filter((a) => a.id !== id));
 }
 
@@ -381,19 +475,29 @@ export async function viderCochesArticlesManuels(): Promise<void> {
   const ancre = ancreActive();
   if (ancre === null) return;
   const avant = articlesManuels;
+  saisiesArticlesManuels++;
   definirArticlesManuels(articlesManuels.map((a) => ({ ...a, coche: false })));
+  // Une coche en vol pourrait être validée APRÈS ce décochage : on lui
+  // demande de finir sur « décoché » (elle réécrit false au besoin).
+  for (const ecriture of ecrituresCoche.values()) ecriture.voulu = false;
+  const vidage = viderCochesArticlesManuelsDistantes(ancre);
+  vidageCochesEnVol = vidage;
   try {
-    await viderCochesArticlesManuelsDistantes(ancre);
+    for (const { id, majLe } of await vidage) retenirMajArticle(id, majLe);
   } catch (erreur) {
     definirArticlesManuels(avant);
     throw erreur;
+  } finally {
+    if (vidageCochesEnVol === vidage) vidageCochesEnVol = null;
   }
 }
 
 // Applique un event Realtime article_manuel au store (INSERT/UPDATE = upsert
 // par id, DELETE = retrait). Idempotent vis-à-vis de nos propres écritures
 // (déjà appliquées localement par les fonctions ci-dessus) : ré-appliquer le
-// même contenu ne change rien d'observable.
+// même contenu ne change rien d'observable. Exception : pendant une écriture
+// de coche en vol, l'écho peut venir d'une écriture dépassée, donc la coche
+// locale est conservée (cf. basculerCocheArticleManuel).
 function surEventArticleManuel(
   foyer: string,
   ancre: string,
@@ -423,8 +527,18 @@ function surEventArticleManuel(
     categorie: (ligne.categorie as ArticleManuel["categorie"]) ?? "autre",
     fondDePlacard: Boolean(ligne.fond_de_placard),
     coche: Boolean(ligne.coche),
+    majLe: typeof ligne.updated_at === "string" ? ligne.updated_at : undefined,
   };
-  const existe = articlesManuels.some((a) => a.id === article.id);
+  // Le temps réel ne garantit pas l'ordre de livraison : un écho qui n'est pas
+  // strictement plus récent que l'état connu (ex. INSERT de la création livré
+  // après la coche) est périmé, on l'ignore. Horloge serveur, cf. migration
+  // 20261104120000_article_manuel_updated_at.
+  const connu = articlesManuels.find((a) => a.id === article.id);
+  if (connu && article.majLe && Date.parse(article.majLe) <= majArticle(connu)) return;
+  // Écriture de coche en vol : l'écho peut être celui d'une écriture dépassée,
+  // la coche locale (dernier geste) fait foi jusqu'à la fin de l'écriture.
+  if (connu && ecrituresCoche.has(article.id)) article.coche = connu.coche;
+  const existe = connu !== undefined;
   definirArticlesManuels(
     existe
       ? articlesManuels.map((a) => (a.id === article.id ? article : a))
@@ -1482,6 +1596,8 @@ async function chargerCycleDansCache(
     }
     // Articles manuels (#216) : scopés par la même ancre, pas de dirty-first
     // (aucune file offline — chaque mutation écrit en base immédiatement).
+    // Une saisie faite pendant la lecture n'est pas écrasée par son résultat
+    // (relecture + coche en vol conservée, cf. chargerArticlesManuelsDansCache).
     await chargerArticlesManuelsDansCache(ancre);
     definirEtat("synchronise");
   } catch (erreur) {

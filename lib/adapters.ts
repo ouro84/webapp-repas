@@ -113,6 +113,7 @@ export function dbArticleManuelToDomain(db: DbArticleManuel): ArticleManuel {
     categorie: db.categorie,
     fondDePlacard: db.fond_de_placard,
     coche: db.coche,
+    majLe: db.updated_at,
   }
 }
 

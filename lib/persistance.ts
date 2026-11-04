@@ -389,7 +389,7 @@ export async function definirLongueurCycle(ancre: string, longueur: number): Pro
 // ---------------------------------------------------------------------------
 
 const SELECT_ARTICLE_MANUEL =
-  "id, libelle, quantite, unite, categorie, fond_de_placard, coche" as const
+  "id, libelle, quantite, unite, categorie, fond_de_placard, coche, updated_at" as const
 
 /** Articles manuels d'une ancre de cycle, dans leur ordre de création. */
 export async function chargerArticlesManuelsDistants(
@@ -440,13 +440,14 @@ export async function creerArticleManuelDistant(
   return dbArticleManuelToDomain(data as unknown as DbArticleManuel)
 }
 
-/** Modifie un article manuel EN PLACE (RG-43 bis) : conserve id et état coché. */
+/** Modifie un article manuel EN PLACE (RG-43 bis) : conserve id et état coché.
+ *  Renvoie l'`updated_at` serveur de l'écriture (null si aucune ligne visible). */
 export async function modifierArticleManuelDistant(
   id: string,
   saisie: SaisieArticleManuel
-): Promise<void> {
+): Promise<string | null> {
   const supabase = createClient()
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("article_manuel")
     .update({
       libelle: saisie.libelle,
@@ -456,21 +457,29 @@ export async function modifierArticleManuelDistant(
       fond_de_placard: saisie.fondDePlacard,
     })
     .eq("id", id)
+    .select("updated_at")
   if (error) {
     throw new Error(`Modification de l'article manuel impossible : ${error.message}`)
   }
+  return (data as { updated_at: string }[] | null)?.[0]?.updated_at ?? null
 }
 
-/** Bascule l'état coché d'un article manuel (colonne dédiée, pas le blob RG-12). */
+/** Bascule l'état coché d'un article manuel (colonne dédiée, pas le blob RG-12).
+ *  Renvoie l'`updated_at` serveur de l'écriture (null si aucune ligne visible). */
 export async function basculerCocheArticleManuelDistant(
   id: string,
   coche: boolean,
   supabase: ClientSupabase = clientParDefaut()
-): Promise<void> {
-  const { error } = await supabase.from("article_manuel").update({ coche }).eq("id", id)
+): Promise<string | null> {
+  const { data, error } = await supabase
+    .from("article_manuel")
+    .update({ coche })
+    .eq("id", id)
+    .select("updated_at")
   if (error) {
     throw new Error(`Cochage de l'article manuel impossible : ${error.message}`)
   }
+  return (data as { updated_at: string }[] | null)?.[0]?.updated_at ?? null
 }
 
 /** Supprime un article manuel (RG-42, icône corbeille). */
@@ -483,14 +492,22 @@ export async function supprimerArticleManuelDistant(id: string): Promise<void> {
 }
 
 /** Décoche tous les articles manuels d'une ancre (« Tout décocher », RG-41 :
- *  décoche SANS supprimer, contrairement aux ingrédients dérivés). */
-export async function viderCochesArticlesManuelsDistantes(ancre: string): Promise<void> {
+ *  décoche SANS supprimer, contrairement aux ingrédients dérivés).
+ *  Renvoie l'`updated_at` serveur de chaque ligne décochée. */
+export async function viderCochesArticlesManuelsDistantes(
+  ancre: string
+): Promise<{ id: string; majLe: string }[]> {
   const supabase = createClient()
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("article_manuel")
     .update({ coche: false })
     .eq("ancre", ancre)
+    .select("id, updated_at")
   if (error) {
     throw new Error(`Décochage des articles manuels impossible : ${error.message}`)
   }
+  return ((data ?? []) as { id: string; updated_at: string }[]).map((l) => ({
+    id: l.id,
+    majLe: l.updated_at,
+  }))
 }

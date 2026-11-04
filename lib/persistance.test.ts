@@ -249,6 +249,11 @@ describe("écritures — client injecté (#306)", () => {
   it("basculerCocheArticleManuelDistant met à jour la coche de l'article", async () => {
     const { client, appels } = creerSupabaseMock()
     await basculerCocheArticleManuelDistant("a1", true, client)
-    expect(appels).toEqual([{ table: "article_manuel", ops: [["update", { coche: true }], ["eq", "id", "a1"]] }])
+    expect(appels).toEqual([
+      {
+        table: "article_manuel",
+        ops: [["update", { coche: true }], ["eq", "id", "a1"], ["select", "updated_at"]],
+      },
+    ])
   })
 })
