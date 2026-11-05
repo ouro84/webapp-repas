@@ -61,14 +61,28 @@ test("à 320 px, ni la barre du haut ni les onglets ne débordent (#335)", async
   }
 });
 
-test("desktop : pas d'onglets en bas, sections libellées en haut (#335)", async ({ page }) => {
+test("desktop : pas d'onglets en bas, sections libellées en haut dans l'ordre mobile (#335, #351)", async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto("/planning");
   await expect(onglets(page)).toBeHidden();
   const haut = page.getByRole("navigation", { name: "Navigation principale" });
-  for (const nom of ["Planning", "Courses", "Recettes"]) {
-    await expect(haut.getByRole("link", { name: nom })).toBeVisible();
-  }
+  // Seuls les 4 liens de section (logo, aide et avatar exclus) ; « Ce midi »
+  // ou « Ce soir » selon l'heure du run.
+  const sectionsHaut = haut.getByRole("link", {
+    name: /^(Ce (midi|soir)|Planning|Courses|Recettes)$/,
+  });
+  await expect(sectionsHaut).toHaveText([
+    /^Ce (midi|soir)$/,
+    "Planning",
+    "Courses",
+    "Recettes",
+  ]);
+  await expect(haut.getByRole("link", { name: "Planning" })).toHaveAttribute(
+    "aria-current",
+    "page"
+  );
 });
 
 test("un connecté qui ouvre « / » arrive sur le prochain repas (#335)", async ({ page }) => {

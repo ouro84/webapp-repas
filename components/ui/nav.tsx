@@ -65,18 +65,25 @@ function useEtatNav() {
 
 type Section = { href: string; label: string; Icone: LucideIcon };
 
-// Sections de l'app. Libellé « Ce soir »/« Ce midi » dynamique (#279/#280) :
-// la page /ce-soir affiche le prochain repas ACTIF, qui peut être le déjeuner —
-// un libellé figé sur « Ce soir » serait faux le midi. Même seuil que
-// lib/prochain-repas.ts. Toque plutôt qu'horloge (#335) : `Clock` se lisait
-// « historique » ou « minuteur ».
-function sections(): Record<"ceSoir" | "planning" | "courses" | "recettes", Section> {
-  return {
-    ceSoir: { href: "/ce-soir", label: libelleMomentActuel(new Date()), Icone: ChefHat },
-    planning: { href: "/planning", label: "Planning", Icone: CalendarDays },
-    courses: { href: "/courses", label: "Courses", Icone: ShoppingCart },
-    recettes: { href: "/recettes", label: "Recettes", Icone: BookOpen },
-  };
+// Page d'arrivée d'un connecté (#335) : cible du logo et première section.
+const HREF_CE_SOIR = "/ce-soir";
+
+// Sections de l'app, DANS L'ORDRE D'AFFICHAGE, commun aux deux barres (#351) :
+// fréquence d'usage — Ce soir (page d'arrivée) · Planning · Courses · Recettes.
+// Aucune barre ne réordonne localement : deux ordres différents déroutaient en
+// passant d'un appareil à l'autre.
+// Libellé « Ce soir »/« Ce midi » dynamique (#279/#280) : la page /ce-soir
+// affiche le prochain repas ACTIF, qui peut être le déjeuner — un libellé figé
+// sur « Ce soir » serait faux le midi. Même seuil que lib/prochain-repas.ts.
+// Toque plutôt qu'horloge (#335) : `Clock` se lisait « historique » ou
+// « minuteur ».
+function sections(): Section[] {
+  return [
+    { href: HREF_CE_SOIR, label: libelleMomentActuel(new Date()), Icone: ChefHat },
+    { href: "/planning", label: "Planning", Icone: CalendarDays },
+    { href: "/courses", label: "Courses", Icone: ShoppingCart },
+    { href: "/recettes", label: "Recettes", Icone: BookOpen },
+  ];
 }
 
 // Lien de section de la barre du haut (`md:` et plus) : libellé texte seul,
@@ -104,8 +111,6 @@ export function NavBar() {
 
   if (masquee) return null;
 
-  const { ceSoir, planning, courses, recettes } = sections();
-
   return (
     <header role="banner">
       <nav
@@ -122,7 +127,7 @@ export function NavBar() {
               visible à toutes les largeurs : la barre du haut n'a plus que
               l'aide et l'avatar à côté. */}
           <Link
-            href={navApp ? ceSoir.href : "/"}
+            href={navApp ? HREF_CE_SOIR : "/"}
             aria-label="On mange quoi ? — accueil"
             aria-current={accueil ? "page" : undefined}
             className={`flex min-w-0 items-center gap-2 rounded-full px-2 py-1 font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 ${
@@ -142,9 +147,10 @@ export function NavBar() {
             {navApp ? (
               <>
                 {/* Sections en haut à partir de `md:` seulement ; en dessous,
-                    elles vivent dans OngletsBas. Ordre desktop inchangé. */}
+                    elles vivent dans OngletsBas. Même ordre que les onglets,
+                    tel que donné par sections() (#351). */}
                 <div className="hidden items-center gap-1 md:flex">
-                  {[planning, courses, recettes, ceSoir].map((s) => (
+                  {sections().map((s) => (
                     <LienSection key={s.href} {...s} actif={estActif(pathname, s.href)} />
                   ))}
                 </div>
@@ -203,17 +209,14 @@ export function NavBar() {
   );
 }
 
-// Barre d'onglets du bas (#335), sous `md:` uniquement. Ordre = fréquence
-// d'usage : Ce soir (page d'arrivée, cf. proxy) · Planning · Courses ·
-// Recettes. Montée en fin de <body> (cf. app/layout.tsx) : l'espaceur, dans le
+// Barre d'onglets du bas (#335), sous `md:` uniquement. Ordre = celui de
+// sections(), partagé avec la barre du haut (#351). Montée en fin de <body> (cf. app/layout.tsx) : l'espaceur, dans le
 // flux, garde le pied de page et le bandeau cookies au-dessus de la barre.
 // `data-onglets-bas` sert aussi de signal CSS pour remonter les toasts
 // (`--decalage-toasts`, app/globals.css).
 export function OngletsBas() {
   const { pathname, masquee, navApp } = useEtatNav();
   if (masquee || !navApp) return null;
-
-  const { ceSoir, planning, courses, recettes } = sections();
 
   return (
     <>
@@ -224,7 +227,7 @@ export function OngletsBas() {
         className="fixed inset-x-0 bottom-0 z-40 border-t border-brand-100 bg-surface pb-[env(safe-area-inset-bottom)] md:hidden"
       >
         <ul className="mx-auto flex max-w-md">
-          {[ceSoir, planning, courses, recettes].map(({ href, label, Icone }) => {
+          {sections().map(({ href, label, Icone }) => {
             const actif = estActif(pathname, href);
             return (
               <li key={href} className="min-w-0 flex-1">
