@@ -2272,4 +2272,22 @@ describe("vague finale de la synchro temps réel (#355)", () => {
     expect(localStorage.getItem("planning_a_relire")).toBe("2020-W01");
     vue.unmount();
   });
+
+  // --- A3 : vue Cycle, repas ajouté sur un jour absent du cache ---
+  it("modifierSlotDistant sur un jour absent du cache : jour inséré à sa place (cache ET confirmé), puis poussé", async () => {
+    const cinqJours = ["lundi", "mardi", "mercredi", "jeudi", "vendredi"] as const;
+    const { sync, semaine, storePlanning } = await monterPlanning((s) => semaineDe(s, cinqJours));
+    const samedi: JourPlanning = { jour: "samedi", diner: recette("cycle") };
+
+    await sync.modifierSlotDistant(semaine, samedi);
+
+    const ordre = [...cinqJours, "samedi"];
+    expect(cache().jours.map((jp) => jp.jour)).toEqual(ordre);
+    expect(jourDe(cache(), "samedi")).toEqual(samedi);
+    expect(confirme()).toEqual(cache());
+    // L'édition suivante en vue Semaine pousse la semaine AVEC le samedi.
+    stepperLundi(storePlanning, 4);
+    const pousse = await dernierPush();
+    expect(jourDe(pousse, "samedi")?.diner?.id).toBe("cycle");
+  });
 });

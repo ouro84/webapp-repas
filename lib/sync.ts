@@ -2165,14 +2165,10 @@ export async function modifierSlotDistant(
     if (semaine === localStorage.getItem(CLE_SEMAINE)) {
       localStorage.setItem(CLE_MAJ, maj);
       // L'instantané confirmé suit la base, comme le cache (jumeau, #355).
-      patcherConfirme(semaine, (jours) =>
-        jours.map((jp) => (jp.jour === jourPlanning.jour ? jourPlanning : jp))
-      );
+      patcherConfirme(semaine, (jours) => remplacerOuInsererJour(jours, jourPlanning));
       const local = planningLocal();
       if (local && local.semaine === semaine) {
-        const jours = local.jours.map((jp) =>
-          jp.jour === jourPlanning.jour ? jourPlanning : jp
-        );
+        const jours = remplacerOuInsererJour(local.jours, jourPlanning);
         // Restaure la valeur précédente (et non `false`) : une relecture
         // (chargerSemaineDansCache) peut tenir la garde pendant son `await`.
         const gardeAvant = hydratationEnCours;
@@ -2187,6 +2183,23 @@ export async function modifierSlotDistant(
   } finally {
     terminerEcriturePlanning();
   }
+}
+
+// Remplace le jour édité, ou l'insère à sa place (lundi → dimanche) s'il est
+// absent (#355) : une semaine partielle (jour sans aucun créneau) n'a pas ce
+// jour en cache. Ignoré, un repas ajouté depuis la vue Cycle sur ce jour
+// manquait au cache, et le push suivant (`sauvegarder_planning`, toute la
+// semaine) le supprimait en base. Même placement que `fusionnerJoursGeneres`.
+function remplacerOuInsererJour(
+  jours: JourPlanning[],
+  jourPlanning: JourPlanning
+): JourPlanning[] {
+  const parJour = new Map(jours.map((jp) => [jp.jour, jp] as const));
+  parJour.set(jourPlanning.jour, jourPlanning);
+  return ORDRE_JOURS.flatMap((jour) => {
+    const jp = parJour.get(jour);
+    return jp ? [jp] : [];
+  });
 }
 
 /**
