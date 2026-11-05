@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest"
 import {
   ancreCourante, ancreDeSemaine, ancreParDefaut, cycleDecale, joursDuCycle, semainesDuCycle,
   cycleTermine, dateVersSemaineJour, datesCycle, estDateISO, libelleCycle, cyclesSelectionnables, LONGUEUR_DEFAUT,
+  CYCLES_PASSES, CYCLES_FUTURS,
   planningDuCycle, planningGenereParSemaine, remplacerJourDansSemaines,
 } from "@/lib/cycles"
 import type { JourPlanning, Planning } from "@/types"
@@ -96,6 +97,16 @@ describe("cyclesSelectionnables", () => {
     const opts = cyclesSelectionnables(new Date("2026-07-09T10:00:00"), 4)
     expect(opts).toHaveLength(19) // 12 passées + courante + 6 futures
     expect(opts.find((o) => o.offset === 0)?.ancre).toBe("2026-07-09")
+  })
+  // Source unique des bornes (#352) : /courses et la vue Cycle de /planning
+  // bornent leur navigateur avec les mêmes constantes.
+  it("défauts = CYCLES_PASSES / CYCLES_FUTURS (12 / 6)", () => {
+    expect(CYCLES_PASSES).toBe(12)
+    expect(CYCLES_FUTURS).toBe(6)
+    const opts = cyclesSelectionnables(new Date("2026-07-09T10:00:00"), 4)
+    expect(opts).toHaveLength(CYCLES_PASSES + CYCLES_FUTURS + 1)
+    expect(opts[0].offset).toBe(-CYCLES_PASSES)
+    expect(opts[opts.length - 1].offset).toBe(CYCLES_FUTURS)
   })
 })
 

@@ -13,6 +13,11 @@ import type { Jour, Planning, JourPlanning } from "@/types"
 export const LONGUEUR_DEFAUT = 7
 export const LONGUEUR_MAX = 14
 
+// Plage de navigation entre cycles, autour du cycle courant (#352) : source
+// unique pour /courses, la vue Cycle de /planning et `cyclesSelectionnables`.
+export const CYCLES_PASSES = 12
+export const CYCLES_FUTURS = 6
+
 // ISO : lundi = 1 … dimanche = 7 (Date.getDay renvoie 0 pour dimanche).
 const JOURS_ISO: Jour[] = [
   "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche",
@@ -139,7 +144,7 @@ export function libelleCycle(ancre: string, longueur: number): string {
 
 /** Plage de cycles navigables (miroir de semainesSelectionnables). */
 export function cyclesSelectionnables(
-  aujourdhui: Date, jourCourses: number, passe = 12, futur = 6,
+  aujourdhui: Date, jourCourses: number, passe = CYCLES_PASSES, futur = CYCLES_FUTURS,
 ): { ancre: string; offset: number }[] {
   const courante = ancreCourante(aujourdhui, jourCourses)
   const options: { ancre: string; offset: number }[] = []

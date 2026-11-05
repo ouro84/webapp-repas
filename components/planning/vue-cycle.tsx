@@ -44,7 +44,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   ancreCourante,
-  ancreParDefaut,
+  CYCLES_FUTURS,
+  CYCLES_PASSES,
   cycleDecale,
   datesCycle,
   dateVersSemaineJour,
@@ -67,6 +68,7 @@ import { modifierPersonnes, PERSONNES_DEFAUT, personnesDuSlot } from "@/lib/pers
 import { estRestes, marquerRestes } from "@/lib/restes";
 import { chargerJourCoursesFoyer } from "@/lib/foyer";
 import { resoudreAncreCycle } from "@/lib/ancre-cycle";
+import { ancreInitialeCycle } from "@/lib/ancre-initiale-cycle";
 import { clientParDefaut } from "@/lib/supabase/par-defaut";
 import { aujourdhuiParis } from "@/lib/semaines";
 import { chargerLongueurCycle, chargerPlanningDistant } from "@/lib/persistance";
@@ -96,11 +98,6 @@ import type { JourPlanning, Planning, Recette, ReglagesGeneration } from "@/type
 type TypeRepas = "dejeuner" | "diner";
 
 const ID_TOAST_ANNULATION_CYCLE = "annulation-slot-cycle";
-
-// Plage de navigation des cycles (miroir de cyclesSelectionnables et de
-// /courses) : 12 cycles passés → +6 futurs.
-const CYCLES_PASSES = 12;
-const CYCLES_FUTURS = 6;
 
 // Slots d'un jour dans l'ordre d'affichage : déjeuner puis dîner. `recette`
 // est absente si le jour n'est pas planifié (`jp` nul), si le slot n'a jamais
@@ -524,31 +521,25 @@ export function VuePlanningCycle({
 
   // Montage : un SEUL chargement initial (jamais le cycle par défaut affiché
   // puis remplacé). Avec un lien profond (#320, RG-87) : ancre résolue par
-  // `resoudreAncreCycle` (même résolution que le MCP et la route panier) ;
-  // hors plage / invalide / lecture échouée → ancre par défaut. Sans lien :
-  // ancre par défaut dérivée du jour de courses du foyer (même règle que
-  // /courses, ancreParDefaut → décalage week-end inclus).
+  // `resoudreAncreCycle` (même résolution que le MCP et la route panier),
+  // EN PARALLÈLE de la lecture du jour de courses ; hors plage / invalide /
+  // lecture échouée → ancre par défaut. Sans lien : ancre par défaut dérivée du
+  // jour de courses du foyer (même règle que /courses, ancreParDefaut → décalage
+  // week-end inclus). Logique dans `ancreInitialeCycle` (lib, testée).
   useEffect(() => {
     let actif = true;
-    async function ancreInitiale(): Promise<string> {
-      const jour = await chargerJourCoursesFoyer().catch(() => 1);
-      if (actif) {
+    void ancreInitialeCycle({
+      chargerJour: () => chargerJourCoursesFoyer(),
+      resoudreLien: (date) => resoudreAncreCycle(clientParDefaut(), date, aujourdhuiParis()),
+      lien: lienInitial,
+      maintenant: new Date(),
+    })
+      .then(({ jourCourses: jour, ancre: cible }) => {
+        if (!actif) return undefined;
         setJourCourses(jour);
         setAujourdhuiISO(versISO(new Date()));
-      }
-      if (lienInitial !== undefined) {
-        try {
-          const res = await resoudreAncreCycle(clientParDefaut(), lienInitial, aujourdhuiParis());
-          if (res.ok) return res.ancre;
-          // hors_plage / invalide : repli silencieux sur le cycle par défaut.
-        } catch (erreur) {
-          console.error("Résolution du cycle du lien échouée (cycle par défaut).", erreur);
-        }
-      }
-      return ancreParDefaut(new Date(), jour);
-    }
-    void ancreInitiale()
-      .then((cible) => (actif ? chargerCycle(cible) : undefined))
+        return chargerCycle(cible);
+      })
       .catch((erreur) => console.error("Chargement initial du cycle échoué.", erreur));
     return () => {
       actif = false;

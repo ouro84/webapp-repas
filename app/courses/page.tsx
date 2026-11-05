@@ -81,8 +81,15 @@ import {
   etirerCycle,
   type CycleAffiche,
 } from "@/lib/sync";
-import { ancreCourante, datesCycle, LONGUEUR_MAX } from "@/lib/cycles";
+import {
+  ancreCourante,
+  CYCLES_FUTURS,
+  CYCLES_PASSES,
+  datesCycle,
+  LONGUEUR_MAX,
+} from "@/lib/cycles";
 import { chargerJourCoursesFoyer } from "@/lib/foyer";
+import { jourCoursesOuLundi } from "@/lib/ancre-initiale-cycle";
 import { decalageCycles, libelleRelatifCycle } from "@/lib/planning-affichage";
 import { NavigateurPeriode } from "@/components/planning/navigateur-periode";
 import { accorderNom } from "@/lib/pluriels";
@@ -161,9 +168,8 @@ function avecTransition(majEtat: () => void): ViewTransition | null {
 //
 // #352 : flèches + libellé = NavigateurPeriode (partagé avec /planning) ; le
 // stepper « Couvre N j » reste propre à /courses. Un cycle hors plage atteint
-// par `?ancre=` reste affiché : seules les flèches se désactivent.
-const CYCLES_PASSES = 12;
-const CYCLES_FUTURS = 6;
+// par `?ancre=` reste affiché : seules les flèches se désactivent. Bornes
+// `CYCLES_PASSES` / `CYCLES_FUTURS` partagées avec la vue Cycle (lib/cycles).
 
 function NavigateurCycle({
   cycle,
@@ -246,12 +252,12 @@ function ContenuCourses() {
   // stores dédiés (#257), distincts de storePlanning (semaine unique).
   const cycle = useCycleAffiche();
   // Jour de courses du foyer (#352) : situe le cycle affiché vs le cycle
-  // courant (libellé relatif). Même source que lib/sync.ts (fail-open : lundi).
+  // courant (libellé relatif). Même source que lib/sync.ts (fail-open : lundi,
+  // repli loggé par `jourCoursesOuLundi`, jumeau de la vue Cycle).
   const [jourCourses, setJourCourses] = useState<number | null>(null);
   useEffect(() => {
     let actif = true;
-    void chargerJourCoursesFoyer()
-      .catch(() => 1)
+    void jourCoursesOuLundi(chargerJourCoursesFoyer())
       .then((jour) => {
         if (actif) setJourCourses(jour);
       });
