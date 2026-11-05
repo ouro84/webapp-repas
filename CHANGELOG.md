@@ -9,6 +9,7 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ### Modifié
 
+- Planning : les vues Semaine et Cycle partagent le même en-tête, le même navigateur et la même grille ; sur ordinateur, les repas Déjeuner et Dîner sont alignés d’une colonne à l’autre, les actions gardent leurs libellés, et le jour courant est mis en évidence (#352).
 - Navigation : sur ordinateur, la barre du haut présente les sections dans le même ordre que sur mobile — Ce soir, Planning, Courses, Recettes (#351).
 - Page « Ce soir » : quand le repas prévu est des restes, la page l’annonce clairement (« Ce midi : rien à cuisiner, on mange les restes qu’on a dans le frigo ») au lieu d’afficher le nom d’un plat qui ne sera pas cuisiné. Les ingrédients tiennent en une seule liste, au format de la liste de courses, pour laisser la place au titre et à la préparation (#349).
 - Planning vide : la page reprend l’accueil de l’app (logo, phrase d’accroche, aperçu de planning) en gardant le choix de la semaine et la bascule Semaine/Cycle. Pendant la génération, le bouton indique « Je compose ta semaine… » et l’aperçu respire doucement (la semaine existante s’estompe quand on régénère). Les jours arrivent ensuite un par un, puis la carte d’aujourd’hui s’éclaire avant la notification. Rien ne bouge si les animations sont réduites sur l’appareil (#337).
