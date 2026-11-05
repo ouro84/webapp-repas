@@ -43,6 +43,7 @@ beforeEach(() => {
   m.chargerPlanningDistant.mockReset();
   m.genererCycle.mockReset();
   vi.mocked(toast.error).mockClear();
+  vi.mocked(toast.dismiss).mockClear();
 });
 
 afterEach(() => {
@@ -82,6 +83,7 @@ describe("VuePlanningCycle : génération du cycle puis relecture en erreur (#35
     await screen.findByText("Aucun repas planifié sur ce cycle.");
     const lectures = m.chargerPlanningDistant.mock.calls.length;
     m.chargerPlanningDistant.mockClear();
+    vi.mocked(toast.dismiss).mockClear(); // le chargement initial réussi l'a appelé
     return lectures;
   }
 
@@ -106,8 +108,25 @@ describe("VuePlanningCycle : génération du cycle puis relecture en erreur (#35
     );
     expect(toast.error).toHaveBeenCalledTimes(1);
     expect(toast.error).toHaveBeenCalledWith(
-      "Certains jours du cycle n'ont pas pu être chargés. Réessaie."
+      "Certains jours du cycle n'ont pas pu être chargés. Réessaie.",
+      { id: "echec-chargement-cycle" }
     );
+    // La resynchronisation a réussi : le toast d'échec périmé est levé.
+    expect(toast.dismiss).toHaveBeenCalledWith("echec-chargement-cycle");
+  });
+
+  it("relecture et nouvelle lecture ratées : les deux toasts partagent le même id (dédoublonnés par sonner)", async () => {
+    await afficherCycleVide();
+    m.genererCycle.mockResolvedValue(sansAvertissement);
+    m.chargerPlanningDistant.mockRejectedValue(new Error("réseau"));
+
+    fireEvent.click(screen.getByRole("button", { name: /Générer mon cycle/ }));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledTimes(2));
+    for (const appel of vi.mocked(toast.error).mock.calls) {
+      expect(appel[1]).toEqual({ id: "echec-chargement-cycle" });
+    }
+    expect(toast.dismiss).not.toHaveBeenCalledWith("echec-chargement-cycle");
   });
 
   it("génération rejetée : toast d'erreur inchangé et cycle relu pour se resynchroniser", async () => {
