@@ -2,8 +2,8 @@
 
 // Corps d'une recette (#336) — partagé par la fiche modale de /planning et de
 // la vue Cycle (`FicheRecette`, variante "fiche") et par la page /ce-soir
-// (variante "cuisine" : texte plus grand, lisible à distance, ingrédients
-// cochables). Une seule source pour la mise à l'échelle et le découpage des
+// (variante "cuisine" : étapes en grand, lisibles à distance ; une seule liste
+// d'ingrédients cochables, au format de la liste de courses). Une seule source pour la mise à l'échelle et le découpage des
 // ingrédients, la liste des étapes et les badges.
 //
 // Les quantités sont mises à l'échelle du slot (RG-20, via RG-17) avec le même
@@ -58,7 +58,11 @@ export function BadgesRecette({
 }
 
 /**
- * Ingrédients (à acheter / fond de placard) puis étapes de préparation.
+ * Ingrédients puis étapes de préparation. Variante "fiche" : ingrédients
+ * scindés à acheter / fond de placard (RG-14, « puis-je la faire sans rien
+ * acheter »). Variante "cuisine" (#349) : une seule liste « Ingrédients »
+ * dans l'ordre de la recette (en cuisine, tout sert), au format de la liste
+ * de courses ; ce sont le titre et la préparation qui priment.
  * `coches` + `onBasculerCoche` (variante "cuisine" seulement) rendent chaque
  * ingrédient cochable (« sorti du placard », RG-89).
  */
@@ -79,9 +83,10 @@ export function ContenuRecette({
 
   // Ingrédients mis à l'échelle du slot puis scindés (RG-20). Même calcul que
   // la liste de courses : ×N/2 puis arrondi par type d'unité (ingredientsAEchelle).
-  const { aAcheter, fondDePlacard } = useMemo(() => {
+  const { tous, aAcheter, fondDePlacard } = useMemo(() => {
     const misAEchelle = ingredientsAEchelle(recette.ingredients, personnes);
     return {
+      tous: misAEchelle,
       aAcheter: misAEchelle.filter((i) => !i.fondDePlacard),
       fondDePlacard: misAEchelle.filter((i) => i.fondDePlacard),
     };
@@ -111,12 +116,14 @@ export function ContenuRecette({
         >
           Aucun ingrédient renseigné pour cette recette.
         </p>
+      ) : cuisine ? (
+        groupe("Ingrédients", tous)
       ) : (
-        <div className={cuisine ? "space-y-8" : "space-y-5"}>
+        <div className="space-y-5">
           {aAcheter.length > 0 ? (
             groupe("À acheter", aAcheter)
           ) : (
-            <p className={cuisine ? "text-base text-brand-700/85" : "text-sm text-brand-700/85"}>
+            <p className="text-sm text-brand-700/85">
               Rien à acheter — tous les ingrédients sont au fond de placard.
             </p>
           )}
@@ -198,36 +205,39 @@ function GroupeIngredients({
   coches?: ReadonlySet<string>;
   onBasculerCoche?: (id: string) => void;
 }) {
-  const cuisine = variante === "cuisine";
   return (
     <section>
       <TitreSection variante={variante}>{titre}</TitreSection>
       <ul className="divide-y divide-brand-100">
-        {ingredients.map((ingredient) => {
-          const cle = `${ingredient.nom}-${ingredient.unite}`;
+        {ingredients.map((ingredient, index) => {
+          // Index en suffixe : la liste unique (#349) peut réunir un même
+          // nom|unité à acheter ET au placard ; la liste ne se réordonne pas.
+          const cle = `${ingredient.nom}-${ingredient.unite}-${index}`;
           if (coches && onBasculerCoche) {
             const id = idIngredient(ingredient);
             const coche = coches.has(id);
             return (
               <li key={cle}>
-                <label className="flex min-h-12 cursor-pointer items-center gap-3 py-2.5">
+                {/* Format de la liste de courses (#349) : case size-4, texte
+                    text-sm, ligne cliquable de 44 px. */}
+                <label className="flex min-h-11 cursor-pointer items-center gap-3 py-2.5">
                   <input
                     type="checkbox"
                     checked={coche}
                     onChange={() => onBasculerCoche(id)}
-                    className="size-5 shrink-0 cursor-pointer accent-brand-600"
+                    className="size-4 shrink-0 cursor-pointer accent-brand-600"
                   />
                   {/* Coché : rayé + passage au vert secondaire, sans opacité
                       (contraste AA conservé, cf. audit #336). */}
                   <span
-                    className={`flex-1 text-lg transition-colors ${
+                    className={`flex-1 text-sm transition-colors ${
                       coche ? "text-brand-700/85 line-through" : "text-brand-900"
                     }`}
                   >
                     {accorderNom(ingredient)}
                   </span>
                   <span
-                    className={`shrink-0 text-lg font-medium text-brand-700/85 transition-colors ${
+                    className={`shrink-0 text-sm font-medium text-brand-700/85 transition-colors ${
                       coche ? "line-through" : ""
                     }`}
                   >
@@ -238,16 +248,9 @@ function GroupeIngredients({
             );
           }
           return (
-            <li
-              key={cle}
-              className={`flex items-center justify-between gap-3 ${cuisine ? "py-3" : "py-2"}`}
-            >
-              <span className={`${cuisine ? "text-lg" : "text-sm"} text-brand-900`}>
-                {accorderNom(ingredient)}
-              </span>
-              <span
-                className={`shrink-0 ${cuisine ? "text-lg" : "text-sm"} font-medium text-brand-700/85`}
-              >
+            <li key={cle} className="flex items-center justify-between gap-3 py-2">
+              <span className="text-sm text-brand-900">{accorderNom(ingredient)}</span>
+              <span className="shrink-0 text-sm font-medium text-brand-700/85">
                 {formaterQuantite(ingredient)}
               </span>
             </li>

@@ -5,6 +5,7 @@ import {
   semaineDuRepas,
   libelleContexteRepas,
   libelleMomentActuel,
+  libelleMomentCourt,
 } from "@/lib/prochain-repas"
 import { REGLAGES_DEFAUT } from "@/lib/reglages"
 import type { Planning, ReglagesGeneration } from "@/types"
@@ -190,6 +191,23 @@ describe("libelleContexteRepas", () => {
     expect(libelleContexteRepas("2026-07-20", "diner", maintenant)).toBe(
       "Dîner du lundi 20 juillet"
     )
+  })
+})
+
+describe("libelleMomentCourt (#349, état restes)", () => {
+  const maintenant = new Date("2026-07-16T10:00:00") // jeudi 16 juillet
+
+  it("aujourd'hui et demain", () => {
+    expect(libelleMomentCourt("2026-07-16", "dejeuner", maintenant)).toBe("Ce midi")
+    expect(libelleMomentCourt("2026-07-16", "diner", maintenant)).toBe("Ce soir")
+    expect(libelleMomentCourt("2026-07-17", "dejeuner", maintenant)).toBe("Demain midi")
+    expect(libelleMomentCourt("2026-07-17", "diner", maintenant)).toBe("Demain soir")
+  })
+  it("dans la semaine : jour de la semaine", () => {
+    expect(libelleMomentCourt("2026-07-20", "diner", maintenant)).toBe("Lundi soir")
+  })
+  it("au-delà d'une semaine : avec la date", () => {
+    expect(libelleMomentCourt("2026-07-23", "dejeuner", maintenant)).toBe("Jeudi 23 juillet midi")
   })
 })
 

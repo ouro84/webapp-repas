@@ -129,6 +129,28 @@ function repasActifDepuis(
 }
 
 /**
+ * Moment court d'un repas (#349, état « restes » de /ce-soir) : « Ce midi »,
+ * « Ce soir », « Demain midi », « Demain soir », puis « Lundi soir » dans la
+ * semaine qui vient, et « Lundi 16 novembre midi » au-delà.
+ */
+export function libelleMomentCourt(
+  dateISO: string,
+  typeRepas: TypeRepas,
+  maintenant: Date
+): string {
+  const cible = depuisISO(dateISO)
+  const aujourdhui = new Date(maintenant.getFullYear(), maintenant.getMonth(), maintenant.getDate())
+  const diffJours = Math.round((cible.getTime() - aujourdhui.getTime()) / 86_400_000)
+  const moment = typeRepas === "dejeuner" ? "midi" : "soir"
+  if (diffJours === 0) return typeRepas === "dejeuner" ? "Ce midi" : "Ce soir"
+  if (diffJours === 1) return `Demain ${moment}`
+  const options: Intl.DateTimeFormatOptions =
+    diffJours < 7 ? { weekday: "long" } : { weekday: "long", day: "numeric", month: "long" }
+  const jour = cible.toLocaleDateString("fr-FR", options)
+  return `${jour.charAt(0).toUpperCase()}${jour.slice(1)} ${moment}`
+}
+
+/**
  * Libellé de contexte affiché au-dessus du repas (#280, D3) — « Dîner de ce
  * soir », « Déjeuner de demain », ou une date complète au-delà.
  */

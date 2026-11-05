@@ -130,7 +130,12 @@ async function jetonTest(request: APIRequestContext): Promise<{
 export async function planifierRepasDistant(
   request: APIRequestContext,
   semaine: string,
-  repas: Array<{ jour: string; typeRepas: "dejeuner" | "diner"; nomRecette: string }>
+  repas: Array<{
+    jour: string;
+    typeRepas: "dejeuner" | "diner";
+    nomRecette: string;
+    restes?: boolean;
+  }>
 ): Promise<void> {
   const { url, headers } = await jetonTest(request);
   const slots = [];
@@ -148,7 +153,7 @@ export async function planifierRepasDistant(
       jour: r.jour,
       type_repas: r.typeRepas,
       personnes: 2,
-      restes: false,
+      restes: r.restes ?? false,
     });
   }
   const ecriture = await request.post(`${url}/rest/v1/rpc/sauvegarder_slots`, {
