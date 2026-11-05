@@ -1245,11 +1245,15 @@ function relectureRatee(semaine: string): void {
   planifierNouvelleRelecture(semaine);
 }
 
-// Toute lecture réussie de la semaine lève la relecture à refaire et rétablit
-// l'indicateur (le push éventuel le repassera par « sauvegarde »).
-function relectureReussie(): void {
-  localStorage.removeItem(CLE_A_RELIRE);
-  annulerNouvelleRelecture();
+// Toute lecture réussie de la semaine rétablit l'indicateur (le push éventuel
+// le repassera par « sauvegarde ») et lève la relecture à refaire, seulement si
+// c'est la MÊME semaine (#355) : lire une autre semaine n'intègre pas le
+// changement distant non relu de celle-ci.
+function relectureReussie(semaine: string): void {
+  if (lireRelectureARefaire() === semaine) {
+    localStorage.removeItem(CLE_A_RELIRE);
+    annulerNouvelleRelecture();
+  }
   if (!pushEnCours && !flushCochesEnCours) definirEtat("synchronise");
 }
 
@@ -1275,7 +1279,15 @@ async function traiterChangementPlanningDistant(semaine: string): Promise<void> 
       return;
     }
     const sigAvant = signaturePlanning(planningLocal());
-    await chargerSemaineDansCache(semaine); // force le re-pull du planning
+    // Force le re-pull du planning. Lecture ratée : même protection que le
+    // rejeu (#355), sinon le `finally` relançait le push (`dirty` toujours
+    // posé) et `sauvegarder_planning` effaçait le changement distant non relu.
+    // Aussi sans édition en attente : une édition ultérieure pousserait toute
+    // la semaine sans ce changement.
+    if (!(await chargerSemaineDansCache(semaine))) {
+      relectureRatee(semaine);
+      return;
+    }
     if (semaineActive() === semaine && signaturePlanning(planningLocal()) !== sigAvant) {
       declencherAlertePlanning();
     }
@@ -1346,7 +1358,7 @@ async function relireEnRejouantEditionsLocales(semaine: string): Promise<boolean
     console.error("Relecture du planning échouée (éditions locales conservées).", erreur);
     return true;
   }
-  relectureReussie();
+  relectureReussie(semaine);
   // Navigation pendant la lecture : la semaine quittée n'est plus en cache.
   if (semaineActive() !== semaine) return true;
   // Relu APRÈS l'await : inclut les éditions faites pendant la lecture.
@@ -1931,7 +1943,11 @@ async function attendreSync(): Promise<boolean> {
 // touche PLUS aux coches : elles sont propres au CYCLE (clé = ancre, ≠ semaine)
 // et gérées par chargerCycleDansCache (/courses). La page /planning n'affiche
 // pas la liste de courses, donc aucun besoin d'y hydrater les coches.
-async function chargerSemaineDansCache(semaine: string): Promise<void> {
+// Renvoie `true` si la lecture a réussi (#355) : une lecture ratée est loggée
+// et laisse le cache intact, à l'appelant de protéger le push s'il le faut
+// (relecture US-21, cf. traiterChangementPlanningDistant).
+async function chargerSemaineDansCache(semaine: string): Promise<boolean> {
+  let lu = false;
   hydratationEnCours = true;
   try {
     const distant = await chargerPlanningDistant(semaine);
@@ -1945,8 +1961,9 @@ async function chargerSemaineDansCache(semaine: string): Promise<void> {
     // Cache = base : c'est le nouveau planning confirmé de la semaine (#355).
     ecrireConfirme(distant ? distant.planning : null);
     localStorage.removeItem(CLE_DIRTY);
-    relectureReussie(); // lève aussi la relecture à refaire (#355)
+    relectureReussie(semaine); // lève aussi la relecture à refaire (#355)
     definirEtat("synchronise");
+    lu = true;
   } catch (erreur) {
     console.error("Chargement de la semaine échoué.", erreur);
   } finally {
@@ -1955,6 +1972,7 @@ async function chargerSemaineDansCache(semaine: string): Promise<void> {
   definirSemaineAffichee(semaine);
   // (Ré)abonne le temps réel du planning à la semaine désormais affichée.
   void synchroniserAbonnementPlanning(semaine);
+  return lu;
 }
 
 /**

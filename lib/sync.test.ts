@@ -2242,4 +2242,34 @@ describe("vague finale de la synchro temps réel (#355)", () => {
     await attendre(900);
     expect(persistance.sauvegarderPlanningDistant).not.toHaveBeenCalled();
   });
+
+  // --- A2 : lecture ratée sur le chemin historique avec une édition en attente ---
+  it("chemin historique, lecture ratée avec une édition en attente : aucun push avant une relecture réussie", async () => {
+    const { semaine, storePlanning, vue } = await monterPlanning();
+    // Instantané d'une autre semaine : pas de rejeu possible, chemin historique.
+    localStorage.setItem("planning_confirme", JSON.stringify(semaineDe("2020-W01")));
+    persistance.chargerPlanningDistant.mockRejectedValueOnce(new Error("réseau"));
+    const erreur = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      stepperLundi(storePlanning, 4);
+      evenement(semaine, T_DISTANT);
+      await vi.waitFor(() => expect(erreur).toHaveBeenCalled());
+      await attendre(1000); // au-delà du débounce
+      expect(persistance.sauvegarderPlanningDistant).not.toHaveBeenCalled();
+      expect(localStorage.getItem("planning_a_relire")).toBe(semaine);
+      expect(localStorage.getItem("planning_dirty")).toBe("1");
+      expect(vue.result.current).toBe("hors-ligne");
+    } finally {
+      vue.unmount(); // coupe la nouvelle tentative différée
+      erreur.mockRestore();
+    }
+  });
+
+  // --- A5 : une lecture réussie ne lève que la relecture à refaire de SA semaine ---
+  it("une lecture réussie d'une autre semaine ne lève pas la relecture à refaire", async () => {
+    localStorage.setItem("planning_a_relire", "2020-W01");
+    const { vue } = await monterPlanning(); // lecture réussie de la semaine par défaut
+    expect(localStorage.getItem("planning_a_relire")).toBe("2020-W01");
+    vue.unmount();
+  });
 });
