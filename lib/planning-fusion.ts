@@ -128,8 +128,10 @@ function reappliquerCreneau(
  * `confirme`).
  *
  * - `rejoues` : créneaux réappliqués (à repousser vers le serveur) ;
- * - `conflits` : créneaux modifiés des deux côtés — le distant gagne, la
- *   version locale est perdue (l’alerte US-21 le signale).
+ * - `conflits` : créneaux modifiés des deux côtés vers des contenus différents
+ *   — le distant gagne, la version locale est perdue (l’alerte US-21 le
+ *   signale). Modifiés des deux côtés vers le même contenu : ni rejoués ni en
+ *   conflit (rien n’est perdu).
  *
  * `confirme` = dernier planning connu du serveur (base de comparaison des
  * éditions locales). Retourne un nouveau planning ; les entrées ne sont pas
@@ -146,8 +148,16 @@ export function fusionnerEditionsLocales(
   const rejoues: CleCreneau[] = []
   const conflits: CleCreneau[] = []
   for (const k of [...modifiesLocal].sort(comparerCles)) {
-    if (modifiesDistant.has(k)) conflits.push(k)
-    else rejoues.push(k)
+    if (!modifiesDistant.has(k)) {
+      rejoues.push(k)
+      continue
+    }
+    // Modifié des deux côtés vers le MÊME contenu (même recette, mêmes
+    // personnes, mêmes restes) : rien à rejouer ni rien de perdu (#355).
+    const [jour, typeRepas] = k.split(":") as [Jour, TypeRepas]
+    if (contenu(local, jour, typeRepas) !== contenu(distant, jour, typeRepas)) {
+      conflits.push(k)
+    }
   }
 
   let jours: JourPlanning[] = [...distant.jours]

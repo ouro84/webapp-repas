@@ -63,3 +63,66 @@ test("un membre en magasin est alerté quand le planning change à la maison (US
   await a.context().close();
   await b.context().close();
 });
+
+// #355 : A a une édition en attente (son push a échoué, réseau coupé) quand B
+// modifie un AUTRE créneau. La relecture US-21 de A rejoue son édition sur le
+// planning de B au lieu de l'écraser, puis la repousse : les deux survivent.
+// Pourquoi un push en échec et pas un push retardé : un `sauvegarder_planning`
+// retardé (toute la semaine) partirait quand même avec l'ancien planning et
+// écraserait en base le créneau de B, quoi que fasse le client ensuite.
+test("une édition en attente survit à la modification d’un autre créneau par un autre membre (#355)", async ({
+  browser,
+}) => {
+  const dirty = (p: Page) => p.evaluate(() => localStorage.getItem("planning_dirty"));
+
+  // --- A génère le planning et attend sa persistance ---
+  const a = await ouvrirAppareil(browser);
+  await a.goto("/planning");
+  await a.getByRole("button", { name: "Générer mon planning" }).click();
+  await expect(a.locator("main ul > li")).toHaveCount(7);
+  await expect.poll(() => dirty(a)).toBeNull();
+
+  // --- B ouvre le même planning ---
+  const b = await ouvrirAppareil(browser);
+  await b.goto("/planning");
+  await expect(b.locator("main ul > li")).toHaveCount(7);
+  // Laisser à l'abonnement temps réel de A le temps de s'établir.
+  await a.waitForTimeout(2500);
+
+  // --- A : stepper lundi dîner 2 → 3, push coupé (reste en attente) ---
+  await a.route("**/rest/v1/rpc/sauvegarder_planning", (route) => route.abort());
+  const pushEchoue = a.waitForEvent("requestfailed", (r) =>
+    r.url().includes("/rpc/sauvegarder_planning")
+  );
+  const lundiA = a.locator("main ul > li").nth(0);
+  await lundiA.getByRole("button", { name: "Plus de personnes pour le dîner de lundi" }).click();
+  await expect(lundiA).toContainText("3 pers.");
+  await pushEchoue;
+  await a.unroute("**/rest/v1/rpc/sauvegarder_planning");
+  expect(await dirty(a)).toBe("1");
+
+  // --- B : stepper mardi déjeuner 2 → 1, poussé ---
+  const mardiB = b.locator("main ul > li").nth(1);
+  await mardiB.getByRole("button", { name: "Moins de personnes pour le déjeuner de mardi" }).click();
+  await expect(mardiB).toContainText("1 pers.");
+  await expect.poll(() => dirty(b)).toBeNull();
+
+  // --- A : alerte, acquittement, les deux créneaux affichés ---
+  const alerte = a.getByText(/le planning de la semaine vient d/i);
+  await expect(alerte).toBeVisible({ timeout: 20_000 });
+  await a.getByRole("button", { name: /OK, j.ai compris/ }).click();
+  await expect(alerte).toHaveCount(0);
+  await expect(lundiA).toContainText("3 pers.");
+  const mardiA = a.locator("main ul > li").nth(1);
+  await expect(mardiA).toContainText("1 pers.");
+
+  // --- A repousse la fusion ; après rechargement, les deux persistent ---
+  await expect.poll(() => dirty(a)).toBeNull();
+  await a.reload();
+  await expect(a.locator("main ul > li")).toHaveCount(7);
+  await expect(a.locator("main ul > li").nth(0)).toContainText("3 pers.");
+  await expect(a.locator("main ul > li").nth(1)).toContainText("1 pers.");
+
+  await a.context().close();
+  await b.context().close();
+});

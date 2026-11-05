@@ -117,6 +117,21 @@ describe("fusionnerEditionsLocales", () => {
     expect(signaturePlanning(r.planning)).toBe(signaturePlanning(distant))
   })
 
+  it("même créneau modifié des deux côtés vers le MÊME contenu → ni rejoué ni conflit", () => {
+    const pareil = (jp: Planning["jours"][number]) => ({
+      ...jp,
+      diner: recette("rX"),
+      personnes: { diner: 4 },
+      restes: { diner: true },
+    })
+    const local = avecJour(base(), "lundi", pareil)
+    const distant = avecJour(base(), "lundi", pareil)
+    const r = fusionnerEditionsLocales(base(), local, distant)
+    expect(r.rejoues).toEqual([])
+    expect(r.conflits).toEqual([])
+    expect(r.planning).toEqual(distant)
+  })
+
   it("restes marqués localement, rien à distance → conservés", () => {
     const local = avecJour(base(), "mardi", (jp) => ({
       ...jp,
