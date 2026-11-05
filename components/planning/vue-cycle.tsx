@@ -51,6 +51,7 @@ import {
   joursDuCycle,
   LONGUEUR_DEFAUT,
   remplacerJourDansSemaines,
+  versISO,
 } from "@/lib/cycles";
 import {
   creerFileEcritureSlots,
@@ -62,7 +63,7 @@ import {
   libelleJourComplet,
   libelleRelatifCycle,
 } from "@/lib/planning-affichage";
-import { modifierPersonnes, personnesDuSlot } from "@/lib/personnes";
+import { modifierPersonnes, PERSONNES_DEFAUT, personnesDuSlot } from "@/lib/personnes";
 import { estRestes, marquerRestes } from "@/lib/restes";
 import { chargerJourCoursesFoyer } from "@/lib/foyer";
 import { resoudreAncreCycle } from "@/lib/ancre-cycle";
@@ -83,6 +84,7 @@ import { chargerRecettesGerees, type RecetteGeree } from "@/lib/recettes";
 import { chargerPreferences } from "@/lib/preferences";
 import { messagesAvertissementGeneration } from "@/lib/avertissements-generation";
 import { SlotRepas } from "@/components/planning/slot-repas";
+import { GrilleJours, type JourGrille } from "@/components/planning/grille-jours";
 import { SelecteurRecette } from "@/components/planning/selecteur-recette";
 import { ConfirmationModale } from "@/components/ui/confirmation";
 import { FicheRecette } from "@/components/planning/fiche-recette";
@@ -101,25 +103,27 @@ const CYCLES_PASSES = 12;
 const CYCLES_FUTURS = 6;
 
 // Slots d'un jour dans l'ordre d'affichage : déjeuner puis dîner. `recette`
-// est absente si le slot n'a jamais été généré (planning antérieur/créneau
-// jamais rempli) OU si son créneau est désactivé (« Aucun », #217, RG-44/46)
-// — même filtre live que la vue Semaine, appliqué ici par slot (cette vue
-// projette des dates de plusieurs semaines, pas un `Planning` unique, donc pas
-// de `retirerCreneauxDesactives` direct).
+// est absente si le jour n'est pas planifié (`jp` nul), si le slot n'a jamais
+// été généré (planning antérieur/créneau jamais rempli) OU si son créneau est
+// désactivé (« Aucun », #217, RG-44/46) — même filtre live que la vue Semaine,
+// appliqué ici par slot (cette vue projette des dates de plusieurs semaines,
+// pas un `Planning` unique, donc pas de `retirerCreneauxDesactives` direct).
+// Les trois cas rendent « Pas de repas prévu » (SlotRepas), comme la semaine.
 function slotsDuJour(
-  jp: JourPlanning,
+  jour: JourPlanning["jour"],
+  jp: JourPlanning | null,
   reglages: ReglagesGeneration
 ): { typeRepas: TypeRepas; libelle: string; recette: Recette | undefined }[] {
   return [
     {
       typeRepas: "dejeuner" as const,
       libelle: "Déjeuner",
-      recette: creneauActif(jp.jour, "dejeuner", reglages) ? jp.dejeuner : undefined,
+      recette: jp && creneauActif(jour, "dejeuner", reglages) ? jp.dejeuner : undefined,
     },
     {
       typeRepas: "diner" as const,
       libelle: "Dîner",
-      recette: creneauActif(jp.jour, "diner", reglages) ? jp.diner : undefined,
+      recette: jp && creneauActif(jour, "diner", reglages) ? jp.diner : undefined,
     },
   ];
 }
@@ -148,6 +152,10 @@ export function VuePlanningCycle({
   // Jour de courses du foyer (#352) : sert à situer le cycle affiché par rapport
   // au cycle courant (libellé relatif du navigateur). Lu au montage, avant l'ancre.
   const [jourCourses, setJourCourses] = useState<number>(1);
+  // Jour courant (#352), date LOCALE du client : `null` au premier rendu (pas de
+  // date au rendu serveur), posé par l'effet de montage. Le week-end, le cycle
+  // par défaut est le suivant : aucun jour marqué.
+  const [aujourdhuiISO, setAujourdhuiISO] = useState<string | null>(null);
   // Plannings des semaines ISO touchées, indexés par semaine.
   const [parSemaine, setParSemaine] = useState<Map<string, Planning>>(new Map());
   const [chargement, setChargement] = useState(true);
@@ -524,7 +532,10 @@ export function VuePlanningCycle({
     let actif = true;
     async function ancreInitiale(): Promise<string> {
       const jour = await chargerJourCoursesFoyer().catch(() => 1);
-      if (actif) setJourCourses(jour);
+      if (actif) {
+        setJourCourses(jour);
+        setAujourdhuiISO(versISO(new Date()));
+      }
       if (lienInitial !== undefined) {
         try {
           const res = await resoudreAncreCycle(clientParDefaut(), lienInitial, aujourdhuiParis());
@@ -569,6 +580,44 @@ export function VuePlanningCycle({
     return { dateISO, jp };
   });
   const aDesRepas = cellules.some((c) => c.jp !== null);
+  // Grille commune avec la semaine (#352). Un jour non planifié garde ses deux
+  // emplacements « Pas de repas prévu » (plus de « Rien de prévu. » à part) ;
+  // ceux du jour courant sont accentués. Ni entrée en cascade ni atterrissage
+  // ici (#353).
+  const joursGrille: JourGrille[] = cellules.map(({ dateISO, jp }) => {
+    const { semaine, jour } = dateVersSemaineJour(dateISO);
+    const jourLabel = libelleJourComplet(dateISO);
+    return {
+      cle: dateISO,
+      dateISO,
+      slots: slotsDuJour(jour, jp, reglages).map((slot) => (
+        <SlotRepas
+          key={slot.typeRepas}
+          libelle={slot.libelle}
+          jourLabel={jourLabel}
+          recette={slot.recette}
+          indisponible={false}
+          personnes={jp ? personnesDuSlot(jp, slot.typeRepas) : PERSONNES_DEFAUT}
+          restes={jp ? estRestes(jp, slot.typeRepas) : false}
+          onChanger={() => changerSlot(dateISO, semaine, jour, slot.typeRepas)}
+          onSelectionner={() =>
+            setSlotEnSelection({ dateISO, semaine, jour, typeRepas: slot.typeRepas })
+          }
+          onChangerPersonnes={(p) => changerPersonnesSlot(semaine, jour, slot.typeRepas, p)}
+          onChangerRestes={(v) => changerRestesSlot(dateISO, semaine, jour, slot.typeRepas, v)}
+          onVoir={() =>
+            jp &&
+            slot.recette &&
+            setFicheOuverte({
+              recette: slot.recette,
+              personnes: personnesDuSlot(jp, slot.typeRepas),
+            })
+          }
+          accentue={aujourdhuiISO !== null && dateISO === aujourdhuiISO}
+        />
+      )),
+    };
+  });
 
   // Navigateur de période (#352, partagé avec la semaine et /courses). Non
   // désactivé pendant un chargement (un bouton désactivé perdrait le focus) :
@@ -627,54 +676,11 @@ export function VuePlanningCycle({
             hrefCourses={`/courses?ancre=${ancre}`}
             navigateur={navigateur}
           />
-          <ul
-            aria-busy={chargement}
-            className={`space-y-4 transition-opacity duration-200 ${chargement ? "opacity-50" : ""}`}
-          >
-            {cellules.map(({ dateISO, jp }) => (
-              <li
-                key={dateISO}
-                className="rounded-lg border border-brand-100 bg-surface p-4"
-              >
-                <h2 className="mb-3 font-semibold text-brand-900">
-                  {libelleJourComplet(dateISO)}
-                </h2>
-                {jp === null ? (
-                  <p className="text-sm text-brand-700/70">Rien de prévu.</p>
-                ) : (
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    {slotsDuJour(jp, reglages).map((slot) => {
-                      const { semaine } = dateVersSemaineJour(dateISO);
-                      return (
-                        <SlotRepas
-                          key={slot.typeRepas}
-                          libelle={slot.libelle}
-                          jourLabel={libelleJourComplet(dateISO)}
-                          recette={slot.recette}
-                          indisponible={false}
-                          personnes={personnesDuSlot(jp, slot.typeRepas)}
-                          restes={estRestes(jp, slot.typeRepas)}
-                          onChanger={() => changerSlot(dateISO, semaine, jp.jour, slot.typeRepas)}
-                          onSelectionner={() =>
-                            setSlotEnSelection({ dateISO, semaine, jour: jp.jour, typeRepas: slot.typeRepas })
-                          }
-                          onChangerPersonnes={(p) => changerPersonnesSlot(semaine, jp.jour, slot.typeRepas, p)}
-                          onChangerRestes={(v) => changerRestesSlot(dateISO, semaine, jp.jour, slot.typeRepas, v)}
-                          onVoir={() =>
-                            slot.recette &&
-                            setFicheOuverte({
-                              recette: slot.recette,
-                              personnes: personnesDuSlot(jp, slot.typeRepas),
-                            })
-                          }
-                        />
-                      );
-                    })}
-                  </div>
-                )}
-              </li>
-            ))}
-          </ul>
+          {/* Rechargement (navigation, génération) : grille estompée, en-tête
+              et navigateur restent montés. */}
+          <div aria-busy={chargement}>
+            <GrilleJours jours={joursGrille} aujourdhuiISO={aujourdhuiISO} enAttente={chargement} />
+          </div>
         </div>
       )}
 

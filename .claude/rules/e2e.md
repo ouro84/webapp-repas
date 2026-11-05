@@ -52,6 +52,7 @@ Un état résiduel fausse les specs suivantes du même job. Nettoyer en `beforeE
 | Favoris / évités | `nettoyerPreferencesDistantes` |
 | Jour de courses (réglage foyer) | `reinitialiserJourCoursesDistant` (ou `definirJourCoursesDistant(request, jour)` pour tester un jour ≠ lundi) |
 | Prénom / couleur d'avatar | `reinitialiserProfilDistant` |
+| Longueur de cycle étirée (`cycle_courses`) | `nettoyerLongueursCycleDistantes` (et `definirLongueurCycleDistant(request, ancre, longueur)` pour tester un cycle ≠ 7 jours) |
 
 Les helpers filtrent `foyer_id=not.is.null`. Les recettes créées par `recettes.spec` portent un suffixe `Date.now()` et sont supprimées en `afterAll`.
 

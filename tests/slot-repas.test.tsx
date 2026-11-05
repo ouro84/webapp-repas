@@ -99,6 +99,35 @@ describe("SlotRepas : gabarit unique (#352)", () => {
     expect(blocBas.textContent).toContain("2 pers.");
   });
 
+  // Colonne desktop de ~100 px de contenu à 1024 (#352, e2e planning-grille) :
+  // le stepper « − 2 pers. + » (≈ 112 px) et le chip « Sélectionner » débordaient.
+  it("à lg, le stepper tient en colonne étroite : unité « pers. » en sr-only, boutons non rétrécis", () => {
+    rendre();
+    const valeur = screen.getByText((_, el) => el?.getAttribute("aria-live") === "polite");
+    // Nom annoncé inchangé (« 2 pers. ») : l'unité reste dans l'arbre d'accessibilité.
+    expect(valeur.textContent).toBe("2 pers.");
+    const unite = Array.from(valeur.querySelectorAll("span")).find(
+      (s) => s.textContent === " pers."
+    );
+    expect(unite).toBeDefined();
+    expect(unite!.className.split(/\s+/)).toContain("lg:sr-only");
+    expect(valeur.className).toContain("lg:min-w-0");
+    for (const nom of ["Moins de personnes pour le déjeuner de lundi", "Plus de personnes pour le déjeuner de lundi"]) {
+      expect(screen.getByRole("button", { name: nom }).className.split(/\s+/)).toContain("shrink-0");
+    }
+  });
+
+  it("à lg, les chips d'action resserrent leur padding horizontal", () => {
+    rendre();
+    for (const nom of [
+      "Changer le déjeuner de lundi",
+      "Sélectionner le déjeuner de lundi",
+      "Marquer le déjeuner de lundi en restes",
+    ]) {
+      expect(screen.getByRole("button", { name: nom }).className.split(/\s+/)).toContain("lg:px-1.5");
+    }
+  });
+
   it("l'alerte « Pas de recette disponible » est dans le bloc ancré", () => {
     rendre({ indisponible: true });
     const alerte = screen.getByRole("alert");

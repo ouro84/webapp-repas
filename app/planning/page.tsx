@@ -55,7 +55,7 @@ import {
   semaineDecalee,
   semaineISO,
 } from "@/lib/semaines";
-import { ancreDeSemaine } from "@/lib/cycles";
+import { ancreDeSemaine, versISO } from "@/lib/cycles";
 import { datesDeSemaine, libellePlageDates } from "@/lib/planning-affichage";
 import { chargerJourCoursesFoyer } from "@/lib/foyer";
 import { parseApiError } from "@/lib/errors";
@@ -63,7 +63,6 @@ import {
   FILET_ATTERRISSAGE_MS,
   SEUIL_ATTENTE_MS,
   delaiAtterrissage,
-  delaiJour,
   delaiNom,
   jourAtterrissage,
 } from "@/lib/choregraphie-generation";
@@ -78,6 +77,7 @@ import { EtatVidePlanning } from "@/components/planning/etat-vide-planning";
 import { NavigateurPeriode } from "@/components/planning/navigateur-periode";
 import { VuePlanningCycle } from "@/components/planning/vue-cycle";
 import { SlotRepas } from "@/components/planning/slot-repas";
+import { GrilleJours, type JourGrille } from "@/components/planning/grille-jours";
 import { ConfirmationModale } from "@/components/ui/confirmation";
 import { PulsationAtterrissage } from "@/components/ui/pulsation-atterrissage";
 import type { Jour, JourPlanning, Planning, Recette } from "@/types";
@@ -88,16 +88,28 @@ type TypeRepas = "dejeuner" | "diner";
 // Libellés & styles
 // ============================================================================
 
-// Libellés des jours : complet pour la liste mobile (RG-08), abrégé pour les
-// en-têtes de la grille desktop (RG-07).
-const LIBELLES_JOURS: Record<Jour, { complet: string; abrege: string }> = {
-  lundi: { complet: "Lundi", abrege: "Lun" },
-  mardi: { complet: "Mardi", abrege: "Mar" },
-  mercredi: { complet: "Mercredi", abrege: "Mer" },
-  jeudi: { complet: "Jeudi", abrege: "Jeu" },
-  vendredi: { complet: "Vendredi", abrege: "Ven" },
-  samedi: { complet: "Samedi", abrege: "Sam" },
-  dimanche: { complet: "Dimanche", abrege: "Dim" },
+// Libellés des jours, pour les noms accessibles des actions de slot et le titre
+// du sélecteur (« Dîner de lundi »). Les en-têtes de la grille, datés, viennent
+// de lib/planning-affichage.ts (GrilleJours, #352).
+const LIBELLES_JOURS: Record<Jour, { complet: string }> = {
+  lundi: { complet: "Lundi" },
+  mardi: { complet: "Mardi" },
+  mercredi: { complet: "Mercredi" },
+  jeudi: { complet: "Jeudi" },
+  vendredi: { complet: "Vendredi" },
+  samedi: { complet: "Samedi" },
+  dimanche: { complet: "Dimanche" },
+};
+
+// Index du jour dans sa semaine ISO (lundi = 0), pour retrouver sa date (#352).
+const INDEX_JOUR: Record<Jour, number> = {
+  lundi: 0,
+  mardi: 1,
+  mercredi: 2,
+  jeudi: 3,
+  vendredi: 4,
+  samedi: 5,
+  dimanche: 6,
 };
 
 function cleSlot(jour: Jour, typeRepas: TypeRepas): string {
@@ -822,6 +834,45 @@ function ContenuPlanning() {
   // (badge « déjà au planning » du sélecteur, RG-02) continue de lire le
   // planning brut : une recette d'un slot masqué reste bloquée ailleurs.
   const planningAffiche = retirerCreneauxDesactives(planning, reglages);
+  // Grille commune (#352) : chaque jour porte sa date (semaine du planning
+  // affiché, index du jour ISO) et ses deux SlotRepas. Le jour courant n'est
+  // connu qu'après hydratation (date client, pas de mismatch SSR) ; le
+  // week-end, la semaine par défaut est la suivante, donc aucun jour marqué.
+  const datesSemaine = datesDeSemaine(planningAffiche.semaine);
+  const aujourdhuiISO = navPret ? versISO(new Date()) : null;
+  const joursGrille: JourGrille[] = planningAffiche.jours.map((jp, i) => {
+    const dateISO = datesSemaine[INDEX_JOUR[jp.jour]];
+    return {
+      cle: jp.jour,
+      dateISO,
+      slots: slotsDuJour(jp).map((slot) => (
+        <SlotRepas
+          key={slot.typeRepas}
+          libelle={slot.libelle}
+          jourLabel={LIBELLES_JOURS[jp.jour].complet}
+          recette={slot.recette}
+          indisponible={slotIndisponible === cleSlot(jp.jour, slot.typeRepas)}
+          personnes={personnesDuSlot(jp, slot.typeRepas)}
+          onChanger={() => changerSlot(jp.jour, slot.typeRepas)}
+          onSelectionner={() =>
+            setSlotEnSelection({ jour: jp.jour, typeRepas: slot.typeRepas })
+          }
+          onChangerPersonnes={(n) => changerPersonnes(jp.jour, slot.typeRepas, n)}
+          onVoir={() =>
+            slot.recette &&
+            setFicheOuverte({
+              recette: slot.recette,
+              personnes: personnesDuSlot(jp, slot.typeRepas),
+            })
+          }
+          restes={estRestes(jp, slot.typeRepas)}
+          onChangerRestes={(valeur) => changerRestes(jp.jour, slot.typeRepas, valeur)}
+          delaiNomMs={choregraphie ? delaiNom(i) : undefined}
+          accentue={aujourdhuiISO !== null && dateISO === aujourdhuiISO}
+        />
+      )),
+    };
+  });
   return (
     <main id="contenu" className="flex-1 p-4 md:p-8">
       <EntetePlanning
@@ -847,135 +898,29 @@ function ContenuPlanning() {
         // génération/régénération vise la semaine affichée.
         navigateur={navigateurSemaine}
       />
-      {/* Vue mobile + tablette (RG-08, #64) : liste verticale jusqu'à lg.
-          La grille 7 colonnes ne s'active qu'à ≥ 1024px, où chaque cellule
-          reste lisible (à md=768 elle tombait à ~120px, badges compressés). */}
-      {/* Régénération en attente (#337) : grille existante en semi-transparence,
-          toujours interactive. Stagger (#69, #337) : 60 ms/jour, `backwards`
-          (cf. token) garde la carte invisible pendant son délai ; motion-safe :
-          rien si l'utilisateur a réduit les animations. */}
-      <ul
-        key={`grille-mobile-${genNonce}`}
-        className={`space-y-4 transition-opacity duration-200 lg:hidden ${attenteVisible ? "opacity-50" : ""}`}
-      >
-        {planningAffiche.jours.map((jp, i) => (
-          <li
-            key={jp.jour}
-            style={{ animationDelay: `${delaiJour(i)}ms` }}
-            className="relative rounded-lg border border-brand-100 bg-surface p-4 motion-safe:animate-entree-jour"
-          >
-            {/* Atterrissage (#337) : carte d'aujourd'hui, une fois le dernier
-                nom de plat posé ; les toasts partent à sa fin. Le contenu est
-                `relative` pour passer au-dessus du lavis. */}
-            {choregraphie?.jour === jp.jour && (
-              <PulsationAtterrissage
-                key={`atterrissage-${genNonce}`}
-                delaiMs={delaiAtterrissage(planningAffiche.jours.length)}
-                onFin={terminerChoregraphie}
-              />
-            )}
-            <h2 className="relative mb-3 font-semibold text-brand-900">
-              {LIBELLES_JOURS[jp.jour].complet}
-            </h2>
-            {/* Déjeuner + dîner côte à côte dès sm (#3 : 14 repas/semaine —
-                chaque jour tient sur une rangée), empilés sous sm (petits
-                écrans). Au-delà de lg, c'est la grille 7 colonnes qui prend
-                le relais (ul masquée). */}
-            <div className="relative grid gap-3 sm:grid-cols-2">
-              {slotsDuJour(jp).map((slot) => (
-                <SlotRepas
-                  key={slot.typeRepas}
-                  libelle={slot.libelle}
-                  jourLabel={LIBELLES_JOURS[jp.jour].complet}
-                  recette={slot.recette}
-                  indisponible={
-                    slotIndisponible === cleSlot(jp.jour, slot.typeRepas)
-                  }
-                  personnes={personnesDuSlot(jp, slot.typeRepas)}
-                  onChanger={() => changerSlot(jp.jour, slot.typeRepas)}
-                  onSelectionner={() =>
-                    setSlotEnSelection({ jour: jp.jour, typeRepas: slot.typeRepas })
-                  }
-                  onChangerPersonnes={(n) =>
-                    changerPersonnes(jp.jour, slot.typeRepas, n)
-                  }
-                  onVoir={() =>
-                    slot.recette &&
-                    setFicheOuverte({
-                      recette: slot.recette,
-                      personnes: personnesDuSlot(jp, slot.typeRepas),
-                    })
-                  }
-                  restes={estRestes(jp, slot.typeRepas)}
-                  onChangerRestes={(valeur) =>
-                    changerRestes(jp.jour, slot.typeRepas, valeur)
-                  }
-                  delaiNomMs={choregraphie ? delaiNom(i) : undefined}
-                />
-              ))}
-            </div>
-          </li>
-        ))}
-      </ul>
-
-      {/* Vue desktop (RG-07, #64) : grille 7 colonnes à partir de lg (≥ 1024px) */}
-      <div
-        key={`grille-desktop-${genNonce}`}
-        className={`hidden transition-opacity duration-200 lg:grid lg:grid-cols-7 lg:gap-3 ${attenteVisible ? "opacity-50" : ""}`}
-      >
-        {planningAffiche.jours.map((jp, i) => (
-          <section
-            key={jp.jour}
-            style={{ animationDelay: `${delaiJour(i)}ms` }}
-            className="relative flex flex-col gap-3 motion-safe:animate-entree-jour"
-          >
-            {/* Atterrissage (#337) : halo derrière la colonne d'aujourd'hui
-                (les cartes sont `relative`, au-dessus du lavis). */}
-            {choregraphie?.jour === jp.jour && (
-              <PulsationAtterrissage
-                key={`atterrissage-${genNonce}`}
-                delaiMs={delaiAtterrissage(planningAffiche.jours.length)}
-                onFin={terminerChoregraphie}
-                className="-inset-2 rounded-xl"
-              />
-            )}
-            <h2 className="relative text-center text-sm font-semibold uppercase tracking-wide text-brand-700/85">
-              {LIBELLES_JOURS[jp.jour].abrege}
-            </h2>
-            {slotsDuJour(jp).map((slot) => (
-              <SlotRepas
-                key={slot.typeRepas}
-                libelle={slot.libelle}
-                jourLabel={LIBELLES_JOURS[jp.jour].complet}
-                recette={slot.recette}
-                indisponible={
-                  slotIndisponible === cleSlot(jp.jour, slot.typeRepas)
-                }
-                personnes={personnesDuSlot(jp, slot.typeRepas)}
-                onChanger={() => changerSlot(jp.jour, slot.typeRepas)}
-                onSelectionner={() =>
-                  setSlotEnSelection({ jour: jp.jour, typeRepas: slot.typeRepas })
-                }
-                onChangerPersonnes={(n) =>
-                  changerPersonnes(jp.jour, slot.typeRepas, n)
-                }
-                onVoir={() =>
-                  slot.recette &&
-                  setFicheOuverte({
-                    recette: slot.recette,
-                    personnes: personnesDuSlot(jp, slot.typeRepas),
-                  })
-                }
-                restes={estRestes(jp, slot.typeRepas)}
-                onChangerRestes={(valeur) =>
-                  changerRestes(jp.jour, slot.typeRepas, valeur)
-                }
-                delaiNomMs={choregraphie ? delaiNom(i) : undefined}
-              />
-            ))}
-          </section>
-        ))}
-      </div>
+      {/* Grille des jours commune avec la vue Cycle (#352) : liste en mobile,
+          rangées alignées en desktop, jour courant marqué. Chorégraphie de
+          génération (#337) : `genNonce` remonte la grille (entrée en cascade
+          rejouée), `attenteVisible` l'estompe (toujours interactive), la
+          pulsation d'atterrissage se pose sur la carte d'aujourd'hui (desktop :
+          halo derrière la colonne) et les toasts partent à sa fin. */}
+      <GrilleJours
+        jours={joursGrille}
+        aujourdhuiISO={aujourdhuiISO}
+        cleAnimation={genNonce}
+        enAttente={attenteVisible}
+        animerEntree
+        decor={(jour, _i, palier) =>
+          choregraphie?.jour === jour.cle ? (
+            <PulsationAtterrissage
+              key={`atterrissage-${genNonce}`}
+              delaiMs={delaiAtterrissage(planningAffiche.jours.length)}
+              onFin={terminerChoregraphie}
+              className={palier === "desktop" ? "-inset-2 rounded-xl" : undefined}
+            />
+          ) : null
+        }
+      />
 
       {/* Sélecteur de recette (US-06) — monté seulement pendant la sélection */}
       {slotEnSelection && (

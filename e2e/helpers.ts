@@ -207,6 +207,53 @@ export async function definirJourCoursesDistant(
 }
 
 /**
+ * Étire (ou raccourcit) le cycle d'ancre donnée à `longueur` jours (#352) :
+ * upsert REST de `cycle_courses` (`on_conflict=foyer_id,ancre`, miroir de
+ * `definirLongueurCycle`, lib/persistance.ts ; `foyer_id` posé par le default
+ * `mon_foyer()`). Sert à tester un cycle de plus ou moins de 7 jours. Toute spec
+ * qui l'utilise DOIT nettoyer via `nettoyerLongueursCycleDistantes` en
+ * beforeEach ET afterAll (foyer partagé).
+ */
+export async function definirLongueurCycleDistant(
+  request: APIRequestContext,
+  ancre: string,
+  longueur: number
+): Promise<void> {
+  const { url, headers } = await jetonTest(request);
+  const reponse = await request.post(
+    `${url}/rest/v1/cycle_courses?on_conflict=foyer_id,ancre`,
+    {
+      headers: {
+        ...headers,
+        "Content-Type": "application/json",
+        Prefer: "resolution=merge-duplicates",
+      },
+      data: { ancre, longueur },
+    }
+  );
+  if (!reponse.ok()) {
+    throw new Error(
+      `Longueur de cycle impossible à poser : HTTP ${reponse.status()} ${await reponse.text()}`
+    );
+  }
+}
+
+/**
+ * Supprime toutes les longueurs de cycle étirées du foyer de test (#352) : sans
+ * ligne, un cycle fait 7 jours (LONGUEUR_DEFAUT). Le foyer étant partagé, une
+ * longueur résiduelle changerait la fenêtre de /courses et de la vue Cycle pour
+ * les specs suivantes.
+ */
+export async function nettoyerLongueursCycleDistantes(
+  request: APIRequestContext
+): Promise<void> {
+  const { url, headers } = await jetonTest(request);
+  await request.delete(`${url}/rest/v1/cycle_courses?foyer_id=not.is.null`, {
+    headers,
+  });
+}
+
+/**
  * Supprime tous les masquages de recettes du compte de test (#105) via DELETE
  * REST. Le masquage (« suppression » d'une recette par défaut) persiste en base
  * pour l'utilisateur : sans nettoyage, une recette du catalogue masquée par un

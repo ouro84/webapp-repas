@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { CookingPot, RefreshCw, Search } from "lucide-react";
+import { CookingPot, RefreshCw, Search, Users } from "lucide-react";
 import { BadgeTemps } from "@/components/planning/badge-temps";
 import { BadgeVegetarien } from "@/components/ui/badge-vegetarien";
 import { BadgeAccompagnement } from "@/components/ui/badge-accompagnement";
@@ -69,8 +69,10 @@ export function SlotRepas({
   const bordure = accentue
     ? "border-2 border-brand-600 p-[11px]"
     : "border p-3";
+  // `lg:px-1.5` : en colonne desktop (~100 px de contenu à 1024), le chip
+  // « Sélectionner » débordait de la carte avec le padding mobile (#352).
   const styleAction =
-    "relative inline-flex items-center gap-1 rounded-full px-2.5 py-1.5 text-sm font-medium text-brand-700 transition after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 hover:text-brand-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100";
+    "relative inline-flex items-center gap-1 rounded-full px-2.5 py-1.5 lg:px-1.5 text-sm font-medium text-brand-700 transition after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 hover:text-brand-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100";
 
   // Créneau désactivé (« Aucun », #217, RG-44/46) : emplacement CONSERVÉ (pas de
   // grille qui se resserre), état vide sobre — 3ᵉ état UI minimum. Aucune action :
@@ -264,6 +266,10 @@ export function IconeRestes() {
 // Stepper du nombre de personnes (US-07, RG-16) : − N pers. +, borné [1;12].
 // Les boutons portent un aria-label contextualisé (9 paires identiques) et
 // une zone tactile ≥ 44px ; la valeur est annoncée via aria-live.
+// En colonne desktop (#352), « − 2 pers. + » (≈ 112 px) ne tient pas dans les
+// ~100 px de contenu d'une carte à 1024 : à `lg`, l'unité passe en `sr-only`
+// (toujours annoncée) et une icône `Users` la remplace ; les boutons ne
+// rétrécissent jamais (`shrink-0`, sinon ils s'écrasent en ovales).
 export function StepperPersonnes({
   personnes,
   slotLabel,
@@ -274,9 +280,9 @@ export function StepperPersonnes({
   onChanger: (personnes: number) => void;
 }) {
   const styleBouton =
-    "relative flex size-7 items-center justify-center rounded-full border border-brand-200 text-brand-700 transition after:absolute after:-inset-2 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.92] motion-reduce:active:scale-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent";
+    "relative flex size-7 shrink-0 items-center justify-center rounded-full border border-brand-200 text-brand-700 transition after:absolute after:-inset-2 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.92] motion-reduce:active:scale-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent";
   return (
-    <div className="mt-2 flex items-center gap-2">
+    <div className="mt-2 flex items-center gap-2 lg:gap-1">
       <button
         type="button"
         onClick={() => onChanger(personnes - 1)}
@@ -288,9 +294,11 @@ export function StepperPersonnes({
       </button>
       <span
         aria-live="polite"
-        className="min-w-[4.5rem] text-center text-xs font-medium text-brand-700/85"
+        className="inline-flex min-w-[4.5rem] items-center justify-center gap-1 text-center text-xs font-medium text-brand-700/85 lg:min-w-0 lg:flex-1"
       >
-        {personnes} pers.
+        <Users aria-hidden="true" className="hidden size-3.5 shrink-0 lg:inline" />
+        {personnes}
+        <span className="lg:sr-only"> pers.</span>
       </span>
       <button
         type="button"
