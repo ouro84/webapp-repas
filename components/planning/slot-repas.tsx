@@ -14,6 +14,9 @@ import type { Recette } from "@/types";
 // Partagée entre les vues mobile et desktop (app/planning/page.tsx), et depuis
 // la vue Cycle (components/planning/vue-cycle.tsx) — extraite ici pour éviter
 // de dupliquer ~200 lignes d'UI d'édition entre les deux vues.
+// Gabarit unique (#352) : la carte occupe toute la hauteur de sa cellule de
+// grille (`h-full`) et ancre badges + actions + stepper en bas (`mt-auto`), pour
+// que les rangées s'alignent d'une colonne à l'autre en desktop.
 export function SlotRepas({
   libelle,
   jourLabel,
@@ -27,6 +30,7 @@ export function SlotRepas({
   restes,
   onChangerRestes,
   delaiNomMs,
+  accentue = false,
 }: {
   libelle: string;
   jourLabel: string;
@@ -44,6 +48,11 @@ export function SlotRepas({
    * seulement pendant la chorégraphie (jamais sur un remplacement de slot).
    */
   delaiNomMs?: number;
+  /**
+   * Jour courant (#352) : bordure `border-2 border-brand-600`. Le padding est
+   * compensé (11px + 2px = 12px + 1px) pour ne pas décaler le contenu.
+   */
+  accentue?: boolean;
 }) {
   const slotNom = `${libelle.toLowerCase()} de ${jourLabel.toLowerCase()}`;
   // Spin one-shot de l'icône « changer » (#69, P17) : incrémenté au clic →
@@ -55,6 +64,11 @@ export function SlotRepas({
   // tactile ≥ 44px via after:-inset-1. `transition` (et non transition-colors)
   // anime couleur ET transform → le feedback `active:scale` est lissé ; neutralisé
   // en reduced-motion.
+  // Bordure + padding de la carte : l'accent épaissit la bordure et rend 1px de
+  // padding, la hauteur et la position du contenu restent identiques.
+  const bordure = accentue
+    ? "border-2 border-brand-600 p-[11px]"
+    : "border p-3";
   const styleAction =
     "relative inline-flex items-center gap-1 rounded-full px-2.5 py-1.5 text-sm font-medium text-brand-700 transition after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 hover:text-brand-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100";
 
@@ -64,7 +78,9 @@ export function SlotRepas({
   // sans recette n'a rien à cuisiner/sélectionner).
   if (!recette) {
     return (
-      <div className="rounded-lg border border-dashed border-brand-100 bg-brand-50/30 p-3 text-center shadow-sm">
+      <div
+        className={`h-full rounded-lg border-dashed bg-brand-50/30 text-center shadow-sm ${bordure} ${accentue ? "" : "border-brand-100"}`}
+      >
         <p className="text-xs font-medium uppercase tracking-wide text-brand-700/85">
           {libelle}
         </p>
@@ -78,14 +94,16 @@ export function SlotRepas({
   // choisit un autre (« Sélectionner »). Style atténué + bordure pointillée.
   if (restes) {
     return (
-      <div className="rounded-lg border border-dashed border-brand-200 bg-brand-50/50 p-3 shadow-sm">
+      <div
+        className={`flex h-full flex-col rounded-lg border-dashed bg-brand-50/50 shadow-sm ${bordure} ${accentue ? "" : "border-brand-200"}`}
+      >
         <p className="text-xs font-medium uppercase tracking-wide text-brand-700/85">
           {libelle}
         </p>
         <p className="mt-1 flex items-center gap-1.5 text-sm font-medium text-brand-700/80">
           <IconeRestes /> Restes
         </p>
-        <div className="mt-2 flex flex-wrap items-center gap-1">
+        <div className="mt-auto flex flex-wrap items-center gap-1 pt-2 lg:flex-col lg:items-start">
           <button
             type="button"
             onClick={() => onChangerRestes(false)}
@@ -110,7 +128,9 @@ export function SlotRepas({
   }
 
   return (
-    <div className="rounded-lg border border-brand-100 bg-surface p-3 shadow-sm">
+    <div
+      className={`flex h-full flex-col rounded-lg bg-surface shadow-sm ${bordure} ${accentue ? "" : "border-brand-100"}`}
+    >
       <p className="text-xs font-medium uppercase tracking-wide text-brand-700/85">
         {libelle}
       </p>
@@ -125,92 +145,100 @@ export function SlotRepas({
         type="button"
         onClick={onVoir}
         aria-label={`Voir la recette : ${recette.nom}`}
+        title={recette.nom}
         // `backwards` : le nom reste invisible pendant son retard (le token
         // crossfade n'a pas de remplissage).
+        // `line-clamp-3` + `title` : en colonne étroite (desktop) le nom est
+        // tronqué à 3 lignes, le nom complet reste en infobulle.
         style={
           delaiNomMs !== undefined
             ? { animationDelay: `${delaiNomMs}ms`, animationFillMode: "backwards" }
             : undefined
         }
-        className="mt-1 block w-full text-left text-sm font-medium text-brand-900 underline-offset-2 transition-colors hover:text-brand-700 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 motion-safe:animate-crossfade"
+        className="mt-1 line-clamp-3 block w-full text-left text-sm font-medium text-brand-900 underline-offset-2 transition-colors hover:text-brand-700 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 motion-safe:animate-crossfade"
       >
         {recette.nom}
       </button>
-      {/* Badges (information) — ligne dédiée, séparée des actions (#210). */}
-      <div className="mt-2 flex flex-wrap items-center gap-1.5">
-        <BadgeTemps temps={recette.tempsPreparation} />
-        {recette.vegetarien && <BadgeVegetarien compact />}
-        {recette.accompagnement && (
-          <BadgeAccompagnement accompagnement={recette.accompagnement} compact />
-        )}
-        {recette.saisons && recette.saisons.length > 0 && (
-          <BadgeSaison saisons={recette.saisons} compact />
+      {/* Bloc bas ancré (`mt-auto`, #352) : badges, actions, stepper et alerte
+          restent alignés en bas de la carte quelle que soit la longueur du nom. */}
+      <div className="mt-auto">
+        {/* Badges (information) — ligne dédiée, séparée des actions (#210). */}
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          <BadgeTemps temps={recette.tempsPreparation} />
+          {recette.vegetarien && <BadgeVegetarien compact />}
+          {recette.accompagnement && (
+            <BadgeAccompagnement accompagnement={recette.accompagnement} compact />
+          )}
+          {recette.saisons && recette.saisons.length > 0 && (
+            <BadgeSaison saisons={recette.saisons} compact />
+          )}
+        </div>
+        {/* Actions (contrôles) — ligne dédiée + style unifié (#210, audit #51) :
+            séparées des badges par un filet. Toujours visibles (#334) : le
+            disclosure « Actions » de #210 coûtait un tap de plus sur des actions
+            utilisées à chaque visite. La densité est tenue autrement : Changer en
+            icône seule (l'action « magique », reconnaissable au ↻), Sélectionner
+            et Restes libellés — une ligne à 320 px. À `lg` (colonnes de ~125 px),
+            les actions s'empilent (`lg:flex-col`) et gardent leurs libellés ;
+            Changer gagne alors le sien (`hidden lg:inline`), son `title` ne servant
+            qu'en mobile où il est icône seule.
+            a11y : aria-labels contextualisés (des paires de boutons identiques sont
+            indiscernables au lecteur d'écran) ; icônes décoratives ; le libellé
+            visible est contenu dans le nom accessible (WCAG 2.5.3). */}
+        <div className="mt-2 flex flex-wrap items-center gap-1 border-t border-brand-100/70 pt-2 lg:flex-col lg:items-start">
+          <button
+            type="button"
+            onClick={() => {
+              setSpin((s) => s + 1);
+              onChanger();
+            }}
+            aria-label={`Changer le ${slotNom}`}
+            title="Changer"
+            className={styleAction}
+          >
+            {/* key={spin} : chaque clic re-monte l'icône → rejoue la rotation
+                360°. spin>0 garde le tout premier rendu sans rotation. (#69) */}
+            <RefreshCw
+              key={spin}
+              aria-hidden="true"
+              className={`size-4 ${spin > 0 ? "motion-safe:animate-spin-once" : ""}`}
+            />
+            <span className="hidden lg:inline">Changer</span>
+          </button>
+          {/* Sélection manuelle (US-06) : ouvre le sélecteur de recettes */}
+          <button
+            type="button"
+            onClick={onSelectionner}
+            aria-label={`Sélectionner le ${slotNom}`}
+            className={styleAction}
+          >
+            <Search aria-hidden="true" className="size-3.5" />
+            Sélectionner
+          </button>
+          {/* Marquer en « restes » (US-12) : pas de cuisine ce repas-là */}
+          <button
+            type="button"
+            onClick={() => onChangerRestes(true)}
+            aria-label={`Marquer le ${slotNom} en restes`}
+            className={styleAction}
+          >
+            <IconeRestes />
+            Restes
+          </button>
+        </div>
+        {/* Nombre de personnes (US-07) : la liste de courses se met à l'échelle */}
+        <StepperPersonnes
+          personnes={personnes}
+          slotLabel={slotNom}
+          onChanger={onChangerPersonnes}
+        />
+        {/* role="alert" : le message dynamique est annoncé aux lecteurs d'écran */}
+        {indisponible && (
+          <p role="alert" className="mt-2 text-xs text-red-600">
+            Pas de recette disponible
+          </p>
         )}
       </div>
-      {/* Actions (contrôles) — ligne dédiée + style unifié (#210, audit #51) :
-          séparées des badges par un filet. Toujours visibles (#334) : le
-          disclosure « Actions » de #210 coûtait un tap de plus sur des actions
-          utilisées à chaque visite. La densité est tenue autrement : Changer en
-          icône seule (l'action « magique », reconnaissable au ↻), Sélectionner
-          et Restes libellés — une ligne à 320 px. À `lg` (colonnes de ~125 px),
-          libellés masqués, `title` en infobulle.
-          a11y : aria-labels contextualisés (des paires de boutons identiques sont
-          indiscernables au lecteur d'écran) ; icônes décoratives ; le libellé
-          visible est contenu dans le nom accessible (WCAG 2.5.3). */}
-      <div className="mt-2 flex flex-wrap items-center gap-1 border-t border-brand-100/70 pt-2">
-        <button
-          type="button"
-          onClick={() => {
-            setSpin((s) => s + 1);
-            onChanger();
-          }}
-          aria-label={`Changer le ${slotNom}`}
-          title="Changer"
-          className={styleAction}
-        >
-          {/* key={spin} : chaque clic re-monte l'icône → rejoue la rotation
-              360°. spin>0 garde le tout premier rendu sans rotation. (#69) */}
-          <RefreshCw
-            key={spin}
-            aria-hidden="true"
-            className={`size-4 ${spin > 0 ? "motion-safe:animate-spin-once" : ""}`}
-          />
-        </button>
-        {/* Sélection manuelle (US-06) : ouvre le sélecteur de recettes */}
-        <button
-          type="button"
-          onClick={onSelectionner}
-          aria-label={`Sélectionner le ${slotNom}`}
-          title="Sélectionner"
-          className={styleAction}
-        >
-          <Search aria-hidden="true" className="size-3.5" />
-          <span className="lg:hidden">Sélectionner</span>
-        </button>
-        {/* Marquer en « restes » (US-12) : pas de cuisine ce repas-là */}
-        <button
-          type="button"
-          onClick={() => onChangerRestes(true)}
-          aria-label={`Marquer le ${slotNom} en restes`}
-          title="Restes"
-          className={styleAction}
-        >
-          <IconeRestes />
-          <span className="lg:hidden">Restes</span>
-        </button>
-      </div>
-      {/* Nombre de personnes (US-07) : la liste de courses se met à l'échelle */}
-      <StepperPersonnes
-        personnes={personnes}
-        slotLabel={slotNom}
-        onChanger={onChangerPersonnes}
-      />
-      {/* role="alert" : le message dynamique est annoncé aux lecteurs d'écran */}
-      {indisponible && (
-        <p role="alert" className="mt-2 text-xs text-red-600">
-          Pas de recette disponible
-        </p>
-      )}
     </div>
   );
 }
