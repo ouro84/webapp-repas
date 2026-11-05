@@ -134,11 +134,25 @@ describe("SlotRepas : gabarit unique (#352)", () => {
     expect((alerte.parentElement as HTMLElement).className).toContain("mt-auto");
   });
 
-  it("accentue : bordure brand-600 épaisse ; sinon bordure normale", () => {
+  // Q19 (#352) : en mobile seule la carte du jour (`li`) est bordée ; l'accent
+  // des cartes de repas n'agit qu'à `lg` (colonne du jour en desktop). Sinon la
+  // carte du jour contiendrait deux cartes elles aussi bordées (trois cadres).
+  const classes = (el: Element) => (el as HTMLElement).className.split(/\s+/);
+  function attendreAccentDesktopSeul(el: Element, couleurBase: string) {
+    const c = classes(el);
+    expect(c).toEqual(expect.arrayContaining(["border", "p-3", couleurBase]));
+    expect(c).toEqual(
+      expect.arrayContaining(["lg:border-2", "lg:border-brand-600", "lg:p-[11px]"])
+    );
+    // Aucune classe d'accent sans préfixe : rien ne change sous `lg`.
+    expect(c).not.toContain("border-2");
+    expect(c).not.toContain("border-brand-600");
+    expect(c).not.toContain("p-[11px]");
+  }
+
+  it("accentue : bordure brand-600 épaisse à lg seulement ; sinon bordure normale", () => {
     const { container, rerender } = rendre({ accentue: true });
-    const racine = container.firstElementChild as HTMLElement;
-    expect(racine.className).toContain("border-2");
-    expect(racine.className).toContain("border-brand-600");
+    attendreAccentDesktopSeul(container.firstElementChild!, "border-brand-100");
     rerender(
       <SlotRepas
         libelle="Déjeuner"
@@ -154,24 +168,24 @@ describe("SlotRepas : gabarit unique (#352)", () => {
         onChangerRestes={vi.fn()}
       />
     );
-    expect((container.firstElementChild as HTMLElement).className).not.toContain(
-      "border-brand-600"
-    );
+    const racine = container.firstElementChild!;
+    expect((racine as HTMLElement).className).not.toContain("border-brand-600");
+    expect(classes(racine)).toEqual(expect.arrayContaining(["border", "p-3", "border-brand-100"]));
   });
 
-  it("variante restes : h-full et accentue", () => {
+  it("variante restes : h-full et accentue (lg seulement)", () => {
     const { container } = rendre({ restes: true, accentue: true });
     const racine = container.firstElementChild as HTMLElement;
     expect(racine.className).toContain("h-full");
-    expect(racine.className).toContain("border-brand-600");
+    attendreAccentDesktopSeul(racine, "border-brand-200");
     const cuisiner = screen.getByRole("button", { name: "Cuisiner le déjeuner de lundi" });
     expect((cuisiner.parentElement as HTMLElement).className).toContain("mt-auto");
   });
 
-  it("variante sans recette : h-full et accentue", () => {
+  it("variante sans recette : h-full et accentue (lg seulement)", () => {
     const { container } = rendre({ recette: undefined, accentue: true });
     const racine = container.firstElementChild as HTMLElement;
     expect(racine.className).toContain("h-full");
-    expect(racine.className).toContain("border-brand-600");
+    attendreAccentDesktopSeul(racine, "border-brand-100");
   });
 });

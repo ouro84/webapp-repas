@@ -155,6 +155,32 @@ test("aujourd'hui marqué, sauf le week-end", async ({ page }) => {
 
   await verifierPastille();
 
+  // Accent des cartes de repas (Q19) : en mobile, seule la carte du jour est
+  // bordée (pas de cadres imbriqués) ; en desktop, les cartes de la colonne du
+  // jour portent la bordure épaisse. Lu sur le style calculé, pas les classes.
+  if (enSemaine) {
+    const bordureHaute = (l: Locator) =>
+      l.evaluateAll((els) => els.map((el) => getComputedStyle(el).borderTopWidth));
+    const jourMobile = page
+      .locator("main ul > li")
+      .filter({ has: page.getByText(PASTILLE, { exact: true }) });
+    const cartesMobile = jourMobile.locator(":scope > div.grid > div");
+    await expect(cartesMobile).toHaveCount(2);
+    expect(await bordureHaute(cartesMobile)).toEqual(["1px", "1px"]);
+
+    await page.setViewportSize({ width: 1280, height: 900 });
+    const colonne = page
+      .getByTestId("rangee-jours")
+      .locator("section")
+      .filter({ has: page.getByText(PASTILLE, { exact: true }) });
+    await expect(colonne).toHaveCount(1);
+    await expect(cartesDe(colonne)).toHaveCount(2);
+    await expect
+      .poll(() => bordureHaute(cartesDe(colonne)))
+      .toEqual(["2px", "2px"]);
+    await page.setViewportSize({ width: 390, height: 844 });
+  }
+
   // Vue Cycle (jour de courses lundi, 7 jours) : même fenêtre que la semaine.
   await page.getByRole("button", { name: "Cycle" }).click();
   await expect(page.getByRole("heading", { name: "Mon planning du cycle" })).toBeVisible();

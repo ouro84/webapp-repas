@@ -49,8 +49,10 @@ export function SlotRepas({
    */
   delaiNomMs?: number;
   /**
-   * Jour courant (#352) : bordure `border-2 border-brand-600`. Le padding est
-   * compensé (11px + 2px = 12px + 1px) pour ne pas décaler le contenu.
+   * Jour courant (#352) : bordure `border-2 border-brand-600` à `lg` seulement
+   * (colonne du jour en desktop ; en mobile, c'est la carte du jour qui est
+   * bordée, Q19). Le padding est compensé (11px + 2px = 12px + 1px) pour ne pas
+   * décaler le contenu.
    */
   accentue?: boolean;
 }) {
@@ -66,9 +68,11 @@ export function SlotRepas({
   // en reduced-motion.
   // Bordure + padding de la carte : l'accent épaissit la bordure et rend 1px de
   // padding, la hauteur et la position du contenu restent identiques.
-  const bordure = accentue
-    ? "border-2 border-brand-600 p-[11px]"
-    : "border p-3";
+  // L'accent n'agit qu'à `lg` (Q19, #352) : en mobile, la carte du jour (`li`)
+  // est déjà bordée, des cartes de repas bordées dedans feraient trois cadres
+  // imbriqués. Sous `lg`, la carte garde la couleur de base de sa variante.
+  const bordure = (couleurBase: string) =>
+    `border p-3 ${couleurBase}${accentue ? " lg:border-2 lg:border-brand-600 lg:p-[11px]" : ""}`;
   // `lg:px-1.5` : en colonne desktop (~100 px de contenu à 1024), le chip
   // « Sélectionner » débordait de la carte avec le padding mobile (#352).
   const styleAction =
@@ -81,7 +85,7 @@ export function SlotRepas({
   if (!recette) {
     return (
       <div
-        className={`h-full rounded-lg border-dashed bg-brand-50/30 text-center shadow-sm ${bordure} ${accentue ? "" : "border-brand-100"}`}
+        className={`h-full rounded-lg border-dashed bg-brand-50/30 text-center shadow-sm ${bordure("border-brand-100")}`}
       >
         <p className="text-xs font-medium uppercase tracking-wide text-brand-700/85">
           {libelle}
@@ -97,7 +101,7 @@ export function SlotRepas({
   if (restes) {
     return (
       <div
-        className={`flex h-full flex-col rounded-lg border-dashed bg-brand-50/50 shadow-sm ${bordure} ${accentue ? "" : "border-brand-200"}`}
+        className={`flex h-full flex-col rounded-lg border-dashed bg-brand-50/50 shadow-sm ${bordure("border-brand-200")}`}
       >
         <p className="text-xs font-medium uppercase tracking-wide text-brand-700/85">
           {libelle}
@@ -131,7 +135,7 @@ export function SlotRepas({
 
   return (
     <div
-      className={`flex h-full flex-col rounded-lg bg-surface shadow-sm ${bordure} ${accentue ? "" : "border-brand-100"}`}
+      className={`flex h-full flex-col rounded-lg bg-surface shadow-sm ${bordure("border-brand-100")}`}
     >
       <p className="text-xs font-medium uppercase tracking-wide text-brand-700/85">
         {libelle}
