@@ -42,6 +42,7 @@ Le job `playwright-cache` peuple le cache **une fois** ; `e2e` fait `actions/cac
 ## Dependabot : majeures ignorées
 
 - `eslint` et `typescript` majeurs sont dans `ignore` (`.github/dependabot.yml`), chacun avec sa condition de retrait en commentaire. Pourquoi : leur majeure casse `eslint-config-next` / typescript-eslint, et une PR rouge ignorée pourrit des mois.
+- **Jamais `npm audit fix --force`** : il propose de rétrograder `eslint-config-next` en 15.x (et Sentry), ce qui casse le lint sous Next 16. Corriger par `npm audit fix` simple et des bumps ciblés. Reliquats acceptés (outillage seul, sans correctif compatible) : `minimatch` < 11.0.1 via typescript-eslint, `glob` ≤ 14.0.1 via `@sentry/bundler-plugins`.
 - TS 7 est surveillé par `veille-typescript-7.yml` (mensuel, ~1 min) : il ouvre une issue quand typescript-eslint accepte 7.0.0. Retirer l'ignore et supprimer ce workflow dans la même PR.
 
 ## Incidents connus
