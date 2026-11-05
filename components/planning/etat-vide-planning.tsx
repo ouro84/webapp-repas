@@ -56,7 +56,7 @@ export function EtatVidePlanning({
       </div>
       <div
         aria-busy={chargement}
-        className={`flex flex-col items-center gap-8 transition-opacity duration-200 ${chargement ? "opacity-50" : ""}`}
+        className={`flex w-full flex-col items-center gap-8 transition-opacity duration-200 ${chargement ? "opacity-50" : ""}`}
       >
         <ApercuPlanning enAttente={enAttente} />
         <div className="flex flex-col items-center gap-4">

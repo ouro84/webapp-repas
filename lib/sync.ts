@@ -52,6 +52,7 @@ import {
   semainesDuCycle,
 } from "@/lib/cycles";
 import { chargerJourCoursesFoyer } from "@/lib/foyer";
+import { jourCoursesOuLundi } from "@/lib/ancre-initiale-cycle";
 import { parseApiError } from "@/lib/errors";
 import type { ArticleManuel, JourPlanning, Planning, SemaineGeneree } from "@/types";
 import type { RealtimeChannel } from "@supabase/supabase-js";
@@ -1597,7 +1598,8 @@ async function chargerCycleDansCache(
  * (défaut 7). Purge de rétention best-effort (cycles > 12 semaines) — une fois.
  */
 export async function hydraterCycle(): Promise<void> {
-  const jour = await chargerJourCoursesFoyer().catch(() => 1); // fail-open : lundi
+  // Fail-open lundi, repli loggé : même helper que la vue Cycle (jumeau, #352).
+  const jour = await jourCoursesOuLundi(chargerJourCoursesFoyer());
   // ancreParDefaut (pas ancreCourante) : le week-end, la génération vise la
   // semaine prochaine (semaineParDefaut) → on décale le cycle par défaut pour la
   // couvrir, sinon /courses afficherait un cycle courant vide/écoulé (#257).

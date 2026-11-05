@@ -1070,3 +1070,32 @@ describe("alerte US-21 : écho reçu pendant une écriture en vol (#352)", () =>
     expect(JSON.parse(localStorage.getItem("planning_courant")!).jours[0].diner.id).toBe("nouveau");
   });
 });
+
+// Jumeau de la vue Cycle (#352, revue) : /courses retombe aussi sur lundi quand
+// le jour de courses est illisible, et le repli est loggé (CLAUDE.md : toute
+// erreur capturée est loggée), via le même `jourCoursesOuLundi`.
+describe("hydraterCycle : jour de courses illisible", () => {
+  it("retombe sur lundi en loggant le repli", async () => {
+    vi.doMock("@/lib/foyer", () => ({
+      chargerJourCoursesFoyer: () => Promise.reject(new Error("réseau")),
+    }));
+    const avertissement = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const { hydraterCycle } = await chargerSync();
+      const { ancreParDefaut } = await import("@/lib/cycles");
+
+      await hydraterCycle();
+
+      expect(avertissement).toHaveBeenCalledWith(
+        "Jour de courses illisible, lundi par défaut.",
+        expect.any(Error)
+      );
+      expect(JSON.parse(localStorage.getItem("cycle_affiche")!).ancre).toBe(
+        ancreParDefaut(new Date(), 1)
+      );
+    } finally {
+      avertissement.mockRestore();
+      vi.doUnmock("@/lib/foyer");
+    }
+  });
+});

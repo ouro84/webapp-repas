@@ -64,3 +64,16 @@ describe("EtatVidePlanning : chargement", () => {
     expect(message.closest("[aria-busy]")?.getAttribute("aria-busy")).toBe("false");
   });
 });
+
+// Le corps est un item flex d'une colonne centrée : sans `w-full`, il prend la
+// largeur de son contenu et rétrécit l'aperçu (`w-full max-w-lg`, ~512 → 460 px
+// dès `sm`), y compris dans l'état vide de la semaine (#352, revue).
+describe("EtatVidePlanning : largeur", () => {
+  it("le corps occupe toute la largeur, l'aperçu garde son max-w-lg", () => {
+    rendre(false);
+    const corps = screen
+      .getByText("Aucun repas planifié sur ce cycle.")
+      .closest("[aria-busy]") as HTMLElement;
+    expect(corps.classList.contains("w-full")).toBe(true);
+  });
+});

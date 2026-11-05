@@ -2,9 +2,15 @@
 // casser l'import circulaire cycles ↔ planning-affichage.
 
 import { readFileSync } from "node:fs"
+import { resolve } from "node:path"
 import { describe, expect, it } from "vitest"
 import { depuisISO, versISO } from "@/lib/dates-iso"
 import * as cycles from "@/lib/cycles"
+
+// Chemins résolus depuis ce fichier (et non le cwd) : le test passe quel que
+// soit le dossier d'où vitest est lancé.
+const lireLib = (fichier: string) =>
+  readFileSync(resolve(__dirname, "../lib", fichier), "utf8")
 
 describe("lib/dates-iso", () => {
   it("aller-retour en heure locale, sans UTC", () => {
@@ -20,9 +26,9 @@ describe("lib/dates-iso", () => {
   })
 
   it("module feuille : aucun import interne ; planning-affichage n'importe plus lib/cycles", () => {
-    const feuille = readFileSync("lib/dates-iso.ts", "utf8")
+    const feuille = lireLib("dates-iso.ts")
     expect(feuille).not.toMatch(/from\s+["']@\/lib\//)
-    const affichage = readFileSync("lib/planning-affichage.ts", "utf8")
+    const affichage = lireLib("planning-affichage.ts")
     expect(affichage).not.toMatch(/from\s+["']@\/lib\/cycles["']/)
   })
 })
