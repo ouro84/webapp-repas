@@ -16,7 +16,7 @@ Le jour de courses se choisit **une fois**, dans **/profil → section « Mon fo
 
 ## Lire et naviguer les cycles
 
-En haut de la liste, un libellé indique la fenêtre en cours, par exemple **« Courses du 9 au 15 juillet »**, encadré de deux flèches **‹** et **›**.
+En haut de la liste, un repère et les dates indiquent la fenêtre en cours, par exemple **« Ce cycle »** puis **« du 9 au 15 juillet »**, encadrés de deux flèches ‹ et ›.
 
 - **‹ / ›** passent au cycle **précédent** ou **suivant** — pratique pour **anticiper** ta prochaine virée (souvent un ou deux jours avant la fin du cycle) ou revoir une liste passée.
 
