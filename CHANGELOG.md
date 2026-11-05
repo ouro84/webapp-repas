@@ -23,6 +23,9 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 ### Corrigé
 
 - Planning : une modification faite pendant qu’un autre membre du foyer modifie un autre repas n’est plus perdue (#355).
+- Régénérer un cycle attend que les dernières modifications du planning soient enregistrées ; si elles ne peuvent pas l’être (connexion coupée), la régénération est refusée avec un message au lieu de les écraser (#355).
+- Planning : si le changement d’un autre membre du foyer n’a pas pu être relu, l’indicateur de synchronisation le signale, l’app réessaie seule, et la modification en attente n’est plus envoyée avant cette relecture, même après un rechargement de la page (#355).
+- Liste de courses : plusieurs modifications du planning faites coup sur coup par un autre membre du foyer apparaissent toutes dans la liste, et non plus seulement la première (#355).
 - Planning : au clavier, passer d’une semaine ou d’un cycle rempli à une période vide (ou l’inverse) laisse le focus sur la flèche qu’on vient d’utiliser, au lieu de le renvoyer en haut de la page. Pendant le chargement d’un autre cycle, le titre et le choix de la vue restent nets, seul le contenu s’estompe (#352).
 - Vue Cycle : si le cycle ne peut pas être chargé à l’ouverture, la page le dit et propose « Réessayer », au lieu de rester bloquée sur « Chargement… » (#352).
 - Planning : l’alerte « le planning vient d’être modifié » pouvait s’ouvrir sur sa propre modification, juste après une génération ou en changeant vite le nombre de personnes, et les derniers clics étaient alors perdus. Elle ne s’ouvre plus que pour la modification d’un autre membre du foyer (#352).

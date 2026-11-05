@@ -44,6 +44,7 @@ test.beforeEach(async ({ page, request }) => {
       "planning_courant_maj",
       "planning_dirty",
       "planning_confirme",
+      "planning_a_relire",
       "courses_cochees_maj",
       "courses_dirty",
       "semaine_affichee",

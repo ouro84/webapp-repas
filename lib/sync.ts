@@ -70,6 +70,11 @@ const CLE_DIRTY = "planning_dirty";
 // `appliquerGenerationCycle`). Base de comparaison des éditions locales en
 // attente quand une relecture US-21 arrive (`relireEnRejouantEditionsLocales`).
 const CLE_CONFIRME = "planning_confirme";
+// Semaine dont la dernière relecture US-21 avec rejeu a échoué (#355) : aucun
+// push de cette semaine avant une relecture réussie. Persistée pour survivre à
+// un rechargement : sinon `hydrater` (« local fait foi ») pousserait le local
+// sans relire et effacerait le changement distant que la lecture devait intégrer.
+const CLE_A_RELIRE = "planning_a_relire";
 // Coches : depuis #56 PR4 (par-article), seul `courses_dirty` (file d'opérations
 // à pousser) sert. `courses_cochees_maj` est legacy — plus écrit, mais purgé au
 // changement de foyer et en e2e pour ne pas laisser de valeur orpheline.
@@ -104,6 +109,7 @@ export function reinitialiserCacheFoyer(): void {
   localStorage.removeItem(CLE_MAJ);
   localStorage.removeItem(CLE_DIRTY);
   localStorage.removeItem(CLE_CONFIRME); // instantané confirmé (#355) de l'ancien foyer
+  localStorage.removeItem(CLE_A_RELIRE); // relecture à refaire (#355) de l'ancien foyer
   localStorage.removeItem(CLE_MAJ_COCHES);
   localStorage.removeItem(CLE_DIRTY_COCHES);
   localStorage.removeItem("planning_snapshot"); // CLE_SNAPSHOT de lib/stockage
@@ -715,7 +721,7 @@ async function pousser(): Promise<void> {
   // Relecture ratée pour cette semaine (#355) : la refaire d'abord. Pousser le
   // local sans elle effacerait le changement de l'autre membre ; c'est elle
   // qui relancera le push (de la fusion) si elle réussit.
-  if (relectureARefaire === planning.semaine) {
+  if (lireRelectureARefaire() === planning.semaine) {
     void traiterChangementPlanningDistant(planning.semaine);
     return;
   }
@@ -1110,6 +1116,13 @@ function couperTempsReel(): Promise<void> {
   // ou différé par une écriture en vol, n'est plus jugé après la coupure.
   semainePlanningVoulue = null;
   eventsPlanningDifferes.clear();
+  // Une lecture encore en vol ne rouvre pas le canal (#355), et la relecture
+  // US-21 ratée n'est plus retentée hors de /planning (reste persistée : refaite
+  // au prochain déclencheur de push). `relecturePlanningDemandee` n'est PAS
+  // levé : la relecture finale d'un traitement en cours protège encore le push
+  // de sa fusion (elle ne rouvre aucun canal).
+  abonnementPlanningAutorise = false;
+  annulerNouvelleRelecture();
   return Promise.all([
     chaineCoches,
     chainePlanning,
@@ -1179,8 +1192,62 @@ let traitementPlanningEnCours = false;
 let relecturePlanningDemandee: string | null = null;
 // Semaine dont la dernière relecture avec rejeu a échoué (#355) : `pousser`
 // refait la relecture avant tout push de cette semaine. Levé par toute lecture
-// réussie (rejeu ou `chargerSemaineDansCache`).
-let relectureARefaire: string | null = null;
+// réussie (rejeu ou `chargerSemaineDansCache`, cf. `relectureReussie`).
+// Persistée (`CLE_A_RELIRE`) : un rechargement ne doit pas pousser sans relire.
+function lireRelectureARefaire(): string | null {
+  return localStorage.getItem(CLE_A_RELIRE);
+}
+
+// Nouvelle tentative différée d'une relecture ratée (#355) : sans elle, rien ne
+// la relançait tant que l'utilisateur ne retouchait pas au planning (en ligne,
+// aucun event `online` ne vient). Back-off simple et borné ; seulement pendant
+// que /planning est monté (`abonnementPlanningAutorise`), arrêtée par
+// `couperTempsReel`. Hors ligne, l'event `online` relance déjà (`pousser`).
+const RELECTURE_DELAI_INITIAL_MS = 2000;
+const RELECTURE_DELAI_MAX_MS = 30_000;
+const RELECTURE_TENTATIVES_MAX = 5;
+let minuteurRelecture: ReturnType<typeof setTimeout> | null = null;
+let tentativesRelecture = 0;
+
+function planifierNouvelleRelecture(semaine: string): void {
+  if (!abonnementPlanningAutorise) return;
+  if (typeof navigator !== "undefined" && navigator.onLine === false) return;
+  if (tentativesRelecture >= RELECTURE_TENTATIVES_MAX) return; // reste : les déclencheurs de push
+  const delai = Math.min(
+    RELECTURE_DELAI_INITIAL_MS * 2 ** tentativesRelecture,
+    RELECTURE_DELAI_MAX_MS
+  );
+  tentativesRelecture++;
+  if (minuteurRelecture) clearTimeout(minuteurRelecture);
+  minuteurRelecture = setTimeout(() => {
+    minuteurRelecture = null;
+    if (lireRelectureARefaire() !== semaine || semaineActive() !== semaine) return;
+    void traiterChangementPlanningDistant(semaine);
+  }, delai);
+}
+
+function annulerNouvelleRelecture(): void {
+  if (minuteurRelecture) clearTimeout(minuteurRelecture);
+  minuteurRelecture = null;
+  tentativesRelecture = 0;
+}
+
+// Relecture ratée : aucun push avant une relecture réussie, indicateur
+// « hors-ligne » (le changement distant n'est pas encore intégré), nouvelle
+// tentative différée.
+function relectureRatee(semaine: string): void {
+  localStorage.setItem(CLE_A_RELIRE, semaine);
+  definirEtat("hors-ligne");
+  planifierNouvelleRelecture(semaine);
+}
+
+// Toute lecture réussie de la semaine lève la relecture à refaire et rétablit
+// l'indicateur (le push éventuel le repassera par « sauvegarde »).
+function relectureReussie(): void {
+  localStorage.removeItem(CLE_A_RELIRE);
+  annulerNouvelleRelecture();
+  if (!pushEnCours && !flushCochesEnCours) definirEtat("synchronise");
+}
 
 // Re-pull forcé du planning de la semaine puis, si le contenu a changé, alerte.
 // Avec des éditions locales en attente (`dirty`) et un instantané confirmé
@@ -1213,9 +1280,10 @@ async function traiterChangementPlanningDistant(semaine: string): Promise<void> 
       // Relecture finale AVANT tout push, contre l'instantané devenu « distant ».
       // Elle reprend la garde synchroniquement et relancera le push à sa fin.
       void traiterChangementPlanningDistant(aRelire);
-    } else if (estDirty() && relectureARefaire !== semaine) {
+    } else if (estDirty() && lireRelectureARefaire() !== semaine) {
       // Lecture ratée : pas de push avant une relecture réussie (refaite par
-      // `pousser` au prochain déclencheur : édition, retour en ligne, navigation).
+      // `pousser` au prochain déclencheur : édition, retour en ligne, navigation,
+      // rechargement ; ou par la nouvelle tentative différée, #355).
       relancerPush();
     }
   }
@@ -1254,12 +1322,12 @@ async function relireEnRejouantEditionsLocales(semaine: string): Promise<boolean
     distant = await chargerPlanningDistant(semaine);
   } catch (erreur) {
     // Cache et `dirty` intacts ; le push attend une relecture réussie (cf.
-    // `relectureARefaire`), sinon il effacerait le changement distant.
-    relectureARefaire = semaine;
+    // `lireRelectureARefaire`), sinon il effacerait le changement distant.
+    relectureRatee(semaine);
     console.error("Relecture du planning échouée (éditions locales conservées).", erreur);
     return true;
   }
-  relectureARefaire = null;
+  relectureReussie();
   // Navigation pendant la lecture : la semaine quittée n'est plus en cache.
   if (semaineActive() !== semaine) return true;
   // Relu APRÈS l'await : inclut les éditions faites pendant la lecture.
@@ -1330,8 +1398,16 @@ let semainePlanningAbonnee: string | null = null;
 // retrait) ou un event différé d'une semaine quittée n'est jamais jugé.
 let semainePlanningVoulue: string | null = null;
 let chainePlanning: Promise<void> = Promise.resolve();
+// Vrai seulement entre le montage de /planning (`demarrerSync`) et sa coupure
+// (`couperTempsReel`) (#355). Une lecture encore en vol au démontage
+// (`chargerSemaineDansCache` d'une hydratation, d'une navigation ou d'une
+// relecture US-21) se termine sans rouvrir de canal ni reposer
+// `semainePlanningVoulue` : sinon le canal restait ouvert hors de /planning et
+// ses events étaient jugés (relecture, alerte) sur une page qui ne les attend pas.
+let abonnementPlanningAutorise = false;
 
 function synchroniserAbonnementPlanning(semaine: string | null): Promise<void> {
+  if (semaine !== null && !abonnementPlanningAutorise) return chainePlanning;
   semainePlanningVoulue = semaine;
   for (const s of [...eventsPlanningDifferes.keys()]) {
     if (s !== semaine) eventsPlanningDifferes.delete(s);
@@ -1387,6 +1463,11 @@ async function majAbonnementPlanning(semaine: string | null): Promise<void> {
 // ---------------------------------------------------------------------------
 let suppressionAlerteCycle = false;
 let traitementCycleEnCours = false;
+// Event distant reçu PENDANT une re-projection du cycle (#355, jumeau de
+// `relecturePlanningDemandee`) : UNE re-projection finale à la fin du traitement
+// (une rafale = une seule). Jeté, le changement d'un autre membre écrit après la
+// lecture en cours n'apparaissait ni dans la liste ni dans l'alerte.
+let rejouerTraitementCycle = false;
 const eventsCycleDifferes = new Map<string, Set<number>>();
 
 // Juge les events du cycle différés, une fois la dernière écriture planning
@@ -1415,7 +1496,11 @@ async function rechargerProjectionCycle(ancre: string, longueur: number): Promis
 }
 
 async function traiterChangementCycleDistant(): Promise<void> {
-  if (suppressionAlerteCycle || traitementCycleEnCours) return;
+  if (suppressionAlerteCycle) return;
+  if (traitementCycleEnCours) {
+    rejouerTraitementCycle = true; // re-projection finale (#355)
+    return;
+  }
   const courant = lireCycleAffiche();
   if (!courant) return;
   traitementCycleEnCours = true;
@@ -1430,6 +1515,10 @@ async function traiterChangementCycleDistant(): Promise<void> {
     }
   } finally {
     traitementCycleEnCours = false;
+    if (rejouerTraitementCycle) {
+      rejouerTraitementCycle = false;
+      void traiterChangementCycleDistant();
+    }
   }
 }
 
@@ -1504,6 +1593,7 @@ async function majAbonnementPlanningCycle(
 
 function couperPlanningCycle(): Promise<void> {
   eventsCycleDifferes.clear(); // plus rien à juger après la coupure (#352)
+  rejouerTraitementCycle = false; // ni re-projection finale (#355)
   chainePlanningCycle = chainePlanningCycle
     .then(async () => {
       for (const canal of canauxPlanningCycle.values()) {
@@ -1529,11 +1619,22 @@ function couperPlanningCycle(): Promise<void> {
  * cette semaine, garderait l'ancien contenu et son prochain push écraserait le
  * cycle). Côté cycle, `suppressionAlerteCycle` diffère en plus les events
  * jusqu'à la fin de la re-projection (`jugerEventsCycleDifferes`).
+ *
+ * Envois vidés d'abord (#355, comme `naviguerVers`) : un push planning en
+ * attente (`sauvegarder_planning`, toute la semaine) parti APRÈS la RPC
+ * écraserait les jours générés de la semaine affichée ; s'il ne peut pas partir
+ * (hors ligne, relecture US-21 à refaire), la génération est refusée avec un
+ * message, sans RPC.
  */
 export async function appliquerGenerationCycle(
   ancre: string,
   semaines: SemaineGeneree[]
 ): Promise<void> {
+  if (!(await attendreSync())) {
+    throw new Error(
+      "Des modifications ne sont pas encore enregistrées. Vérifie ta connexion et réessaie."
+    );
+  }
   suppressionAlerteCycle = true;
   try {
     ecrituresPlanningEnVol++;
@@ -1819,8 +1920,8 @@ async function chargerSemaineDansCache(semaine: string): Promise<void> {
     }
     // Cache = base : c'est le nouveau planning confirmé de la semaine (#355).
     ecrireConfirme(distant ? distant.planning : null);
-    relectureARefaire = null;
     localStorage.removeItem(CLE_DIRTY);
+    relectureReussie(); // lève aussi la relecture à refaire (#355)
     definirEtat("synchronise");
   } catch (erreur) {
     console.error("Chargement de la semaine échoué.", erreur);
@@ -2104,6 +2205,8 @@ export async function hydrater(semaineVoulue: string | null = null): Promise<voi
   if (local && (estDirty() || lireMajLocale() === 0)) {
     // Cas e2e/offline : le local fait foi, on ne le remplace pas.
     definirSemaineAffichee(local.semaine);
+    // Relecture US-21 ratée avant le rechargement (`CLE_A_RELIRE`, #355) :
+    // `pousser` la refait d'abord et ne pousse que la fusion.
     if (estDirty()) void pousser();
     await hydraterCoches();
     // Coches clées par CYCLE (#257) : réabonnement sur l'ancre active (null hors
@@ -2136,6 +2239,7 @@ function demarrerSync(): () => void {
   // déjà connue (nav SPA « à chaud » ; au chargement froid, l'abonnement est posé
   // par hydrater/chargerSemaineDansCache/chargerCycleDansCache une fois résolu).
   // La PRÉSENCE est gérée à part (usePresenceCourses).
+  abonnementPlanningAutorise = true; // jusqu'à couperTempsReel (#355)
   void synchroniserAbonnementCoches(ancreActive());
   void synchroniserAbonnementPlanning(semaineActive());
   return () => {

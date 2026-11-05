@@ -62,6 +62,7 @@ async function ouvrirCourses(browser: Browser, planning: Planning): Promise<Page
         "planning_courant_maj",
         "planning_dirty",
         "planning_confirme",
+        "planning_a_relire",
         "courses_cochees",
         "courses_cochees_maj",
         "courses_dirty",

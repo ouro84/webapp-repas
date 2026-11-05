@@ -101,7 +101,7 @@ test("les toasts s'affichent au-dessus de la barre d'onglets (#335)", async ({
 }) => {
   await nettoyerEtatDistant(request);
   await page.addInitScript(() => {
-    for (const c of ["planning_courant", "planning_courant_maj", "planning_dirty", "planning_confirme", "semaine_affichee"]) {
+    for (const c of ["planning_courant", "planning_courant_maj", "planning_dirty", "planning_confirme", "planning_a_relire", "semaine_affichee"]) {
       localStorage.removeItem(c);
     }
   });

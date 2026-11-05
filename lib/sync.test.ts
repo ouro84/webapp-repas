@@ -1292,6 +1292,8 @@ describe("alerte US-21 : écho reçu pendant une écriture en vol (#352)", () =>
     const enCours = sync.appliquerGenerationCycle("2026-07-13", [
       { semaine, jours: [jourPlanningSimple("mardi", { id: "genere", nom: "Généré" })] },
     ]);
+    // La RPC part après le vidage des envois (#355) : son écho ne peut précéder son envoi.
+    await vi.waitFor(() => expect(persistance.sauvegarderCycleDistant).toHaveBeenCalled());
     evenement(semaine, T1); // écho avant la réponse de sauvegarder_cycle
     ecriture.resoudre({ [semaine]: T1 });
     await enCours;
@@ -1394,6 +1396,8 @@ describe("alerte US-21 côté cycle : écho exact (#352)", () => {
     const enCours = sync.appliquerGenerationCycle("2026-07-13", [
       { semaine: "2026-W29", jours: [jourPlanningSimple("mardi", { id: "genere", nom: "G" })] },
     ]);
+    // La RPC part après le vidage des envois (#355) : son écho ne peut précéder son envoi.
+    await vi.waitFor(() => expect(persistance.sauvegarderCycleDistant).toHaveBeenCalled());
     event(T_NOUS); // notre écho, avant la réponse
     event(T_AUTRE); // un autre membre écrit pendant la génération
     await new Promise((r) => setTimeout(r, 30));
@@ -1793,4 +1797,294 @@ describe("relecture US-21 : rejeu des éditions locales en attente (#355)", () =
     sync.reinitialiserCacheFoyer();
     expect(localStorage.getItem("planning_confirme")).toBeNull();
   });
+});
+
+// Gardes ciblées de la synchro temps réel (#355, Task 3) : rejeu d'un event
+// reçu pendant une re-projection du cycle (jumeau de `relecturePlanningDemandee`),
+// abonnement planning borné au montage de /planning, envois vidés avant une
+// régénération du cycle, et relecture US-21 ratée qui survit à un rechargement
+// et se retente seule.
+describe("gardes ciblées de la synchro temps réel (#355)", () => {
+  const T0 = "2026-06-15T09:00:00.000Z";
+  const T_DISTANT = "2026-06-15T10:05:00.000Z";
+  const JOURS = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"] as const;
+
+  function semaineComplete(semaine: string): Planning {
+    return {
+      semaine,
+      jours: JOURS.map((jour) => ({ jour, dejeuner: recette(`d-${jour}`), diner: recette(`s-${jour}`) })),
+    };
+  }
+  function avecJour(p: Planning, jour: string, f: (jp: JourPlanning) => JourPlanning): Planning {
+    return { ...p, jours: p.jours.map((jp) => (jp.jour === jour ? f(jp) : jp)) };
+  }
+  function jourDe(p: Planning, jour: string): JourPlanning {
+    return p.jours.find((jp) => jp.jour === jour)!;
+  }
+  function differe<T>(): { promesse: Promise<T>; resoudre: (v: T) => void } {
+    let resoudre!: (v: T) => void;
+    const promesse = new Promise<T>((r) => (resoudre = r));
+    return { promesse, resoudre };
+  }
+  function rappelsPlanning(): RappelRealtime[] {
+    return realtime.rappels.filter((r) => r.filtre.table === "planning");
+  }
+  function evenementSur(rappel: RappelRealtime, semaine: string, majISO: string): void {
+    rappel.rappel({
+      eventType: "UPDATE",
+      new: { foyer_id: "foyer-1", semaine, updated_at: majISO },
+      old: {},
+    });
+  }
+  const attendre = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  // --- 1. Rejeu côté cycle (jumeau de la relecture finale côté planning) ---
+  it("côté cycle : un event reçu pendant une re-projection en déclenche UNE seconde, même en rafale", async () => {
+    const sync = await chargerSync();
+    const { renderHook } = await import("@testing-library/react");
+    const lundi = jourPlanningSimple("lundi", { id: "r1", nom: "R1" });
+    persistance.chargerPlanningDistant.mockResolvedValue({
+      planning: { semaine: "2026-W29", jours: [lundi] },
+      updatedAt: "2026-07-13T09:00:00.000000+00:00",
+    });
+    renderHook(() => sync.useSyncCourses("2026-07-13"));
+    const alerte = renderHook(() => sync.useAlertePlanning());
+    await vi.waitFor(() => expect(rappelsPlanning()).toHaveLength(1));
+    const appels = persistance.chargerPlanningDistant.mock.calls.length;
+    const lecture = differe<{ planning: Planning; updatedAt: string }>();
+    persistance.chargerPlanningDistant
+      .mockImplementationOnce(() => lecture.promesse)
+      .mockResolvedValue({
+        planning: {
+          semaine: "2026-W29",
+          jours: [lundi, jourPlanningSimple("mardi", { id: "autre-membre-2", nom: "A2" })],
+        },
+        updatedAt: "2026-07-13T10:00:03.000000+00:00",
+      });
+
+    const canal = rappelsPlanning()[0];
+    evenementSur(canal, "2026-W29", "2026-07-13T10:00:01.000000+00:00"); // re-projection lente
+    await attendre(20);
+    evenementSur(canal, "2026-W29", "2026-07-13T10:00:02.000000+00:00"); // rafale pendant
+    evenementSur(canal, "2026-W29", "2026-07-13T10:00:03.000000+00:00");
+    lecture.resoudre({
+      planning: {
+        semaine: "2026-W29",
+        jours: [lundi, jourPlanningSimple("mardi", { id: "autre-membre-1", nom: "A1" })],
+      },
+      updatedAt: "2026-07-13T10:00:01.000000+00:00",
+    });
+
+    await vi.waitFor(() =>
+      expect(persistance.chargerPlanningDistant).toHaveBeenCalledTimes(appels + 2)
+    );
+    await attendre(50);
+    expect(persistance.chargerPlanningDistant).toHaveBeenCalledTimes(appels + 2);
+    expect(alerte.result.current).toBe(true);
+    const projete = JSON.parse(localStorage.getItem("cycle_planning")!) as Planning;
+    expect(projete.jours.some((jp) => jp.diner?.id === "autre-membre-2")).toBe(true);
+  });
+
+  // --- 2. Abonnement planning borné au montage de /planning ---
+  it("hydratation encore en vol au démontage : aucun canal planning ouvert, puis abonnement au remontage", async () => {
+    const sync = await chargerSync();
+    const { renderHook } = await import("@testing-library/react");
+    const { semaineParDefaut } = await import("@/lib/semaines");
+    const semaine = semaineParDefaut();
+    const lecture = differe<{ planning: Planning; updatedAt: string }>();
+    persistance.chargerPlanningDistant.mockImplementationOnce(() => lecture.promesse);
+
+    const vue = renderHook(() => sync.useSync());
+    await vi.waitFor(() => expect(persistance.chargerPlanningDistant).toHaveBeenCalled());
+    vue.unmount(); // départ de /planning avant la fin de la lecture
+    lecture.resoudre({ planning: semaineComplete(semaine), updatedAt: T0 });
+    await attendre(50);
+    expect(rappelsPlanning()).toHaveLength(0);
+
+    // Montage normal : l'abonnement se fait.
+    const vue2 = renderHook(() => sync.useSync());
+    await vi.waitFor(() => expect(rappelsPlanning()).toHaveLength(1));
+    vue2.unmount();
+  });
+
+  it("relecture US-21 encore en vol au démontage : aucun canal rouvert, plus aucun event jugé", async () => {
+    const sync = await chargerSync();
+    const { renderHook } = await import("@testing-library/react");
+    const { semaineParDefaut } = await import("@/lib/semaines");
+    const semaine = semaineParDefaut();
+    persistance.chargerPlanningDistant.mockResolvedValue({ planning: semaineComplete(semaine), updatedAt: T0 });
+    const vue = renderHook(() => sync.useSync());
+    await vi.waitFor(() => expect(rappelsPlanning()).toHaveLength(1));
+    const canal = rappelsPlanning()[0];
+    const lecture = differe<{ planning: Planning; updatedAt: string }>();
+    persistance.chargerPlanningDistant.mockImplementationOnce(() => lecture.promesse);
+
+    evenementSur(canal, semaine, T_DISTANT); // relecture (chemin historique), lente
+    await vi.waitFor(() => expect(persistance.chargerPlanningDistant).toHaveBeenCalledTimes(2));
+    vue.unmount();
+    lecture.resoudre({ planning: semaineComplete(semaine), updatedAt: T_DISTANT });
+    await attendre(50);
+    expect(rappelsPlanning()).toHaveLength(1); // aucun canal rouvert
+
+    // `semainePlanningVoulue` reste null : un event tardif n'est pas jugé.
+    evenementSur(canal, semaine, "2026-06-15T10:06:00.000Z");
+    await attendre(50);
+    expect(persistance.chargerPlanningDistant).toHaveBeenCalledTimes(2);
+  });
+
+  // --- 3. Envois vidés avant la régénération du cycle ---
+  it("appliquerGenerationCycle attend la fin d'un push planning en attente avant sauvegarder_cycle", async () => {
+    localStorage.setItem("cycle_affiche", JSON.stringify({ ancre: "2026-10-29", longueur: 7 }));
+    localStorage.setItem("planning_courant", JSON.stringify(planning("2026-W10")));
+    localStorage.setItem("planning_dirty", "1");
+    const push = differe<string>();
+    persistance.sauvegarderPlanningDistant.mockImplementationOnce(() => push.promesse);
+    const { appliquerGenerationCycle } = await chargerSync();
+
+    const enCours = appliquerGenerationCycle("2026-10-29", [
+      { semaine: "2026-W44", jours: [jourPlanningSimple("lundi", { id: "g", nom: "G" })] },
+    ]);
+    await vi.waitFor(() => expect(persistance.sauvegarderPlanningDistant).toHaveBeenCalledTimes(1));
+    await attendre(50);
+    expect(persistance.sauvegarderCycleDistant).not.toHaveBeenCalled();
+    push.resoudre("2026-06-15T10:00:00.000Z");
+    await enCours;
+
+    expect(persistance.sauvegarderCycleDistant).toHaveBeenCalledTimes(1);
+    expect(persistance.sauvegarderCycleDistant.mock.invocationCallOrder[0]).toBeGreaterThan(
+      persistance.sauvegarderPlanningDistant.mock.invocationCallOrder[0]
+    );
+  });
+
+  it("appliquerGenerationCycle : envois impossibles → rejet explicite, aucune RPC sauvegarder_cycle", async () => {
+    localStorage.setItem("cycle_affiche", JSON.stringify({ ancre: "2026-10-29", longueur: 7 }));
+    localStorage.setItem("planning_courant", JSON.stringify(planning("2026-W10")));
+    localStorage.setItem("planning_dirty", "1");
+    persistance.sauvegarderPlanningDistant.mockRejectedValue(new Error("hors-ligne"));
+    const erreur = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const { appliquerGenerationCycle } = await chargerSync();
+      await expect(
+        appliquerGenerationCycle("2026-10-29", [
+          { semaine: "2026-W44", jours: [jourPlanningSimple("lundi", { id: "g", nom: "G" })] },
+        ])
+      ).rejects.toThrow(
+        "Des modifications ne sont pas encore enregistrées. Vérifie ta connexion et réessaie."
+      );
+      expect(persistance.sauvegarderCycleDistant).not.toHaveBeenCalled();
+      expect(localStorage.getItem("planning_dirty")).toBe("1");
+    } finally {
+      erreur.mockRestore();
+    }
+  }, 10000);
+
+  // --- 4. Relecture ratée : persistée, retentée, signalée ---
+  async function monterPlanningComplet() {
+    const sync = await chargerSync();
+    const { semaineParDefaut } = await import("@/lib/semaines");
+    const { storePlanning } = await import("@/lib/stockage");
+    const { renderHook } = await import("@testing-library/react");
+    const semaine = semaineParDefaut();
+    persistance.chargerPlanningDistant.mockResolvedValue({ planning: semaineComplete(semaine), updatedAt: T0 });
+    const vue = renderHook(() => sync.useSync());
+    const alerte = renderHook(() => sync.useAlertePlanning());
+    await vi.waitFor(() => expect(localStorage.getItem("semaine_affichee")).toBe(semaine));
+    await vi.waitFor(() => expect(rappelsPlanning()).toHaveLength(1));
+    return { sync, semaine, storePlanning, vue, alerte, canal: rappelsPlanning()[0] };
+  }
+  function distantAvecMardi(semaine: string): Planning {
+    return avecJour(semaineComplete(semaine), "mardi", (jp) => ({ ...jp, dejeuner: recette("autre-membre") }));
+  }
+  function stepperLundi(storePlanning: { ecrire: (v: string) => void }, semaine: string): void {
+    storePlanning.ecrire(
+      JSON.stringify(avecJour(semaineComplete(semaine), "lundi", (jp) => ({ ...jp, personnes: { diner: 4 } })))
+    );
+  }
+
+  it("lecture ratée : la relecture à refaire est persistée (et purgée par reinitialiserCacheFoyer)", async () => {
+    const { sync, semaine, storePlanning, canal, vue } = await monterPlanningComplet();
+    persistance.chargerPlanningDistant.mockRejectedValueOnce(new Error("réseau"));
+    const erreur = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      stepperLundi(storePlanning, semaine);
+      evenementSur(canal, semaine, T_DISTANT);
+      await vi.waitFor(() => expect(localStorage.getItem("planning_a_relire")).toBe(semaine));
+      vue.unmount(); // coupe aussi la nouvelle tentative différée
+      sync.reinitialiserCacheFoyer();
+      expect(localStorage.getItem("planning_a_relire")).toBeNull();
+    } finally {
+      erreur.mockRestore();
+    }
+  });
+
+  it("rechargement avec une relecture à refaire : hydrater relit avant de pousser, la fusion part", async () => {
+    const { semaineParDefaut } = await import("@/lib/semaines");
+    const semaine = semaineParDefaut();
+    const local = avecJour(semaineComplete(semaine), "lundi", (jp) => ({ ...jp, personnes: { diner: 4 } }));
+    localStorage.setItem("planning_courant", JSON.stringify(local));
+    localStorage.setItem("planning_courant_maj", T0);
+    localStorage.setItem("planning_dirty", "1");
+    localStorage.setItem("planning_confirme", JSON.stringify(semaineComplete(semaine)));
+    localStorage.setItem("planning_a_relire", semaine);
+    persistance.chargerPlanningDistant.mockResolvedValue({ planning: distantAvecMardi(semaine), updatedAt: T_DISTANT });
+    const { hydrater } = await chargerSync();
+
+    await hydrater();
+
+    await vi.waitFor(() => expect(persistance.sauvegarderPlanningDistant).toHaveBeenCalled(), {
+      timeout: 2000,
+    });
+    expect(persistance.chargerPlanningDistant.mock.invocationCallOrder[0]).toBeLessThan(
+      persistance.sauvegarderPlanningDistant.mock.invocationCallOrder[0]
+    );
+    const pousse = persistance.sauvegarderPlanningDistant.mock.calls[0][0] as Planning;
+    expect(jourDe(pousse, "lundi").personnes?.diner).toBe(4);
+    expect(jourDe(pousse, "mardi").dejeuner?.id).toBe("autre-membre");
+    expect(localStorage.getItem("planning_a_relire")).toBeNull();
+  });
+
+  it("lecture ratée en ligne : état « hors-ligne », nouvelle tentative seule, état rétabli et fusion poussée", async () => {
+    const { semaine, storePlanning, canal, vue, alerte } = await monterPlanningComplet();
+    persistance.chargerPlanningDistant
+      .mockRejectedValueOnce(new Error("réseau"))
+      .mockResolvedValue({ planning: distantAvecMardi(semaine), updatedAt: T_DISTANT });
+    const erreur = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      stepperLundi(storePlanning, semaine);
+      evenementSur(canal, semaine, T_DISTANT);
+      await vi.waitFor(() => expect(vue.result.current).toBe("hors-ligne"));
+      expect(persistance.sauvegarderPlanningDistant).not.toHaveBeenCalled();
+
+      // Aucun déclencheur : la tentative différée relit seule.
+      await vi.waitFor(() => expect(alerte.result.current).toBe(true), { timeout: 4000 });
+      await vi.waitFor(() => expect(persistance.sauvegarderPlanningDistant).toHaveBeenCalled(), {
+        timeout: 2000,
+      });
+      const pousse = persistance.sauvegarderPlanningDistant.mock.calls[0][0] as Planning;
+      expect(jourDe(pousse, "lundi").personnes?.diner).toBe(4);
+      expect(jourDe(pousse, "mardi").dejeuner?.id).toBe("autre-membre");
+      await vi.waitFor(() => expect(vue.result.current).toBe("synchronise"));
+    } finally {
+      erreur.mockRestore();
+      vue.unmount();
+    }
+  }, 10000);
+
+  it("lecture ratée puis démontage : la nouvelle tentative différée est annulée", async () => {
+    const { semaine, storePlanning, canal, vue } = await monterPlanningComplet();
+    persistance.chargerPlanningDistant.mockRejectedValueOnce(new Error("réseau"));
+    const erreur = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      stepperLundi(storePlanning, semaine);
+      evenementSur(canal, semaine, T_DISTANT);
+      await vi.waitFor(() => expect(localStorage.getItem("planning_a_relire")).toBe(semaine));
+      const lectures = persistance.chargerPlanningDistant.mock.calls.length;
+      vue.unmount();
+      await attendre(2500); // au-delà du premier délai de nouvelle tentative
+      expect(persistance.chargerPlanningDistant).toHaveBeenCalledTimes(lectures);
+      expect(persistance.sauvegarderPlanningDistant).not.toHaveBeenCalled();
+    } finally {
+      erreur.mockRestore();
+    }
+  }, 10000);
 });
