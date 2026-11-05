@@ -68,7 +68,7 @@ describe("SlotRepas : gabarit unique (#352)", () => {
       [restes, "Restes"],
     ] as const) {
       expect(bouton.textContent).toContain(texte);
-      expect(bouton.querySelector(".lg\:hidden")).toBeNull();
+      expect(bouton.querySelector('[class~="lg:hidden"]')).toBeNull();
     }
   });
 
@@ -76,7 +76,15 @@ describe("SlotRepas : gabarit unique (#352)", () => {
     rendre();
     const nom = screen.getByRole("button", { name: `Voir la recette : ${recette.nom}` });
     expect(nom.getAttribute("title")).toBe(recette.nom);
-    expect(nom.className).toContain("line-clamp-3");
+    const classes = nom.className.split(/\s+/);
+    expect(classes).toContain("line-clamp-3");
+    // line-clamp pose son propre display (-webkit-box) : toute classe display
+    // concurrente (block, flex…) est émise après et l'annule, le nom ne serait
+    // plus tronqué.
+    const displaysConcurrents = classes.filter((c) =>
+      /^(block|inline|inline-block|inline-flex|flex|grid|inline-grid|contents|table|flow-root)$/.test(c)
+    );
+    expect(displaysConcurrents).toEqual([]);
   });
 
   it("les actions s'empilent à lg et le bloc bas est ancré (mt-auto)", () => {

@@ -155,7 +155,7 @@ export function SlotRepas({
             ? { animationDelay: `${delaiNomMs}ms`, animationFillMode: "backwards" }
             : undefined
         }
-        className="mt-1 line-clamp-3 block w-full text-left text-sm font-medium text-brand-900 underline-offset-2 transition-colors hover:text-brand-700 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 motion-safe:animate-crossfade"
+        className="mt-1 line-clamp-3 w-full text-left text-sm font-medium text-brand-900 underline-offset-2 transition-colors hover:text-brand-700 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 motion-safe:animate-crossfade"
       >
         {recette.nom}
       </button>
