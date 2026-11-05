@@ -27,6 +27,7 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ### Sécurité
 
+- Dépendances : Sentry passe en 10.78.0, qui corrige une faille critique de contournement du proxy (GHSA-mchm-gjx6-7h55). Elle n’était pas exploitable chez nous, faute de `tunnelRoute` configuré. D’autres paquets de build et de test sont mis à jour dans leurs plages autorisées. Restent deux avis modérés sans correctif compatible (`minimatch`, `glob`), limités à l’outillage de lint et de build.
 - Limitation du nombre de requêtes désormais active en production (#191, #305) : la génération de planning (10 par minute) et le serveur MCP des assistants IA (60 par minute) sont plafonnés par utilisateur. Un usage normal n'est jamais concerné.
 - Panier Chronodrive (#330) : le remplissage du panier ne dépend plus des consignes données au modèle. Le run passe par un serveur MCP dédié d’OMQ (`/api/mcp/executeur`) et chaque article porte un jeton signé, valable 30 minutes, que le MCP Chronodrive vérifie avant tout ajout. Un run qui saute la prise de la demande ou invente un cycle est refusé sans rien ajouter au panier, et un jeton n’est plus accepté une fois expiré (30 minutes après la prise). Ces outils quittent le serveur général `/api/mcp`.
 
