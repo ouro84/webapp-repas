@@ -156,6 +156,9 @@ export function VuePlanningCycle({
   // Plannings des semaines ISO touchées, indexés par semaine.
   const [parSemaine, setParSemaine] = useState<Map<string, Planning>>(new Map());
   const [chargement, setChargement] = useState(true);
+  // Premier chargement en échec (RG-09, 3 états) : sans cycle affiché, l'écran
+  // propose « Réessayer » au lieu de rester sur « Chargement… ».
+  const [erreurInitiale, setErreurInitiale] = useState(false);
   const [ficheOuverte, setFicheOuverte] = useState<{
     recette: Recette;
     personnes: number;
@@ -475,8 +478,9 @@ export function VuePlanningCycle({
   // juste après une édition. On distingue donc explicitement l'échec de
   // l'absence légitime, et on n'écrase l'affichage courant QUE si TOUTES les
   // lectures ont réussi (sinon on garde l'état précédent + un toast, plutôt
-  // qu'une projection partielle).
-  const chargerCycle = useCallback(async (ancreCible: string) => {
+  // qu'une projection partielle). Renvoie `false` si une lecture a échoué. Au
+  // premier chargement (`initial`), pas de toast : l'état erreur le dit déjà.
+  const chargerCycle = useCallback(async (ancreCible: string, initial = false): Promise<boolean> => {
     setChargement(true);
     try {
       const long = await chargerLongueurCycle(ancreCible).catch(() => LONGUEUR_DEFAUT);
@@ -496,10 +500,12 @@ export function VuePlanningCycle({
         )
       );
       if (echec) {
-        toast.error(
-          "Certains jours du cycle n'ont pas pu être chargés. Réessaie."
-        );
-        return;
+        if (!initial) {
+          toast.error(
+            "Certains jours du cycle n'ont pas pu être chargés. Réessaie."
+          );
+        }
+        return false;
       }
       const map = new Map<string, Planning>();
       semaines.forEach((s, i) => {
@@ -514,6 +520,7 @@ export function VuePlanningCycle({
       // MÊME cycle que celui affiché ici. Écriture localStorage pure, sans
       // effet de bord coches/réaltime (cf. definirCycleAffiche).
       definirCycleAffiche(ancreCible, long);
+      return true;
     } finally {
       setChargement(false);
     }
@@ -526,6 +533,9 @@ export function VuePlanningCycle({
   // lecture échouée → ancre par défaut. Sans lien : ancre par défaut dérivée du
   // jour de courses du foyer (même règle que /courses, ancreParDefaut → décalage
   // week-end inclus). Logique dans `ancreInitialeCycle` (lib, testée).
+  // Échec (lecture d'une semaine, erreur inattendue) → état erreur ; « Réessayer »
+  // rejoue ce même chargement initial (`essaiInitial` en dépendance).
+  const [essaiInitial, setEssaiInitial] = useState(0);
   useEffect(() => {
     let actif = true;
     void ancreInitialeCycle({
@@ -535,21 +545,53 @@ export function VuePlanningCycle({
       maintenant: new Date(),
     })
       .then(({ jourCourses: jour, ancre: cible }) => {
-        if (!actif) return undefined;
+        if (!actif) return true;
         setJourCourses(jour);
         setAujourdhuiISO(versISO(new Date()));
-        return chargerCycle(cible);
+        return chargerCycle(cible, true);
       })
-      .catch((erreur) => console.error("Chargement initial du cycle échoué.", erreur));
+      .catch((erreur) => {
+        console.error("Chargement initial du cycle échoué.", erreur);
+        return false;
+      })
+      .then((ok) => {
+        if (actif && !ok) setErreurInitiale(true);
+      });
     return () => {
       actif = false;
     };
-  }, [chargerCycle, lienInitial]);
+  }, [chargerCycle, lienInitial, essaiInitial]);
+
+  function reessayerChargementInitial(): void {
+    setErreurInitiale(false);
+    setEssaiInitial((n) => n + 1);
+  }
 
   // « Chargement… » seul uniquement au premier chargement. Aux rechargements
   // (navigation entre cycles, génération), l'en-tête / état vide et le navigateur
   // restent montés (comme la semaine, #352) : pas de saut de mise en page, bascule
   // disponible, focus conservé sur la flèche cliquée ; seul le corps est estompé.
+  if (ancre === null && erreurInitiale) {
+    return (
+      <div className="flex flex-1 flex-col items-center justify-center gap-6 p-8">
+        <div
+          role="alert"
+          className="max-w-md rounded-lg border border-red-200 bg-red-50 p-4 text-center"
+        >
+          <p className="font-medium text-red-800">Impossible de charger le cycle.</p>
+          <p className="mt-1 text-sm text-red-700">Vérifie ta connexion et réessaie.</p>
+        </div>
+        <button
+          type="button"
+          onClick={reessayerChargementInitial}
+          className="rounded-full bg-primary px-6 py-3 font-medium text-white transition hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100"
+        >
+          Réessayer
+        </button>
+      </div>
+    );
+  }
+
   if (ancre === null) {
     return (
       <div className="flex-1 p-4 md:p-8">
