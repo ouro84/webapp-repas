@@ -1651,24 +1651,116 @@ describe("relecture US-21 : rejeu des éditions locales en attente (#355)", () =
     expect(jourDe(pousse, "mardi").dejeuner?.id).toBe("autre-membre");
   });
 
-  it("échec de la relecture : éditions locales gardées, dirty, push replanifié", async () => {
-    const { semaine, alerte, storePlanning } = await monterPlanning();
-    persistance.chargerPlanningDistant.mockRejectedValue(new Error("réseau"));
+  // Revue #355 : pousser le local après une lecture ratée effacerait en base
+  // (toute la semaine) le changement de l'autre membre. Le push attend une
+  // relecture réussie, relancée au prochain déclencheur de push.
+  it("échec de la relecture : rien n'est poussé avant une relecture réussie, puis la fusion part", async () => {
+    const { sync, semaine, alerte, storePlanning } = await monterPlanning();
+    const distant = avecJour(semaineComplete(semaine), "mardi", (jp) => ({
+      ...jp,
+      dejeuner: recette("autre-membre"),
+    }));
+    persistance.chargerPlanningDistant.mockRejectedValueOnce(new Error("réseau"));
     const erreur = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
       stepperLundiDiner(storePlanning, semaine, 4);
       evenement(semaine, T_DISTANT);
+      await vi.waitFor(() => expect(erreur).toHaveBeenCalled());
+      await new Promise((r) => setTimeout(r, 1000)); // au-delà du débounce
+      expect(persistance.sauvegarderPlanningDistant).not.toHaveBeenCalled();
+      expect(localStorage.getItem("planning_dirty")).toBe("1");
+      expect(jourDe(cache(), "lundi").personnes?.diner).toBe(4);
 
+      // Prochain déclencheur de push (remontage SPA de /planning, comme le
+      // retour en ligne) : relecture (réussie) d'abord, puis push de la fusion.
+      // Pas d'event `online` : les modules des tests précédents, encore montés,
+      // l'écouteraient aussi.
+      persistance.chargerPlanningDistant.mockResolvedValue({ planning: distant, updatedAt: T_DISTANT });
+      void sync.hydrater();
+
+      await vi.waitFor(() => expect(alerte.result.current).toBe(true));
       await vi.waitFor(() => expect(persistance.sauvegarderPlanningDistant).toHaveBeenCalled(), {
         timeout: 2000,
       });
-      expect(alerte.result.current).toBe(false);
       const pousse = persistance.sauvegarderPlanningDistant.mock.calls.at(-1)![0] as Planning;
       expect(jourDe(pousse, "lundi").personnes?.diner).toBe(4);
-      expect(erreur).toHaveBeenCalled();
+      expect(jourDe(pousse, "mardi").dejeuner?.id).toBe("autre-membre");
     } finally {
       erreur.mockRestore();
     }
+  });
+
+  it("aucun push ne part pendant la lecture, même déclenché directement (remontage SPA)", async () => {
+    const { sync, semaine, storePlanning } = await monterPlanning();
+    const distant = avecJour(semaineComplete(semaine), "mardi", (jp) => ({
+      ...jp,
+      dejeuner: recette("autre-membre"),
+    }));
+    let resoudre!: (v: { planning: Planning; updatedAt: string }) => void;
+    persistance.chargerPlanningDistant.mockImplementationOnce(
+      () => new Promise((r) => (resoudre = r))
+    );
+
+    stepperLundiDiner(storePlanning, semaine, 4);
+    evenement(semaine, T_DISTANT);
+    await new Promise((r) => setTimeout(r, 20));
+    void sync.hydrater(); // remontage SPA : pousser() appelé sans minuteur
+    await new Promise((r) => setTimeout(r, 50));
+    expect(persistance.sauvegarderPlanningDistant).not.toHaveBeenCalled();
+    resoudre({ planning: distant, updatedAt: T_DISTANT });
+
+    await vi.waitFor(() => expect(persistance.sauvegarderPlanningDistant).toHaveBeenCalledTimes(1), {
+      timeout: 2000,
+    });
+    const pousse = persistance.sauvegarderPlanningDistant.mock.calls[0][0] as Planning;
+    expect(jourDe(pousse, "lundi").personnes?.diner).toBe(4);
+    expect(jourDe(pousse, "mardi").dejeuner?.id).toBe("autre-membre");
+  });
+
+  it("deux events pendant une lecture lente : relecture finale, le push contient les trois créneaux", async () => {
+    const { semaine, alerte, storePlanning } = await monterPlanning();
+    const d1 = avecJour(semaineComplete(semaine), "mardi", (jp) => ({
+      ...jp,
+      dejeuner: recette("autre-membre"),
+    }));
+    const d2 = avecJour(d1, "mercredi", (jp) => ({ ...jp, diner: recette("autre-membre-2") }));
+    let resoudre!: (v: { planning: Planning; updatedAt: string }) => void;
+    persistance.chargerPlanningDistant
+      .mockImplementationOnce(() => new Promise((r) => (resoudre = r)))
+      .mockResolvedValue({ planning: d2, updatedAt: "2026-06-15T10:06:00.000Z" });
+
+    stepperLundiDiner(storePlanning, semaine, 4);
+    evenement(semaine, T_DISTANT); // B1 : lecture lente
+    await new Promise((r) => setTimeout(r, 20));
+    evenement(semaine, "2026-06-15T10:06:00.000Z"); // B2, écrit après la lecture de A
+    resoudre({ planning: d1, updatedAt: T_DISTANT });
+
+    await vi.waitFor(() => expect(alerte.result.current).toBe(true));
+    await vi.waitFor(() => expect(persistance.sauvegarderPlanningDistant).toHaveBeenCalled(), {
+      timeout: 2000,
+    });
+    expect(persistance.sauvegarderPlanningDistant).toHaveBeenCalledTimes(1);
+    const pousse = persistance.sauvegarderPlanningDistant.mock.calls[0][0] as Planning;
+    expect(jourDe(pousse, "lundi").personnes?.diner).toBe(4);
+    expect(jourDe(pousse, "mardi").dejeuner?.id).toBe("autre-membre");
+    expect(jourDe(pousse, "mercredi").diner?.id).toBe("autre-membre-2");
+  });
+
+  it("semaine supprimée à distance avec une édition en attente : chemin historique (cache vidé)", async () => {
+    const { semaine, alerte, storePlanning } = await monterPlanning();
+    persistance.chargerPlanningDistant.mockResolvedValue(null);
+
+    stepperLundiDiner(storePlanning, semaine, 4);
+    evenement(semaine, T_DISTANT);
+
+    await vi.waitFor(() => expect(localStorage.getItem("planning_courant")).toBeNull());
+    // Comportement historique : semaine vide → état vide, sans alerte
+    // (`semaineActive()` devient null avec le cache).
+    expect(alerte.result.current).toBe(false);
+    expect(localStorage.getItem("planning_confirme")).toBeNull();
+    expect(localStorage.getItem("planning_dirty")).toBeNull();
+    await new Promise((r) => setTimeout(r, 1000));
+    expect(persistance.sauvegarderPlanningDistant).not.toHaveBeenCalled();
   });
 
   it("modifierSlotDistant sur la semaine affichée met aussi l'instantané confirmé à jour (jumeau)", async () => {

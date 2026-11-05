@@ -64,6 +64,44 @@ test("un membre en magasin est alerté quand le planning change à la maison (US
   await b.context().close();
 });
 
+// Résout quand Supabase Realtime confirme l'abonnement `postgres_changes` du
+// planning de la semaine (message `system` « ok » sur le topic
+// `realtime:planning:<foyer>:<semaine>`, hors canaux `planning-cycle:`). À
+// appeler AVANT `goto` : le WebSocket s'ouvre au chargement. Signal réel plutôt
+// qu'une attente fixe.
+function abonnementPlanningPret(page: Page): Promise<void> {
+  return new Promise((resoudre) => {
+    page.on("websocket", (ws) => {
+      ws.on("framereceived", ({ payload }) => {
+        if (typeof payload !== "string") return;
+        try {
+          type Charge = { extension?: string; status?: string };
+          const brut: unknown = JSON.parse(payload);
+          // Sérialiseur 2.0.0 de realtime-js : [join_ref, ref, topic, event, payload] ;
+          // 1.0.0 : objet { topic, event, payload }.
+          const [topic, event, charge] = Array.isArray(brut)
+            ? [brut[2] as string, brut[3] as string, brut[4] as Charge]
+            : [
+                (brut as { topic?: string }).topic,
+                (brut as { event?: string }).event,
+                (brut as { payload?: Charge }).payload,
+              ];
+          if (
+            topic?.startsWith("realtime:planning:") &&
+            event === "system" &&
+            charge?.extension === "postgres_changes" &&
+            charge.status === "ok"
+          ) {
+            resoudre();
+          }
+        } catch {
+          // Trame non JSON (heartbeat binaire, etc.) : ignorée.
+        }
+      });
+    });
+  });
+}
+
 // #355 : A a une édition en attente (son push a échoué, réseau coupé) quand B
 // modifie un AUTRE créneau. La relecture US-21 de A rejoue son édition sur le
 // planning de B au lieu de l'écraser, puis la repousse : les deux survivent.
@@ -77,6 +115,7 @@ test("une édition en attente survit à la modification d’un autre créneau pa
 
   // --- A génère le planning et attend sa persistance ---
   const a = await ouvrirAppareil(browser);
+  const abonnementA = abonnementPlanningPret(a);
   await a.goto("/planning");
   await a.getByRole("button", { name: "Générer mon planning" }).click();
   await expect(a.locator("main ul > li")).toHaveCount(7);
@@ -86,8 +125,8 @@ test("une édition en attente survit à la modification d’un autre créneau pa
   const b = await ouvrirAppareil(browser);
   await b.goto("/planning");
   await expect(b.locator("main ul > li")).toHaveCount(7);
-  // Laisser à l'abonnement temps réel de A le temps de s'établir.
-  await a.waitForTimeout(2500);
+  // Abonnement temps réel du planning de A confirmé par Supabase.
+  await abonnementA;
 
   // --- A : stepper lundi dîner 2 → 3, push coupé (reste en attente) ---
   await a.route("**/rest/v1/rpc/sauvegarder_planning", (route) => route.abort());

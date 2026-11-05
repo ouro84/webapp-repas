@@ -699,12 +699,26 @@ function estComplet(planning: Planning): boolean {
 // l'horodatage local prend la valeur serveur renvoyée et `dirty` est levé ;
 // à l'échec (réseau/hors-ligne), `dirty` reste et le push sera rejoué.
 async function pousser(): Promise<void> {
+  // Relecture US-21 en cours (#355) : `dirty` reste posé, elle relance le push
+  // à sa fin. Garde ICI et pas seulement dans `relancerPush` : `attendreSync`,
+  // le remontage de `hydrater`, le retour en ligne et le re-push de fin de
+  // `pousser` l'appellent directement. Parti pendant la lecture,
+  // `sauvegarder_planning` (toute la semaine) effacerait en base le changement
+  // distant en cours de lecture.
+  if (traitementPlanningEnCours) return;
   if (pushEnCours) {
     rePushDemande = true;
     return;
   }
   const planning = planningLocal();
   if (planning === null) return; // rien à pousser
+  // Relecture ratée pour cette semaine (#355) : la refaire d'abord. Pousser le
+  // local sans elle effacerait le changement de l'autre membre ; c'est elle
+  // qui relancera le push (de la fusion) si elle réussit.
+  if (relectureARefaire === planning.semaine) {
+    void traiterChangementPlanningDistant(planning.semaine);
+    return;
+  }
 
   pushEnCours = true;
   rePushDemande = false; // toute écriture pendant ce push le repassera à true
@@ -750,9 +764,8 @@ function relancerPush(): void {
     rePushDemande = true;
     return;
   }
-  // Relecture US-21 en cours : `dirty` suffit, elle replanifie le push à sa fin.
-  // Parti pendant la lecture, il écraserait en base (toute la semaine) le
-  // changement distant qu'elle est en train de lire (#355).
+  // Relecture US-21 en cours : `dirty` suffit, elle replanifie le push à sa fin
+  // (pas de minuteur inutile ; `pousser` est de toute façon gardé, #355).
   if (traitementPlanningEnCours) return;
   if (minuteur) clearTimeout(minuteur);
   minuteur = setTimeout(() => void pousser(), DELAI_DEBOUNCE_MS);
@@ -1159,12 +1172,24 @@ export function useAlertePlanning(): boolean {
 }
 
 let traitementPlanningEnCours = false;
+// Event distant reçu PENDANT un traitement (#355) : sa semaine, pour UNE
+// relecture finale (plusieurs events pendant la lecture = une seule relecture).
+// Jeté, il laissait la fusion (sans ce changement) repartir en push et
+// l'effacer en base.
+let relecturePlanningDemandee: string | null = null;
+// Semaine dont la dernière relecture avec rejeu a échoué (#355) : `pousser`
+// refait la relecture avant tout push de cette semaine. Levé par toute lecture
+// réussie (rejeu ou `chargerSemaineDansCache`).
+let relectureARefaire: string | null = null;
 
 // Re-pull forcé du planning de la semaine puis, si le contenu a changé, alerte.
 // Avec des éditions locales en attente (`dirty`) et un instantané confirmé
 // exploitable, elles sont rejouées sur le distant au lieu d'être écrasées (#355).
 async function traiterChangementPlanningDistant(semaine: string): Promise<void> {
-  if (traitementPlanningEnCours) return;
+  if (traitementPlanningEnCours) {
+    relecturePlanningDemandee = semaine;
+    return;
+  }
   if (semaine !== semaineActive()) return; // l'utilisateur a navigué entre-temps
   traitementPlanningEnCours = true;
   // Pas de push pendant la relecture : parti maintenant, `sauvegarder_planning`
@@ -1182,7 +1207,17 @@ async function traiterChangementPlanningDistant(semaine: string): Promise<void> 
     }
   } finally {
     traitementPlanningEnCours = false;
-    if (estDirty()) relancerPush();
+    const aRelire = relecturePlanningDemandee;
+    relecturePlanningDemandee = null;
+    if (aRelire !== null && aRelire === semaineActive()) {
+      // Relecture finale AVANT tout push, contre l'instantané devenu « distant ».
+      // Elle reprend la garde synchroniquement et relancera le push à sa fin.
+      void traiterChangementPlanningDistant(aRelire);
+    } else if (estDirty() && relectureARefaire !== semaine) {
+      // Lecture ratée : pas de push avant une relecture réussie (refaite par
+      // `pousser` au prochain déclencheur : édition, retour en ligne, navigation).
+      relancerPush();
+    }
   }
 }
 
@@ -1218,10 +1253,13 @@ async function relireEnRejouantEditionsLocales(semaine: string): Promise<boolean
   try {
     distant = await chargerPlanningDistant(semaine);
   } catch (erreur) {
-    // Cache et `dirty` intacts : les éditions locales repartiront en push.
+    // Cache et `dirty` intacts ; le push attend une relecture réussie (cf.
+    // `relectureARefaire`), sinon il effacerait le changement distant.
+    relectureARefaire = semaine;
     console.error("Relecture du planning échouée (éditions locales conservées).", erreur);
     return true;
   }
+  relectureARefaire = null;
   // Navigation pendant la lecture : la semaine quittée n'est plus en cache.
   if (semaineActive() !== semaine) return true;
   // Relu APRÈS l'await : inclut les éditions faites pendant la lecture.
@@ -1242,11 +1280,14 @@ async function relireEnRejouantEditionsLocales(semaine: string): Promise<boolean
   }
   localStorage.setItem(CLE_MAJ, distant.updatedAt);
   ecrireConfirme(distant.planning);
-  // Un push parti pendant la lecture (navigation, retour en ligne) écrit un
-  // planning sans le changement distant : on garde `dirty` pour qu'il rejoue
-  // la fusion derrière lui.
   if (rejoues.length > 0 || pushEnCours) localStorage.setItem(CLE_DIRTY, "1");
   else localStorage.removeItem(CLE_DIRTY);
+  // Défensif : `pousser` est gardé pendant le traitement et un event reçu
+  // pendant un push est différé, donc aucun push ne devrait être en vol ici.
+  // S'il l'était (parti avec l'ancien planning), il ne doit pas lever `dirty`
+  // à son succès : `rePushDemande` lui fait repousser la fusion derrière lui
+  // (la fusion, écrite sous garde d'hydratation, ne passe pas par `planifierPush`).
+  if (pushEnCours) rePushDemande = true;
   if (signaturePlanning(distant.planning) !== signaturePlanning(base.confirme)) {
     declencherAlertePlanning();
   }
@@ -1747,6 +1788,13 @@ async function attendreSync(): Promise<boolean> {
     i < 100 && (pushEnCours || flushCochesEnCours || estDirty() || estDirtyCoches());
     i++
   ) {
+    // Push bloqué par une relecture US-21 (#355) puis replanifié à sa fin : on
+    // le part tout de suite plutôt que d'attendre le débounce. Seulement s'il
+    // y a un minuteur (pas de rafale de pushes après un échec hors ligne).
+    if (minuteur && estDirty() && !pushEnCours && !traitementPlanningEnCours) {
+      suspendrePush();
+      void pousser();
+    }
     await new Promise((r) => setTimeout(r, 30));
   }
   return !(estDirty() || estDirtyCoches());
@@ -1771,6 +1819,7 @@ async function chargerSemaineDansCache(semaine: string): Promise<void> {
     }
     // Cache = base : c'est le nouveau planning confirmé de la semaine (#355).
     ecrireConfirme(distant ? distant.planning : null);
+    relectureARefaire = null;
     localStorage.removeItem(CLE_DIRTY);
     definirEtat("synchronise");
   } catch (erreur) {
