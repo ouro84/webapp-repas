@@ -9,7 +9,8 @@
 // 100 % décoratif : données factices, aucun élément interactif (le nom est un
 // simple texte, pas un bouton comme dans le vrai planning). Le conteneur est
 // `aria-hidden` — les lecteurs d'écran s'appuient sur le h1 + la tagline, pas
-// sur ces faux plats. Pas d'animation ici : les micro-interactions sont #69.
+// sur ces faux plats. Réutilisé comme état vide de /planning (#337) : pendant
+// la première génération (`enAttente`), les cartes « respirent » en décalé.
 
 import { BadgeTemps } from "@/components/planning/badge-temps";
 import { BadgeVegetarien } from "@/components/ui/badge-vegetarien";
@@ -30,16 +31,26 @@ const CARTES: CarteApercu[] = [
   { jour: "Mercredi", plat: "Saumon rôti", temps: "long" },
 ];
 
-export function ApercuPlanning({ className }: { className?: string }) {
+export function ApercuPlanning({
+  className,
+  enAttente = false,
+}: {
+  className?: string;
+  /** Génération en cours (#337) : respiration d'opacité, décalée par carte. */
+  enAttente?: boolean;
+}) {
   return (
     <div
       aria-hidden="true"
       className={`grid w-full max-w-lg grid-cols-3 gap-2 sm:gap-3 ${className ?? ""}`}
     >
-      {CARTES.map((carte) => (
+      {CARTES.map((carte, i) => (
         <div
           key={carte.jour}
-          className="flex flex-col gap-1.5 rounded-lg border border-brand-100 bg-surface p-2.5 shadow-sm sm:p-3"
+          style={enAttente ? { animationDelay: `${i * 200}ms` } : undefined}
+          className={`flex flex-col gap-1.5 rounded-lg border border-brand-100 bg-surface p-2.5 shadow-sm sm:p-3 ${
+            enAttente ? "animate-respiration" : ""
+          }`}
         >
           <p className="text-[0.65rem] font-medium uppercase tracking-wide text-brand-700/85">
             {carte.jour}

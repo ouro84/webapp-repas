@@ -15,7 +15,7 @@ const JOURS_ISO: Jour[] = [
   "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche",
 ]
 
-function jourDeDate(date: Date): Jour {
+export function jourDeDate(date: Date): Jour {
   const iso = date.getDay() === 0 ? 7 : date.getDay()
   return JOURS_ISO[iso - 1]
 }
