@@ -72,8 +72,10 @@ test("un membre en magasin est alerté quand le planning change à la maison (US
 //  - `planning-cycle:` = planning du cycle (`/courses`, #259).
 // À appeler AVANT `goto` : le WebSocket s'ouvre au chargement, et `page.on("websocket")`
 // ne rejoue pas une connexion déjà ouverte. Signal réel plutôt qu'une attente fixe.
-// Rejette après `delaiMs` avec un message qui nomme le protocole attendu, et retire
-// ses écouteurs (WebSocket et page) dès que le signal est reçu ou le délai écoulé.
+// Rejette après `delaiMs` avec un message qui nomme le protocole attendu, ou dès que
+// la page se ferme avant le signal (#357 : sinon la promesse restait en suspens et
+// l'appelant n'échouait qu'au timeout du test), et retire ses écouteurs (WebSocket
+// et page) dès que le signal est reçu, le délai écoulé ou la page fermée.
 function abonnementRealtimePret(
   page: Page,
   prefixe: "planning:" | "planning-cycle:",
@@ -84,8 +86,16 @@ function abonnementRealtimePret(
     const nettoyer = () => {
       clearTimeout(minuteur);
       page.off("websocket", surWebSocket);
-      page.off("close", nettoyer);
+      page.off("close", surFermeture);
       for (const retirer of ecouteurs) retirer();
+    };
+    const surFermeture = () => {
+      nettoyer();
+      rejeter(
+        new Error(
+          `Page fermée avant la confirmation de l'abonnement temps réel « realtime:${prefixe} ».`
+        )
+      );
     };
     const minuteur = setTimeout(() => {
       nettoyer();
@@ -129,7 +139,7 @@ function abonnementRealtimePret(
       ecouteurs.push(() => ws.off("framereceived", surTrame));
     };
     page.on("websocket", surWebSocket);
-    page.on("close", nettoyer);
+    page.on("close", surFermeture);
   });
   // Un rejet après la fin d'un test qui a échoué plus tôt ne doit pas planter le worker ;
   // l'appelant qui attend la promesse reçoit bien l'erreur.

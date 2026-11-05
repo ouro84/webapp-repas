@@ -24,9 +24,13 @@ test.afterAll(async ({ request }) => {
 // #357 : la génération réelle (route + RPC + relecture) peut attendre un gel de
 // staging de plus de 30 s. On attend donc le TOAST de résultat (succès ou échec)
 // avec un délai large, puis on exige le succès : un échec ressort avec son
-// message au lieu d'un « main li » introuvable après 20 s.
+// message au lieu d'un « main li » introuvable après 20 s. Le refus pour envois
+// en attente (« Des modifications ne sont pas… », #355) compte aussi comme un
+// résultat : échec franc et rapide plutôt que 45 s d'attente.
 async function attendreCycleGenere(page: Page): Promise<void> {
-  await expect(page.getByText(/Cycle généré|Impossible de générer/).last()).toBeVisible({
+  await expect(
+    page.getByText(/Cycle généré|Impossible de générer|Des modifications ne sont pas/).last()
+  ).toBeVisible({
     timeout: 45_000,
   });
   await expect(page.getByText("Cycle généré").last()).toBeVisible();
@@ -86,15 +90,14 @@ test("régénérer un cycle déjà rempli depuis la vue Cycle demande confirmati
   await page.getByRole("button", { name: "Régénérer" }).click();
   await modale.getByRole("button", { name: "Régénérer" }).click();
   await attendreCycleGenere(page);
-  // Le toast précède la relecture du cycle (`chargerCycle`) : attendre que la vue
-  // montre le cycle régénéré (liste différente de l'ancienne) puis qu'elle ait fini
-  // de charger, sinon on lirait l'ancienne projection (#357).
-  await expect
-    .poll(async () => page.locator("main button[aria-label^='Voir la recette']").allTextContents(), {
-      timeout: 20_000,
-    })
-    .not.toEqual(recettesAvant);
-  await expect(page.locator("main [aria-busy='true']")).toHaveCount(0);
+  // Le toast précède la relecture du cycle (`chargerCycle`) : attendre la FIN de la
+  // régénération par un signal indépendant du contenu (#357). Le bouton
+  // « Régénérer » de l'en-tête porte `aria-busy` de son clic jusqu'au `finally` de
+  // la génération, donc après la relecture ; le corps du cycle le porte pendant la
+  // relecture. Plus aucun `aria-busy` dans `main` = régénération et relecture
+  // terminées. Comparer au contenu d'avant échouerait si la régénération
+  // redonnait la même liste.
+  await expect(page.locator("main [aria-busy='true']")).toHaveCount(0, { timeout: 20_000 });
   const recettesCycle = await page
     .locator("main button[aria-label^='Voir la recette']")
     .allTextContents();
