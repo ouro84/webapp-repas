@@ -973,11 +973,22 @@ describe("alerte US-21 : écho reçu pendant une écriture en vol (#352)", () =>
     const { storePlanning } = await import("@/lib/stockage");
     const { renderHook } = await import("@testing-library/react");
     const semaine = semaineParDefaut();
-    renderHook(() => sync.useSync());
+    const vue = renderHook(() => sync.useSync());
     const alerte = renderHook(() => sync.useAlertePlanning());
     await vi.waitFor(() => expect(localStorage.getItem("semaine_affichee")).toBe(semaine));
     await vi.waitFor(() => expect(rappelPlanning()).toBeDefined());
-    return { sync, semaine, alerte, storePlanning };
+    return { sync, semaine, alerte, storePlanning, vue };
+  }
+  // Semaine affichée en cache, horodatée (hors hydratation pour garder les tests courts).
+  function poserSemaineAffichee(semaine: string, jours: JourPlanning[], maj: string): void {
+    localStorage.setItem("planning_courant", JSON.stringify({ semaine, jours }));
+    localStorage.setItem("planning_courant_maj", maj);
+  }
+  function joursLocaux(): JourPlanning[] {
+    return (JSON.parse(localStorage.getItem("planning_courant")!) as Planning).jours;
+  }
+  function canauxPlanning(): number {
+    return realtime.rappels.filter((r) => r.filtre.table === "planning").length;
   }
 
   it("push en vol : l'écho de ce push ne relit pas la base, les éditions faites pendant le push sont gardées", async () => {
@@ -1068,6 +1079,262 @@ describe("alerte US-21 : écho reçu pendant une écriture en vol (#352)", () =>
     expect(persistance.chargerPlanningDistant).toHaveBeenCalledTimes(appels);
     expect(alerte.result.current).toBe(false);
     expect(JSON.parse(localStorage.getItem("planning_courant")!).jours[0].diner.id).toBe("nouveau");
+  });
+
+  // S1 : un autre membre modifie un AUTRE slot et son commit passe juste avant
+  // le nôtre (T_autre < T_nous). Son event n'est pas un écho : il doit être relu,
+  // sinon le cache local reste sans son slot et la prochaine édition en vue
+  // Semaine (sauvegarder_planning, toute la semaine) l'écrase en base.
+  it("écriture en vol : l'event d'un autre membre plus ancien que notre écriture est relu (alerte)", async () => {
+    const { sync, semaine, alerte } = await monterPlanning();
+    poserSemaineAffichee(
+      semaine,
+      [jourPlanningSimple("lundi", { id: "vieux", nom: "Vieux" })],
+      "2026-06-15T09:00:00.000Z"
+    );
+    const T_AUTRE = "2026-06-15T10:00:01.000100+00:00";
+    const T_NOUS = "2026-06-15T10:00:01.000200+00:00";
+    const ecriture = differe<string>();
+    persistance.sauvegarderSlotsDistant.mockImplementationOnce(() => ecriture.promesse);
+    persistance.chargerPlanningDistant.mockResolvedValue({
+      planning: {
+        semaine,
+        jours: [
+          jourPlanningSimple("lundi", { id: "nouveau", nom: "Nouveau" }),
+          jourPlanningSimple("mardi", { id: "autre-membre", nom: "Autre" }),
+        ],
+      },
+      updatedAt: T_NOUS,
+    });
+    const appels = persistance.chargerPlanningDistant.mock.calls.length;
+
+    const enCours = sync.modifierSlotDistant(
+      semaine,
+      jourPlanningSimple("lundi", { id: "nouveau", nom: "Nouveau" })
+    );
+    evenement(semaine, T_AUTRE); // l'autre membre, commit juste avant le nôtre
+    evenement(semaine, T_NOUS); // notre écho, avant la réponse de sauvegarder_slots
+    ecriture.resoudre(T_NOUS);
+    await enCours;
+
+    await vi.waitFor(() => expect(alerte.result.current).toBe(true));
+    expect(persistance.chargerPlanningDistant).toHaveBeenCalledTimes(appels + 1);
+    expect(joursLocaux().map((jp) => jp.diner?.id)).toEqual(["nouveau", "autre-membre"]);
+  });
+
+  it("hors écriture : un event plus ancien que planning_courant_maj mais pas de nous est relu", async () => {
+    const { semaine, alerte, storePlanning } = await monterPlanning();
+    const T_NOUS = "2026-06-15T10:00:02.000000+00:00";
+    const T_AUTRE = "2026-06-15T10:00:01.500000+00:00";
+    persistance.sauvegarderPlanningDistant.mockResolvedValueOnce(T_NOUS);
+    storePlanning.ecrire(JSON.stringify(avecPersonnes(semaine, 3)));
+    await vi.waitFor(() => expect(localStorage.getItem("planning_dirty")).toBeNull(), {
+      timeout: 2000,
+    });
+    const appels = persistance.chargerPlanningDistant.mock.calls.length;
+    persistance.chargerPlanningDistant.mockResolvedValue({
+      planning: { semaine, jours: [{ jour: "lundi", diner: recette("autre-membre") }] },
+      updatedAt: T_NOUS,
+    });
+
+    evenement(semaine, T_NOUS); // écho tardif de notre push : ignoré
+    await new Promise((r) => setTimeout(r, 30));
+    expect(persistance.chargerPlanningDistant).toHaveBeenCalledTimes(appels);
+
+    evenement(semaine, T_AUTRE); // autre membre, livré après notre réponse
+    await vi.waitFor(() => expect(alerte.result.current).toBe(true));
+    expect(persistance.chargerPlanningDistant).toHaveBeenCalledTimes(appels + 1);
+  });
+
+  it("anti-écho à la microseconde : même milliseconde que notre écriture mais autre horodatage → relu", async () => {
+    const { sync, semaine, alerte } = await monterPlanning();
+    poserSemaineAffichee(
+      semaine,
+      [jourPlanningSimple("lundi", { id: "vieux", nom: "Vieux" })],
+      "2026-06-15T09:00:00.000Z"
+    );
+    // Postgres tronque les zéros finaux : « .94056 » = 940 560 µs.
+    persistance.sauvegarderSlotsDistant.mockResolvedValueOnce("2026-06-15T10:00:01.94056+00:00");
+    await sync.modifierSlotDistant(semaine, jourPlanningSimple("lundi", { id: "nouveau", nom: "Nouveau" }));
+    const appels = persistance.chargerPlanningDistant.mock.calls.length;
+    persistance.chargerPlanningDistant.mockResolvedValue({
+      planning: {
+        semaine,
+        jours: [
+          jourPlanningSimple("lundi", { id: "nouveau", nom: "Nouveau" }),
+          jourPlanningSimple("mardi", { id: "autre-membre", nom: "Autre" }),
+        ],
+      },
+      updatedAt: "2026-06-15T10:00:01.940562+00:00",
+    });
+
+    evenement(semaine, "2026-06-15T10:00:01.940560+00:00"); // notre écho, autre écriture
+    await new Promise((r) => setTimeout(r, 30));
+    expect(persistance.chargerPlanningDistant).toHaveBeenCalledTimes(appels);
+
+    evenement(semaine, "2026-06-15T10:00:01.940562+00:00"); // autre membre, même ms
+    await vi.waitFor(() => expect(alerte.result.current).toBe(true));
+  });
+
+  // S2 : l'event différé ne doit pas être jugé après le démontage de /planning
+  // (relecture inutile ET réabonnement d'un canal que useSync vient de couper).
+  it("event différé puis démontage pendant l'écriture : ni relecture ni canal rouvert", async () => {
+    const { sync, semaine, alerte, vue } = await monterPlanning();
+    poserSemaineAffichee(
+      semaine,
+      [jourPlanningSimple("lundi", { id: "vieux", nom: "Vieux" })],
+      "2026-06-15T09:00:00.000Z"
+    );
+    const ecriture = differe<string>();
+    persistance.sauvegarderSlotsDistant.mockImplementationOnce(() => ecriture.promesse);
+    const appels = persistance.chargerPlanningDistant.mock.calls.length;
+    const canaux = canauxPlanning();
+
+    const enCours = sync.modifierSlotDistant(
+      semaine,
+      jourPlanningSimple("lundi", { id: "nouveau", nom: "Nouveau" })
+    );
+    evenement(semaine, T_DISTANT); // un autre membre, pendant l'écriture
+    vue.unmount(); // départ de /planning
+    ecriture.resoudre(T1);
+    await enCours;
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(persistance.chargerPlanningDistant).toHaveBeenCalledTimes(appels);
+    expect(canauxPlanning()).toBe(canaux);
+    expect(alerte.result.current).toBe(false);
+  });
+
+  // S3 : la régénération du cycle (sauvegarder_cycle) est un troisième écrivain
+  // de la semaine abonnée (vue Cycle de /planning) : son écho n'alerte pas et le
+  // cache de la semaine affichée reçoit les jours générés.
+  it("régénération du cycle touchant la semaine abonnée : ni alerte ni relecture, cache à jour", async () => {
+    const { sync, semaine, alerte } = await monterPlanning();
+    // Cycle affiché hors de la semaine abonnée : ses lectures de re-projection
+    // ne se confondent pas avec une relecture US-21 de la semaine.
+    localStorage.setItem("cycle_affiche", JSON.stringify({ ancre: "2026-07-13", longueur: 7 }));
+    poserSemaineAffichee(
+      semaine,
+      [jourPlanningSimple("lundi", { id: "vieux", nom: "Vieux" })],
+      "2026-06-15T09:00:00.000Z"
+    );
+    const ecriture = differe<Record<string, string>>();
+    persistance.sauvegarderCycleDistant.mockImplementationOnce(() => ecriture.promesse);
+    const appelsAvant = persistance.chargerPlanningDistant.mock.calls.length;
+
+    const enCours = sync.appliquerGenerationCycle("2026-07-13", [
+      { semaine, jours: [jourPlanningSimple("mardi", { id: "genere", nom: "Généré" })] },
+    ]);
+    evenement(semaine, T1); // écho avant la réponse de sauvegarder_cycle
+    ecriture.resoudre({ [semaine]: T1 });
+    await enCours;
+    evenement(semaine, T1); // écho tardif
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(alerte.result.current).toBe(false);
+    // Seules les lectures de la re-projection du cycle (aucune relecture US-21).
+    const relectures = persistance.chargerPlanningDistant.mock.calls
+      .slice(appelsAvant)
+      .filter(([s]) => s === semaine);
+    expect(relectures).toHaveLength(0);
+    expect(joursLocaux().map((jp) => [jp.jour, jp.diner?.id])).toEqual([
+      ["lundi", "vieux"],
+      ["mardi", "genere"],
+    ]);
+    expect(localStorage.getItem("planning_courant_maj")).toBe(T1);
+    expect(localStorage.getItem("planning_dirty")).toBeNull();
+  });
+});
+
+// Jumeau côté cycle (/courses, #259) : même règle d'écho exacte.
+describe("alerte US-21 côté cycle : écho exact (#352)", () => {
+  it("un event d'un autre membre plus ancien que la dernière lecture du cycle est re-projeté (alerte)", async () => {
+    const sync = await chargerSync();
+    const { renderHook } = await import("@testing-library/react");
+    persistance.chargerPlanningDistant.mockResolvedValue({
+      planning: { semaine: "2026-W29", jours: [jourPlanningSimple("lundi", { id: "r1", nom: "R1" })] },
+      updatedAt: "2026-07-13T10:00:02.000000+00:00",
+    });
+    renderHook(() => sync.useSyncCourses("2026-07-13"));
+    const alerte = renderHook(() => sync.useAlertePlanning());
+    await vi.waitFor(() =>
+      expect(realtime.rappels.find((r) => r.filtre.table === "planning")).toBeDefined()
+    );
+    const appels = persistance.chargerPlanningDistant.mock.calls.length;
+    persistance.chargerPlanningDistant.mockResolvedValue({
+      planning: {
+        semaine: "2026-W29",
+        jours: [
+          jourPlanningSimple("lundi", { id: "r1", nom: "R1" }),
+          jourPlanningSimple("mardi", { id: "autre-membre", nom: "Autre" }),
+        ],
+      },
+      updatedAt: "2026-07-13T10:00:02.000000+00:00",
+    });
+
+    realtime.rappels
+      .find((r) => r.filtre.table === "planning")!
+      .rappel({
+        eventType: "UPDATE",
+        new: { semaine: "2026-W29", updated_at: "2026-07-13T10:00:01.000000+00:00" },
+        old: {},
+      });
+
+    await vi.waitFor(() => expect(alerte.result.current).toBe(true));
+    expect(persistance.chargerPlanningDistant.mock.calls.length).toBeGreaterThan(appels);
+  });
+
+  it("génération en vol : notre écho est ignoré, l'event d'un autre membre est jugé à la fin (alerte)", async () => {
+    const sync = await chargerSync();
+    const { renderHook } = await import("@testing-library/react");
+    persistance.chargerPlanningDistant.mockResolvedValue({
+      planning: { semaine: "2026-W29", jours: [jourPlanningSimple("lundi", { id: "r1", nom: "R1" })] },
+      updatedAt: "2026-07-13T09:00:00.000000+00:00",
+    });
+    renderHook(() => sync.useSyncCourses("2026-07-13"));
+    const alerte = renderHook(() => sync.useAlertePlanning());
+    await vi.waitFor(() =>
+      expect(realtime.rappels.find((r) => r.filtre.table === "planning")).toBeDefined()
+    );
+    const event = (maj: string) =>
+      realtime.rappels
+        .find((r) => r.filtre.table === "planning")!
+        .rappel({ eventType: "UPDATE", new: { semaine: "2026-W29", updated_at: maj }, old: {} });
+    const T_NOUS = "2026-07-13T10:00:02.000000+00:00";
+    const T_AUTRE = "2026-07-13T10:00:03.000000+00:00";
+    const ecriture = {} as { resoudre: (v: Record<string, string>) => void };
+    persistance.sauvegarderCycleDistant.mockImplementationOnce(
+      () => new Promise((r) => (ecriture.resoudre = r))
+    );
+    // Re-projection de rafraichirCycleGenere : la base juste après notre RPC ;
+    // relecture suivante : la base porte aussi le slot de l'autre membre.
+    persistance.chargerPlanningDistant
+      .mockResolvedValueOnce({
+        planning: { semaine: "2026-W29", jours: [jourPlanningSimple("mardi", { id: "genere", nom: "G" })] },
+        updatedAt: T_NOUS,
+      })
+      .mockResolvedValue({
+        planning: {
+          semaine: "2026-W29",
+          jours: [
+            jourPlanningSimple("lundi", { id: "autre-membre", nom: "A" }),
+            jourPlanningSimple("mardi", { id: "genere", nom: "G" }),
+          ],
+        },
+        updatedAt: T_AUTRE,
+      });
+
+    const enCours = sync.appliquerGenerationCycle("2026-07-13", [
+      { semaine: "2026-W29", jours: [jourPlanningSimple("mardi", { id: "genere", nom: "G" })] },
+    ]);
+    event(T_NOUS); // notre écho, avant la réponse
+    event(T_AUTRE); // un autre membre écrit pendant la génération
+    await new Promise((r) => setTimeout(r, 30));
+    expect(alerte.result.current).toBe(false); // rien de jugé pendant la fenêtre
+    ecriture.resoudre({ "2026-W29": T_NOUS });
+    await enCours;
+
+    await vi.waitFor(() => expect(alerte.result.current).toBe(true));
   });
 });
 

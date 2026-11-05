@@ -14,10 +14,9 @@
 // contrainte en écrivant DIRECTEMENT en base pour la semaine ISO du jour
 // édité (modifierSlotDistant, lib/sync.ts — mirroir de la génération #259,
 // RPC sauvegarder_slots), sans jamais passer par storePlanning. Deux garde-
-// fous nécessaires, câblés dans modifierSlotDistant : (1) les deux bookkeeping
-// anti-écho existants (majPlanningCycle #259, planning_courant_maj #56 PR5)
-// sont tenus à jour pour ne jamais déclencher l'alerte intrusive sur sa
-// propre édition ; (2) si le jour édité appartient à la semaine actuellement
+// fous nécessaires, câblés dans modifierSlotDistant : (1) l'anti-écho US-21
+// (compteur des écritures en vol + `updated_at` retenu, #352) est tenu à jour
+// pour ne jamais déclencher l'alerte intrusive sur sa propre édition ; (2) si le jour édité appartient à la semaine actuellement
 // affichée en vue Semaine, le cache storePlanning est patché en direct. Undo
 // dédié et léger (toast « Annuler » qui rejoue l'ancien JourPlanning), pas de
 // réutilisation du snapshot localStorage de la vue Semaine (inutile ici).
