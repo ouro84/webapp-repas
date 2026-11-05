@@ -148,6 +148,11 @@ describe("VuePlanningCycle : génération du cycle puis relecture en erreur (#35
     );
     expect(toast.error).toHaveBeenCalledTimes(1);
     expect(toast.error).toHaveBeenCalledWith("Impossible de générer le cycle.");
+    // L'état précédent (cycle vide) reste affiché : ni état erreur, ni « Chargement… ».
+    await waitFor(() => expect(screen.getByText("Aucun repas planifié sur ce cycle.")).toBeTruthy());
+    expect(screen.getByRole("button", { name: /Générer mon cycle/ })).toBeTruthy();
+    expect(screen.queryByText("Impossible de charger le cycle.")).toBeNull();
+    expect(screen.queryByText("Chargement…")).toBeNull();
   });
 
   it("refus sans RPC (envois en attente, #355) : un seul toast, aucune relecture du cycle", async () => {
@@ -164,5 +169,6 @@ describe("VuePlanningCycle : génération du cycle puis relecture en erreur (#35
     // Laisse au gestionnaire le temps d'aller au bout (une relecture partirait ici).
     await new Promise((r) => setTimeout(r, 50));
     expect(m.chargerPlanningDistant).not.toHaveBeenCalled();
+    expect(screen.getByText("Aucun repas planifié sur ce cycle.")).toBeTruthy();
   });
 });
