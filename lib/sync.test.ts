@@ -2049,44 +2049,52 @@ describe("gardes ciblées de la synchro temps réel (#355)", () => {
       .mockRejectedValueOnce(new Error("réseau"))
       .mockResolvedValue({ planning: distantAvecMardi(semaine), updatedAt: T_DISTANT });
     const erreur = vi.spyOn(console, "error").mockImplementation(() => {});
+    // Horloge simulée (vague finale #355) : plus d'attente réelle de la tentative.
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     try {
       stepperLundi(storePlanning, semaine);
       evenementSur(canal, semaine, T_DISTANT);
+      await vi.advanceTimersByTimeAsync(0);
       await vi.waitFor(() => expect(vue.result.current).toBe("hors-ligne"));
       expect(persistance.sauvegarderPlanningDistant).not.toHaveBeenCalled();
 
-      // Aucun déclencheur : la tentative différée relit seule.
-      await vi.waitFor(() => expect(alerte.result.current).toBe(true), { timeout: 4000 });
-      await vi.waitFor(() => expect(persistance.sauvegarderPlanningDistant).toHaveBeenCalled(), {
-        timeout: 2000,
-      });
+      // Aucun déclencheur : la tentative différée (2 s) relit seule.
+      await vi.advanceTimersByTimeAsync(2000);
+      await vi.waitFor(() => expect(alerte.result.current).toBe(true));
+      await vi.advanceTimersByTimeAsync(800); // débounce du push
+      expect(persistance.sauvegarderPlanningDistant).toHaveBeenCalled();
       const pousse = persistance.sauvegarderPlanningDistant.mock.calls[0][0] as Planning;
       expect(jourDe(pousse, "lundi").personnes?.diner).toBe(4);
       expect(jourDe(pousse, "mardi").dejeuner?.id).toBe("autre-membre");
       await vi.waitFor(() => expect(vue.result.current).toBe("synchronise"));
     } finally {
+      vi.useRealTimers();
       erreur.mockRestore();
       vue.unmount();
     }
-  }, 10000);
+  });
 
   it("lecture ratée puis démontage : la nouvelle tentative différée est annulée", async () => {
     const { semaine, storePlanning, canal, vue } = await monterPlanningComplet();
     persistance.chargerPlanningDistant.mockRejectedValueOnce(new Error("réseau"));
     const erreur = vi.spyOn(console, "error").mockImplementation(() => {});
+    // Horloge simulée AVANT l'échec : la tentative différée est un minuteur simulé.
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     try {
       stepperLundi(storePlanning, semaine);
       evenementSur(canal, semaine, T_DISTANT);
-      await vi.waitFor(() => expect(localStorage.getItem("planning_a_relire")).toBe(semaine));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(localStorage.getItem("planning_a_relire")).toBe(semaine);
       const lectures = persistance.chargerPlanningDistant.mock.calls.length;
       vue.unmount();
-      await attendre(2500); // au-delà du premier délai de nouvelle tentative
+      await vi.advanceTimersByTimeAsync(2500); // au-delà du premier délai de nouvelle tentative
       expect(persistance.chargerPlanningDistant).toHaveBeenCalledTimes(lectures);
       expect(persistance.sauvegarderPlanningDistant).not.toHaveBeenCalled();
     } finally {
+      vi.useRealTimers();
       erreur.mockRestore();
     }
-  }, 10000);
+  });
 });
 
 // Vague finale #355 : semaines partielles (week-end « Aucun », créneau
@@ -2319,4 +2327,77 @@ describe("vague finale de la synchro temps réel (#355)", () => {
       vi.unstubAllGlobals();
     }
   }, 10000);
+
+  // --- A7 : re-projection finale du cycle demandée pendant une génération ---
+  it("côté cycle : une re-projection finale demandée pendant une génération est jugée à sa fin, pas jetée", async () => {
+    const sync = await chargerSync();
+    const { renderHook } = await import("@testing-library/react");
+    const lundi = jourPlanningSimple("lundi", { id: "r1", nom: "R1" });
+    persistance.chargerPlanningDistant.mockResolvedValue({
+      planning: { semaine: "2026-W29", jours: [lundi] },
+      updatedAt: "2026-07-13T09:00:00.000000+00:00",
+    });
+    renderHook(() => sync.useSyncCourses("2026-07-13"));
+    await vi.waitFor(() =>
+      expect(realtime.rappels.filter((r) => r.filtre.table === "planning")).toHaveLength(1)
+    );
+    const canal = realtime.rappels.filter((r) => r.filtre.table === "planning")[0];
+    const lecture = differe<{ planning: Planning; updatedAt: string }>();
+    persistance.chargerPlanningDistant.mockImplementationOnce(() => lecture.promesse);
+    const rpc = differe<Record<string, string>>();
+    persistance.sauvegarderCycleDistant.mockImplementationOnce(() => rpc.promesse);
+    const appels = persistance.chargerPlanningDistant.mock.calls.length;
+    const evenementCycle = (maj: string) =>
+      canal.rappel({ eventType: "UPDATE", new: { semaine: "2026-W29", updated_at: maj }, old: {} });
+
+    evenementCycle("2026-07-13T10:00:01.000000+00:00"); // re-projection lente
+    await vi.waitFor(() => expect(persistance.chargerPlanningDistant).toHaveBeenCalledTimes(appels + 1));
+    evenementCycle("2026-07-13T10:00:02.000000+00:00"); // → re-projection finale demandée
+    const generation = sync.appliquerGenerationCycle("2026-07-13", [
+      { semaine: "2026-W29", jours: [jourPlanningSimple("mardi", { id: "g", nom: "G" })] },
+    ]);
+    await vi.waitFor(() => expect(persistance.sauvegarderCycleDistant).toHaveBeenCalled());
+    // La re-projection lente finit PENDANT la génération : sa finale est différée.
+    lecture.resoudre({ planning: { semaine: "2026-W29", jours: [lundi] }, updatedAt: "2026-07-13T10:00:01.000000+00:00" });
+    await attendre(20);
+    rpc.resoudre({ "2026-W29": "2026-07-13T10:00:05.000000+00:00" });
+    await generation;
+
+    // Lectures : la lente, celle de la génération, puis la finale différée.
+    await vi.waitFor(() => expect(persistance.chargerPlanningDistant).toHaveBeenCalledTimes(appels + 3));
+    await attendre(50);
+    expect(persistance.chargerPlanningDistant).toHaveBeenCalledTimes(appels + 3);
+  });
+
+  // --- A8 : back-off de la nouvelle tentative (2 s ×2, plafond 30 s, 5 essais) ---
+  it("relecture ratée en boucle : nouvelles tentatives à 2, 4, 8, 16 puis 30 s, et plus rien après la 5e", async () => {
+    const { semaine, storePlanning, vue } = await monterPlanning();
+    const erreur = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      persistance.chargerPlanningDistant.mockRejectedValue(new Error("réseau"));
+      stepperLundi(storePlanning, 4);
+      evenement(semaine, T_DISTANT);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(localStorage.getItem("planning_a_relire")).toBe(semaine);
+      let lectures = persistance.chargerPlanningDistant.mock.calls.length;
+
+      for (const delai of [2000, 4000, 8000, 16_000, 30_000]) {
+        await vi.advanceTimersByTimeAsync(delai - 1);
+        expect(persistance.chargerPlanningDistant).toHaveBeenCalledTimes(lectures);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(persistance.chargerPlanningDistant).toHaveBeenCalledTimes(lectures + 1);
+        lectures++;
+      }
+      // Après 5 tentatives : plus de relance automatique (restent les déclencheurs de push).
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(persistance.chargerPlanningDistant).toHaveBeenCalledTimes(lectures);
+      expect(persistance.sauvegarderPlanningDistant).not.toHaveBeenCalled();
+      expect(localStorage.getItem("planning_a_relire")).toBe(semaine);
+    } finally {
+      vue.unmount();
+      vi.useRealTimers();
+      erreur.mockRestore();
+    }
+  });
 });

@@ -1505,6 +1505,13 @@ let traitementCycleEnCours = false;
 // lecture en cours n'apparaissait ni dans la liste ni dans l'alerte.
 let rejouerTraitementCycle = false;
 const eventsCycleDifferes = new Map<string, Set<number>>();
+// Re-projection demandée PENDANT la fenêtre de génération (#355), typiquement
+// la re-projection finale d'un traitement qui se termine pendant une
+// génération : différée comme les events (jugée par `jugerEventsCycleDifferes`)
+// au lieu d'être jetée. Ses horodatages ne sont plus connus ici (déjà triés
+// par `surEventPlanningCycle`) : c'est un drapeau, pas une entrée de
+// `eventsCycleDifferes`.
+let reprojectionCycleDifferee = false;
 
 // Juge les events du cycle différés, une fois la dernière écriture planning
 // terminée et hors fenêtre de génération.
@@ -1512,7 +1519,12 @@ function jugerEventsCycleDifferes(): void {
   if (ecrituresPlanningEnVol > 0 || suppressionAlerteCycle) return;
   const differes = [...eventsCycleDifferes];
   eventsCycleDifferes.clear();
-  if (differes.some(([semaine, cles]) => [...cles].some((cle) => !estEchoPlanning(semaine, cle)))) {
+  const reprojection = reprojectionCycleDifferee;
+  reprojectionCycleDifferee = false;
+  if (
+    reprojection ||
+    differes.some(([semaine, cles]) => [...cles].some((cle) => !estEchoPlanning(semaine, cle)))
+  ) {
     void traiterChangementCycleDistant();
   }
 }
@@ -1532,7 +1544,10 @@ async function rechargerProjectionCycle(ancre: string, longueur: number): Promis
 }
 
 async function traiterChangementCycleDistant(): Promise<void> {
-  if (suppressionAlerteCycle) return;
+  if (suppressionAlerteCycle) {
+    reprojectionCycleDifferee = true; // jugée à la fin de la génération (#355)
+    return;
+  }
   if (traitementCycleEnCours) {
     rejouerTraitementCycle = true; // re-projection finale (#355)
     return;
@@ -1630,6 +1645,7 @@ async function majAbonnementPlanningCycle(
 function couperPlanningCycle(): Promise<void> {
   eventsCycleDifferes.clear(); // plus rien à juger après la coupure (#352)
   rejouerTraitementCycle = false; // ni re-projection finale (#355)
+  reprojectionCycleDifferee = false; // ni re-projection différée (#355)
   chainePlanningCycle = chainePlanningCycle
     .then(async () => {
       for (const canal of canauxPlanningCycle.values()) {
