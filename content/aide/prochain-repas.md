@@ -6,7 +6,7 @@ Contrairement à la vue Semaine ou à la vue Cycle, la page **Ce soir** n'affich
 
 ## Ce qui s'affiche
 
-La recette s'affiche directement dans la page, en grand, pour rester lisible téléphone posé sur le plan de travail : le moment du repas, le nom du plat, le nombre de personnes, puis les ingrédients (adaptés au nombre de personnes) et les étapes numérotées si elles ont été renseignées.
+La recette s'affiche directement dans la page, pour rester lisible téléphone posé sur le plan de travail : le moment du repas, le nom du plat, le nombre de personnes, puis les ingrédients (adaptés au nombre de personnes) et les étapes numérotées si elles ont été renseignées.
 
 En bas de page, **« Ensuite »** t'indique le repas d'après (par exemple « Ensuite : Dîner de demain, Pâtes à la carbonara »).
 

@@ -11,6 +11,20 @@ import { clientParDefaut } from "@/lib/supabase/par-defaut"
 import type { ClientSupabase } from "@/lib/supabase/types"
 import type { PreferencesRecettes, RecettePreference } from "@/lib/generateur"
 
+// Écritures en vol par recette (#352) : chaque écriture part après la
+// précédente de la même recette, et une lecture attend leur fin. Pourquoi :
+// deux bascules rapides (favorite puis évitée) partaient en parallèle et
+// pouvaient se valider dans le désordre (la base gardait « favorite »), et une
+// fiche rouverte aussitôt relisait la base avant la dernière écriture.
+const ecrituresEnVol = new Map<string, Promise<void>>()
+
+// Attend la fin (succès ou échec) des écritures en vol, d'une recette ou de toutes.
+async function attendreEcritures(recetteId?: string): Promise<void> {
+  const enVol =
+    recetteId === undefined ? [...ecrituresEnVol.values()] : [ecrituresEnVol.get(recetteId)]
+  await Promise.allSettled(enVol)
+}
+
 /**
  * Charge toutes les préférences du foyer courant (id de recette → préférence).
  * Sert la vue en liste (« Mes recettes ») qui affiche N recettes à la fois —
@@ -19,6 +33,7 @@ import type { PreferencesRecettes, RecettePreference } from "@/lib/generateur"
 export async function chargerPreferences(
   client: ClientSupabase = clientParDefaut()
 ): Promise<PreferencesRecettes> {
+  await attendreEcritures()
   const { data, error } = await client
     .from("recette_preference")
     .select("recette_id, preference")
@@ -40,6 +55,7 @@ export async function chargerPreferences(
 export async function chargerPreference(
   recetteId: string
 ): Promise<RecettePreference | null> {
+  await attendreEcritures(recetteId)
   const client = createClient()
   const { data, error } = await client
     .from("recette_preference")
@@ -57,9 +73,26 @@ export async function chargerPreference(
  * neutre (delete) ; passer à `"favorite"`/`"evitee"` remplace directement
  * l'état précédent (upsert — un seul aller-retour, pas de delete+insert).
  * `foyer_id` est posé par le default `mon_foyer()` (#56 PR2) ; la RLS rejette
- * si non connecté ou hors foyer.
+ * si non connecté ou hors foyer. Écritures d'une même recette sérialisées
+ * (cf. `ecrituresEnVol`) : la dernière demandée est la dernière écrite.
  */
-export async function definirPreference(
+export function definirPreference(
+  recetteId: string,
+  preference: RecettePreference | null
+): Promise<void> {
+  const precedente = ecrituresEnVol.get(recetteId) ?? Promise.resolve()
+  const ecriture = precedente
+    .catch(() => {}) // un échec précédent (déjà remonté à son appelant) ne bloque pas
+    .then(() => ecrirePreference(recetteId, preference))
+  ecrituresEnVol.set(recetteId, ecriture)
+  const nettoyer = () => {
+    if (ecrituresEnVol.get(recetteId) === ecriture) ecrituresEnVol.delete(recetteId)
+  }
+  ecriture.then(nettoyer, nettoyer)
+  return ecriture
+}
+
+async function ecrirePreference(
   recetteId: string,
   preference: RecettePreference | null
 ): Promise<void> {

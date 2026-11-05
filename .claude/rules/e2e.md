@@ -38,7 +38,7 @@ paths:
   - **Le test de captures crée son état et nettoie derrière lui** (`supprimerDemandesPanier` au début et en `finally`), sans dépendre de sa place dans le fichier. Pourquoi : l'état « disponible » exige un foyer sans demande, ce que l'ordre des tests ne garantit pas.
 
 - **`prochain-repas.spec`** (#336) : le repas affiché par `/ce-soir` dépend de l'heure ; le test calcule le créneau avec `prochainRepasActif` / `repasActifSuivant` (réglages par défaut remis en `beforeEach`) et y écrit une recette du catalogue par `planifierRepasDistant(request, semaine, repas)` (nom exact → id uuid, RPC `sauvegarder_slots`). Pourquoi : une génération réelle laisse le créneau courant vide le week-end (elle vise la semaine suivante), le test ne vérifiait alors que l'état vide. En headless, le Wake Lock est refusé : le `console.warn` dans les logs est attendu.
-- **`lien-cycle.spec`** (#320, RG-87) : compte partagé, lecture seule ; la vue préférée se pose par init script (`vue_planning`), gardé par un drapeau `sessionStorage` pour ne l'appliquer qu'une fois, et le libellé attendu se calcule avec `libelleCycle` sur le jour de courses lundi (`ancreParDefaut`, `cycleDecale`). Pourquoi : `addInitScript` rejoue à chaque chargement complet et écraserait la valeur lue après un `reload` ; le week-end décale le cycle par défaut, donc un libellé figé casserait.
+- **`lien-cycle.spec`** (#320, RG-87) : compte partagé, lecture seule ; la vue préférée se pose par init script (`vue_planning`), gardé par un drapeau `sessionStorage` pour ne l'appliquer qu'une fois, et les dates attendues se calculent avec `datesCycle` (celles que le navigateur de période affiche, et non plus un « Courses du … ») sur le jour de courses lundi (`ancreParDefaut`, `cycleDecale`). Pourquoi : `addInitScript` rejoue à chaque chargement complet et écraserait la valeur lue après un `reload` ; le week-end décale le cycle par défaut, donc des dates figées casseraient.
 
 ## Le compte partagé : chaque spec restaure ce qu'elle touche
 
@@ -52,6 +52,7 @@ Un état résiduel fausse les specs suivantes du même job. Nettoyer en `beforeE
 | Favoris / évités | `nettoyerPreferencesDistantes` |
 | Jour de courses (réglage foyer) | `reinitialiserJourCoursesDistant` (ou `definirJourCoursesDistant(request, jour)` pour tester un jour ≠ lundi) |
 | Prénom / couleur d'avatar | `reinitialiserProfilDistant` |
+| Longueur de cycle étirée (`cycle_courses`) | `nettoyerLongueursCycleDistantes` (et `definirLongueurCycleDistant(request, ancre, longueur)` pour tester un cycle ≠ 7 jours) |
 
 Les helpers filtrent `foyer_id=not.is.null`. Les recettes créées par `recettes.spec` portent un suffixe `Date.now()` et sont supprimées en `afterAll`.
 

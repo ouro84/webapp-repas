@@ -3,7 +3,7 @@
 // lib/cycles.ts (fonctions testables sans réseau). Destiné à /ce-soir : pour
 // la personne qui cuisine sans avoir suivi la planification.
 
-import { creneauActif } from "@/lib/generateur"
+import { creneauActif, ORDRE_JOURS } from "@/lib/generateur"
 import { estRestes } from "@/lib/restes"
 import { personnesDuSlot, PERSONNES_DEFAUT } from "@/lib/personnes"
 import { semaineISO } from "@/lib/semaines"
@@ -11,13 +11,10 @@ import type { Jour, Planning, Recette, ReglagesGeneration } from "@/types"
 
 export type TypeRepas = "dejeuner" | "diner"
 
-const JOURS_ISO: Jour[] = [
-  "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche",
-]
-
 export function jourDeDate(date: Date): Jour {
   const iso = date.getDay() === 0 ? 7 : date.getDay()
-  return JOURS_ISO[iso - 1]
+  // ORDRE_JOURS (lundi → dimanche) : index = rang ISO - 1 (#352, source unique).
+  return ORDRE_JOURS[iso - 1]
 }
 
 function versISO(d: Date): string {

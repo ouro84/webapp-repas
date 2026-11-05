@@ -213,13 +213,15 @@ test("cycle chevauchant deux semaines ISO — éditer vendredi/samedi/dimanche n
   await expect(page.getByText("Recette remplacée")).toBeVisible();
 
   // Les 7 jours (dont samedi/dimanche, même semaine ISO que vendredi) restent
-  // tous affichés avec un repas — aucun "Rien de prévu" fantôme.
+  // tous affichés avec un repas — aucun emplacement vide fantôme (#352 : un
+  // jour non planifié rend deux « Pas de repas prévu » ; réglages par défaut,
+  // tous les créneaux sont actifs).
   await expect(page.locator("main li")).toHaveCount(7);
-  await expect(page.getByText("Rien de prévu")).toHaveCount(0);
+  await expect(page.getByText("Pas de repas prévu")).toHaveCount(0);
 
   await page.reload();
   await expect(page.locator("main li")).toHaveCount(7);
-  await expect(page.getByText("Rien de prévu")).toHaveCount(0);
+  await expect(page.getByText("Pas de repas prévu")).toHaveCount(0);
 });
 
 // Revue #301 : une édition faite PENDANT « Générer mon cycle » armait une
@@ -235,8 +237,8 @@ test("édition en vue Cycle bloquée pendant « Générer mon cycle » (#301)", 
 
   const carte = page.locator("main li").first();
   const n = await lirePersonnes(carte);
-  await page.getByRole("button", { name: "Générer mon cycle" }).click();
-  // Cycle déjà rempli → confirmation avant de régénérer (#334).
+  // Cycle déjà rempli : « Régénérer » (#352) puis confirmation (#334).
+  await page.getByRole("button", { name: "Régénérer", exact: true }).click();
   await page
     .getByRole("dialog", { name: "Régénérer ce cycle ?" })
     .getByRole("button", { name: "Régénérer" })

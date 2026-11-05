@@ -16,20 +16,13 @@
 // Responsive (RG-06 à RG-08) : liste verticale par jour en mobile,
 // grille 7 colonnes à partir de md (≥ 768px).
 
-import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { flushSync } from "react-dom";
 import { toast } from "sonner";
 import {
-  Carrot,
-  Leaf,
-  SlidersHorizontal,
-  Sun,
-  Wheat,
-} from "lucide-react";
-import {
   joursSansLegume,
+  ORDRE_JOURS,
   prefereVegeSlot,
   recettesUtilisees,
   remplacerSlot,
@@ -63,14 +56,14 @@ import {
   semaineDecalee,
   semaineISO,
 } from "@/lib/semaines";
-import { ancreDeSemaine } from "@/lib/cycles";
+import { ancreDeSemaine, versISO } from "@/lib/cycles";
+import { datesDeSemaine, libellePlageDates } from "@/lib/planning-affichage";
 import { chargerJourCoursesFoyer } from "@/lib/foyer";
 import { parseApiError } from "@/lib/errors";
 import {
   FILET_ATTERRISSAGE_MS,
   SEUIL_ATTENTE_MS,
   delaiAtterrissage,
-  delaiJour,
   delaiNom,
   jourAtterrissage,
 } from "@/lib/choregraphie-generation";
@@ -80,11 +73,13 @@ const SEMAINES_PASSEES = 12;
 const SEMAINES_FUTURES = 6;
 import { SelecteurRecette } from "@/components/planning/selecteur-recette";
 import { FicheRecette } from "@/components/planning/fiche-recette";
+import { EntetePlanning, type VuePlanning } from "@/components/planning/entete-planning";
+import { EtatVidePlanning } from "@/components/planning/etat-vide-planning";
+import { NavigateurPeriode } from "@/components/planning/navigateur-periode";
 import { VuePlanningCycle } from "@/components/planning/vue-cycle";
 import { SlotRepas } from "@/components/planning/slot-repas";
+import { GrilleJours, type JourGrille } from "@/components/planning/grille-jours";
 import { ConfirmationModale } from "@/components/ui/confirmation";
-import { ApercuPlanning } from "@/components/ui/apercu-planning";
-import { Logo } from "@/components/ui/logo";
 import { PulsationAtterrissage } from "@/components/ui/pulsation-atterrissage";
 import type { Jour, JourPlanning, Planning, Recette } from "@/types";
 
@@ -94,16 +89,17 @@ type TypeRepas = "dejeuner" | "diner";
 // Libellés & styles
 // ============================================================================
 
-// Libellés des jours : complet pour la liste mobile (RG-08), abrégé pour les
-// en-têtes de la grille desktop (RG-07).
-const LIBELLES_JOURS: Record<Jour, { complet: string; abrege: string }> = {
-  lundi: { complet: "Lundi", abrege: "Lun" },
-  mardi: { complet: "Mardi", abrege: "Mar" },
-  mercredi: { complet: "Mercredi", abrege: "Mer" },
-  jeudi: { complet: "Jeudi", abrege: "Jeu" },
-  vendredi: { complet: "Vendredi", abrege: "Ven" },
-  samedi: { complet: "Samedi", abrege: "Sam" },
-  dimanche: { complet: "Dimanche", abrege: "Dim" },
+// Libellés des jours, pour les noms accessibles des actions de slot et le titre
+// du sélecteur (« Dîner de lundi »). Les en-têtes de la grille, datés, viennent
+// de lib/planning-affichage.ts (GrilleJours, #352).
+const LIBELLES_JOURS: Record<Jour, { complet: string }> = {
+  lundi: { complet: "Lundi" },
+  mardi: { complet: "Mardi" },
+  mercredi: { complet: "Mercredi" },
+  jeudi: { complet: "Jeudi" },
+  vendredi: { complet: "Vendredi" },
+  samedi: { complet: "Samedi" },
+  dimanche: { complet: "Dimanche" },
 };
 
 function cleSlot(jour: Jour, typeRepas: TypeRepas): string {
@@ -121,128 +117,6 @@ function useHydratation(): boolean {
     () => () => {},
     () => true,
     () => false
-  );
-}
-
-// Navigateur de semaines (US-14, #5) : stepper borné ‹ [libellé relatif + date] ›
-// qui change la semaine AFFICHÉE (passé stocké → futur). La semaine courante
-// (offset 0) est visuellement marquée (RG). Remplace le sélecteur de génération
-// #55 (génération = semaine affichée).
-function NavigateurSemaine({
-  semaine,
-  offset,
-  peutReculer,
-  peutAvancer,
-  onPrecedente,
-  onSuivante,
-  disabled,
-}: {
-  semaine: string;
-  offset: number; // par rapport à la semaine courante (0 = cette semaine)
-  peutReculer: boolean;
-  peutAvancer: boolean;
-  onPrecedente: () => void;
-  onSuivante: () => void;
-  disabled?: boolean;
-}) {
-  const estCourante = offset === 0;
-  const styleFleche =
-    "relative flex size-8 items-center justify-center rounded-full border border-brand-200 text-brand-700 transition after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.92] motion-reduce:active:scale-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent";
-  return (
-    <div
-      role="group"
-      aria-label="Naviguer entre les semaines"
-      className="inline-flex items-center gap-2"
-    >
-      <button
-        type="button"
-        onClick={onPrecedente}
-        disabled={disabled || !peutReculer}
-        aria-label="Semaine précédente"
-        className={styleFleche}
-      >
-        <ChevronSemaine direction="gauche" />
-      </button>
-      {/* Semaine courante marquée (RG) : fond brand + texte accentué. */}
-      <span
-        aria-live="polite"
-        className={`min-w-[11rem] rounded-lg px-3 py-1 text-center ${estCourante ? "bg-brand-50" : ""}`}
-      >
-        <span
-          className={`block text-sm font-medium ${estCourante ? "text-brand-700" : "text-brand-900"}`}
-        >
-          {libelleRelatif(offset)}
-        </span>
-        <span className="block text-xs text-brand-700/85">
-          {formaterSemaine(semaine)}
-        </span>
-      </span>
-      <button
-        type="button"
-        onClick={onSuivante}
-        disabled={disabled || !peutAvancer}
-        aria-label="Semaine suivante"
-        className={styleFleche}
-      >
-        <ChevronSemaine direction="droite" />
-      </button>
-    </div>
-  );
-}
-
-// Chevron gauche/droite — SVG inline (pas de glyphe texte, cf. audit #51).
-function ChevronSemaine({ direction }: { direction: "gauche" | "droite" }) {
-  return (
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 16 16"
-      className="size-4"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d={direction === "gauche" ? "M10 4l-4 4 4 4" : "M6 4l4 4-4 4"} />
-    </svg>
-  );
-}
-
-// Bascule de vue « Semaine | Cycle » (#260, PR3) : segmented control. La vue
-// semaine (défaut) est le driver quotidien ; la vue cycle (lecture seule) cale
-// l'affichage sur la fenêtre de la liste de courses.
-function BasculeVue({
-  vue,
-  onChange,
-}: {
-  vue: "semaine" | "cycle";
-  onChange: (v: "semaine" | "cycle") => void;
-}) {
-  const base =
-    "relative rounded-full px-3 py-1.5 text-sm font-medium transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600";
-  return (
-    <div
-      role="group"
-      aria-label="Vue du planning"
-      className="inline-flex rounded-full border border-brand-200 p-0.5"
-    >
-      <button
-        type="button"
-        aria-pressed={vue === "semaine"}
-        onClick={() => onChange("semaine")}
-        className={`${base} ${vue === "semaine" ? "bg-primary text-white" : "text-brand-700 hover:bg-brand-50"}`}
-      >
-        Semaine
-      </button>
-      <button
-        type="button"
-        aria-pressed={vue === "cycle"}
-        onClick={() => onChange("cycle")}
-        className={`${base} ${vue === "cycle" ? "bg-primary text-white" : "text-brand-700 hover:bg-brand-50"}`}
-      >
-        Cycle
-      </button>
-    </div>
   );
 }
 
@@ -437,12 +311,12 @@ function ContenuPlanning() {
   }, [paramLienPresent, paramSemainePresent]);
   // Le lien force la vue Cycle pour la visite SANS écrire storeVuePlanning : la
   // vue préférée enregistrée reste celle de tous les jours.
-  const vue: "semaine" | "cycle" = lienSemaineActif
+  const vue: VuePlanning = lienSemaineActif
     ? "semaine"
     : lienActif || vueBrute === "cycle"
       ? "cycle"
       : "semaine";
-  function setVue(v: "semaine" | "cycle"): void {
+  function setVue(v: VuePlanning): void {
     // Choix explicite : écrit la préférence (comportement existant) et
     // désactive le lien pour le reste de la visite.
     setLienActif(false);
@@ -569,9 +443,34 @@ function ContenuPlanning() {
     : 0;
   const peutReculer = navPret && offsetAffiche > -SEMAINES_PASSEES;
   const peutAvancer = navPret && offsetAffiche < SEMAINES_FUTURES;
+  // Props du navigateur de période (#352) : libellé relatif + plage de dates
+  // (mêmes helpers que la vue Cycle, lib/planning-affichage.ts).
+  const periodeSemaine = {
+    libelle: libelleRelatif(offsetAffiche),
+    dates: navPret
+      ? (() => {
+          const jours = datesDeSemaine(semaineAffichee);
+          return libellePlageDates(jours[0], jours[6]);
+        })()
+      : "",
+    courante: offsetAffiche === 0,
+    peutReculer,
+    peutAvancer,
+  };
   function allerSemaine(delta: number): void {
     if (semaineAffichee) void naviguerVers(semaineDecalee(semaineAffichee, delta));
   }
+  // Navigateur de semaines (#5, #352), partagé par l'état vide et l'en-tête de
+  // l'état chargé — après hydratation seulement (date client).
+  const navigateurSemaine = navPret ? (
+    <NavigateurPeriode
+      unite="semaine"
+      {...periodeSemaine}
+      onPrecedente={() => allerSemaine(-1)}
+      onSuivante={() => allerSemaine(1)}
+      disabled={enGeneration}
+    />
+  ) : null;
 
   // Garde-fou « semaine passée » (US-14, RG-24) : régénérer ou modifier un
   // planning déjà passé demande confirmation. `reprise` est l'action à rejouer
@@ -879,76 +778,40 @@ function ContenuPlanning() {
   // les liens « Liste de courses → » de la vue Semaine (vide et chargée).
   const ancreCourses = semaineAffichee ? ancreDeSemaine(semaineAffichee, jourCourses) : null;
 
-  // --- Vue CYCLE (#260, PR3) : lecture seule, calée sur la fenêtre de courses.
-  // Court-circuite les états semaine (vide/chargé) : le cycle peut avoir des
-  // repas même si la semaine affichée est vide, et inversement. ---
+  // --- Vue CYCLE (#260, PR3) : calée sur la fenêtre de courses. Court-circuite
+  // les états semaine (vide/chargé) : le cycle peut avoir des repas même si la
+  // semaine affichée est vide, et inversement. L'en-tête, l'état vide et le
+  // navigateur sont rendus par la vue elle-même (gabarit partagé, #352). ---
   if (vue === "cycle") {
     return (
-      <main id="contenu" className="flex-1 p-4 md:p-8">
-        <header className="mb-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-          <div className="min-w-0 flex-1">
-            <h1 className="font-display text-2xl font-semibold text-brand-900">
-              Mon planning
-            </h1>
-          </div>
-          <div className="flex items-center gap-2">
-            <BasculeVue vue={vue} onChange={setVue} />
-          </div>
-        </header>
+      <main id="contenu" className="flex flex-1 flex-col">
         <VuePlanningCycle
           idsModifiables={idsModifiables}
           lienCycle={lienActif ? lienCycle ?? undefined : undefined}
+          vue={vue}
+          onChangerVue={setVue}
         />
       </main>
     );
   }
 
   // --- État vide (RG-09) : semaine affichée sans planning (#5) ---
-  // Reprend le hero de la vitrine (#337) : logo, baseline, aperçu (qui
-  // « respire » pendant la génération), avec le navigateur de semaine et la
-  // bascule Semaine | Cycle.
+  // Hero de la vitrine (#337), partagé avec la vue Cycle (#352).
   if (planning === null) {
     return (
-      <main id="contenu" className="flex flex-1 flex-col items-center justify-center gap-8 p-8">
-        <div className="flex flex-col items-center text-center">
-          <Logo className="mb-5 size-20 text-brand-600" />
-          <h1 className="font-display text-3xl font-semibold text-brand-900">
-            Mon planning de la semaine
-          </h1>
-          <p className="mt-3 max-w-sm text-brand-700/85">
-            La question du soir a enfin sa réponse
-          </p>
-        </div>
-        <div className="flex flex-col items-center gap-3">
-          {/* Bascule Semaine | Cycle (#260) : accessible même sans planning de
-              semaine, pour consulter le cycle. */}
-          <BasculeVue vue={vue} onChange={setVue} />
-          {/* Navigation entre semaines (#5) — après hydratation (date client). */}
-          {navPret && (
-            <NavigateurSemaine
-              semaine={semaineAffichee!}
-              offset={offsetAffiche}
-              peutReculer={peutReculer}
-              peutAvancer={peutAvancer}
-              onPrecedente={() => allerSemaine(-1)}
-              onSuivante={() => allerSemaine(1)}
-              disabled={enGeneration}
-            />
-          )}
-        </div>
-        <ApercuPlanning enAttente={attenteVisible} />
-        <div className="flex flex-col items-center gap-4">
-          <p className="text-brand-700/85">Aucun planning pour cette semaine.</p>
-          <button
-            type="button"
-            onClick={() => void genererNouveauPlanning()}
-            disabled={enGeneration}
-            aria-busy={enGeneration}
-            className="rounded-full bg-primary px-8 py-4 text-lg font-semibold text-white shadow-sm transition hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100 disabled:opacity-60"
-          >
-            {attenteVisible ? "Je compose ta semaine…" : "Générer mon planning"}
-          </button>
-        </div>
+      <main id="contenu" className="flex flex-1 flex-col">
+        <EtatVidePlanning
+          titre="Mon planning de la semaine"
+          vue={vue}
+          onChangerVue={setVue}
+          navigateur={navigateurSemaine}
+          enAttente={attenteVisible}
+          message="Aucun planning pour cette semaine."
+          libelleBouton="Générer mon planning"
+          libelleAttente="Je compose ta semaine…"
+          onGenerer={() => void genererNouveauPlanning()}
+          generationEnCours={enGeneration}
+        />
       </main>
     );
   }
@@ -961,236 +824,94 @@ function ContenuPlanning() {
   // (badge « déjà au planning » du sélecteur, RG-02) continue de lire le
   // planning brut : une recette d'un slot masqué reste bloquée ailleurs.
   const planningAffiche = retirerCreneauxDesactives(planning, reglages);
+  // Grille commune (#352) : chaque jour porte sa date (semaine du planning
+  // affiché, index du jour ISO) et ses deux SlotRepas. Le jour courant n'est
+  // connu qu'après hydratation (date client, pas de mismatch SSR) ; le
+  // week-end, la semaine par défaut est la suivante, donc aucun jour marqué.
+  const datesSemaine = datesDeSemaine(planningAffiche.semaine);
+  const aujourdhuiISO = navPret ? versISO(new Date()) : null;
+  const joursGrille: JourGrille[] = planningAffiche.jours.map((jp, i) => {
+    // Rang du jour dans sa semaine ISO (lundi = 0, ORDRE_JOURS) → sa date (#352).
+    const dateISO = datesSemaine[ORDRE_JOURS.indexOf(jp.jour)];
+    return {
+      cle: jp.jour,
+      dateISO,
+      slots: slotsDuJour(jp).map((slot) => (
+        <SlotRepas
+          key={slot.typeRepas}
+          libelle={slot.libelle}
+          jourLabel={LIBELLES_JOURS[jp.jour].complet}
+          recette={slot.recette}
+          indisponible={slotIndisponible === cleSlot(jp.jour, slot.typeRepas)}
+          personnes={personnesDuSlot(jp, slot.typeRepas)}
+          onChanger={() => changerSlot(jp.jour, slot.typeRepas)}
+          onSelectionner={() =>
+            setSlotEnSelection({ jour: jp.jour, typeRepas: slot.typeRepas })
+          }
+          onChangerPersonnes={(n) => changerPersonnes(jp.jour, slot.typeRepas, n)}
+          onVoir={() =>
+            slot.recette &&
+            setFicheOuverte({
+              recette: slot.recette,
+              personnes: personnesDuSlot(jp, slot.typeRepas),
+            })
+          }
+          restes={estRestes(jp, slot.typeRepas)}
+          onChangerRestes={(valeur) => changerRestes(jp.jour, slot.typeRepas, valeur)}
+          delaiNomMs={choregraphie ? delaiNom(i) : undefined}
+          accentue={aujourdhuiISO !== null && dateISO === aujourdhuiISO}
+        />
+      )),
+    };
+  });
   return (
     <main id="contenu" className="flex-1 p-4 md:p-8">
-      {/*
-        #65 — Sur mobile le header s'empile : le titre prend toute la largeur
-        (≤ 2 lignes au lieu de 4, le premier repas remonte au-dessus de la
-        ligne de flottaison), les actions sur une rangée en dessous. À partir
-        de sm, retour à la disposition titre + actions sur une ligne.
-      */}
-      <header className="mb-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-        <div className="min-w-0 flex-1">
-          <h1 className="font-display text-2xl font-semibold text-brand-900">
-            Mon planning de la semaine
-          </h1>
-          {/* La semaine s'affiche dans le navigateur ci-dessous (#5). */}
-          {/* Indicateur de synchro (US-13, bonus) — discret, seulement hors état nominal */}
-          {etatSync !== "synchronise" && (
-            <p
-              role="status"
-              className="mt-0.5 text-xs text-brand-700/85"
-            >
+      <EntetePlanning
+        titre="Mon planning de la semaine"
+        vue={vue}
+        onChangerVue={setVue}
+        libelleRegenerer={attenteVisible ? "Je compose ta semaine…" : "Régénérer"}
+        onRegenerer={() => void genererNouveauPlanning()}
+        regenerationEnCours={enGeneration}
+        hrefCourses={ancreCourses ? `/courses?ancre=${ancreCourses}` : "/courses"}
+        statut={
+          // Indicateur de synchro (US-13, bonus) — discret, seulement hors état
+          // nominal. La semaine s'affiche dans le navigateur ci-dessous (#5).
+          etatSync !== "synchronise" ? (
+            <p role="status" className="mt-0.5 text-xs text-brand-700/85">
               {etatSync === "sauvegarde"
                 ? "Sauvegarde…"
                 : "Hors-ligne — synchro au retour du réseau"}
             </p>
-          )}
-        </div>
-        {/* Actions : pleine largeur partagée sur mobile, compactes dès sm.
-            after:-inset-1 étend la zone tactile à ≥ 44px sans changer le visuel. */}
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Bascule Semaine | Cycle (#260, PR3). */}
-          <BasculeVue vue={vue} onChange={setVue} />
-          {/* Accès contextuel aux réglages de génération (#206, audit #51) :
-              l'intention « ce planning ne me ressemble pas » naît ici → on
-              rapproche le levier de l'action, au lieu de l'enfouir dans /profil.
-              Icône seule (place limitée sur mobile à côté des deux CTA). */}
-          <Link
-            href="/reglages"
-            aria-label="Réglages de génération"
-            title="Réglages de génération"
-            className="relative flex size-10 shrink-0 items-center justify-center rounded-full border border-brand-200 text-brand-700 transition after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.95] motion-reduce:active:scale-100"
-          >
-            <SlidersHorizontal className="size-5" aria-hidden="true" />
-          </Link>
-          <button
-            type="button"
-            onClick={() => void genererNouveauPlanning()}
-            disabled={enGeneration}
-            aria-busy={enGeneration}
-            className="relative flex-1 rounded-full border border-brand-200 px-4 py-2 text-center text-sm font-medium text-brand-700 transition after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100 disabled:opacity-60 sm:flex-none"
-          >
-            {attenteVisible ? "Je compose ta semaine…" : "Régénérer"}
-          </button>
-          <Link
-            href={ancreCourses ? `/courses?ancre=${ancreCourses}` : "/courses"}
-            className="relative flex-1 rounded-full bg-primary px-4 py-2 text-center text-sm font-medium text-white transition-colors after:absolute after:-inset-1 after:content-[''] hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 sm:flex-none"
-          >
-            Liste de courses →
-          </Link>
-        </div>
-      </header>
-
-      {/* Légende des pictogrammes (#210, audit critique — reconnaissance
-          plutôt que rappel) : les badges compacts des cartes (Leaf/Wheat/
-          Carrot) n'avaient de sens explicité que dans /aide, jamais ici où
-          ils apparaissent réellement. Une ligne, une fois pour toute la
-          page — pas répétée par carte. */}
-      <p className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-brand-700/85">
-        <span className="inline-flex items-center gap-1">
-          <Leaf aria-hidden="true" className="size-3.5 text-brand-600" />
-          Végétarien
-        </span>
-        <span className="inline-flex items-center gap-1">
-          <Wheat aria-hidden="true" className="size-3.5 text-accent-600" />
-          Féculents
-        </span>
-        <span className="inline-flex items-center gap-1">
-          <Carrot aria-hidden="true" className="size-3.5 text-brand-600" />
-          Légumes
-        </span>
-        <span className="inline-flex items-center gap-1">
-          <Sun aria-hidden="true" className="size-3.5 text-brand-600" />
-          De saison
-        </span>
-      </p>
-
-      {/* Navigateur de semaines (#5) : change la semaine affichée ; la
-          génération/régénération vise la semaine affichée. */}
-      {navPret && (
-        <div className="mb-6">
-          <NavigateurSemaine
-            semaine={semaineAffichee!}
-            offset={offsetAffiche}
-            peutReculer={peutReculer}
-            peutAvancer={peutAvancer}
-            onPrecedente={() => allerSemaine(-1)}
-            onSuivante={() => allerSemaine(1)}
-            disabled={enGeneration}
-          />
-        </div>
-      )}
-
-      {/* Vue mobile + tablette (RG-08, #64) : liste verticale jusqu'à lg.
-          La grille 7 colonnes ne s'active qu'à ≥ 1024px, où chaque cellule
-          reste lisible (à md=768 elle tombait à ~120px, badges compressés). */}
-      {/* Régénération en attente (#337) : grille existante en semi-transparence,
-          toujours interactive. Stagger (#69, #337) : 60 ms/jour, `backwards`
-          (cf. token) garde la carte invisible pendant son délai ; motion-safe :
-          rien si l'utilisateur a réduit les animations. */}
-      <ul
-        key={`grille-mobile-${genNonce}`}
-        className={`space-y-4 transition-opacity duration-200 lg:hidden ${attenteVisible ? "opacity-50" : ""}`}
-      >
-        {planningAffiche.jours.map((jp, i) => (
-          <li
-            key={jp.jour}
-            style={{ animationDelay: `${delaiJour(i)}ms` }}
-            className="relative rounded-lg border border-brand-100 bg-surface p-4 motion-safe:animate-entree-jour"
-          >
-            {/* Atterrissage (#337) : carte d'aujourd'hui, une fois le dernier
-                nom de plat posé ; les toasts partent à sa fin. Le contenu est
-                `relative` pour passer au-dessus du lavis. */}
-            {choregraphie?.jour === jp.jour && (
-              <PulsationAtterrissage
-                key={`atterrissage-${genNonce}`}
-                delaiMs={delaiAtterrissage(planningAffiche.jours.length)}
-                onFin={terminerChoregraphie}
-              />
-            )}
-            <h2 className="relative mb-3 font-semibold text-brand-900">
-              {LIBELLES_JOURS[jp.jour].complet}
-            </h2>
-            {/* Déjeuner + dîner côte à côte dès sm (#3 : 14 repas/semaine —
-                chaque jour tient sur une rangée), empilés sous sm (petits
-                écrans). Au-delà de lg, c'est la grille 7 colonnes qui prend
-                le relais (ul masquée). */}
-            <div className="relative grid gap-3 sm:grid-cols-2">
-              {slotsDuJour(jp).map((slot) => (
-                <SlotRepas
-                  key={slot.typeRepas}
-                  libelle={slot.libelle}
-                  jourLabel={LIBELLES_JOURS[jp.jour].complet}
-                  recette={slot.recette}
-                  indisponible={
-                    slotIndisponible === cleSlot(jp.jour, slot.typeRepas)
-                  }
-                  personnes={personnesDuSlot(jp, slot.typeRepas)}
-                  onChanger={() => changerSlot(jp.jour, slot.typeRepas)}
-                  onSelectionner={() =>
-                    setSlotEnSelection({ jour: jp.jour, typeRepas: slot.typeRepas })
-                  }
-                  onChangerPersonnes={(n) =>
-                    changerPersonnes(jp.jour, slot.typeRepas, n)
-                  }
-                  onVoir={() =>
-                    slot.recette &&
-                    setFicheOuverte({
-                      recette: slot.recette,
-                      personnes: personnesDuSlot(jp, slot.typeRepas),
-                    })
-                  }
-                  restes={estRestes(jp, slot.typeRepas)}
-                  onChangerRestes={(valeur) =>
-                    changerRestes(jp.jour, slot.typeRepas, valeur)
-                  }
-                  delaiNomMs={choregraphie ? delaiNom(i) : undefined}
-                />
-              ))}
-            </div>
-          </li>
-        ))}
-      </ul>
-
-      {/* Vue desktop (RG-07, #64) : grille 7 colonnes à partir de lg (≥ 1024px) */}
-      <div
-        key={`grille-desktop-${genNonce}`}
-        className={`hidden transition-opacity duration-200 lg:grid lg:grid-cols-7 lg:gap-3 ${attenteVisible ? "opacity-50" : ""}`}
-      >
-        {planningAffiche.jours.map((jp, i) => (
-          <section
-            key={jp.jour}
-            style={{ animationDelay: `${delaiJour(i)}ms` }}
-            className="relative flex flex-col gap-3 motion-safe:animate-entree-jour"
-          >
-            {/* Atterrissage (#337) : halo derrière la colonne d'aujourd'hui
-                (les cartes sont `relative`, au-dessus du lavis). */}
-            {choregraphie?.jour === jp.jour && (
-              <PulsationAtterrissage
-                key={`atterrissage-${genNonce}`}
-                delaiMs={delaiAtterrissage(planningAffiche.jours.length)}
-                onFin={terminerChoregraphie}
-                className="-inset-2 rounded-xl"
-              />
-            )}
-            <h2 className="relative text-center text-sm font-semibold uppercase tracking-wide text-brand-700/85">
-              {LIBELLES_JOURS[jp.jour].abrege}
-            </h2>
-            {slotsDuJour(jp).map((slot) => (
-              <SlotRepas
-                key={slot.typeRepas}
-                libelle={slot.libelle}
-                jourLabel={LIBELLES_JOURS[jp.jour].complet}
-                recette={slot.recette}
-                indisponible={
-                  slotIndisponible === cleSlot(jp.jour, slot.typeRepas)
-                }
-                personnes={personnesDuSlot(jp, slot.typeRepas)}
-                onChanger={() => changerSlot(jp.jour, slot.typeRepas)}
-                onSelectionner={() =>
-                  setSlotEnSelection({ jour: jp.jour, typeRepas: slot.typeRepas })
-                }
-                onChangerPersonnes={(n) =>
-                  changerPersonnes(jp.jour, slot.typeRepas, n)
-                }
-                onVoir={() =>
-                  slot.recette &&
-                  setFicheOuverte({
-                    recette: slot.recette,
-                    personnes: personnesDuSlot(jp, slot.typeRepas),
-                  })
-                }
-                restes={estRestes(jp, slot.typeRepas)}
-                onChangerRestes={(valeur) =>
-                  changerRestes(jp.jour, slot.typeRepas, valeur)
-                }
-                delaiNomMs={choregraphie ? delaiNom(i) : undefined}
-              />
-            ))}
-          </section>
-        ))}
-      </div>
+          ) : null
+        }
+        // Navigateur de semaines (#5) : change la semaine affichée ; la
+        // génération/régénération vise la semaine affichée.
+        navigateur={navigateurSemaine}
+      />
+      {/* Grille des jours commune avec la vue Cycle (#352) : liste en mobile,
+          rangées alignées en desktop, jour courant marqué. Chorégraphie de
+          génération (#337) : `genNonce` remonte la grille (entrée en cascade
+          rejouée), `attenteVisible` l'estompe (toujours interactive), la
+          pulsation d'atterrissage se pose sur la carte d'aujourd'hui (desktop :
+          halo derrière la colonne) et les toasts partent à sa fin. */}
+      <GrilleJours
+        jours={joursGrille}
+        aujourdhuiISO={aujourdhuiISO}
+        cleAnimation={genNonce}
+        enAttente={attenteVisible}
+        animerEntree
+        decor={(jour, _i, palier) =>
+          choregraphie?.jour === jour.cle ? (
+            <PulsationAtterrissage
+              key={`atterrissage-${genNonce}`}
+              delaiMs={delaiAtterrissage(planningAffiche.jours.length)}
+              onFin={terminerChoregraphie}
+              className={palier === "desktop" ? "-inset-2 rounded-xl" : undefined}
+            />
+          ) : null
+        }
+      />
 
       {/* Sélecteur de recette (US-06) — monté seulement pendant la sélection */}
       {slotEnSelection && (

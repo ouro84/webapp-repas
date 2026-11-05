@@ -13,21 +13,11 @@ import type {
   DbPlanningSlot,
   Recette,
   Ingredient,
-  Jour,
   JourPlanning,
   Planning,
 } from "@/types"
-
-// Ordre canonique des jours (section 5.5).
-const ORDRE_JOURS: Jour[] = [
-  "lundi",
-  "mardi",
-  "mercredi",
-  "jeudi",
-  "vendredi",
-  "samedi",
-  "dimanche",
-]
+// Ordre canonique des jours (section 5.5) : source unique dans lib/generateur.
+import { ORDRE_JOURS } from "@/lib/generateur"
 
 export function dbIngredientToDomain(
   ri: DbRecette["recette_ingredient"][number]
@@ -84,8 +74,10 @@ export function dbSlotToJourPlanning(
   if (dejeuner) jp.dejeuner = dbRecetteToDomain(dejeuner.recette)
 
   // personnes / restes : on n'attache que les valeurs non-défaut, pour produire
-  // un objet domaine minimal identique à la sortie du générateur (défaut 2 /
-  // false géré côté lecture, US-07/US-12).
+  // un objet domaine minimal (défaut 2 / false géré côté lecture, US-07/US-12).
+  // Le générateur, lui, pose `personnes: 2` explicitement (#45) : toute
+  // comparaison passe donc par les lecteurs à défaut (`personnesDuSlot`,
+  // `signaturePlanning`, #352), jamais par les champs bruts.
   const personnes: { dejeuner?: number; diner?: number } = {}
   if (diner && diner.personnes !== 2) personnes.diner = diner.personnes
   if (dejeuner && dejeuner.personnes !== 2) personnes.dejeuner = dejeuner.personnes

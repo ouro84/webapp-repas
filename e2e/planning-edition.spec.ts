@@ -416,16 +416,13 @@ test("la grille 7 colonnes n'apparaît qu'à partir du desktop (#64)", async ({
   await expect(page.locator("main ul > li")).toHaveCount(7);
 
   // Mobile (viewport par défaut 390) : liste verticale (jours en toutes
-  // lettres), la grille desktop (jours abrégés) est masquée.
-  await expect(page.getByRole("heading", { name: "Lundi" })).toBeVisible();
-  await expect(
-    page.getByRole("heading", { name: "Lun", exact: true })
-  ).toBeHidden();
+  // lettres, datés : « Lundi 2 nov. », #352), la grille desktop (jours
+  // abrégés : « Lun 2 ») est masquée.
+  await expect(page.getByRole("heading", { name: /^Lundi\s\d/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /^Lun\s\d/ })).toBeHidden();
 
   // Desktop (≥ lg) : la grille 7 colonnes apparaît, la liste mobile disparaît.
   await page.setViewportSize({ width: 1280, height: 900 });
-  await expect(
-    page.getByRole("heading", { name: "Lun", exact: true })
-  ).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Lundi" })).toBeHidden();
+  await expect(page.getByRole("heading", { name: /^Lun\s\d/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /^Lundi\s\d/ })).toBeHidden();
 });

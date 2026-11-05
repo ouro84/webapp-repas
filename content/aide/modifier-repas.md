@@ -1,6 +1,6 @@
 _Le planning généré n'est qu'un point de départ. Chaque repas se retouche en un geste._
 
-Sur chaque carte de repas, sous le nom du plat, trois boutons sont toujours visibles : **↻** (changer), **« Sélectionner »** et **« Restes »**. Voici à quoi ils servent.
+Sur chaque carte de repas, sous le nom du plat, trois boutons sont toujours visibles : **↻** (changer ; sur ordinateur, le bouton affiche aussi le libellé **« Changer »**), **« Sélectionner »** et **« Restes »**.
 
 ## Voir la recette
 

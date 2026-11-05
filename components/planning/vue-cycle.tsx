@@ -14,11 +14,11 @@
 // contrainte en écrivant DIRECTEMENT en base pour la semaine ISO du jour
 // édité (modifierSlotDistant, lib/sync.ts — mirroir de la génération #259,
 // RPC sauvegarder_slots), sans jamais passer par storePlanning. Deux garde-
-// fous nécessaires, câblés dans modifierSlotDistant : (1) les deux bookkeeping
-// anti-écho existants (majPlanningCycle #259, planning_courant_maj #56 PR5)
-// sont tenus à jour pour ne jamais déclencher l'alerte intrusive sur sa
-// propre édition ; (2) si le jour édité appartient à la semaine actuellement
-// affichée en vue Semaine, le cache storePlanning est patché en direct. Undo
+// fous nécessaires, câblés dans modifierSlotDistant : (1) l'anti-écho US-21
+// (compteur des écritures en vol + `updated_at` retenu, #352) est tenu à jour
+// pour ne jamais déclencher l'alerte intrusive sur sa propre édition ; (2) si
+// le jour édité appartient à la semaine actuellement affichée en vue Semaine,
+// le cache storePlanning est patché en direct. Undo
 // dédié et léger (toast « Annuler » qui rejoue l'ancien JourPlanning), pas de
 // réutilisation du snapshot localStorage de la vue Semaine (inutile ici).
 //
@@ -28,39 +28,48 @@
 // immédiat pour les actions ponctuelles, débounce pour le stepper personnes,
 // une seule écriture en vol par jour, retour à l'état confirmé + toast en cas
 // d'échec. Jamais de `chargerCycle` après une édition : son
-// `setChargement(true)` démonte la grille (« Chargement… », scroll et menus
-// perdus) le temps d'un aller-retour réseau. La file est vidée avant toute
+// `setChargement(true)` estompe la grille et ignore les flèches le temps d'un
+// aller-retour réseau (« Chargement… » seul n'existe qu'au premier chargement),
+// et sa relecture écraserait l'état optimiste. La file est vidée avant toute
 // relecture (navigation, génération) et au démontage.
 //
-// Le lien « Liste de courses → » vit aussi ici (passe l'ancre affichée en
-// query param, #279).
+// L'en-tête (titre, bascule, « Régénérer », « Liste de courses → » avec l'ancre
+// affichée en query param #279, légende, navigateur) et l'état vide sont ceux de
+// la vue Semaine (EntetePlanning / EtatVidePlanning, #352).
 //
 // Projection : on lit les plannings des 1-2 semaines ISO que le cycle touche
 // (chargerPlanningDistant, base = source de vérité) et on rend chaque JOUR du
 // cycle (date concrète) via lib/cycles (fonctions pures).
 
-import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import {
-  ancreParDefaut,
+  ancreCourante,
+  CYCLES_FUTURS,
+  CYCLES_PASSES,
   cycleDecale,
+  datesCycle,
   dateVersSemaineJour,
   joursDuCycle,
-  libelleCycle,
   LONGUEUR_DEFAUT,
   remplacerJourDansSemaines,
+  versISO,
 } from "@/lib/cycles";
 import {
   creerFileEcritureSlots,
   DELAI_STEPPER_MS,
   type FileEcritureSlots,
 } from "@/lib/file-ecriture-slots";
-import { modifierPersonnes, personnesDuSlot } from "@/lib/personnes";
+import {
+  decalageCycles,
+  libelleJourComplet,
+  libelleRelatifCycle,
+} from "@/lib/planning-affichage";
+import { modifierPersonnes, PERSONNES_DEFAUT, personnesDuSlot } from "@/lib/personnes";
 import { estRestes, marquerRestes } from "@/lib/restes";
 import { chargerJourCoursesFoyer } from "@/lib/foyer";
 import { resoudreAncreCycle } from "@/lib/ancre-cycle";
+import { ancreInitialeCycle } from "@/lib/ancre-initiale-cycle";
 import { clientParDefaut } from "@/lib/supabase/par-defaut";
 import { aujourdhuiParis } from "@/lib/semaines";
 import { chargerLongueurCycle, chargerPlanningDistant } from "@/lib/persistance";
@@ -78,48 +87,41 @@ import { chargerRecettesGerees, type RecetteGeree } from "@/lib/recettes";
 import { chargerPreferences } from "@/lib/preferences";
 import { messagesAvertissementGeneration } from "@/lib/avertissements-generation";
 import { SlotRepas } from "@/components/planning/slot-repas";
+import { GrilleJours, type JourGrille } from "@/components/planning/grille-jours";
 import { SelecteurRecette } from "@/components/planning/selecteur-recette";
 import { ConfirmationModale } from "@/components/ui/confirmation";
 import { FicheRecette } from "@/components/planning/fiche-recette";
+import { NavigateurPeriode } from "@/components/planning/navigateur-periode";
+import { EntetePlanning, type VuePlanning } from "@/components/planning/entete-planning";
+import { EtatVidePlanning } from "@/components/planning/etat-vide-planning";
 import type { JourPlanning, Planning, Recette, ReglagesGeneration } from "@/types";
 
 type TypeRepas = "dejeuner" | "diner";
 
 const ID_TOAST_ANNULATION_CYCLE = "annulation-slot-cycle";
 
-// « jeudi 9 juil. » avec majuscule initiale (les jours du cycle sont des dates
-// concrètes, pas des jours de semaine abstraits comme dans la vue semaine).
-function libelleJourDate(dateISO: string): string {
-  const [a, m, j] = dateISO.split("-").map(Number);
-  const d = new Date(a, m - 1, j);
-  const s = d.toLocaleDateString("fr-FR", {
-    weekday: "long",
-    day: "numeric",
-    month: "short",
-  });
-  return s.charAt(0).toUpperCase() + s.slice(1);
-}
-
 // Slots d'un jour dans l'ordre d'affichage : déjeuner puis dîner. `recette`
-// est absente si le slot n'a jamais été généré (planning antérieur/créneau
-// jamais rempli) OU si son créneau est désactivé (« Aucun », #217, RG-44/46)
-// — même filtre live que la vue Semaine, appliqué ici par slot (cette vue
-// projette des dates de plusieurs semaines, pas un `Planning` unique, donc pas
-// de `retirerCreneauxDesactives` direct).
+// est absente si le jour n'est pas planifié (`jp` nul), si le slot n'a jamais
+// été généré (planning antérieur/créneau jamais rempli) OU si son créneau est
+// désactivé (« Aucun », #217, RG-44/46) — même filtre live que la vue Semaine,
+// appliqué ici par slot (cette vue projette des dates de plusieurs semaines,
+// pas un `Planning` unique, donc pas de `retirerCreneauxDesactives` direct).
+// Les trois cas rendent « Pas de repas prévu » (SlotRepas), comme la semaine.
 function slotsDuJour(
-  jp: JourPlanning,
+  jour: JourPlanning["jour"],
+  jp: JourPlanning | null,
   reglages: ReglagesGeneration
 ): { typeRepas: TypeRepas; libelle: string; recette: Recette | undefined }[] {
   return [
     {
       typeRepas: "dejeuner" as const,
       libelle: "Déjeuner",
-      recette: creneauActif(jp.jour, "dejeuner", reglages) ? jp.dejeuner : undefined,
+      recette: jp && creneauActif(jour, "dejeuner", reglages) ? jp.dejeuner : undefined,
     },
     {
       typeRepas: "diner" as const,
       libelle: "Dîner",
-      recette: creneauActif(jp.jour, "diner", reglages) ? jp.diner : undefined,
+      recette: jp && creneauActif(jour, "diner", reglages) ? jp.diner : undefined,
     },
   ];
 }
@@ -127,6 +129,8 @@ function slotsDuJour(
 export function VuePlanningCycle({
   idsModifiables,
   lienCycle,
+  vue,
+  onChangerVue,
 }: {
   // Ids des recettes du catalogue chargé (#137) : pour ceux-là, la fiche propose
   // « Modifier » (deep-link /recettes?edition). Fourni par la page (déjà chargé).
@@ -135,13 +139,27 @@ export function VuePlanningCycle({
   // vue sur le cycle qui la contient. Lue UNE fois au montage : une modification
   // ultérieure de la prop (bascule, retrait du lien) ne relance pas le chargement.
   lienCycle?: string;
+  // Bascule Semaine | Cycle (#352) : rendue par la vue elle-même, dans son en-tête
+  // ou son état vide, comme la vue Semaine.
+  vue: VuePlanning;
+  onChangerVue: (v: VuePlanning) => void;
 }) {
   const [lienInitial] = useState(lienCycle);
   const [ancre, setAncre] = useState<string | null>(null);
   const [longueur, setLongueur] = useState<number>(LONGUEUR_DEFAUT);
+  // Jour de courses du foyer (#352) : sert à situer le cycle affiché par rapport
+  // au cycle courant (libellé relatif du navigateur). Lu au montage, avant l'ancre.
+  const [jourCourses, setJourCourses] = useState<number>(1);
+  // Jour courant (#352), date LOCALE du client : `null` au premier rendu (pas de
+  // date au rendu serveur), posé par l'effet de montage. Le week-end, le cycle
+  // par défaut est le suivant : aucun jour marqué.
+  const [aujourdhuiISO, setAujourdhuiISO] = useState<string | null>(null);
   // Plannings des semaines ISO touchées, indexés par semaine.
   const [parSemaine, setParSemaine] = useState<Map<string, Planning>>(new Map());
   const [chargement, setChargement] = useState(true);
+  // Premier chargement en échec (RG-09, 3 états) : sans cycle affiché, l'écran
+  // propose « Réessayer » au lieu de rester sur « Chargement… ».
+  const [erreurInitiale, setErreurInitiale] = useState(false);
   const [ficheOuverte, setFicheOuverte] = useState<{
     recette: Recette;
     personnes: number;
@@ -461,8 +479,9 @@ export function VuePlanningCycle({
   // juste après une édition. On distingue donc explicitement l'échec de
   // l'absence légitime, et on n'écrase l'affichage courant QUE si TOUTES les
   // lectures ont réussi (sinon on garde l'état précédent + un toast, plutôt
-  // qu'une projection partielle).
-  const chargerCycle = useCallback(async (ancreCible: string) => {
+  // qu'une projection partielle). Renvoie `false` si une lecture a échoué. Au
+  // premier chargement (`initial`), pas de toast : l'état erreur le dit déjà.
+  const chargerCycle = useCallback(async (ancreCible: string, initial = false): Promise<boolean> => {
     setChargement(true);
     try {
       const long = await chargerLongueurCycle(ancreCible).catch(() => LONGUEUR_DEFAUT);
@@ -482,10 +501,12 @@ export function VuePlanningCycle({
         )
       );
       if (echec) {
-        toast.error(
-          "Certains jours du cycle n'ont pas pu être chargés. Réessaie."
-        );
-        return;
+        if (!initial) {
+          toast.error(
+            "Certains jours du cycle n'ont pas pu être chargés. Réessaie."
+          );
+        }
+        return false;
       }
       const map = new Map<string, Planning>();
       semaines.forEach((s, i) => {
@@ -500,6 +521,7 @@ export function VuePlanningCycle({
       // MÊME cycle que celui affiché ici. Écriture localStorage pure, sans
       // effet de bord coches/réaltime (cf. definirCycleAffiche).
       definirCycleAffiche(ancreCible, long);
+      return true;
     } finally {
       setChargement(false);
     }
@@ -507,41 +529,83 @@ export function VuePlanningCycle({
 
   // Montage : un SEUL chargement initial (jamais le cycle par défaut affiché
   // puis remplacé). Avec un lien profond (#320, RG-87) : ancre résolue par
-  // `resoudreAncreCycle` (même résolution que le MCP et la route panier) ;
-  // hors plage / invalide / lecture échouée → ancre par défaut. Sans lien :
-  // ancre par défaut dérivée du jour de courses du foyer (même règle que
-  // /courses, ancreParDefaut → décalage week-end inclus).
+  // `resoudreAncreCycle` (même résolution que le MCP et la route panier),
+  // EN PARALLÈLE de la lecture du jour de courses ; hors plage / invalide /
+  // lecture échouée → ancre par défaut. Sans lien : ancre par défaut dérivée du
+  // jour de courses du foyer (même règle que /courses, ancreParDefaut → décalage
+  // week-end inclus). Logique dans `ancreInitialeCycle` (lib, testée).
+  // Échec (lecture d'une semaine, erreur inattendue) → état erreur ; « Réessayer »
+  // rejoue ce même chargement initial (`essaiInitial` en dépendance).
+  const [essaiInitial, setEssaiInitial] = useState(0);
   useEffect(() => {
     let actif = true;
-    async function ancreInitiale(): Promise<string> {
-      if (lienInitial !== undefined) {
-        try {
-          const res = await resoudreAncreCycle(clientParDefaut(), lienInitial, aujourdhuiParis());
-          if (res.ok) return res.ancre;
-          // hors_plage / invalide : repli silencieux sur le cycle par défaut.
-        } catch (erreur) {
-          console.error("Résolution du cycle du lien échouée (cycle par défaut).", erreur);
-        }
-      }
-      const jour = await chargerJourCoursesFoyer().catch(() => 1);
-      return ancreParDefaut(new Date(), jour);
-    }
-    void ancreInitiale()
-      .then((cible) => (actif ? chargerCycle(cible) : undefined))
-      .catch((erreur) => console.error("Chargement initial du cycle échoué.", erreur));
+    void ancreInitialeCycle({
+      chargerJour: () => chargerJourCoursesFoyer(),
+      resoudreLien: (date) => resoudreAncreCycle(clientParDefaut(), date, aujourdhuiParis()),
+      lien: lienInitial,
+      maintenant: new Date(),
+    })
+      .then(({ jourCourses: jour, ancre: cible }) => {
+        if (!actif) return true;
+        setJourCourses(jour);
+        setAujourdhuiISO(versISO(new Date()));
+        return chargerCycle(cible, true);
+      })
+      .catch((erreur) => {
+        console.error("Chargement initial du cycle échoué.", erreur);
+        return false;
+      })
+      .then((ok) => {
+        if (actif && !ok) setErreurInitiale(true);
+      });
     return () => {
       actif = false;
     };
-  }, [chargerCycle, lienInitial]);
+  }, [chargerCycle, lienInitial, essaiInitial]);
 
-  if (chargement || ancre === null) {
+  function reessayerChargementInitial(): void {
+    setErreurInitiale(false);
+    setEssaiInitial((n) => n + 1);
+  }
+
+  // « Chargement… » seul uniquement au premier chargement. Aux rechargements
+  // (navigation entre cycles, génération), l'en-tête / état vide et le navigateur
+  // restent montés (comme la semaine, #352) : pas de saut de mise en page, bascule
+  // disponible, focus conservé sur la flèche cliquée ; seul le corps est estompé.
+  if (ancre === null && erreurInitiale) {
     return (
-      <p role="status" className="animate-pulse py-12 text-center text-brand-700/85">
-        Chargement…
-      </p>
+      <div className="flex flex-1 flex-col items-center justify-center gap-6 p-8">
+        <div
+          role="alert"
+          className="max-w-md rounded-lg border border-red-200 bg-red-50 p-4 text-center"
+        >
+          <p className="font-medium text-red-800">Impossible de charger le cycle.</p>
+          <p className="mt-1 text-sm text-red-700">Vérifie ta connexion et réessaie.</p>
+        </div>
+        <button
+          type="button"
+          onClick={reessayerChargementInitial}
+          className="rounded-full bg-primary px-6 py-3 font-medium text-white transition hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100"
+        >
+          Réessayer
+        </button>
+      </div>
     );
   }
 
+  if (ancre === null) {
+    return (
+      <div className="flex-1 p-4 md:p-8">
+        <p role="status" className="animate-pulse py-12 text-center text-brand-700/85">
+          Chargement…
+        </p>
+      </div>
+    );
+  }
+
+  // Position du cycle affiché vs le cycle courant (#352). Calculé ici, après
+  // chargement client : pas de mismatch d'hydratation (SSR = « Chargement… »).
+  const offsetCycle = decalageCycles(ancre, ancreCourante(new Date(), jourCourses));
   const jours = joursDuCycle(ancre, longueur);
   // Chaque date → le JourPlanning correspondant (ou null si non planifié).
   const cellules = jours.map((dateISO) => {
@@ -550,105 +614,107 @@ export function VuePlanningCycle({
     return { dateISO, jp };
   });
   const aDesRepas = cellules.some((c) => c.jp !== null);
+  // Grille commune avec la semaine (#352). Un jour non planifié garde ses deux
+  // emplacements « Pas de repas prévu » (plus de « Rien de prévu. » à part) ;
+  // ceux du jour courant sont accentués. Ni entrée en cascade ni atterrissage
+  // ici (#353).
+  const joursGrille: JourGrille[] = cellules.map(({ dateISO, jp }) => {
+    const { semaine, jour } = dateVersSemaineJour(dateISO);
+    const jourLabel = libelleJourComplet(dateISO);
+    return {
+      cle: dateISO,
+      dateISO,
+      slots: slotsDuJour(jour, jp, reglages).map((slot) => (
+        <SlotRepas
+          key={slot.typeRepas}
+          libelle={slot.libelle}
+          jourLabel={jourLabel}
+          recette={slot.recette}
+          indisponible={false}
+          personnes={jp ? personnesDuSlot(jp, slot.typeRepas) : PERSONNES_DEFAUT}
+          restes={jp ? estRestes(jp, slot.typeRepas) : false}
+          onChanger={() => changerSlot(dateISO, semaine, jour, slot.typeRepas)}
+          onSelectionner={() =>
+            setSlotEnSelection({ dateISO, semaine, jour, typeRepas: slot.typeRepas })
+          }
+          onChangerPersonnes={(p) => changerPersonnesSlot(semaine, jour, slot.typeRepas, p)}
+          onChangerRestes={(v) => changerRestesSlot(dateISO, semaine, jour, slot.typeRepas, v)}
+          onVoir={() =>
+            jp &&
+            slot.recette &&
+            setFicheOuverte({
+              recette: slot.recette,
+              personnes: personnesDuSlot(jp, slot.typeRepas),
+            })
+          }
+          accentue={aujourdhuiISO !== null && dateISO === aujourdhuiISO}
+        />
+      )),
+    };
+  });
+
+  // Navigateur de période (#352, partagé avec la semaine et /courses). Non
+  // désactivé pendant un chargement (un bouton désactivé perdrait le focus) :
+  // les flèches sont ignorées tant qu'un chargement est en cours.
+  const naviguer = (delta: number) => {
+    if (chargement) return;
+    void file.vider().then(() => chargerCycle(cycleDecale(ancre, delta)));
+  };
+  const navigateur = (
+    <NavigateurPeriode
+      unite="cycle"
+      libelle={libelleRelatifCycle(offsetCycle)}
+      dates={datesCycle(ancre, longueur)}
+      courante={offsetCycle === 0}
+      peutReculer={offsetCycle > -CYCLES_PASSES}
+      peutAvancer={offsetCycle < CYCLES_FUTURS}
+      onPrecedente={() => naviguer(-1)}
+      onSuivante={() => naviguer(1)}
+    />
+  );
+  const generationEnCours = enGeneration || verrouAffiche;
 
   return (
-    <div>
-      {/* Navigateur de cycle (miroir de /courses) + libellé de la fenêtre +
-          actions (#279 : génération + accès courses, directement ici). */}
-      <div className="mb-6 flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          aria-label="Cycle précédent"
-          onClick={() => void file.vider().then(() => chargerCycle(cycleDecale(ancre, -1)))}
-          className="relative flex size-8 shrink-0 items-center justify-center rounded-full border border-brand-200 text-brand-700 transition after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.92] motion-reduce:active:scale-100"
-        >
-          <ChevronLeft aria-hidden="true" className="size-4" />
-        </button>
-        <span
-          aria-live="polite"
-          className="min-w-[12rem] text-center text-sm font-medium text-brand-900"
-        >
-          {libelleCycle(ancre, longueur)}
-        </span>
-        <button
-          type="button"
-          aria-label="Cycle suivant"
-          onClick={() => void file.vider().then(() => chargerCycle(cycleDecale(ancre, 1)))}
-          className="relative flex size-8 shrink-0 items-center justify-center rounded-full border border-brand-200 text-brand-700 transition after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.92] motion-reduce:active:scale-100"
-        >
-          <ChevronRight aria-hidden="true" className="size-4" />
-        </button>
-        <button
-          type="button"
-          // Cycle déjà rempli → confirmation (#334, miroir de RG-74 côté MCP) :
-          // la régénération écrase les repas et purge les coches du foyer, sans
-          // annulation possible. Cycle vide → génération directe.
-          onClick={() =>
-            aDesRepas ? setConfirmationGeneration(true) : void genererMonCycle()
-          }
-          disabled={enGeneration || verrouAffiche}
-          className="relative rounded-full border border-brand-200 px-4 py-2 text-sm font-medium text-brand-700 transition after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {enGeneration || verrouAffiche ? "Génération…" : "Générer mon cycle"}
-        </button>
-        <Link
-          href={`/courses?ancre=${ancre}`}
-          className="relative rounded-full bg-primary px-4 py-2 text-center text-sm font-medium text-white transition-colors after:absolute after:-inset-1 after:content-[''] hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
-        >
-          Liste de courses →
-        </Link>
-      </div>
-
+    <>
       {!aDesRepas ? (
-        <p className="py-12 text-center text-brand-700/85">
-          Aucun repas planifié sur ce cycle.
-        </p>
+        // Cycle vide → génération directe, sans confirmation (#334). Rechargement :
+        // seul le corps de l'état vide est estompé (titre, bascule, navigateur nets).
+        <div className="flex flex-1 flex-col">
+          <EtatVidePlanning
+            titre="Mon planning du cycle"
+            vue={vue}
+            onChangerVue={onChangerVue}
+            navigateur={navigateur}
+            enAttente={generationEnCours}
+            message="Aucun repas planifié sur ce cycle."
+            libelleBouton="Générer mon cycle"
+            libelleAttente="Génération…"
+            onGenerer={() => void genererMonCycle()}
+            generationEnCours={generationEnCours}
+            chargement={chargement}
+          />
+        </div>
       ) : (
-        <ul className="space-y-4">
-          {cellules.map(({ dateISO, jp }) => (
-            <li
-              key={dateISO}
-              className="rounded-lg border border-brand-100 bg-surface p-4"
-            >
-              <h2 className="mb-3 font-semibold text-brand-900">
-                {libelleJourDate(dateISO)}
-              </h2>
-              {jp === null ? (
-                <p className="text-sm text-brand-700/70">Rien de prévu.</p>
-              ) : (
-                <div className="grid gap-3 sm:grid-cols-2">
-                  {slotsDuJour(jp, reglages).map((slot) => {
-                    const { semaine } = dateVersSemaineJour(dateISO);
-                    return (
-                      <SlotRepas
-                        key={slot.typeRepas}
-                        libelle={slot.libelle}
-                        jourLabel={libelleJourDate(dateISO)}
-                        recette={slot.recette}
-                        indisponible={false}
-                        personnes={personnesDuSlot(jp, slot.typeRepas)}
-                        restes={estRestes(jp, slot.typeRepas)}
-                        onChanger={() => changerSlot(dateISO, semaine, jp.jour, slot.typeRepas)}
-                        onSelectionner={() =>
-                          setSlotEnSelection({ dateISO, semaine, jour: jp.jour, typeRepas: slot.typeRepas })
-                        }
-                        onChangerPersonnes={(p) => changerPersonnesSlot(semaine, jp.jour, slot.typeRepas, p)}
-                        onChangerRestes={(v) => changerRestesSlot(dateISO, semaine, jp.jour, slot.typeRepas, v)}
-                        onVoir={() =>
-                          slot.recette &&
-                          setFicheOuverte({
-                            recette: slot.recette,
-                            personnes: personnesDuSlot(jp, slot.typeRepas),
-                          })
-                        }
-                      />
-                    );
-                  })}
-                </div>
-              )}
-            </li>
-          ))}
-        </ul>
+        <div className="flex-1 p-4 md:p-8">
+          <EntetePlanning
+            titre="Mon planning du cycle"
+            vue={vue}
+            onChangerVue={onChangerVue}
+            libelleRegenerer={generationEnCours ? "Génération…" : "Régénérer"}
+            // Cycle déjà rempli → confirmation (#334, miroir de RG-74 côté MCP) :
+            // la régénération écrase les repas et purge les coches du foyer, sans
+            // annulation possible.
+            onRegenerer={() => setConfirmationGeneration(true)}
+            regenerationEnCours={generationEnCours}
+            hrefCourses={`/courses?ancre=${ancre}`}
+            navigateur={navigateur}
+          />
+          {/* Rechargement (navigation, génération) : grille estompée, en-tête
+              et navigateur restent montés. */}
+          <div aria-busy={chargement}>
+            <GrilleJours jours={joursGrille} aujourdhuiISO={aujourdhuiISO} enAttente={chargement} />
+          </div>
+        </div>
       )}
 
       {/* Fiche recette (US-10) — consultation depuis la vue cycle aussi. */}
@@ -664,7 +730,7 @@ export function VuePlanningCycle({
       {/* Sélecteur de recette (US-06) — monté seulement pendant la sélection. */}
       {slotEnSelection && (
         <SelecteurRecette
-          titre={`${slotEnSelection.typeRepas === "diner" ? "Dîner" : "Déjeuner"} de ${libelleJourDate(slotEnSelection.dateISO).toLowerCase()}`}
+          titre={`${slotEnSelection.typeRepas === "diner" ? "Dîner" : "Déjeuner"} de ${libelleJourComplet(slotEnSelection.dateISO).toLowerCase()}`}
           recettes={recettes}
           idsAuPlanning={recettesUtilisees(
             planningDeLaSemaine(slotEnSelection.semaine) ?? { semaine: slotEnSelection.semaine, jours: [] }
@@ -712,6 +778,6 @@ export function VuePlanningCycle({
           onAnnuler={() => setConfirmationGeneration(false)}
         />
       )}
-    </div>
+    </>
   );
 }

@@ -20,7 +20,13 @@ test("« Générer mon cycle » est accessible et fonctionne depuis la vue Cycle
 }) => {
   await page.goto("/planning");
   await page.getByRole("button", { name: "Cycle" }).click();
+  // #352 : l'état vide du cycle a le même gabarit que celui de la semaine (titre,
+  // navigateur, bouton principal), sous le titre « Mon planning du cycle ».
+  await expect(page.getByRole("heading", { name: "Mon planning du cycle" })).toBeVisible();
+  await expect(page.getByText("Aucun repas planifié sur ce cycle.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Générer mon cycle" })).toBeVisible();
+  // Comme en semaine, l'état vide n'a pas de lien « Liste de courses → ».
+  await expect(page.getByRole("link", { name: "Liste de courses →" })).toHaveCount(0);
 
   await page.getByRole("button", { name: "Générer mon cycle" }).click();
   // Une recette apparaît dans la projection (génération réelle, catalogue seedé CI-only).
@@ -41,8 +47,12 @@ test("régénérer un cycle déjà rempli depuis la vue Cycle demande confirmati
     .locator("main button[aria-label^='Voir la recette']")
     .allTextContents();
 
+  // #352 : cycle rempli → l'en-tête porte « Régénérer » (comme la semaine) et
+  // l'accès aux réglages de génération.
+  await expect(page.getByRole("link", { name: "Réglages de génération" })).toBeVisible();
+
   // Annuler : rien ne change.
-  await page.getByRole("button", { name: "Générer mon cycle" }).click();
+  await page.getByRole("button", { name: "Régénérer" }).click();
   const modale = page.getByRole("dialog", { name: "Régénérer ce cycle ?" });
   await expect(modale).toBeVisible();
   await modale.getByRole("button", { name: "Annuler" }).click();
@@ -52,9 +62,24 @@ test("régénérer un cycle déjà rempli depuis la vue Cycle demande confirmati
   ).toEqual(recettesAvant);
 
   // Confirmer : le cycle est régénéré.
-  await page.getByRole("button", { name: "Générer mon cycle" }).click();
+  await page.getByRole("button", { name: "Régénérer" }).click();
   await modale.getByRole("button", { name: "Régénérer" }).click();
   await expect(page.getByText("Cycle généré").last()).toBeVisible({ timeout: 20_000 });
+  const recettesCycle = await page
+    .locator("main button[aria-label^='Voir la recette']")
+    .allTextContents();
+
+  // #352 : le cycle (lundi → dimanche, jour de courses par défaut) est la semaine
+  // affichée en vue Semaine, abonnée au temps réel. Sa régénération n'ouvre pas
+  // l'alerte US-21 sur sa propre écriture, et la vue Semaine montre le cycle
+  // régénéré sans relecture.
+  await page.getByRole("button", { name: "Semaine", exact: true }).click();
+  await expect
+    .poll(async () =>
+      (await page.locator("main button[aria-label^='Voir la recette']").allTextContents()).sort()
+    )
+    .toEqual([...recettesCycle].sort());
+  await expect(page.getByRole("dialog", { name: "Planning mis à jour" })).toHaveCount(0);
 });
 
 test("le lien « Liste de courses → » depuis la vue Cycle conserve la même fenêtre", async ({
@@ -62,7 +87,13 @@ test("le lien « Liste de courses → » depuis la vue Cycle conserve la même f
 }) => {
   await page.goto("/planning");
   await page.getByRole("button", { name: "Cycle" }).click();
-  const libelleCycle = await page.getByText(/Courses du/).textContent();
+  // #352 : le lien « Liste de courses → » n'existe que dans l'en-tête du cycle
+  // rempli (pas dans l'état vide, comme en semaine) : on génère d'abord.
+  await page.getByRole("button", { name: "Générer mon cycle" }).click();
+  await expect(page.locator("main li").first()).toBeVisible({ timeout: 20_000 });
+  // #352 : le navigateur de période (libellé relatif + dates) remplace « Courses du… ».
+  const navigateurCycle = page.getByRole("group", { name: "Naviguer entre les cycles" });
+  const libelleCycle = (await navigateurCycle.innerText()).trim();
 
   await page.getByRole("link", { name: "Liste de courses →" }).click();
   await page.waitForURL(/\/courses/);
@@ -72,7 +103,7 @@ test("le lien « Liste de courses → » depuis la vue Cycle conserve la même f
   // one-shot, cf. app/courses/page.tsx), une assertion dessus serait racy par
   // construction (déjà vécu : le paramètre disparaît souvent avant que
   // `toHaveURL` n'ait eu la moindre chance de l'observer).
-  await expect(page.getByText(libelleCycle!)).toBeVisible();
+  await expect(navigateurCycle).toHaveText(libelleCycle);
   // Le paramètre est bien nettoyé une fois appliqué (comportement one-shot).
   await expect(page).toHaveURL(/\/courses$/);
 });
@@ -84,4 +115,72 @@ test("le choix de vue Cycle survit au reload", async ({ page }) => {
 
   await page.reload();
   await expect(page.getByRole("button", { name: "Cycle", pressed: true })).toBeVisible();
+});
+
+// #352 : comme la semaine, la vue Cycle garde son en-tête, sa bascule et son
+// navigateur montés pendant qu'elle charge un autre cycle (« Chargement… » seul
+// au tout premier chargement) : pas de saut de mise en page, bascule disponible,
+// focus clavier conservé sur la flèche cliquée.
+test("naviguer entre les cycles garde l'en-tête et le focus sur la flèche pendant le chargement (#352)", async ({
+  page,
+}) => {
+  await page.goto("/planning");
+  await page.getByRole("button", { name: "Cycle" }).click();
+  await page.getByRole("button", { name: "Générer mon cycle" }).click();
+  await expect(page.locator("main li").first()).toBeVisible({ timeout: 20_000 });
+
+  // Première lecture de chaque chargement de cycle : retardée pour rendre la
+  // fenêtre de chargement observable.
+  await page.route("**/rest/v1/cycle_courses*", async (route) => {
+    await new Promise((r) => setTimeout(r, 1_500));
+    await route.continue();
+  });
+
+  const navigateur = page.getByRole("group", { name: "Naviguer entre les cycles" });
+  const suivant = page.getByRole("button", { name: "Cycle suivant" });
+  const libelleAvant = (await navigateur.innerText()).trim();
+  await suivant.click();
+
+  // Pendant le chargement (< 1,5 s) : tout reste monté, le focus n'a pas bougé.
+  // Lectures instantanées (pas d'assertion qui réessaie : elle attendrait la fin
+  // du chargement et masquerait un démontage transitoire).
+  await page.waitForTimeout(800);
+  expect(await page.getByRole("heading", { name: "Mon planning du cycle" }).isVisible()).toBe(true);
+  expect(await page.getByRole("group", { name: "Vue du planning" }).isVisible()).toBe(true);
+  expect(await navigateur.isVisible()).toBe(true);
+  expect(await page.getByText("Chargement…").count()).toBe(0);
+  expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe(
+    "Cycle suivant"
+  );
+
+  // Le chargement aboutit : le navigateur annonce un autre cycle.
+  await expect(navigateur).not.toHaveText(libelleAvant, { timeout: 10_000 });
+  await expect(page.getByRole("group", { name: "Vue du planning" })).toBeVisible();
+
+  // Le cycle suivant est vide : l'en-tête est remplacé par l'état vide et le
+  // navigateur remonté ailleurs ; le focus revient sur la flèche cliquée.
+  await expect(page.getByText("Aucun repas planifié sur ce cycle.")).toBeVisible();
+  await expect
+    .poll(() => page.evaluate(() => document.activeElement?.getAttribute("aria-label")))
+    .toBe("Cycle suivant");
+});
+
+// Jumeau semaine (#352) : semaine remplie → semaine vide, même remontage du
+// navigateur (en-tête → état vide), même reprise du focus.
+test("semaine remplie → semaine vide : le focus reste sur « Semaine suivante » (#352)", async ({
+  page,
+}) => {
+  await page.goto("/planning");
+  await page.getByRole("button", { name: "Générer mon planning" }).click();
+  await expect(
+    page.getByRole("button", { name: /^Voir la recette/ }).first()
+  ).toBeVisible({ timeout: 20_000 });
+
+  await page.getByRole("button", { name: "Semaine suivante" }).click();
+  await expect(page.getByText("Aucun planning pour cette semaine.")).toBeVisible({
+    timeout: 10_000,
+  });
+  await expect
+    .poll(() => page.evaluate(() => document.activeElement?.getAttribute("aria-label")))
+    .toBe("Semaine suivante");
 });

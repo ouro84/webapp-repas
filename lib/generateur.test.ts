@@ -18,6 +18,7 @@ import {
   FENETRE_VARIETE,
   genererPlanning,
   joursSansLegume,
+  ORDRE_JOURS,
   poidsPreference,
   poidsVariete,
   prefereVegeSlot,
@@ -47,7 +48,6 @@ const RAPIDES_NORMALES = RECETTES.filter((r) => r.tempsPreparation !== "long");
 const LONGUES = RECETTES.filter((r) => r.tempsPreparation === "long");
 
 const JOURS_SEMAINE: Jour[] = ["lundi", "mardi", "mercredi", "jeudi", "vendredi"];
-const ORDRE_JOURS: Jour[] = [...JOURS_SEMAINE, "samedi", "dimanche"];
 
 // PRNG déterministe (mulberry32) injecté dans genererPlanning/remplacerSlot pour
 // neutraliser l'aléa de RG-03 (#157). Sans seed, la génération pouvait épuiser
@@ -121,6 +121,12 @@ function idsWeekend(planning: Planning): string[] {
 // un déjeuner ET un dîner chaque jour (14 repas).
 // ---------------------------------------------------------------------------
 describe("genererPlanning — structure du planning (section 5.5)", () => {
+  // Source unique de l'ordre des jours (#352) : réutilisée par lib/adapters,
+  // lib/cycles et /planning (date d'un jour dans sa semaine).
+  test("ORDRE_JOURS exporté : lundi → dimanche", () => {
+    expect(ORDRE_JOURS).toEqual([...JOURS_SEMAINE, "samedi", "dimanche"]);
+  });
+
   test("produit 7 jours dans l'ordre lundi → dimanche", () => {
     const planning = genererPlanning(RECETTES);
     expect(planning.jours.map((jp) => jp.jour)).toEqual(ORDRE_JOURS);

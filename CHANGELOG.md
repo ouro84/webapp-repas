@@ -9,6 +9,7 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ### Modifié
 
+- Planning : les vues Semaine et Cycle partagent le même en-tête, le même navigateur et la même grille ; sur ordinateur, les repas Déjeuner et Dîner sont alignés d’une colonne à l’autre, les actions gardent leurs libellés, et le jour courant est mis en évidence (#352).
 - Navigation : sur ordinateur, la barre du haut présente les sections dans le même ordre que sur mobile — Ce soir, Planning, Courses, Recettes (#351).
 - Page « Ce soir » : quand le repas prévu est des restes, la page l’annonce clairement (« Ce midi : rien à cuisiner, on mange les restes qu’on a dans le frigo ») au lieu d’afficher le nom d’un plat qui ne sera pas cuisiné. Les ingrédients tiennent en une seule liste, au format de la liste de courses, pour laisser la place au titre et à la préparation (#349).
 - Planning vide : la page reprend l’accueil de l’app (logo, phrase d’accroche, aperçu de planning) en gardant le choix de la semaine et la bascule Semaine/Cycle. Pendant la génération, le bouton indique « Je compose ta semaine… » et l’aperçu respire doucement (la semaine existante s’estompe quand on régénère). Les jours arrivent ensuite un par un, puis la carte d’aujourd’hui s’éclaire avant la notification. Rien ne bouge si les animations sont réduites sur l’appareil (#337).
@@ -21,6 +22,11 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ### Corrigé
 
+- Planning : au clavier, passer d’une semaine ou d’un cycle rempli à une période vide (ou l’inverse) laisse le focus sur la flèche qu’on vient d’utiliser, au lieu de le renvoyer en haut de la page. Pendant le chargement d’un autre cycle, le titre et le choix de la vue restent nets, seul le contenu s’estompe (#352).
+- Vue Cycle : si le cycle ne peut pas être chargé à l’ouverture, la page le dit et propose « Réessayer », au lieu de rester bloquée sur « Chargement… » (#352).
+- Planning : l’alerte « le planning vient d’être modifié » pouvait s’ouvrir sur sa propre modification, juste après une génération ou en changeant vite le nombre de personnes, et les derniers clics étaient alors perdus. Elle ne s’ouvre plus que pour la modification d’un autre membre du foyer (#352).
+- Planning : quand un autre membre du foyer modifiait un repas au même moment qu’une modification faite depuis la vue Cycle (ou qu’une régénération du cycle), son changement pouvait ne pas s’afficher, puis être effacé par la modification suivante faite en vue Semaine. Une régénération du cycle ne déclenche plus non plus l’alerte sur sa propre modification (#352).
+- Fiche recette : passer vite de « favorite » à « évitée » pouvait laisser la recette en favorite, et la fiche rouverte aussitôt affichait l’ancien choix. Le dernier choix est désormais toujours celui qui reste (#352).
 - Liste de courses, articles ajoutés à la main : cocher puis décocher vite, ou cocher juste après l’ajout, pouvait laisser l’article dans l’état inverse du dernier geste, pour tout le foyer. L’article pouvait aussi apparaître en double juste après son ajout. Le dernier geste est désormais toujours celui qui reste.
 - Liste de courses : une case cochée juste après l’ouverture de la liste, pendant son chargement, n’était pas enregistrée et disparaissait au retour sur la liste (#339).
 - Liste de courses : le bouton « Générer mon cycle » n’apparaît plus quand la liste est remplie. Un clic involontaire, juste à côté de « Tout décocher », régénérait tout le cycle et effaçait les coches du foyer (#334).

@@ -83,8 +83,10 @@ test("la génération affiche un planning de 7 jours avec leurs 14 repas", async
     page.getByRole("button", { name: "Changer le déjeuner de lundi" })
   ).toBeVisible();
 
-  // Le numéro de semaine s'affiche dans le navigateur (« Semaine du … »).
-  await expect(page.getByText(/^Semaine du /).first()).toBeVisible();
+  // La période s'affiche dans le navigateur de semaines (#352 : libellé relatif + dates).
+  await expect(
+    page.getByRole("group", { name: "Naviguer entre les semaines" })
+  ).toBeVisible();
 
   // Accès contextuel aux réglages de génération depuis le planning (#206).
   const lienReglages = page.getByRole("link", { name: "Réglages de génération" });
@@ -105,7 +107,9 @@ test("la bascule « Cycle » affiche la vue planning calée sur le cycle (#260)"
 
   // Bascule en vue Cycle → libellé de la fenêtre + jours du cycle rendus.
   await page.getByRole("button", { name: "Cycle", exact: true }).click();
-  await expect(page.getByText(/^Courses du /)).toBeVisible();
+  await expect(
+    page.getByRole("group", { name: "Naviguer entre les cycles" })
+  ).toBeVisible();
   await expect(page.locator("main ul > li").first()).toBeVisible();
   // Vue Cycle éditable (RG-57, #283) : actions de slot visibles d'emblée (#334).
   await expect(
@@ -127,7 +131,7 @@ test("la bascule « Cycle » affiche la vue planning calée sur le cycle (#260)"
 test("naviguer vers une autre semaine et y générer un planning (US-14)", async ({
   page,
 }) => {
-  const label = page.getByText(/^Semaine du /).first();
+  const label = page.getByRole("group", { name: "Naviguer entre les semaines" });
   const depart = (await label.innerText()).trim();
 
   // Avancer d'une semaine (navigation asynchrone → on attend le changement).
@@ -140,7 +144,7 @@ test("naviguer vers une autre semaine et y générer un planning (US-14)", async
   await expect(page.getByText(/^Planning généré — Semaine du /)).toBeVisible();
   await expect(page.locator("main ul > li")).toHaveCount(7);
   // La semaine affichée reste la cible.
-  await expect(page.getByText(cible).first()).toBeVisible();
+  await expect(label).toHaveText(cible);
 });
 
 test("l'historique : un planning généré est retrouvé en revenant sur sa semaine (US-14)", async ({
@@ -152,22 +156,23 @@ test("l'historique : un planning généré est retrouvé en revenant sur sa sema
   await expect
     .poll(async () => page.evaluate(() => localStorage.getItem("planning_dirty")))
     .toBeNull();
-  const defaut = (await page.getByText(/^Semaine du /).first().innerText()).trim();
+  const navigateur = page.getByRole("group", { name: "Naviguer entre les semaines" });
+  const defaut = (await navigateur.innerText()).trim();
 
   // Avancer (semaine future vide), puis revenir → le planning est retrouvé.
   await page.getByRole("button", { name: "Semaine suivante" }).click();
-  await expect.poll(async () => (await page.getByText(/^Semaine du /).first().innerText()).trim()).not.toBe(defaut);
+  await expect.poll(async () => (await navigateur.innerText()).trim()).not.toBe(defaut);
   await expect(page.locator("main ul > li")).toHaveCount(0); // semaine vide
 
   await page.getByRole("button", { name: "Semaine précédente" }).click();
-  await expect.poll(async () => (await page.getByText(/^Semaine du /).first().innerText()).trim()).toBe(defaut);
+  await expect.poll(async () => (await navigateur.innerText()).trim()).toBe(defaut);
   await expect(page.locator("main ul > li")).toHaveCount(7); // planning retrouvé depuis la base
 });
 
 test("modifier une semaine passée demande confirmation (US-14, RG-24)", async ({
   page,
 }) => {
-  const label = page.getByText(/^Semaine du /).first();
+  const label = page.getByRole("group", { name: "Naviguer entre les semaines" });
 
   // Reculer DEUX fois pour atterrir à coup sûr sur une semaine PASSÉE, quel que
   // soit le jour du run (le défaut peut être la semaine prochaine le week-end).

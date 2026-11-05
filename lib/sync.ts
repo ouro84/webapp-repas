@@ -42,6 +42,7 @@ import {
   type EventCoche,
 } from "@/lib/coches-sync";
 import { signaturePlanning } from "@/lib/planning-diff";
+import { ORDRE_JOURS } from "@/lib/generateur";
 import { createClient } from "@/lib/supabase/client";
 import { semaineDecalee, semaineISO, semaineParDefaut } from "@/lib/semaines";
 import {
@@ -52,6 +53,7 @@ import {
   semainesDuCycle,
 } from "@/lib/cycles";
 import { chargerJourCoursesFoyer } from "@/lib/foyer";
+import { jourCoursesOuLundi } from "@/lib/ancre-initiale-cycle";
 import { parseApiError } from "@/lib/errors";
 import type { ArticleManuel, JourPlanning, Planning, SemaineGeneree } from "@/types";
 import type { RealtimeChannel } from "@supabase/supabase-js";
@@ -557,6 +559,81 @@ let pushEnCours = false;
 let rePushDemande = false;
 let minuteur: ReturnType<typeof setTimeout> | null = null;
 
+// Anti-écho exact du temps réel planning (#352, US-21). Toute écriture planning
+// par RPC (`pousser`, `modifierSlotDistant`, `appliquerGenerationCycle`) retient
+// l'`updated_at` que la base lui renvoie, par semaine ; un event Realtime n'est
+// l'écho d'une de NOS écritures que si son `updated_at` est retenu. Tout autre
+// event, même plus ancien que `planning_courant_maj`, vient d'un autre membre :
+// relecture + comparaison de signature. Pourquoi pas « <= planning_courant_maj » :
+// un commit d'un autre membre passé juste avant le nôtre (T_autre < T_nous) était
+// pris pour un écho ; le cache restait sans son slot, et la prochaine édition en
+// vue Semaine (`sauvegarder_planning`, toute la semaine) l'écrasait en base.
+// Clé à la microseconde (`now()` de Postgres) : deux écritures d'une même
+// milliseconde restent distinctes.
+const HORODATAGES_RETENUS_PAR_SEMAINE = 32;
+const SEMAINES_RETENUES = 8;
+const horodatagesEcrits = new Map<string, number[]>();
+
+// `updated_at` → entier en microsecondes, ou null s'il est absent ou illisible
+// (ex. un DELETE dont `old` ne porte que la clé primaire : ignoré, comme avant).
+// Postgres tronque les zéros finaux (« .94056 » = 940 560 µs) : on complète.
+function cleHorodatage(iso: string | null | undefined): number | null {
+  if (!iso) return null;
+  const ms = Date.parse(iso);
+  if (!Number.isFinite(ms)) return null;
+  const fraction = /\.(\d+)/.exec(iso)?.[1] ?? "";
+  const micro = Number((fraction + "000000").slice(0, 6));
+  return Math.floor(ms / 1000) * 1_000_000 + micro;
+}
+
+// Borné : par semaine (les plus anciens sortent d'abord) et en nombre de
+// semaines. Un écho très tardif d'un horodatage oublié est juste relu.
+function retenirHorodatageEcrit(semaine: string, iso: string): void {
+  const cle = cleHorodatage(iso);
+  if (cle === null) return;
+  const cles = horodatagesEcrits.get(semaine) ?? [];
+  horodatagesEcrits.delete(semaine); // réinsertion = semaine la plus récente
+  cles.push(cle);
+  if (cles.length > HORODATAGES_RETENUS_PAR_SEMAINE) cles.shift();
+  horodatagesEcrits.set(semaine, cles);
+  if (horodatagesEcrits.size > SEMAINES_RETENUES) {
+    const plusAncienne = horodatagesEcrits.keys().next().value;
+    if (plusAncienne !== undefined) horodatagesEcrits.delete(plusAncienne);
+  }
+}
+
+function estEchoPlanning(semaine: string, cle: number): boolean {
+  return horodatagesEcrits.get(semaine)?.includes(cle) ?? false;
+}
+
+// Écritures planning en vol et events temps réel reçus pendant ce temps (#352,
+// US-21). L'écho Realtime d'une écriture peut arriver AVANT la réponse HTTP de
+// sa RPC, donc avant que son `updated_at` ne soit retenu : jugé à ce moment-là,
+// il passerait pour un changement distant (relecture qui écrase les éditions
+// faites pendant l'écriture, alerte sur sa propre écriture). On garde TOUS les
+// horodatages reçus (un écho et un vrai changement peuvent se croiser), par
+// semaine, et on les juge quand la dernière écriture se termine.
+let ecrituresPlanningEnVol = 0;
+const eventsPlanningDifferes = new Map<string, Set<number>>();
+
+function terminerEcriturePlanning(): void {
+  ecrituresPlanningEnVol = Math.max(0, ecrituresPlanningEnVol - 1);
+  if (ecrituresPlanningEnVol > 0) return;
+  const differes = [...eventsPlanningDifferes];
+  eventsPlanningDifferes.clear();
+  for (const [semaine, cles] of differes) {
+    // Abonnement coupé (départ de /planning) ou passé à une autre semaine
+    // pendant l'écriture : plus rien à juger (ni relecture, ni réabonnement).
+    if (semaine !== semainePlanningVoulue) continue;
+    // Échos de nos écritures : ignorés ; un autre horodatage = un autre membre
+    // a écrit pendant ce temps → traitement US-21 habituel.
+    if ([...cles].some((cle) => !estEchoPlanning(semaine, cle))) {
+      void traiterChangementPlanningDistant(semaine);
+    }
+  }
+  jugerEventsCycleDifferes(); // jumeau côté cycle
+}
+
 function estDirty(): boolean {
   return localStorage.getItem(CLE_DIRTY) === "1";
 }
@@ -590,9 +667,11 @@ async function pousser(): Promise<void> {
 
   pushEnCours = true;
   rePushDemande = false; // toute écriture pendant ce push le repassera à true
+  ecrituresPlanningEnVol++; // anti-écho US-21 (#352), cf. surEventPlanning
   definirEtat("sauvegarde");
   try {
     const majServeur = await sauvegarderPlanningDistant(planning);
+    retenirHorodatageEcrit(planning.semaine, majServeur);
     localStorage.setItem(CLE_MAJ, majServeur);
     // Ne lever `dirty` que si AUCUNE écriture locale n'est survenue pendant le
     // push (sinon le local a re-divergé → on garde dirty et on rejoue).
@@ -605,8 +684,9 @@ async function pousser(): Promise<void> {
     pushEnCours = false;
     if (rePushDemande) {
       rePushDemande = false;
-      void pousser();
+      void pousser(); // reprend une écriture en vol avant que celle-ci ne se termine
     }
+    terminerEcriturePlanning();
   }
 }
 
@@ -953,6 +1033,10 @@ function couperTempsReel(): Promise<void> {
       semainePlanningAbonnee = null;
     })
     .catch((e) => console.error("Arrêt temps réel du planning échoué.", e));
+  // Synchrone (#352) : un event encore livré par le canal en cours de retrait,
+  // ou différé par une écriture en vol, n'est plus jugé après la coupure.
+  semainePlanningVoulue = null;
+  eventsPlanningDifferes.clear();
   return Promise.all([
     chaineCoches,
     chainePlanning,
@@ -970,8 +1054,9 @@ function couperTempsReel(): Promise<void> {
 // cette semaine ; à réception, on RE-PULL de force (on lève le « local fait
 // foi » du #6) puis, si le contenu a vraiment changé (≠ écho de notre propre
 // écriture), on déclenche l'alerte. Discriminant : l'`updated_at` serveur (#104)
-// vs notre `planning_courant_maj` — notre propre push l'a déjà rattrapé, donc
-// son écho est filtré ; un changement distant est strictement plus récent.
+// de l'event, comparé aux horodatages renvoyés par NOS écritures
+// (`horodatagesEcrits`, #352) — retenu = écho filtré ; sinon un autre membre a
+// écrit, quel que soit l'ordre des horodatages.
 // ---------------------------------------------------------------------------
 let alertePlanning = false;
 const abonnesAlerte = new Set<() => void>();
@@ -1040,20 +1125,39 @@ function surEventPlanning(
     old: { foyer_id?: string; semaine?: string; updated_at?: string };
   }
 ): void {
+  // Canal d'une semaine quittée ou en cours de coupure (#352) → ignorer.
+  if (semaine !== semainePlanningVoulue) return;
   const ligne = payload.eventType === "DELETE" ? payload.old : payload.new;
   if (ligne.foyer_id && ligne.foyer_id !== foyer) return;
   if (ligne.semaine && ligne.semaine !== semaine) return;
-  const majEvent = ligne.updated_at ? Date.parse(ligne.updated_at) : 0;
-  // Écho de notre propre écriture ou pas plus récent que notre cache → ignorer.
-  if (!Number.isFinite(majEvent) || majEvent <= lireMajLocale()) return;
+  const cle = cleHorodatage(ligne.updated_at);
+  // Sans horodatage exploitable, ou écho d'une de nos écritures → ignorer.
+  if (cle === null || estEchoPlanning(semaine, cle)) return;
+  // Écriture en vol : peut-être son écho, arrivé avant la réponse de la RPC
+  // (#352) → jugé à la fin de l'écriture (terminerEcriturePlanning).
+  if (ecrituresPlanningEnVol > 0) {
+    const cles = eventsPlanningDifferes.get(semaine) ?? new Set<number>();
+    cles.add(cle);
+    eventsPlanningDifferes.set(semaine, cles);
+    return;
+  }
   void traiterChangementPlanningDistant(semaine);
 }
 
 let canalPlanning: RealtimeChannel | null = null;
 let semainePlanningAbonnee: string | null = null;
+// Semaine dont on VEUT les events, posée synchroniquement (#352) — alors que
+// `semainePlanningAbonnee` ne change qu'à l'exécution de la file `chainePlanning`.
+// Null après `couperTempsReel`. Un event d'une autre semaine (canal en cours de
+// retrait) ou un event différé d'une semaine quittée n'est jamais jugé.
+let semainePlanningVoulue: string | null = null;
 let chainePlanning: Promise<void> = Promise.resolve();
 
 function synchroniserAbonnementPlanning(semaine: string | null): Promise<void> {
+  semainePlanningVoulue = semaine;
+  for (const s of [...eventsPlanningDifferes.keys()]) {
+    if (s !== semaine) eventsPlanningDifferes.delete(s);
+  }
   chainePlanning = chainePlanning
     .then(() => majAbonnementPlanning(semaine))
     .catch((e) => console.error("Abonnement temps réel du planning échoué.", e));
@@ -1095,29 +1199,38 @@ async function majAbonnementPlanning(semaine: string | null): Promise<void> {
 // la table `planning` pour CHACUNE. À réception d'un changement, on re-projette
 // le cycle depuis la base et on compare la signature AVANT/APRÈS ; si le contenu
 // visible du cycle a changé, on déclenche l'alerte intrusive (réutilise le même
-// store/modale que #56 PR5). L'écho de notre PROPRE génération est filtré par la
-// signature (rafraichirCycleGenere a déjà posé le nouveau contenu localement) et,
-// pendant la fenêtre de génération, par le drapeau `suppressionAlerteCycle`.
+// store/modale que #56 PR5). Même anti-écho exact que la semaine (#352) : un
+// event dont l'`updated_at` est retenu (`horodatagesEcrits`) est l'écho d'une de
+// nos écritures ; tout autre event est jugé. Pendant une écriture planning en vol
+// ou la fenêtre de génération (`suppressionAlerteCycle`, qui couvre aussi la
+// re-projection de rafraichirCycleGenere), les events sont différés, puis jugés
+// à la fin (`jugerEventsCycleDifferes`) : notre écho est ignoré, celui d'un
+// autre membre n'est plus perdu.
 // ---------------------------------------------------------------------------
 let suppressionAlerteCycle = false;
 let traitementCycleEnCours = false;
-// Dernier updated_at serveur connu PAR SEMAINE ISO du cycle (discriminant écho /
-// changement distant, comme `planning_courant_maj` pour la semaine #56 PR5) : un
-// event dont l'updated_at est <= au connu est un écho de notre propre écriture
-// (ou un event obsolète) → ignoré. Rempli à chaque pull et à chaque push cycle.
-const majPlanningCycle = new Map<string, number>();
+const eventsCycleDifferes = new Map<string, Set<number>>();
+
+// Juge les events du cycle différés, une fois la dernière écriture planning
+// terminée et hors fenêtre de génération.
+function jugerEventsCycleDifferes(): void {
+  if (ecrituresPlanningEnVol > 0 || suppressionAlerteCycle) return;
+  const differes = [...eventsCycleDifferes];
+  eventsCycleDifferes.clear();
+  if (differes.some(([semaine, cles]) => [...cles].some((cle) => !estEchoPlanning(semaine, cle)))) {
+    void traiterChangementCycleDistant();
+  }
+}
 
 // Re-projette le cycle affiché depuis la base (planning des 1-2 semaines
 // touchées). Écrase la projection locale (contrairement à chargerCycleDansCache,
 // PAS de dirty-first : un re-pull US-21/génération DOIT refléter la base).
-// Mémorise au passage l'updated_at de chaque semaine (discriminant d'écho).
 async function rechargerProjectionCycle(ancre: string, longueur: number): Promise<void> {
   const semaines = semainesDuCycle(ancre, longueur);
   const resultats = await Promise.all(semaines.map((s) => chargerPlanningDistant(s)));
   const plannings: Planning[] = [];
   semaines.forEach((s, i) => {
     const r = resultats[i];
-    majPlanningCycle.set(s, r ? Date.parse(r.updatedAt) : 0);
     if (r) plannings.push(r.planning);
   });
   definirCyclePlanning(planningDuCycle(plannings, ancre, longueur));
@@ -1146,8 +1259,8 @@ async function traiterChangementCycleDistant(): Promise<void> {
 const canauxPlanningCycle = new Map<string, RealtimeChannel>();
 let chainePlanningCycle: Promise<void> = Promise.resolve();
 
-// Filtre l'écho de nos propres écritures (updated_at <= connu pour la semaine)
-// avant de traiter un changement distant du planning du cycle (US-21).
+// Filtre l'écho de nos propres écritures (`updated_at` retenu, #352) avant de
+// traiter un changement distant du planning du cycle (US-21).
 function surEventPlanningCycle(
   semaine: string,
   payload: {
@@ -1157,9 +1270,14 @@ function surEventPlanningCycle(
   }
 ): void {
   const ligne = payload.eventType === "DELETE" ? payload.old : payload.new;
-  const majEvent = ligne.updated_at ? Date.parse(ligne.updated_at) : 0;
-  if (!Number.isFinite(majEvent) || majEvent <= (majPlanningCycle.get(semaine) ?? 0)) {
-    return; // écho de notre propre écriture ou event obsolète
+  const cle = cleHorodatage(ligne.updated_at);
+  // Sans horodatage exploitable, ou écho d'une de nos écritures → ignorer.
+  if (cle === null || estEchoPlanning(semaine, cle)) return;
+  if (ecrituresPlanningEnVol > 0 || suppressionAlerteCycle) {
+    const cles = eventsCycleDifferes.get(semaine) ?? new Set<number>();
+    cles.add(cle);
+    eventsCycleDifferes.set(semaine, cles);
+    return;
   }
   void traiterChangementCycleDistant();
 }
@@ -1207,6 +1325,7 @@ async function majAbonnementPlanningCycle(
 }
 
 function couperPlanningCycle(): Promise<void> {
+  eventsCycleDifferes.clear(); // plus rien à juger après la coupure (#352)
   chainePlanningCycle = chainePlanningCycle
     .then(async () => {
       for (const canal of canauxPlanningCycle.values()) {
@@ -1224,8 +1343,14 @@ function couperPlanningCycle(): Promise<void> {
  * semaines ISO touchées (sans écraser les jours voisins) ET purge des coches du
  * cycle (RG-13) dans la même transaction —, puis remet à zéro les coches locales
  * et re-projette depuis la base. Même RPC que le serveur MCP (règle du jumeau).
- * Le drapeau `suppressionAlerteCycle` évite que l'écho realtime de nos propres
- * écritures ne déclenche l'alerte US-21 pendant la fenêtre de génération.
+ *
+ * Anti-écho US-21 (#352) : troisième écrivain du planning, au même titre que
+ * `pousser` et `modifierSlotDistant` — compteur des écritures en vol pendant la
+ * RPC, `updated_at` retenus pour chaque semaine écrite, et cache `storePlanning`
+ * patché si la semaine affichée est touchée (sinon la vue Semaine, abonnée à
+ * cette semaine, garderait l'ancien contenu et son prochain push écraserait le
+ * cycle). Côté cycle, `suppressionAlerteCycle` diffère en plus les events
+ * jusqu'à la fin de la re-projection (`jugerEventsCycleDifferes`).
  */
 export async function appliquerGenerationCycle(
   ancre: string,
@@ -1233,16 +1358,79 @@ export async function appliquerGenerationCycle(
 ): Promise<void> {
   suppressionAlerteCycle = true;
   try {
-    const majs = await sauvegarderCycleDistant(ancre, semaines);
-    // Mémorise l'updated_at de notre propre écriture → son écho realtime sera
-    // filtré (en plus du drapeau de suppression, cf. surEventPlanningCycle).
-    for (const [semaine, maj] of Object.entries(majs)) {
-      majPlanningCycle.set(semaine, Date.parse(maj));
+    ecrituresPlanningEnVol++;
+    try {
+      const majs = await sauvegarderCycleDistant(ancre, semaines);
+      for (const [semaine, maj] of Object.entries(majs)) {
+        retenirHorodatageEcrit(semaine, maj);
+      }
+      reporterGenerationSurSemaineAffichee(semaines, majs);
+    } finally {
+      terminerEcriturePlanning();
     }
     await rafraichirCycleGenere();
   } finally {
     suppressionAlerteCycle = false;
+    jugerEventsCycleDifferes();
   }
+}
+
+// Reporte dans le cache `storePlanning` les jours générés de la semaine
+// affichée (#352), comme le fait la RPC `sauvegarder_cycle` en base : seuls les
+// (jour, type_repas) fournis sont remplacés, les autres jours et créneaux
+// restent. Patch sous garde `hydratationEnCours` (la base est déjà à jour, pas
+// de `sauvegarder_planning`) ; une édition locale en attente (dirty) garde son
+// propre minuteur et repoussera la semaine, patch inclus.
+function reporterGenerationSurSemaineAffichee(
+  semaines: SemaineGeneree[],
+  majs: Record<string, string>
+): void {
+  const semaine = localStorage.getItem(CLE_SEMAINE);
+  if (semaine === null) return;
+  const generee = semaines.find((s) => s.semaine === semaine);
+  const maj = majs[semaine];
+  if (!generee || !maj) return;
+  const local = planningLocal();
+  if (local !== null && local.semaine !== semaine) return; // cache incohérent : ne pas toucher
+  const jours = fusionnerJoursGeneres(local?.jours ?? [], generee.jours);
+  localStorage.setItem(CLE_MAJ, maj);
+  const gardeAvant = hydratationEnCours;
+  hydratationEnCours = true;
+  try {
+    storePlanning.ecrire(JSON.stringify({ semaine, jours }));
+  } finally {
+    hydratationEnCours = gardeAvant;
+  }
+}
+
+// Miroir local de l'upsert de `sauvegarder_cycle` sur une semaine : par jour
+// généré, chaque créneau fourni remplace le créneau local (recette, personnes,
+// restes) ; un créneau non fourni n'est pas touché. Jours dans l'ordre lundi →
+// dimanche, comme la relecture de la base (`dbPlanningToDomain`).
+function fusionnerJoursGeneres(
+  locaux: JourPlanning[],
+  generes: JourPlanning[]
+): JourPlanning[] {
+  const parJour = new Map(locaux.map((jp) => [jp.jour, jp] as const));
+  for (const genere of generes) {
+    let jp: JourPlanning = parJour.get(genere.jour) ?? { jour: genere.jour };
+    for (const repas of ["dejeuner", "diner"] as const) {
+      const recette = genere[repas];
+      if (!recette) continue;
+      const personnes = { ...jp.personnes };
+      const restes = { ...jp.restes };
+      delete personnes[repas];
+      delete restes[repas];
+      if (genere.personnes?.[repas] !== undefined) personnes[repas] = genere.personnes[repas];
+      if (genere.restes?.[repas] !== undefined) restes[repas] = genere.restes[repas];
+      jp = { ...jp, [repas]: recette, personnes, restes };
+    }
+    parJour.set(genere.jour, jp);
+  }
+  return ORDRE_JOURS.flatMap((jour) => {
+    const jp = parJour.get(jour);
+    return jp ? [jp] : [];
+  });
 }
 
 export type ResultatGenerationCycle = {
@@ -1501,8 +1689,6 @@ async function chargerCycleDansCache(
     const plannings: Planning[] = [];
     semaines.forEach((s, i) => {
       const r = resultats[i];
-      // Mémorise l'updated_at par semaine (discriminant d'écho realtime, US-21).
-      majPlanningCycle.set(s, r ? Date.parse(r.updatedAt) : 0);
       if (r) plannings.push(r.planning);
     });
     const projete = planningDuCycle(plannings, ancre, longueur);
@@ -1565,7 +1751,8 @@ async function chargerCycleDansCache(
  * (défaut 7). Purge de rétention best-effort (cycles > 12 semaines) — une fois.
  */
 export async function hydraterCycle(): Promise<void> {
-  const jour = await chargerJourCoursesFoyer().catch(() => 1); // fail-open : lundi
+  // Fail-open lundi, repli loggé : même helper que la vue Cycle (jumeau, #352).
+  const jour = await jourCoursesOuLundi(chargerJourCoursesFoyer());
   // ancreParDefaut (pas ancreCourante) : le week-end, la génération vise la
   // semaine prochaine (semaineParDefaut) → on décale le cycle par défaut pour la
   // couvrir, sinon /courses afficherait un cycle courant vide/écoulé (#257).
@@ -1614,12 +1801,13 @@ export async function allerAuCycle(ancre: string): Promise<void> {
  * les `(jour, type_repas)` présents sur `jourPlanning` — passer un seul repas
  * renseigné ne touche pas l'autre repas du même jour.
  *
- * Met à jour les DEUX bookkeeping anti-écho existants, sinon on déclenche une
- * fausse alerte intrusive sur sa propre édition :
- * - `majPlanningCycle` (temps réel de /courses, #259) : toujours, quelle que
- *   soit la semaine — /courses peut avoir sa propre vue cycle ouverte ailleurs.
- * - `planning_courant_maj` + cache `storePlanning` (alerte de /planning, #56
- *   PR5) : UNIQUEMENT si la semaine éditée est la semaine actuellement
+ * Anti-écho, sinon on déclenche une fausse alerte intrusive sur sa propre
+ * édition :
+ * - compteur des écritures en vol + `updated_at` retenu pour la semaine
+ *   (`horodatagesEcrits`, #352) : toujours, quelle que soit la semaine — il
+ *   sert aux deux temps réels (/planning et cycle de /courses).
+ * - `planning_courant_maj` + cache `storePlanning` (vue Semaine de /planning,
+ *   #56 PR5) : UNIQUEMENT si la semaine éditée est la semaine actuellement
  *   affichée — sinon ce cache ne représente pas cette semaine, rien à patcher.
  *
  * Ce patch passe sous la garde `hydratationEnCours` (#301) : la base est DÉJÀ
@@ -1632,26 +1820,33 @@ export async function modifierSlotDistant(
   semaine: string,
   jourPlanning: JourPlanning
 ): Promise<void> {
-  const maj = await sauvegarderSlotsDistant(semaine, [jourPlanning]);
-  majPlanningCycle.set(semaine, Date.parse(maj));
+  // Écriture en vol (#352) : son écho reçu avant la réponse est jugé à la fin,
+  // une fois son `updated_at` retenu (jumeau de `pousser`).
+  ecrituresPlanningEnVol++;
+  try {
+    const maj = await sauvegarderSlotsDistant(semaine, [jourPlanning]);
+    retenirHorodatageEcrit(semaine, maj);
 
-  if (semaine === localStorage.getItem(CLE_SEMAINE)) {
-    localStorage.setItem(CLE_MAJ, maj);
-    const local = planningLocal();
-    if (local && local.semaine === semaine) {
-      const jours = local.jours.map((jp) =>
-        jp.jour === jourPlanning.jour ? jourPlanning : jp
-      );
-      // Restaure la valeur précédente (et non `false`) : une relecture
-      // (chargerSemaineDansCache) peut tenir la garde pendant son `await`.
-      const gardeAvant = hydratationEnCours;
-      hydratationEnCours = true;
-      try {
-        storePlanning.ecrire(JSON.stringify({ semaine, jours }));
-      } finally {
-        hydratationEnCours = gardeAvant;
+    if (semaine === localStorage.getItem(CLE_SEMAINE)) {
+      localStorage.setItem(CLE_MAJ, maj);
+      const local = planningLocal();
+      if (local && local.semaine === semaine) {
+        const jours = local.jours.map((jp) =>
+          jp.jour === jourPlanning.jour ? jourPlanning : jp
+        );
+        // Restaure la valeur précédente (et non `false`) : une relecture
+        // (chargerSemaineDansCache) peut tenir la garde pendant son `await`.
+        const gardeAvant = hydratationEnCours;
+        hydratationEnCours = true;
+        try {
+          storePlanning.ecrire(JSON.stringify({ semaine, jours }));
+        } finally {
+          hydratationEnCours = gardeAvant;
+        }
       }
     }
+  } finally {
+    terminerEcriturePlanning();
   }
 }
 
