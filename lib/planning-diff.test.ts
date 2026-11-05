@@ -65,4 +65,32 @@ describe("signaturePlanning", () => {
   it("identique pour deux plannings au même contenu", () => {
     expect(signaturePlanning(planning())).toBe(signaturePlanning(planning()))
   })
+
+  // #352 : le générateur pose `personnes: { dejeuner: 2, diner: 2 }` (réglage
+  // personnesDefaut, #45) alors que la relecture de la base (dbSlotToJourPlanning)
+  // omet le défaut 2. Même contenu, deux formes : la signature doit les confondre,
+  // sinon la relecture qui suit une génération déclenche l'alerte US-21 sur sa
+  // propre écriture.
+  it("confond « 2 personnes » explicite et personnes absentes (défaut RG-16)", () => {
+    const genere: Planning = {
+      semaine: "2026-W24",
+      jours: [
+        { jour: "lundi", dejeuner: recette("r1"), diner: recette("r2"), personnes: { dejeuner: 2, diner: 2 } },
+      ],
+    }
+    const relu: Planning = {
+      semaine: "2026-W24",
+      jours: [{ jour: "lundi", dejeuner: recette("r1"), diner: recette("r2") }],
+    }
+    expect(signaturePlanning(genere)).toBe(signaturePlanning(relu))
+  })
+
+  it("confond restes explicitement faux et restes absents", () => {
+    const explicite: Planning = {
+      semaine: "2026-W24",
+      jours: [{ jour: "lundi", diner: recette("r2"), restes: { diner: false } }],
+    }
+    const relu: Planning = { semaine: "2026-W24", jours: [{ jour: "lundi", diner: recette("r2") }] }
+    expect(signaturePlanning(explicite)).toBe(signaturePlanning(relu))
+  })
 })

@@ -9,12 +9,19 @@
 // créneau), insensible à l'ordre des clés et des jours.
 
 import type { Planning } from "@/types"
+import { personnesDuSlot } from "@/lib/personnes"
 
 /**
  * Empreinte stable d'un planning : par jour et par créneau, l'id de recette, le
  * nombre de personnes et le flag restes. Triée → deux plannings au même contenu
  * (quel que soit l'ordre interne) ont la même signature ; toute modif de slot
  * (recette, personnes, restes) la change. `null` → chaîne vide.
+ *
+ * Personnes et restes sont lus avec leur défaut (2, RG-16 ; faux, RG-22) : le
+ * générateur pose `personnes: 2` explicitement (#45) alors que la relecture de
+ * la base l'omet (`dbSlotToJourPlanning`). Sans ce défaut, la relecture qui suit
+ * une génération « changeait » le planning et déclenchait l'alerte US-21 sur sa
+ * propre écriture (#352).
  */
 export function signaturePlanning(planning: Planning | null): string {
   if (planning === null) return ""
@@ -26,8 +33,8 @@ export function signaturePlanning(planning: Planning | null): string {
         jp.jour,
         dej?.id ?? "",
         din?.id ?? "",
-        jp.personnes?.dejeuner ?? "",
-        jp.personnes?.diner ?? "",
+        personnesDuSlot(jp, "dejeuner"),
+        personnesDuSlot(jp, "diner"),
         jp.restes?.dejeuner ? "1" : "0",
         jp.restes?.diner ? "1" : "0",
       ].join("|")

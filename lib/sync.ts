@@ -557,6 +557,28 @@ let pushEnCours = false;
 let rePushDemande = false;
 let minuteur: ReturnType<typeof setTimeout> | null = null;
 
+// Écritures planning en vol (push `sauvegarder_planning`, `modifierSlotDistant`)
+// et événement temps réel reçu pendant ce temps (#352, US-21). L'écho Realtime
+// d'une écriture peut arriver AVANT la réponse HTTP de sa RPC, donc avant que
+// `planning_courant_maj` ne porte son `updated_at` : jugé à ce moment-là, il
+// passerait pour un changement distant (relecture qui écrase les éditions faites
+// pendant l'écriture, alerte sur sa propre écriture). On le réévalue quand la
+// dernière écriture se termine, contre l'horodatage serveur alors connu.
+let ecrituresPlanningEnVol = 0;
+let eventPlanningDiffere: { semaine: string; maj: number } | null = null;
+
+function terminerEcriturePlanning(): void {
+  ecrituresPlanningEnVol = Math.max(0, ecrituresPlanningEnVol - 1);
+  if (ecrituresPlanningEnVol > 0) return;
+  const differe = eventPlanningDiffere;
+  eventPlanningDiffere = null;
+  // Écho de nos écritures (<= horodatage connu) : ignoré ; plus récent : un
+  // autre membre a écrit pendant ce temps → traitement US-21 habituel.
+  if (differe !== null && differe.maj > lireMajLocale()) {
+    void traiterChangementPlanningDistant(differe.semaine);
+  }
+}
+
 function estDirty(): boolean {
   return localStorage.getItem(CLE_DIRTY) === "1";
 }
@@ -590,6 +612,7 @@ async function pousser(): Promise<void> {
 
   pushEnCours = true;
   rePushDemande = false; // toute écriture pendant ce push le repassera à true
+  ecrituresPlanningEnVol++; // anti-écho US-21 (#352), cf. surEventPlanning
   definirEtat("sauvegarde");
   try {
     const majServeur = await sauvegarderPlanningDistant(planning);
@@ -605,8 +628,9 @@ async function pousser(): Promise<void> {
     pushEnCours = false;
     if (rePushDemande) {
       rePushDemande = false;
-      void pousser();
+      void pousser(); // reprend une écriture en vol avant que celle-ci ne se termine
     }
+    terminerEcriturePlanning();
   }
 }
 
@@ -1046,6 +1070,14 @@ function surEventPlanning(
   const majEvent = ligne.updated_at ? Date.parse(ligne.updated_at) : 0;
   // Écho de notre propre écriture ou pas plus récent que notre cache → ignorer.
   if (!Number.isFinite(majEvent) || majEvent <= lireMajLocale()) return;
+  // Écriture en vol : peut-être son écho, arrivé avant la réponse de la RPC
+  // (#352) → jugé à la fin de l'écriture (terminerEcriturePlanning).
+  if (ecrituresPlanningEnVol > 0) {
+    if (eventPlanningDiffere === null || majEvent > eventPlanningDiffere.maj) {
+      eventPlanningDiffere = { semaine, maj: majEvent };
+    }
+    return;
+  }
   void traiterChangementPlanningDistant(semaine);
 }
 
@@ -1632,26 +1664,33 @@ export async function modifierSlotDistant(
   semaine: string,
   jourPlanning: JourPlanning
 ): Promise<void> {
-  const maj = await sauvegarderSlotsDistant(semaine, [jourPlanning]);
-  majPlanningCycle.set(semaine, Date.parse(maj));
+  // Écriture en vol (#352) : son écho reçu avant la réponse est jugé à la fin,
+  // une fois `planning_courant_maj` posé (jumeau de `pousser`).
+  ecrituresPlanningEnVol++;
+  try {
+    const maj = await sauvegarderSlotsDistant(semaine, [jourPlanning]);
+    majPlanningCycle.set(semaine, Date.parse(maj));
 
-  if (semaine === localStorage.getItem(CLE_SEMAINE)) {
-    localStorage.setItem(CLE_MAJ, maj);
-    const local = planningLocal();
-    if (local && local.semaine === semaine) {
-      const jours = local.jours.map((jp) =>
-        jp.jour === jourPlanning.jour ? jourPlanning : jp
-      );
-      // Restaure la valeur précédente (et non `false`) : une relecture
-      // (chargerSemaineDansCache) peut tenir la garde pendant son `await`.
-      const gardeAvant = hydratationEnCours;
-      hydratationEnCours = true;
-      try {
-        storePlanning.ecrire(JSON.stringify({ semaine, jours }));
-      } finally {
-        hydratationEnCours = gardeAvant;
+    if (semaine === localStorage.getItem(CLE_SEMAINE)) {
+      localStorage.setItem(CLE_MAJ, maj);
+      const local = planningLocal();
+      if (local && local.semaine === semaine) {
+        const jours = local.jours.map((jp) =>
+          jp.jour === jourPlanning.jour ? jourPlanning : jp
+        );
+        // Restaure la valeur précédente (et non `false`) : une relecture
+        // (chargerSemaineDansCache) peut tenir la garde pendant son `await`.
+        const gardeAvant = hydratationEnCours;
+        hydratationEnCours = true;
+        try {
+          storePlanning.ecrire(JSON.stringify({ semaine, jours }));
+        } finally {
+          hydratationEnCours = gardeAvant;
+        }
       }
     }
+  } finally {
+    terminerEcriturePlanning();
   }
 }
 
