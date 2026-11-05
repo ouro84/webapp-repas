@@ -4,10 +4,12 @@
 // relance le chargement initial.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { toast } from "sonner";
 
 const m = vi.hoisted(() => ({
   chargerPlanningDistant: vi.fn(),
+  genererCycle: vi.fn(),
 }));
 
 vi.mock("sonner", () => ({
@@ -31,7 +33,7 @@ vi.mock("@/lib/preferences", () => ({ chargerPreferences: () => new Promise(() =
 vi.mock("@/lib/sync", () => ({
   definirCycleAffiche: vi.fn(),
   modifierSlotDistant: vi.fn(),
-  useGenerationCycle: () => ({ enGeneration: false, genererCycle: vi.fn() }),
+  useGenerationCycle: () => ({ enGeneration: false, genererCycle: m.genererCycle }),
 }));
 
 import { VuePlanningCycle } from "@/components/planning/vue-cycle";
@@ -39,6 +41,8 @@ import { VuePlanningCycle } from "@/components/planning/vue-cycle";
 beforeEach(() => {
   vi.spyOn(console, "error").mockImplementation(() => {});
   m.chargerPlanningDistant.mockReset();
+  m.genererCycle.mockReset();
+  vi.mocked(toast.error).mockClear();
 });
 
 afterEach(() => {
@@ -66,5 +70,63 @@ describe("VuePlanningCycle : premier chargement en échec", () => {
 
     expect(await screen.findByText("Aucun repas planifié sur ce cycle.")).toBeTruthy();
     expect(screen.queryByText("Impossible de charger le cycle.")).toBeNull();
+  });
+});
+
+describe("VuePlanningCycle : génération du cycle puis relecture en erreur (#357)", () => {
+  // Cycle vide affiché, prêt à générer ; renvoie le nombre de lectures du
+  // chargement initial (1 ou 2 semaines ISO selon le jour de courses).
+  async function afficherCycleVide(): Promise<number> {
+    m.chargerPlanningDistant.mockResolvedValue(null);
+    rendre();
+    await screen.findByText("Aucun repas planifié sur ce cycle.");
+    const lectures = m.chargerPlanningDistant.mock.calls.length;
+    m.chargerPlanningDistant.mockClear();
+    return lectures;
+  }
+
+  const sansAvertissement = {
+    vegeNonHonore: false,
+    mixNonHonore: false,
+    saisonNonHonore: false,
+  };
+
+  it("relecture ratée après une génération réussie : la vue retente la lecture du cycle", async () => {
+    const lectures = await afficherCycleVide();
+    m.genererCycle.mockResolvedValue(sansAvertissement);
+    // La première lecture de la relecture échoue, les suivantes réussissent.
+    m.chargerPlanningDistant.mockRejectedValueOnce(new Error("réseau"));
+    m.chargerPlanningDistant.mockResolvedValue(null);
+
+    fireEvent.click(screen.getByRole("button", { name: /Générer mon cycle/ }));
+
+    // Relecture (échec) + nouvelle lecture de resynchronisation.
+    await waitFor(() =>
+      expect(m.chargerPlanningDistant).toHaveBeenCalledTimes(lectures * 2)
+    );
+    expect(toast.error).toHaveBeenCalledTimes(1);
+    expect(toast.error).toHaveBeenCalledWith(
+      "Certains jours du cycle n'ont pas pu être chargés. Réessaie."
+    );
+  });
+
+  it("génération rejetée : toast d'erreur inchangé et cycle relu pour se resynchroniser", async () => {
+    const lectures = await afficherCycleVide();
+    m.genererCycle.mockRejectedValue(
+      new Error(
+        "Des modifications ne sont pas encore enregistrées. Vérifie ta connexion et réessaie."
+      )
+    );
+    m.chargerPlanningDistant.mockResolvedValue(null);
+
+    fireEvent.click(screen.getByRole("button", { name: /Générer mon cycle/ }));
+
+    await waitFor(() =>
+      expect(m.chargerPlanningDistant).toHaveBeenCalledTimes(lectures)
+    );
+    expect(toast.error).toHaveBeenCalledTimes(1);
+    expect(toast.error).toHaveBeenCalledWith(
+      "Des modifications ne sont pas encore enregistrées. Vérifie ta connexion et réessaie."
+    );
   });
 });

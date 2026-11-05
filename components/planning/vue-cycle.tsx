@@ -306,8 +306,10 @@ export function VuePlanningCycle({
       })) {
         toast.warning(message);
       }
-      // Recharge la projection affichée pour refléter le nouveau contenu.
-      if (ancre !== null) await chargerCycle(ancre);
+      // Recharge la projection affichée pour refléter le nouveau contenu. Une
+      // relecture ratée (`false`, jamais une exception) est retentée une fois
+      // (#357) : le cycle est déjà généré en base, l'afficher périmé trompe.
+      if (ancre !== null && !(await chargerCycle(ancre))) await chargerCycle(ancre);
     } catch (erreur) {
       console.error("Génération du cycle échouée.", erreur);
       toast.error(
@@ -315,6 +317,11 @@ export function VuePlanningCycle({
           ? erreur.message
           : "Impossible de générer le cycle. Vérifie ta connexion et réessaie."
       );
+      // Resynchronise l'affichage (#357) : la base peut déjà contenir le cycle
+      // généré (RPC passée, relecture échouée) ; sans cette relecture la vue
+      // resterait sur la projection d'avant. `chargerCycle` gère elle-même ses
+      // erreurs (log + toast, état précédent conservé) : pas de double toast.
+      if (ancre !== null) await chargerCycle(ancre);
     } finally {
       generationVerrouillee.current = false;
       setVerrouAffiche(false);
