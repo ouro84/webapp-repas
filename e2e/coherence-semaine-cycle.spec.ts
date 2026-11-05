@@ -20,6 +20,10 @@ test("« Générer mon cycle » est accessible et fonctionne depuis la vue Cycle
 }) => {
   await page.goto("/planning");
   await page.getByRole("button", { name: "Cycle" }).click();
+  // #352 : l'état vide du cycle a le même gabarit que celui de la semaine (titre,
+  // navigateur, bouton principal), sous le titre « Mon planning du cycle ».
+  await expect(page.getByRole("heading", { name: "Mon planning du cycle" })).toBeVisible();
+  await expect(page.getByText("Aucun repas planifié sur ce cycle.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Générer mon cycle" })).toBeVisible();
 
   await page.getByRole("button", { name: "Générer mon cycle" }).click();
@@ -41,8 +45,12 @@ test("régénérer un cycle déjà rempli depuis la vue Cycle demande confirmati
     .locator("main button[aria-label^='Voir la recette']")
     .allTextContents();
 
+  // #352 : cycle rempli → l'en-tête porte « Régénérer » (comme la semaine) et
+  // l'accès aux réglages de génération.
+  await expect(page.getByRole("link", { name: "Réglages de génération" })).toBeVisible();
+
   // Annuler : rien ne change.
-  await page.getByRole("button", { name: "Générer mon cycle" }).click();
+  await page.getByRole("button", { name: "Régénérer" }).click();
   const modale = page.getByRole("dialog", { name: "Régénérer ce cycle ?" });
   await expect(modale).toBeVisible();
   await modale.getByRole("button", { name: "Annuler" }).click();
@@ -52,7 +60,7 @@ test("régénérer un cycle déjà rempli depuis la vue Cycle demande confirmati
   ).toEqual(recettesAvant);
 
   // Confirmer : le cycle est régénéré.
-  await page.getByRole("button", { name: "Générer mon cycle" }).click();
+  await page.getByRole("button", { name: "Régénérer" }).click();
   await modale.getByRole("button", { name: "Régénérer" }).click();
   await expect(page.getByText("Cycle généré").last()).toBeVisible({ timeout: 20_000 });
 });
@@ -62,6 +70,10 @@ test("le lien « Liste de courses → » depuis la vue Cycle conserve la même f
 }) => {
   await page.goto("/planning");
   await page.getByRole("button", { name: "Cycle" }).click();
+  // #352 : le lien « Liste de courses → » n'existe que dans l'en-tête du cycle
+  // rempli (pas dans l'état vide, comme en semaine) : on génère d'abord.
+  await page.getByRole("button", { name: "Générer mon cycle" }).click();
+  await expect(page.locator("main li").first()).toBeVisible({ timeout: 20_000 });
   // #352 : le navigateur de période (libellé relatif + dates) remplace « Courses du… ».
   const navigateurCycle = page.getByRole("group", { name: "Naviguer entre les cycles" });
   const libelleCycle = (await navigateurCycle.innerText()).trim();

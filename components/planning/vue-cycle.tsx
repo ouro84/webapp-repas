@@ -32,14 +32,14 @@
 // perdus) le temps d'un aller-retour réseau. La file est vidée avant toute
 // relecture (navigation, génération) et au démontage.
 //
-// Le lien « Liste de courses → » vit aussi ici (passe l'ancre affichée en
-// query param, #279).
+// L'en-tête (titre, bascule, « Régénérer », « Liste de courses → » avec l'ancre
+// affichée en query param #279, légende, navigateur) et l'état vide sont ceux de
+// la vue Semaine (EntetePlanning / EtatVidePlanning, #352).
 //
 // Projection : on lit les plannings des 1-2 semaines ISO que le cycle touche
 // (chargerPlanningDistant, base = source de vérité) et on rend chaque JOUR du
 // cycle (date concrète) via lib/cycles (fonctions pures).
 
-import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -87,6 +87,8 @@ import { SelecteurRecette } from "@/components/planning/selecteur-recette";
 import { ConfirmationModale } from "@/components/ui/confirmation";
 import { FicheRecette } from "@/components/planning/fiche-recette";
 import { NavigateurPeriode } from "@/components/planning/navigateur-periode";
+import { EntetePlanning, type VuePlanning } from "@/components/planning/entete-planning";
+import { EtatVidePlanning } from "@/components/planning/etat-vide-planning";
 import type { JourPlanning, Planning, Recette, ReglagesGeneration } from "@/types";
 
 type TypeRepas = "dejeuner" | "diner";
@@ -125,6 +127,8 @@ function slotsDuJour(
 export function VuePlanningCycle({
   idsModifiables,
   lienCycle,
+  vue,
+  onChangerVue,
 }: {
   // Ids des recettes du catalogue chargé (#137) : pour ceux-là, la fiche propose
   // « Modifier » (deep-link /recettes?edition). Fourni par la page (déjà chargé).
@@ -133,6 +137,10 @@ export function VuePlanningCycle({
   // vue sur le cycle qui la contient. Lue UNE fois au montage : une modification
   // ultérieure de la prop (bascule, retrait du lien) ne relance pas le chargement.
   lienCycle?: string;
+  // Bascule Semaine | Cycle (#352) : rendue par la vue elle-même, dans son en-tête
+  // ou son état vide, comme la vue Semaine.
+  vue: VuePlanning;
+  onChangerVue: (v: VuePlanning) => void;
 }) {
   const [lienInitial] = useState(lienCycle);
   const [ancre, setAncre] = useState<string | null>(null);
@@ -538,9 +546,11 @@ export function VuePlanningCycle({
 
   if (chargement || ancre === null) {
     return (
-      <p role="status" className="animate-pulse py-12 text-center text-brand-700/85">
-        Chargement…
-      </p>
+      <div className="flex-1 p-4 md:p-8">
+        <p role="status" className="animate-pulse py-12 text-center text-brand-700/85">
+          Chargement…
+        </p>
+      </div>
     );
   }
 
@@ -556,92 +566,98 @@ export function VuePlanningCycle({
   });
   const aDesRepas = cellules.some((c) => c.jp !== null);
 
-  return (
-    <div>
-      {/* Navigateur de période (#352, partagé avec la semaine et /courses) +
-          actions (#279 : génération + accès courses, directement ici). */}
-      <div className="mb-6 flex flex-wrap items-center gap-2">
-        <NavigateurPeriode
-          unite="cycle"
-          libelle={libelleRelatifCycle(offsetCycle)}
-          dates={datesCycle(ancre, longueur)}
-          courante={offsetCycle === 0}
-          peutReculer={offsetCycle > -CYCLES_PASSES}
-          peutAvancer={offsetCycle < CYCLES_FUTURS}
-          onPrecedente={() => void file.vider().then(() => chargerCycle(cycleDecale(ancre, -1)))}
-          onSuivante={() => void file.vider().then(() => chargerCycle(cycleDecale(ancre, 1)))}
-        />
-        <button
-          type="button"
-          // Cycle déjà rempli → confirmation (#334, miroir de RG-74 côté MCP) :
-          // la régénération écrase les repas et purge les coches du foyer, sans
-          // annulation possible. Cycle vide → génération directe.
-          onClick={() =>
-            aDesRepas ? setConfirmationGeneration(true) : void genererMonCycle()
-          }
-          disabled={enGeneration || verrouAffiche}
-          className="relative rounded-full border border-brand-200 px-4 py-2 text-sm font-medium text-brand-700 transition after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {enGeneration || verrouAffiche ? "Génération…" : "Générer mon cycle"}
-        </button>
-        <Link
-          href={`/courses?ancre=${ancre}`}
-          className="relative rounded-full bg-primary px-4 py-2 text-center text-sm font-medium text-white transition-colors after:absolute after:-inset-1 after:content-[''] hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
-        >
-          Liste de courses →
-        </Link>
-      </div>
+  // Navigateur de période (#352, partagé avec la semaine et /courses).
+  const navigateur = (
+    <NavigateurPeriode
+      unite="cycle"
+      libelle={libelleRelatifCycle(offsetCycle)}
+      dates={datesCycle(ancre, longueur)}
+      courante={offsetCycle === 0}
+      peutReculer={offsetCycle > -CYCLES_PASSES}
+      peutAvancer={offsetCycle < CYCLES_FUTURS}
+      onPrecedente={() => void file.vider().then(() => chargerCycle(cycleDecale(ancre, -1)))}
+      onSuivante={() => void file.vider().then(() => chargerCycle(cycleDecale(ancre, 1)))}
+    />
+  );
+  const generationEnCours = enGeneration || verrouAffiche;
 
+  return (
+    <>
       {!aDesRepas ? (
-        <p className="py-12 text-center text-brand-700/85">
-          Aucun repas planifié sur ce cycle.
-        </p>
+        // Cycle vide → génération directe, sans confirmation (#334).
+        <EtatVidePlanning
+          titre="Mon planning du cycle"
+          vue={vue}
+          onChangerVue={onChangerVue}
+          navigateur={navigateur}
+          enAttente={generationEnCours}
+          message="Aucun repas planifié sur ce cycle."
+          libelleBouton="Générer mon cycle"
+          libelleAttente="Génération…"
+          onGenerer={() => void genererMonCycle()}
+          generationEnCours={generationEnCours}
+        />
       ) : (
-        <ul className="space-y-4">
-          {cellules.map(({ dateISO, jp }) => (
-            <li
-              key={dateISO}
-              className="rounded-lg border border-brand-100 bg-surface p-4"
-            >
-              <h2 className="mb-3 font-semibold text-brand-900">
-                {libelleJourComplet(dateISO)}
-              </h2>
-              {jp === null ? (
-                <p className="text-sm text-brand-700/70">Rien de prévu.</p>
-              ) : (
-                <div className="grid gap-3 sm:grid-cols-2">
-                  {slotsDuJour(jp, reglages).map((slot) => {
-                    const { semaine } = dateVersSemaineJour(dateISO);
-                    return (
-                      <SlotRepas
-                        key={slot.typeRepas}
-                        libelle={slot.libelle}
-                        jourLabel={libelleJourComplet(dateISO)}
-                        recette={slot.recette}
-                        indisponible={false}
-                        personnes={personnesDuSlot(jp, slot.typeRepas)}
-                        restes={estRestes(jp, slot.typeRepas)}
-                        onChanger={() => changerSlot(dateISO, semaine, jp.jour, slot.typeRepas)}
-                        onSelectionner={() =>
-                          setSlotEnSelection({ dateISO, semaine, jour: jp.jour, typeRepas: slot.typeRepas })
-                        }
-                        onChangerPersonnes={(p) => changerPersonnesSlot(semaine, jp.jour, slot.typeRepas, p)}
-                        onChangerRestes={(v) => changerRestesSlot(dateISO, semaine, jp.jour, slot.typeRepas, v)}
-                        onVoir={() =>
-                          slot.recette &&
-                          setFicheOuverte({
-                            recette: slot.recette,
-                            personnes: personnesDuSlot(jp, slot.typeRepas),
-                          })
-                        }
-                      />
-                    );
-                  })}
-                </div>
-              )}
-            </li>
-          ))}
-        </ul>
+        <div className="flex-1 p-4 md:p-8">
+          <EntetePlanning
+            titre="Mon planning du cycle"
+            vue={vue}
+            onChangerVue={onChangerVue}
+            libelleRegenerer={generationEnCours ? "Génération…" : "Régénérer"}
+            // Cycle déjà rempli → confirmation (#334, miroir de RG-74 côté MCP) :
+            // la régénération écrase les repas et purge les coches du foyer, sans
+            // annulation possible.
+            onRegenerer={() => setConfirmationGeneration(true)}
+            regenerationEnCours={generationEnCours}
+            hrefCourses={`/courses?ancre=${ancre}`}
+            navigateur={navigateur}
+          />
+          <ul className="space-y-4">
+            {cellules.map(({ dateISO, jp }) => (
+              <li
+                key={dateISO}
+                className="rounded-lg border border-brand-100 bg-surface p-4"
+              >
+                <h2 className="mb-3 font-semibold text-brand-900">
+                  {libelleJourComplet(dateISO)}
+                </h2>
+                {jp === null ? (
+                  <p className="text-sm text-brand-700/70">Rien de prévu.</p>
+                ) : (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {slotsDuJour(jp, reglages).map((slot) => {
+                      const { semaine } = dateVersSemaineJour(dateISO);
+                      return (
+                        <SlotRepas
+                          key={slot.typeRepas}
+                          libelle={slot.libelle}
+                          jourLabel={libelleJourComplet(dateISO)}
+                          recette={slot.recette}
+                          indisponible={false}
+                          personnes={personnesDuSlot(jp, slot.typeRepas)}
+                          restes={estRestes(jp, slot.typeRepas)}
+                          onChanger={() => changerSlot(dateISO, semaine, jp.jour, slot.typeRepas)}
+                          onSelectionner={() =>
+                            setSlotEnSelection({ dateISO, semaine, jour: jp.jour, typeRepas: slot.typeRepas })
+                          }
+                          onChangerPersonnes={(p) => changerPersonnesSlot(semaine, jp.jour, slot.typeRepas, p)}
+                          onChangerRestes={(v) => changerRestesSlot(dateISO, semaine, jp.jour, slot.typeRepas, v)}
+                          onVoir={() =>
+                            slot.recette &&
+                            setFicheOuverte({
+                              recette: slot.recette,
+                              personnes: personnesDuSlot(jp, slot.typeRepas),
+                            })
+                          }
+                        />
+                      );
+                    })}
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
 
       {/* Fiche recette (US-10) — consultation depuis la vue cycle aussi. */}
@@ -705,6 +721,6 @@ export function VuePlanningCycle({
           onAnnuler={() => setConfirmationGeneration(false)}
         />
       )}
-    </div>
+    </>
   );
 }

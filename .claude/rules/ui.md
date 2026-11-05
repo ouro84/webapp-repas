@@ -85,7 +85,7 @@ Store `lib/theme.ts` (`useSyncExternalStore`, clé localStorage `theme` ∈ clai
 ## Carte de slot du planning (`components/planning/slot-repas.tsx`)
 
 - Les actions Changer / Sélectionner / Restes sont **toujours visibles**, sans disclosure : Changer en icône seule (`RefreshCw`), Sélectionner et Restes libellés ; à `lg`, libellés masqués (`lg:hidden`) et `title` en infobulle. Noms accessibles inchangés (`aria-label`). Pourquoi : un toggle « Actions » (#210) coûtait un tap de plus sur des actions utilisées à chaque visite (#334) ; la ligne tient à 320 px.
-- La légende des badges est affichée **une fois** en tête de `/planning`, pas par carte.
+- La légende des badges est affichée **une fois** en tête de `/planning`, pas par carte. Elle (`LegendeBadges`), la bascule Semaine | Cycle (`BasculeVue`) et l’en-tête (`EntetePlanning`) vivent dans `components/planning/entete-planning.tsx`, l’état vide dans `etat-vide-planning.tsx` : ils servent les deux vues (#352), le titre et les libellés viennent de l’appelant. Pourquoi : deux copies divergeaient (position du navigateur, libellés).
 - Déclencheur de la fiche recette = le **nom du plat** (`<button>`), pas la carte entière, pour éviter d'imbriquer des interactifs.
 
 ## PWA

@@ -235,8 +235,8 @@ test("édition en vue Cycle bloquée pendant « Générer mon cycle » (#301)", 
 
   const carte = page.locator("main li").first();
   const n = await lirePersonnes(carte);
-  await page.getByRole("button", { name: "Générer mon cycle" }).click();
-  // Cycle déjà rempli → confirmation avant de régénérer (#334).
+  // Cycle déjà rempli : « Régénérer » (#352) puis confirmation (#334).
+  await page.getByRole("button", { name: "Régénérer", exact: true }).click();
   await page
     .getByRole("dialog", { name: "Régénérer ce cycle ?" })
     .getByRole("button", { name: "Régénérer" })
