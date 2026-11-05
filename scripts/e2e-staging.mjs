@@ -12,7 +12,8 @@
 //  3. Sauvegarde .env.local → .env.local.prodbak, puis écrit un .env.local
 //     STAGING (seuls NEXT_PUBLIC_SUPABASE_URL/ANON_KEY repointés ; le reste des
 //     secrets prod est conservé, nécessaire au build/monitoring).
-//  4. Lance `playwright test <args>` (NODE_OPTIONS=--use-system-ca pour Avast).
+//  4. Lance `playwright test <args>` SANS shell (node + CLI Playwright, #357 : les motifs
+//     `-g` à espaces/`|`/accents arrivent intacts ; NODE_OPTIONS=--use-system-ca pour Avast).
 //  5. RESTAURE toujours .env.local en sortie (succès, échec, Ctrl-C).
 //
 // Garde-fous : refuse si le port e2e (3000, ou `E2E_PORT`) est déjà occupé (sinon Playwright
@@ -30,6 +31,7 @@ import { readFileSync, writeFileSync, copyFileSync, existsSync, rmSync } from "n
 import { createConnection } from "node:net"
 import { spawn } from "node:child_process"
 import { assurerProjetActif } from "./supabase-projet.mjs"
+import { commandePlaywright } from "./commande-playwright.mjs"
 
 const STAGING_REF = "upxoxrjumxpzumakawiv"
 const PROD_REF = "gabyhlcwahzquolwxmgd"
@@ -109,12 +111,17 @@ async function main() {
   try {
     writeFileSync(ENV, staging, "utf8")
     console.log(`✓ ${ENV} pointe STAGING (${STAGING_REF}). Lancement de Playwright…\n`)
+    const cmd = commandePlaywright(process.argv.slice(2))
     const code = await new Promise((resolve) => {
-      const p = spawn("npx", ["playwright", "test", ...process.argv.slice(2)], {
+      // Sans shell (#357) : les motifs `-g` (espaces, `|`, accents) arrivent intacts.
+      const p = spawn(cmd.commande, cmd.arguments, {
         stdio: "inherit",
-        shell: process.platform === "win32",
+        shell: cmd.shell,
         env: { ...process.env, NODE_OPTIONS: "--use-system-ca" },
       })
+      // Échec de lancement : sans ce handler, 'close' peut ne jamais venir et
+      // .env.local resterait en staging (restaurer() est appelé juste après).
+      p.on("error", (e) => { console.error(`✗ Lancement de Playwright impossible : ${e.message}`); resolve(1) })
       p.on("close", resolve)
     })
     restaurer()
