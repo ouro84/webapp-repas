@@ -1205,6 +1205,73 @@ describe("alerte US-21 : écho reçu pendant une écriture en vol (#352)", () =>
     expect(alerte.result.current).toBe(false);
   });
 
+  // S2, changement de semaine : l'event différé d'une semaine quittée n'est
+  // jamais jugé (ni relecture de cette semaine, ni canal rouvert pour elle).
+  function canauxDe(semaine: string): number {
+    return realtime.rappels.filter(
+      (r) => (r.filtre as { filter?: string }).filter === `semaine=eq.${semaine}`
+    ).length;
+  }
+  async function ecritureEnVolAvecEventDistant(sync: Awaited<ReturnType<typeof chargerSync>>, semaine: string) {
+    poserSemaineAffichee(
+      semaine,
+      [jourPlanningSimple("lundi", { id: "vieux", nom: "Vieux" })],
+      "2026-06-15T09:00:00.000Z"
+    );
+    // Chaque semaine relue a un planning : `semaineActive()` n'est jamais null,
+    // la garde de traiterChangementPlanningDistant ne masque donc rien.
+    persistance.chargerPlanningDistant.mockImplementation(async (s: string) => ({
+      planning: planning(s),
+      updatedAt: "2026-06-15T09:30:00.000Z",
+    }));
+    const ecriture = differe<string>();
+    persistance.sauvegarderSlotsDistant.mockImplementationOnce(() => ecriture.promesse);
+    const enCours = sync.modifierSlotDistant(
+      semaine,
+      jourPlanningSimple("lundi", { id: "nouveau", nom: "Nouveau" })
+    );
+    evenement(semaine, T_DISTANT); // un autre membre, pendant l'écriture
+    return { ecriture, enCours };
+  }
+
+  it("event différé puis navigation vers une autre semaine pendant l'écriture : ni relecture ni canal pour la semaine quittée", async () => {
+    const { sync, semaine: A, alerte } = await monterPlanning();
+    const { semaineDecalee } = await import("@/lib/semaines");
+    const B = semaineDecalee(A, 1);
+    const { ecriture, enCours } = await ecritureEnVolAvecEventDistant(sync, A);
+    const canauxA = canauxDe(A);
+
+    await sync.naviguerVers(B);
+    await vi.waitFor(() => expect(canauxDe(B)).toBe(1));
+    const lecturesA = () =>
+      persistance.chargerPlanningDistant.mock.calls.filter(([s]) => s === A).length;
+    const lecturesAAvant = lecturesA();
+    ecriture.resoudre(T1);
+    await enCours;
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(lecturesA()).toBe(lecturesAAvant);
+    expect(canauxDe(A)).toBe(canauxA);
+    expect(alerte.result.current).toBe(false);
+  });
+
+  it("aller-retour A → B → A pendant l'écriture : l'event différé de la première visite de A n'est pas rejugé", async () => {
+    const { sync, semaine: A, alerte } = await monterPlanning();
+    const { semaineDecalee } = await import("@/lib/semaines");
+    const B = semaineDecalee(A, 1);
+    const { ecriture, enCours } = await ecritureEnVolAvecEventDistant(sync, A);
+
+    await sync.naviguerVers(B);
+    await sync.naviguerVers(A); // relit A : l'event différé est déjà pris en compte
+    const lectures = persistance.chargerPlanningDistant.mock.calls.length;
+    ecriture.resoudre(T1);
+    await enCours;
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(persistance.chargerPlanningDistant).toHaveBeenCalledTimes(lectures);
+    expect(alerte.result.current).toBe(false);
+  });
+
   // S3 : la régénération du cycle (sauvegarder_cycle) est un troisième écrivain
   // de la semaine abonnée (vue Cycle de /planning) : son écho n'alerte pas et le
   // cache de la semaine affichée reçoit les jours générés.
