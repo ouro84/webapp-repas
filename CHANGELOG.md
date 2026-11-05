@@ -22,7 +22,7 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ### Corrigé
 
-- Planning : une modification faite pendant qu’un autre membre du foyer modifie un autre repas n’est plus perdue (#355).
+- Planning : une modification faite pendant qu’un autre membre du foyer modifie un autre repas n’est plus perdue, y compris sur une semaine dont certains jours ou repas sont désactivés, et même si elle est faite pendant la relecture du changement de l’autre membre (#355).
 - Régénérer un cycle attend que les dernières modifications du planning soient enregistrées ; si elles ne peuvent pas l’être (connexion coupée), la régénération est refusée avec un message au lieu de les écraser (#355).
 - Planning : si le changement d’un autre membre du foyer n’a pas pu être relu, l’indicateur de synchronisation le signale, l’app réessaie seule, et la modification en attente n’est plus envoyée avant cette relecture, même après un rechargement de la page (#355).
 - Liste de courses : plusieurs modifications du planning faites coup sur coup par un autre membre du foyer apparaissent toutes dans la liste, et non plus seulement la première (#355).

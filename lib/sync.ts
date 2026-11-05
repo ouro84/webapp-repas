@@ -696,8 +696,12 @@ function patcherConfirme(
   ecrireConfirme({ ...confirme, jours: patch(confirme.jours) });
 }
 
-function estComplet(planning: Planning): boolean {
-  return ORDRE_JOURS.every((jour) => planning.jours.some((jp) => jp.jour === jour));
+// Vrai si tout jour présent dans `confirme` l'est aussi dans `local` (#355).
+// Une semaine PARTIELLE est normale (`dbPlanningToDomain` ne garde que les jours
+// ayant au moins un créneau : week-end « Aucun », semaine coupée par un cycle,
+// RG-44/46) ; seul un local qui aurait PERDU des jours rend le rejeu douteux.
+function joursConserves(confirme: Planning, local: Planning): boolean {
+  return confirme.jours.every((jc) => local.jours.some((jl) => jl.jour === jc.jour));
 }
 
 // Pousse le planning courant en base. Sérialisé (garde `pushEnCours`) pour
@@ -1264,7 +1268,10 @@ async function traiterChangementPlanningDistant(semaine: string): Promise<void> 
   // lire. Replanifié à la fin si des éditions restent à pousser.
   suspendrePush();
   try {
-    if (baseDuRejeu(semaine) !== null && (await relireEnRejouantEditionsLocales(semaine))) {
+    // Fusion ou remplacement décidés APRÈS la lecture, dès qu'un instantané
+    // confirmé de la semaine existe (#355), même sans édition en attente au
+    // départ : un clic pendant la lecture pose `dirty` pendant l'`await`.
+    if (confirmeDeLaSemaine(semaine) && (await relireEnRejouantEditionsLocales(semaine))) {
       return;
     }
     const sigAvant = signaturePlanning(planningLocal());
@@ -1291,16 +1298,25 @@ async function traiterChangementPlanningDistant(semaine: string): Promise<void> 
 
 // Le rejeu des éditions locales (#355) n'est sûr que si l'on sait ce qui a
 // changé localement : instantané confirmé de la MÊME semaine que le cache, et
-// plannings local et confirmé complets (7 jours). Sinon : chemin historique,
-// le distant fait foi.
+// aucun jour du confirmé perdu par le local (une semaine partielle, elle, est
+// normale : week-end « Aucun », créneau désactivé, cf. `joursConserves`).
+// Sinon : chemin historique, le distant fait foi.
 function baseDuRejeu(semaine: string): { confirme: Planning; local: Planning } | null {
   if (!estDirty()) return null;
   const local = planningLocal();
   const confirme = lireConfirme();
   if (local === null || confirme === null) return null;
   if (local.semaine !== semaine || confirme.semaine !== semaine) return null;
-  if (!estComplet(local) || !estComplet(confirme)) return null;
+  if (!joursConserves(confirme, local)) return null;
   return { confirme, local };
+}
+
+// Instantané confirmé de la semaine relue : la relecture lit alors le distant
+// SANS toucher au cache et décide fusion ou remplacement APRÈS la lecture
+// (#355). Décidé avant, une édition faite pendant la lecture (`dirty` posé
+// pendant l'`await`) était écrasée par le chemin historique.
+function confirmeDeLaSemaine(semaine: string): boolean {
+  return lireConfirme()?.semaine === semaine && planningLocal()?.semaine === semaine;
 }
 
 /**
@@ -1312,9 +1328,12 @@ function baseDuRejeu(semaine: string): { confirme: Planning; local: Planning } |
  * push est replanifié par l'appelant). L'instantané confirmé devient le
  * DISTANT, pas la fusion : seul un push réussi confirme les éditions rejouées.
  * Alerte ssi le distant diffère de l'instantané confirmé (vrai changement
- * distant). Renvoie `false` si le rejeu n'est plus applicable après la lecture
- * (semaine supprimée à distance, plus d'édition en attente…) : l'appelant
- * reprend alors le chemin historique.
+ * distant). Sans édition en attente APRÈS la lecture, le cache est simplement
+ * remplacé par le distant (alerte ssi il diffère du cache d'avant) : la
+ * décision suit la lecture, pour qu'un clic fait pendant l'`await` soit rejoué
+ * et non écrasé (#355). Renvoie `false` si ni le rejeu ni le remplacement ne
+ * sont applicables après la lecture (semaine supprimée à distance, local ayant
+ * perdu des jours…) : l'appelant reprend alors le chemin historique.
  */
 async function relireEnRejouantEditionsLocales(semaine: string): Promise<boolean> {
   let distant: Awaited<ReturnType<typeof chargerPlanningDistant>>;
@@ -1332,13 +1351,18 @@ async function relireEnRejouantEditionsLocales(semaine: string): Promise<boolean
   if (semaineActive() !== semaine) return true;
   // Relu APRÈS l'await : inclut les éditions faites pendant la lecture.
   const base = baseDuRejeu(semaine);
-  if (distant === null || base === null) return false;
+  if (distant === null) return false;
+  // Éditions en attente mais rejeu douteux (local ayant perdu des jours) :
+  // chemin historique, le distant fait foi.
+  if (base === null && estDirty()) return false;
+  // Aucune édition en attente : remplacement par le distant (une seule
+  // lecture), comparé au cache d'avant pour l'alerte, comme le chemin historique.
+  const reference = base?.confirme ?? planningLocal();
+  if (reference === null) return false;
 
-  const { planning, rejoues } = fusionnerEditionsLocales(
-    base.confirme,
-    base.local,
-    distant.planning
-  );
+  const { planning, rejoues } = base
+    ? fusionnerEditionsLocales(base.confirme, base.local, distant.planning)
+    : { planning: distant.planning, rejoues: [] };
   const gardeAvant = hydratationEnCours;
   hydratationEnCours = true;
   try {
@@ -1356,7 +1380,7 @@ async function relireEnRejouantEditionsLocales(semaine: string): Promise<boolean
   // à son succès : `rePushDemande` lui fait repousser la fusion derrière lui
   // (la fusion, écrite sous garde d'hydratation, ne passe pas par `planifierPush`).
   if (pushEnCours) rePushDemande = true;
-  if (signaturePlanning(distant.planning) !== signaturePlanning(base.confirme)) {
+  if (signaturePlanning(distant.planning) !== signaturePlanning(reference)) {
     declencherAlertePlanning();
   }
   return true;
