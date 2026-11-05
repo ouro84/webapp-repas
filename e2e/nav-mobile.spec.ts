@@ -2,6 +2,7 @@
 // Barre d'onglets mobile (#335) : les 4 destinations du quotidien, libellées,
 // en bas d'écran sous `md:` ; barre du haut réduite à la marque, l'aide et le
 // profil. Redirection d'un connecté de « / » vers /ce-soir.
+// Ordre des sections identique en haut (≥ md) et en bas (#351).
 
 import { test, expect } from "./fixtures";
 import { nettoyerEtatDistant } from "./helpers";

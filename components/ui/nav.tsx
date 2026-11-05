@@ -210,8 +210,9 @@ export function NavBar() {
 }
 
 // Barre d'onglets du bas (#335), sous `md:` uniquement. Ordre = celui de
-// sections(), partagé avec la barre du haut (#351). Montée en fin de <body> (cf. app/layout.tsx) : l'espaceur, dans le
-// flux, garde le pied de page et le bandeau cookies au-dessus de la barre.
+// sections(), partagé avec la barre du haut (#351).
+// Montée en fin de <body> (cf. app/layout.tsx) : l'espaceur, dans le flux,
+// garde le pied de page et le bandeau cookies au-dessus de la barre.
 // `data-onglets-bas` sert aussi de signal CSS pour remonter les toasts
 // (`--decalage-toasts`, app/globals.css).
 export function OngletsBas() {
