@@ -2,7 +2,7 @@ _La page « Mes recettes » réunit deux choses : un catalogue fourni d'office, 
 
 ## Deux origines, une seule liste
 
-Depuis le menu, ouvre **« Mes recettes »**. Tu y vois, mélangées dans une même liste :
+Ouvre l'onglet **« Recettes »** (en bas de l'écran sur téléphone, en haut sur ordinateur). Tu y vois, mélangées dans une même liste :
 
 - **Le catalogue par défaut** : des dizaines de recettes fournies avec l'app, partagées par tout le monde. C'est dans ce vivier que la génération pioche dès le départ.
 

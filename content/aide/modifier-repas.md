@@ -1,6 +1,6 @@
 _Le planning généré n'est qu'un point de départ. Chaque repas se retouche en un geste._
 
-Sur chaque carte de repas, sous le nom du plat, tu trouves plusieurs actions. Voici à quoi elles servent.
+Sur chaque carte de repas, sous le nom du plat, trois boutons sont toujours visibles : **↻** (changer), **« Sélectionner »** et **« Restes »**. Voici à quoi ils servent.
 
 ## Voir la recette
 
@@ -10,7 +10,7 @@ Si la recette fait partie de ton catalogue, un lien **« Modifier la recette »*
 
 ## Changer un repas au hasard
 
-Touche **« changer »** (l'icône qui tourne) : l'app remplace le plat par **une autre recette éligible tirée au sort**, en respectant tes réglages pour ce créneau.
+ouche **↻** (les deux flèches en rond) : l'app remplace le plat par **une autre recette éligible tirée au sort**, en respectant tes réglages pour ce créneau
 
 > ⚠️ S'il n'existe plus aucune recette éligible pour ce créneau, le repas affiche **« Pas de recette disponible »**. Choisis-en une manuellement (ci-dessous) ou assouplis tes réglages.
 

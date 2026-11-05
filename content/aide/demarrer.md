@@ -47,3 +47,19 @@ En haut : **« Régénérer »** relance toute la semaine, et les flèches **‹
 ## 5. Ta liste de courses
 
 Touche **« Liste de courses → »**. Tous les ingrédients de la semaine y sont **agrégés et rangés par rayon**. Coche au fur et à mesure : les articles cochés glissent en bas, les rayons terminés aussi.
+
+## 6. Se repérer dans l’app
+
+Sur téléphone, la barre en bas de l'écran mène aux quatre pages du quotidien :
+
+-  **Ce soir** : le prochain repas à cuisiner 
+
+-  **Planning **: les repas de la semaine 
+
+- **Courses** : ta liste de courses 
+
+- **Recettes** : ton catalogue.
+
+En haut, le **?** ouvre cette aide et ton avatar ouvre ton profil. Sur ordinateur, tout est dans la barre du haut.
+
+

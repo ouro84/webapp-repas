@@ -14,7 +14,7 @@ Tu peux naviguer de **12 semaines en arrière** à **6 semaines en avant**. Au-d
 
 C'est le point important : **chaque semaine a son propre planning**.
 
-- Une semaine que tu n'as jamais générée s'affiche **vide** (« Aucun planning pour cette semaine — lance la génération ! ») : tu peux la générer comme la semaine en cours.
+- Une semaine que tu n'as jamais générée s'affiche **vide** (« Aucun planning pour cette semaine. », avec un aperçu et le bouton **« Générer mon planning »**) : tu peux la générer comme la semaine en cours.
 
 - Tes « restes » et tes modifications restent **attachés à leur semaine** — naviguer ne les mélange pas. (Les **coches de courses**, elles, suivent le **cycle de courses**, pas la semaine — voir _Ma liste suit mon cycle de courses_.)
 

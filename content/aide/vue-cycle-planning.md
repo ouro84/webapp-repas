@@ -6,7 +6,7 @@ En haut de la page **Planning**, un sélecteur **« Semaine | Cycle »** change 
 
 - **Semaine** (par défaut) : la vue habituelle, lundi → dimanche. C'est ici qu'on **génère** et qu'on **modifie** les repas (changer, choisir, personnes, restes).
 
-- **Cycle** : le planning **calé sur ta fenêtre de courses** (mêmes jours et même longueur que ta liste), avec son propre navigateur **‹ / ›** pour passer au cycle précédent ou suivant, un bouton **« Générer mon cycle »**, et un lien direct vers ta liste de courses.
+- **Cycle** : le planning **calé sur ta fenêtre de courses** (mêmes jours et même longueur que ta liste), avec son propre navigateur **‹ / ›** pour passer au cycle précédent ou suivant, un bouton **« Générer mon cycle »**, et un lien direct vers ta liste de courses. Si le cycle contient déjà des repas, l'app te demande de confirmer : les repas sont remplacés et la liste est décochée pour tout le foyer.
 
 > 💡 La vue **Cycle** reste en **lecture seule** pour modifier un repas (changer, choisir, personnes, restes) : repasse en vue **Semaine** pour ça. En revanche, tu peux **générer** tous les repas de la fenêtre directement depuis cette vue avec **« Générer mon cycle »** — plus besoin d'aller sur la liste de courses pour ça (le bouton y reste disponible aussi).
 

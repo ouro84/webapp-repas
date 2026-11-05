@@ -30,9 +30,9 @@ Certaines virées couvrent plus de 7 jours (avant un week-end prolongé, des vac
 
 ## Générer tous les repas du cycle d'un clic
 
-Depuis la liste de courses, le bouton **« Générer mon cycle »** remplit d'un coup **tous les repas de la fenêtre affichée** — même quand elle est à cheval sur deux semaines. Plus besoin de passer par le planning et de générer semaine par semaine : un clic, et ta liste se remplit sur la bonne fenêtre.
+Quand la liste d'un cycle est vide, le bouton **« Générer mon cycle »** remplit d'un coup **tous les repas de la fenêtre affichée**, même quand elle est à cheval sur deux semaines. Un clic, et ta liste se remplit sur la bonne fenêtre.
 
-- Depuis un cycle **vide**, c'est le moyen le plus rapide de démarrer.
+- Une fois la liste remplie, le bouton n'est plus sur la liste de courses (un clic de travers effaçait toute la liste). Pour régénérer, passe par la **vue Cycle** du planning : l'app te demande de confirmer avant de remplacer les repas.
 
 - Les repas déjà planifiés **en dehors** du cycle (autres jours des semaines concernées) ne sont **pas** touchés.
 
