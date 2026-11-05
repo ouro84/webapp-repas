@@ -544,7 +544,11 @@ export function VuePlanningCycle({
     };
   }, [chargerCycle, lienInitial]);
 
-  if (chargement || ancre === null) {
+  // « Chargement… » seul uniquement au premier chargement. Aux rechargements
+  // (navigation entre cycles, génération), l'en-tête / état vide et le navigateur
+  // restent montés (comme la semaine, #352) : pas de saut de mise en page, bascule
+  // disponible, focus conservé sur la flèche cliquée ; seul le corps est estompé.
+  if (ancre === null) {
     return (
       <div className="flex-1 p-4 md:p-8">
         <p role="status" className="animate-pulse py-12 text-center text-brand-700/85">
@@ -566,7 +570,13 @@ export function VuePlanningCycle({
   });
   const aDesRepas = cellules.some((c) => c.jp !== null);
 
-  // Navigateur de période (#352, partagé avec la semaine et /courses).
+  // Navigateur de période (#352, partagé avec la semaine et /courses). Non
+  // désactivé pendant un chargement (un bouton désactivé perdrait le focus) :
+  // les flèches sont ignorées tant qu'un chargement est en cours.
+  const naviguer = (delta: number) => {
+    if (chargement) return;
+    void file.vider().then(() => chargerCycle(cycleDecale(ancre, delta)));
+  };
   const navigateur = (
     <NavigateurPeriode
       unite="cycle"
@@ -575,8 +585,8 @@ export function VuePlanningCycle({
       courante={offsetCycle === 0}
       peutReculer={offsetCycle > -CYCLES_PASSES}
       peutAvancer={offsetCycle < CYCLES_FUTURS}
-      onPrecedente={() => void file.vider().then(() => chargerCycle(cycleDecale(ancre, -1)))}
-      onSuivante={() => void file.vider().then(() => chargerCycle(cycleDecale(ancre, 1)))}
+      onPrecedente={() => naviguer(-1)}
+      onSuivante={() => naviguer(1)}
     />
   );
   const generationEnCours = enGeneration || verrouAffiche;
@@ -585,18 +595,23 @@ export function VuePlanningCycle({
     <>
       {!aDesRepas ? (
         // Cycle vide → génération directe, sans confirmation (#334).
-        <EtatVidePlanning
-          titre="Mon planning du cycle"
-          vue={vue}
-          onChangerVue={onChangerVue}
-          navigateur={navigateur}
-          enAttente={generationEnCours}
-          message="Aucun repas planifié sur ce cycle."
-          libelleBouton="Générer mon cycle"
-          libelleAttente="Génération…"
-          onGenerer={() => void genererMonCycle()}
-          generationEnCours={generationEnCours}
-        />
+        <div
+          aria-busy={chargement}
+          className={`flex flex-1 flex-col transition-opacity duration-200 ${chargement ? "opacity-50" : ""}`}
+        >
+          <EtatVidePlanning
+            titre="Mon planning du cycle"
+            vue={vue}
+            onChangerVue={onChangerVue}
+            navigateur={navigateur}
+            enAttente={generationEnCours}
+            message="Aucun repas planifié sur ce cycle."
+            libelleBouton="Générer mon cycle"
+            libelleAttente="Génération…"
+            onGenerer={() => void genererMonCycle()}
+            generationEnCours={generationEnCours}
+          />
+        </div>
       ) : (
         <div className="flex-1 p-4 md:p-8">
           <EntetePlanning
@@ -612,7 +627,10 @@ export function VuePlanningCycle({
             hrefCourses={`/courses?ancre=${ancre}`}
             navigateur={navigateur}
           />
-          <ul className="space-y-4">
+          <ul
+            aria-busy={chargement}
+            className={`space-y-4 transition-opacity duration-200 ${chargement ? "opacity-50" : ""}`}
+          >
             {cellules.map(({ dateISO, jp }) => (
               <li
                 key={dateISO}

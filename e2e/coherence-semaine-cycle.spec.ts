@@ -99,3 +99,44 @@ test("le choix de vue Cycle survit au reload", async ({ page }) => {
   await page.reload();
   await expect(page.getByRole("button", { name: "Cycle", pressed: true })).toBeVisible();
 });
+
+// #352 : comme la semaine, la vue Cycle garde son en-tête, sa bascule et son
+// navigateur montés pendant qu'elle charge un autre cycle (« Chargement… » seul
+// au tout premier chargement) : pas de saut de mise en page, bascule disponible,
+// focus clavier conservé sur la flèche cliquée.
+test("naviguer entre les cycles garde l'en-tête et le focus sur la flèche pendant le chargement (#352)", async ({
+  page,
+}) => {
+  await page.goto("/planning");
+  await page.getByRole("button", { name: "Cycle" }).click();
+  await page.getByRole("button", { name: "Générer mon cycle" }).click();
+  await expect(page.locator("main li").first()).toBeVisible({ timeout: 20_000 });
+
+  // Première lecture de chaque chargement de cycle : retardée pour rendre la
+  // fenêtre de chargement observable.
+  await page.route("**/rest/v1/cycle_courses*", async (route) => {
+    await new Promise((r) => setTimeout(r, 1_500));
+    await route.continue();
+  });
+
+  const navigateur = page.getByRole("group", { name: "Naviguer entre les cycles" });
+  const suivant = page.getByRole("button", { name: "Cycle suivant" });
+  const libelleAvant = (await navigateur.innerText()).trim();
+  await suivant.click();
+
+  // Pendant le chargement (< 1,5 s) : tout reste monté, le focus n'a pas bougé.
+  // Lectures instantanées (pas d'assertion qui réessaie : elle attendrait la fin
+  // du chargement et masquerait un démontage transitoire).
+  await page.waitForTimeout(800);
+  expect(await page.getByRole("heading", { name: "Mon planning du cycle" }).isVisible()).toBe(true);
+  expect(await page.getByRole("group", { name: "Vue du planning" }).isVisible()).toBe(true);
+  expect(await navigateur.isVisible()).toBe(true);
+  expect(await page.getByText("Chargement…").count()).toBe(0);
+  expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe(
+    "Cycle suivant"
+  );
+
+  // Le chargement aboutit : le navigateur annonce un autre cycle.
+  await expect(navigateur).not.toHaveText(libelleAvant, { timeout: 10_000 });
+  await expect(page.getByRole("group", { name: "Vue du planning" })).toBeVisible();
+});
