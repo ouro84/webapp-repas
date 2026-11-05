@@ -26,6 +26,7 @@ export function SlotRepas({
   onVoir,
   restes,
   onChangerRestes,
+  delaiNomMs,
 }: {
   libelle: string;
   jourLabel: string;
@@ -38,6 +39,11 @@ export function SlotRepas({
   onVoir: () => void;
   restes: boolean;
   onChangerRestes: (valeur: boolean) => void;
+  /**
+   * Chorégraphie de génération (#337) : retard du fondu du nom de plat, posé
+   * seulement pendant la chorégraphie (jamais sur un remplacement de slot).
+   */
+  delaiNomMs?: number;
 }) {
   const slotNom = `${libelle.toLowerCase()} de ${jourLabel.toLowerCase()}`;
   // Spin one-shot de l'icône « changer » (#69, P17) : incrémenté au clic →
@@ -119,6 +125,13 @@ export function SlotRepas({
         type="button"
         onClick={onVoir}
         aria-label={`Voir la recette : ${recette.nom}`}
+        // `backwards` : le nom reste invisible pendant son retard (le token
+        // crossfade n'a pas de remplissage).
+        style={
+          delaiNomMs !== undefined
+            ? { animationDelay: `${delaiNomMs}ms`, animationFillMode: "backwards" }
+            : undefined
+        }
         className="mt-1 block w-full text-left text-sm font-medium text-brand-900 underline-offset-2 transition-colors hover:text-brand-700 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 motion-safe:animate-crossfade"
       >
         {recette.nom}

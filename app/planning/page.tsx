@@ -18,7 +18,8 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { flushSync } from "react-dom";
 import { toast } from "sonner";
 import {
   Carrot,
@@ -65,6 +66,14 @@ import {
 import { ancreDeSemaine } from "@/lib/cycles";
 import { chargerJourCoursesFoyer } from "@/lib/foyer";
 import { parseApiError } from "@/lib/errors";
+import {
+  FILET_ATTERRISSAGE_MS,
+  SEUIL_ATTENTE_MS,
+  delaiAtterrissage,
+  delaiJour,
+  delaiNom,
+  jourAtterrissage,
+} from "@/lib/choregraphie-generation";
 
 // Plage de navigation de l'historique (#5) : 12 semaines passées → +6 futures.
 const SEMAINES_PASSEES = 12;
@@ -74,6 +83,9 @@ import { FicheRecette } from "@/components/planning/fiche-recette";
 import { VuePlanningCycle } from "@/components/planning/vue-cycle";
 import { SlotRepas } from "@/components/planning/slot-repas";
 import { ConfirmationModale } from "@/components/ui/confirmation";
+import { ApercuPlanning } from "@/components/ui/apercu-planning";
+import { Logo } from "@/components/ui/logo";
+import { PulsationAtterrissage } from "@/components/ui/pulsation-atterrissage";
 import type { Jour, JourPlanning, Planning, Recette } from "@/types";
 
 type TypeRepas = "dejeuner" | "diner";
@@ -269,6 +281,32 @@ function annulerDerniereAction(): boolean {
   return restaure;
 }
 
+// Arrivée du premier planning (#337) : View Transition état vide → grille,
+// fondu de la racine ≈ 220 ms (bloc (3) de globals.css, activé par
+// `data-vt="generation"` pour ne pas toucher aux règles de /courses). Garde JS
+// reduced-motion (même motif que avecTransition de /courses) : sans API ou
+// sous reduced motion, mise à jour directe. `flushSync` : le callback ne
+// capture que le rendu synchrone. `ready` rejette (AbortError) si la
+// transition est sautée : toujours catché.
+function avecTransitionGeneration(majEtat: () => void): ViewTransition | null {
+  const reduireAnimations = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (!document.startViewTransition || reduireAnimations) {
+    majEtat();
+    return null;
+  }
+  const racine = document.documentElement;
+  racine.dataset.vt = "generation";
+  const transition = document.startViewTransition(() => {
+    flushSync(majEtat);
+  });
+  const nettoyer = () => {
+    delete racine.dataset.vt;
+  };
+  transition.finished.then(nettoyer, nettoyer);
+  transition.ready.catch(() => {});
+  return transition;
+}
+
 // ============================================================================
 // Composant page
 // ============================================================================
@@ -291,6 +329,37 @@ function ContenuPlanning() {
   // bumpé sur un remplacement de slot / changement de personnes (sinon la
   // grille entière re-animerait à chaque petite édition — sautillant).
   const [genNonce, setGenNonce] = useState(0);
+  // Chorégraphie de génération (#337, lib/choregraphie-generation.ts).
+  // `attenteVisible` : posé seulement si la réponse dépasse SEUIL_ATTENTE_MS
+  // (libellé « Je compose ta semaine… », respiration de l'aperçu, grille
+  // existante en semi-transparence). `choregraphie` : de l'arrivée jusqu'au
+  // toast ; porte le jour d'atterrissage (aujourd'hui, ou null). Comme
+  // genNonce, n'est posée QUE par genererNouveauPlanning.
+  const [attenteVisible, setAttenteVisible] = useState(false);
+  const [choregraphie, setChoregraphie] = useState<{ jour: Jour | null } | null>(null);
+  // Toasts de la génération, différés jusqu'à la fin de l'atterrissage.
+  const toastsEnAttente = useRef<(() => void) | null>(null);
+  const minuteurChoregraphie = useRef<number | null>(null);
+  function terminerChoregraphie(): void {
+    if (minuteurChoregraphie.current !== null) {
+      window.clearTimeout(minuteurChoregraphie.current);
+      minuteurChoregraphie.current = null;
+    }
+    const afficher = toastsEnAttente.current;
+    toastsEnAttente.current = null;
+    setChoregraphie(null);
+    afficher?.();
+  }
+  // Démontage en pleine chorégraphie : les toasts (dont l'undo) partent quand même.
+  useEffect(
+    () => () => {
+      if (minuteurChoregraphie.current !== null) window.clearTimeout(minuteurChoregraphie.current);
+      const afficher = toastsEnAttente.current;
+      toastsEnAttente.current = null;
+      afficher?.();
+    },
+    []
+  );
   // Slot dont le dernier remplacement a échoué (RG-04) : "jour-typeRepas".
   const [slotIndisponible, setSlotIndisponible] = useState<string | null>(null);
   // Slot en cours de sélection manuelle (US-06) : le sélecteur est monté
@@ -528,8 +597,15 @@ function ContenuPlanning() {
     if (!force && confirmerSiPassee(() => void genererNouveauPlanning(true))) {
       return;
     }
+    // Une chorégraphie précédente encore en cours : on la solde (toasts).
+    if (toastsEnAttente.current !== null || minuteurChoregraphie.current !== null) {
+      terminerChoregraphie();
+    }
     setEnGeneration(true);
     setErreurGeneration(null);
+    // Phase d'attente sautée si la réponse arrive avant le seuil (#337) ;
+    // aucune latence artificielle.
+    const minuteurAttente = window.setTimeout(() => setAttenteVisible(true), SEUIL_ATTENTE_MS);
     try {
       // Génère pour la semaine affichée (US-14) ; le serveur valide la plage.
       const reponse = await fetch("/api/planning/generer", {
@@ -557,33 +633,75 @@ function ContenuPlanning() {
       // génération : rien à annuler (capturerSnapshot est alors un no-op).
       const estRegeneration = storePlanning.lire() !== null;
       capturerSnapshotAnnulation();
-      // Génération complète : réinitialise aussi les coches de la liste
-      // de courses (RG-13) — règle centralisée dans lib/stockage.ts.
-      sauvegarderPlanningComplet(nouveau);
-      setSlotIndisponible(null);
-      // Rejoue le stagger d'apparition des cartes (#69) : nouvelle key de grille.
-      setGenNonce((n) => n + 1);
-      // Toast contextualisé par la semaine générée (US-11, bonus).
+      // Toast contextualisé par la semaine générée (US-11, bonus) + préférences
+      // souples non honorées (vivier insuffisant) — RG-26 (végé), RG-27 (≥1
+      // légume/jour), RG-28 (saison) : on informe sans bloquer. La construction
+      // des messages (accord singulier/pluriel) est extraite et testée à part
+      // (#168, lib/avertissements-generation.ts). Affichés APRÈS l'atterrissage.
       const libelleSemaine = formaterSemaine(nouveau.semaine);
+      const afficherToasts = () => {
+        if (estRegeneration) {
+          toast(`Planning régénéré — ${libelleSemaine}`, {
+            id: ID_TOAST_ANNULATION,
+            action: { label: "Annuler", onClick: annulerDerniereAction },
+            duration: 5000,
+          });
+        } else {
+          toast.success(`Planning généré — ${libelleSemaine}`);
+        }
+        for (const message of messagesAvertissementGeneration({
+          vegeNonHonore,
+          mixNonHonore,
+          saisonNonHonore,
+        })) {
+          toast.warning(message);
+        }
+      };
+      // Chorégraphie (#337) : rien sous reduced motion (changement d'état
+      // instantané, toasts immédiats) ; sinon atterrissage sur aujourd'hui si
+      // la semaine générée est la courante.
+      const reduireAnimations = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      const nbJours = nouveau.jours.length;
+      const jour = reduireAnimations
+        ? null
+        : jourAtterrissage(nouveau.semaine, nouveau.jours.map((j) => j.jour), new Date());
+      window.clearTimeout(minuteurAttente);
+      const appliquer = () => {
+        // Génération complète : réinitialise aussi les coches de la liste
+        // de courses (RG-13) — règle centralisée dans lib/stockage.ts.
+        sauvegarderPlanningComplet(nouveau);
+        setSlotIndisponible(null);
+        // Rejoue le stagger d'apparition des cartes (#69) : nouvelle key de grille.
+        setGenNonce((n) => n + 1);
+        setAttenteVisible(false);
+        setChoregraphie(reduireAnimations ? null : { jour });
+      };
       if (estRegeneration) {
-        toast(`Planning régénéré — ${libelleSemaine}`, {
-          id: ID_TOAST_ANNULATION,
-          action: { label: "Annuler", onClick: annulerDerniereAction },
-          duration: 5000,
-        });
+        appliquer();
       } else {
-        toast.success(`Planning généré — ${libelleSemaine}`);
+        // Première génération : état vide → grille en View Transition. On
+        // attend la fin du callback pour que l'instantané « avant » garde le
+        // bouton en attente (le finally ci-dessous le réactive).
+        await avecTransitionGeneration(appliquer)?.updateCallbackDone.catch((erreur: unknown) => {
+          console.error("Transition de génération interrompue.", erreur);
+        });
       }
-      // Préférences souples non honorées (vivier insuffisant) — RG-26 (végé),
-      // RG-27 (≥1 légume/jour), RG-28 (saison) : on informe sans bloquer. La
-      // construction des messages (accord singulier/pluriel) est extraite et
-      // testée à part (#168, lib/avertissements-generation.ts).
-      for (const message of messagesAvertissementGeneration({
-        vegeNonHonore,
-        mixNonHonore,
-        saisonNonHonore,
-      })) {
-        toast.warning(message);
+      if (jour !== null) {
+        // Toasts à la fin de l'atterrissage (onFin), filet si animationend
+        // ne vient pas (onglet masqué).
+        toastsEnAttente.current = afficherToasts;
+        minuteurChoregraphie.current = window.setTimeout(
+          terminerChoregraphie,
+          delaiAtterrissage(nbJours) + FILET_ATTERRISSAGE_MS
+        );
+      } else {
+        afficherToasts();
+        if (!reduireAnimations) {
+          minuteurChoregraphie.current = window.setTimeout(
+            terminerChoregraphie,
+            delaiAtterrissage(nbJours)
+          );
+        }
       }
     } catch (erreur) {
       console.error("Génération du planning échouée.", erreur);
@@ -591,6 +709,8 @@ function ContenuPlanning() {
         "Impossible de générer le planning. Vérifie ta connexion et réessaie."
       );
     } finally {
+      window.clearTimeout(minuteurAttente);
+      setAttenteVisible(false);
       setEnGeneration(false);
     }
   }
@@ -749,7 +869,7 @@ function ContenuPlanning() {
           aria-busy={enGeneration}
           className="rounded-full bg-primary px-6 py-3 font-medium text-white transition hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100 disabled:opacity-60"
         >
-          {enGeneration ? "Génération…" : "Réessayer"}
+          {attenteVisible ? "Je compose ta semaine…" : "Réessayer"}
         </button>
       </main>
     );
@@ -784,41 +904,51 @@ function ContenuPlanning() {
   }
 
   // --- État vide (RG-09) : semaine affichée sans planning (#5) ---
+  // Reprend le hero de la vitrine (#337) : logo, baseline, aperçu (qui
+  // « respire » pendant la génération), avec le navigateur de semaine et la
+  // bascule Semaine | Cycle.
   if (planning === null) {
     return (
       <main id="contenu" className="flex flex-1 flex-col items-center justify-center gap-8 p-8">
-        <div className="text-center">
-          <h1 className="font-display text-2xl font-semibold text-brand-900">
+        <div className="flex flex-col items-center text-center">
+          <Logo className="mb-5 size-20 text-brand-600" />
+          <h1 className="font-display text-3xl font-semibold text-brand-900">
             Mon planning de la semaine
           </h1>
-          <p className="mt-2 text-brand-700/85">
-            Aucun planning pour cette semaine — lance la génération !
+          <p className="mt-3 max-w-sm text-brand-700/85">
+            La question du soir a enfin sa réponse
           </p>
         </div>
-        {/* Bascule Semaine | Cycle (#260) : accessible même sans planning de
-            semaine, pour consulter le cycle. */}
-        <BasculeVue vue={vue} onChange={setVue} />
-        {/* Navigation entre semaines (#5) — après hydratation (date client). */}
-        {navPret && (
-          <NavigateurSemaine
-            semaine={semaineAffichee!}
-            offset={offsetAffiche}
-            peutReculer={peutReculer}
-            peutAvancer={peutAvancer}
-            onPrecedente={() => allerSemaine(-1)}
-            onSuivante={() => allerSemaine(1)}
+        <div className="flex flex-col items-center gap-3">
+          {/* Bascule Semaine | Cycle (#260) : accessible même sans planning de
+              semaine, pour consulter le cycle. */}
+          <BasculeVue vue={vue} onChange={setVue} />
+          {/* Navigation entre semaines (#5) — après hydratation (date client). */}
+          {navPret && (
+            <NavigateurSemaine
+              semaine={semaineAffichee!}
+              offset={offsetAffiche}
+              peutReculer={peutReculer}
+              peutAvancer={peutAvancer}
+              onPrecedente={() => allerSemaine(-1)}
+              onSuivante={() => allerSemaine(1)}
+              disabled={enGeneration}
+            />
+          )}
+        </div>
+        <ApercuPlanning enAttente={attenteVisible} />
+        <div className="flex flex-col items-center gap-4">
+          <p className="text-brand-700/85">Aucun planning pour cette semaine.</p>
+          <button
+            type="button"
+            onClick={() => void genererNouveauPlanning()}
             disabled={enGeneration}
-          />
-        )}
-        <button
-          type="button"
-          onClick={() => void genererNouveauPlanning()}
-          disabled={enGeneration}
-          aria-busy={enGeneration}
-          className="rounded-full bg-primary px-8 py-4 text-lg font-medium text-white transition hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100 disabled:opacity-60"
-        >
-          {enGeneration ? "Génération…" : "Générer mon planning"}
-        </button>
+            aria-busy={enGeneration}
+            className="rounded-full bg-primary px-8 py-4 text-lg font-semibold text-white shadow-sm transition hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100 disabled:opacity-60"
+          >
+            {attenteVisible ? "Je compose ta semaine…" : "Générer mon planning"}
+          </button>
+        </div>
       </main>
     );
   }
@@ -881,7 +1011,7 @@ function ContenuPlanning() {
             aria-busy={enGeneration}
             className="relative flex-1 rounded-full border border-brand-200 px-4 py-2 text-center text-sm font-medium text-brand-700 transition after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100 disabled:opacity-60 sm:flex-none"
           >
-            {enGeneration ? "Génération…" : "Régénérer"}
+            {attenteVisible ? "Je compose ta semaine…" : "Régénérer"}
           </button>
           <Link
             href={ancreCourses ? `/courses?ancre=${ancreCourses}` : "/courses"}
@@ -935,24 +1065,38 @@ function ContenuPlanning() {
       {/* Vue mobile + tablette (RG-08, #64) : liste verticale jusqu'à lg.
           La grille 7 colonnes ne s'active qu'à ≥ 1024px, où chaque cellule
           reste lisible (à md=768 elle tombait à ~120px, badges compressés). */}
-      <ul key={`grille-mobile-${genNonce}`} className="space-y-4 lg:hidden">
+      {/* Régénération en attente (#337) : grille existante en semi-transparence,
+          toujours interactive. Stagger (#69, #337) : 60 ms/jour, `backwards`
+          (cf. token) garde la carte invisible pendant son délai ; motion-safe :
+          rien si l'utilisateur a réduit les animations. */}
+      <ul
+        key={`grille-mobile-${genNonce}`}
+        className={`space-y-4 transition-opacity duration-200 lg:hidden ${attenteVisible ? "opacity-50" : ""}`}
+      >
         {planningAffiche.jours.map((jp, i) => (
           <li
             key={jp.jour}
-            // Stagger d'apparition (#69) : 40 ms/carte. `backwards` (cf. token)
-            // garde la carte invisible pendant son délai. motion-safe : rien si
-            // l'utilisateur a réduit les animations.
-            style={{ animationDelay: `${i * 40}ms` }}
-            className="rounded-lg border border-brand-100 bg-surface p-4 motion-safe:animate-apparition"
+            style={{ animationDelay: `${delaiJour(i)}ms` }}
+            className="relative rounded-lg border border-brand-100 bg-surface p-4 motion-safe:animate-entree-jour"
           >
-            <h2 className="mb-3 font-semibold text-brand-900">
+            {/* Atterrissage (#337) : carte d'aujourd'hui, une fois le dernier
+                nom de plat posé ; les toasts partent à sa fin. Le contenu est
+                `relative` pour passer au-dessus du lavis. */}
+            {choregraphie?.jour === jp.jour && (
+              <PulsationAtterrissage
+                key={`atterrissage-${genNonce}`}
+                delaiMs={delaiAtterrissage(planningAffiche.jours.length)}
+                onFin={terminerChoregraphie}
+              />
+            )}
+            <h2 className="relative mb-3 font-semibold text-brand-900">
               {LIBELLES_JOURS[jp.jour].complet}
             </h2>
             {/* Déjeuner + dîner côte à côte dès sm (#3 : 14 repas/semaine —
                 chaque jour tient sur une rangée), empilés sous sm (petits
                 écrans). Au-delà de lg, c'est la grille 7 colonnes qui prend
                 le relais (ul masquée). */}
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="relative grid gap-3 sm:grid-cols-2">
               {slotsDuJour(jp).map((slot) => (
                 <SlotRepas
                   key={slot.typeRepas}
@@ -981,6 +1125,7 @@ function ContenuPlanning() {
                   onChangerRestes={(valeur) =>
                     changerRestes(jp.jour, slot.typeRepas, valeur)
                   }
+                  delaiNomMs={choregraphie ? delaiNom(i) : undefined}
                 />
               ))}
             </div>
@@ -991,15 +1136,25 @@ function ContenuPlanning() {
       {/* Vue desktop (RG-07, #64) : grille 7 colonnes à partir de lg (≥ 1024px) */}
       <div
         key={`grille-desktop-${genNonce}`}
-        className="hidden lg:grid lg:grid-cols-7 lg:gap-3"
+        className={`hidden transition-opacity duration-200 lg:grid lg:grid-cols-7 lg:gap-3 ${attenteVisible ? "opacity-50" : ""}`}
       >
         {planningAffiche.jours.map((jp, i) => (
           <section
             key={jp.jour}
-            style={{ animationDelay: `${i * 40}ms` }}
-            className="flex flex-col gap-3 motion-safe:animate-apparition"
+            style={{ animationDelay: `${delaiJour(i)}ms` }}
+            className="relative flex flex-col gap-3 motion-safe:animate-entree-jour"
           >
-            <h2 className="text-center text-sm font-semibold uppercase tracking-wide text-brand-700/85">
+            {/* Atterrissage (#337) : halo derrière la colonne d'aujourd'hui
+                (les cartes sont `relative`, au-dessus du lavis). */}
+            {choregraphie?.jour === jp.jour && (
+              <PulsationAtterrissage
+                key={`atterrissage-${genNonce}`}
+                delaiMs={delaiAtterrissage(planningAffiche.jours.length)}
+                onFin={terminerChoregraphie}
+                className="-inset-2 rounded-xl"
+              />
+            )}
+            <h2 className="relative text-center text-sm font-semibold uppercase tracking-wide text-brand-700/85">
               {LIBELLES_JOURS[jp.jour].abrege}
             </h2>
             {slotsDuJour(jp).map((slot) => (
@@ -1030,6 +1185,7 @@ function ContenuPlanning() {
                 onChangerRestes={(valeur) =>
                   changerRestes(jp.jour, slot.typeRepas, valeur)
                 }
+                delaiNomMs={choregraphie ? delaiNom(i) : undefined}
               />
             ))}
           </section>

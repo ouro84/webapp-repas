@@ -9,6 +9,7 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ### Modifié
 
+- Planning vide : la page reprend l’accueil de l’app (logo, phrase d’accroche, aperçu de planning) en gardant le choix de la semaine et la bascule Semaine/Cycle. Pendant la génération, le bouton indique « Je compose ta semaine… » et l’aperçu respire doucement (la semaine existante s’estompe quand on régénère). Les jours arrivent ensuite un par un, puis la carte d’aujourd’hui s’éclaire avant la notification. Rien ne bouge si les animations sont réduites sur l’appareil (#337).
 - Page « Ce soir » : la recette s’affiche dans la page, en grand, lisible téléphone posé sur le plan de travail, et l’écran ne se met plus en veille pendant la lecture. Les ingrédients se cochent au fur et à mesure qu’on les sort du placard (sur ce téléphone seulement, remis à zéro au repas suivant). Le bas de page annonce le repas suivant, et quand rien n’est prévu, un bouton mène au planning (#336).
 - Navigation mobile : les sections passent dans une barre d’onglets en bas d’écran, avec leur libellé (Ce soir, Planning, Courses, Recettes). Le haut d’écran affiche le nom de l’app, l’aide et le profil. Sur ordinateur, rien ne change (#335).
 - Une fois connecté, l’adresse de l’app et le logo ouvrent directement le prochain repas (#335).

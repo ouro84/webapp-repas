@@ -32,6 +32,7 @@ import {
 } from "react";
 import { useSearchParams } from "next/navigation";
 import { flushSync } from "react-dom";
+import { PulsationAtterrissage } from "@/components/ui/pulsation-atterrissage";
 import { toast } from "sonner";
 import {
   Check,
@@ -147,33 +148,8 @@ function avecTransition(majEtat: () => void): ViewTransition | null {
   });
 }
 
-// Pulsation d'atterrissage (RG-11 / RG-39) — « il est ICI maintenant ».
-//
-// Les premiers utilisateurs croyaient qu'un article coché avait DISPARU : en
-// magasin on regarde son doigt, pas le trajet. Le moment focal n'est donc pas
-// le départ mais l'ARRIVÉE. Trois contraintes ont dicté ce composant :
-//   - un calque de couleur STATIQUE dont on anime l'opacité, jamais un
-//     `background-color` animé (contrat transform/opacity-only, globals.css) ;
-//   - un <div>, JAMAIS un <span> : e2e/courses.spec.ts cible
-//     `li.last().locator("span").first()` pour vérifier le rayé ;
-//   - la couleur passe par le token sémantique `--color-atterrissage`, qui a
-//     sa propre valeur en sombre (brand-50 y serait quasi invisible sur
-//     surface) — le projet n'a aucune utilitaire `dark:`, qui serait branchée
-//     sur prefers-color-scheme donc fausse face au sélecteur de thème manuel.
-// Pas de `motion-safe:` : sous reduced motion aucune transition n'est
-// démarrée, donc pas de `finished`, donc ce composant n'est jamais monté. Un
-// `motion-safe:` en ferait au contraire un bandeau vert PERMANENT.
-// Le parent doit être `relative`, et le contenu en flux qui suit aussi (un
-// enfant absolute peint au-dessus du contenu resté dans le flux).
-function PulsationAtterrissage({ onFin }: { onFin: () => void }) {
-  return (
-    <div
-      aria-hidden="true"
-      onAnimationEnd={onFin}
-      className="pointer-events-none absolute inset-0 rounded-lg bg-atterrissage animate-atterrissage"
-    />
-  );
-}
+// Pulsation d'atterrissage (RG-11 / RG-39) : components/ui/pulsation-atterrissage.tsx
+// (partagée avec la chorégraphie de génération du planning, #337).
 
 // ============================================================================
 // Navigateur de cycle (#257, M1) — extrait pour être rendu à la fois dans
