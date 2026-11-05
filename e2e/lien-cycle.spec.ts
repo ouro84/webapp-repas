@@ -8,18 +8,19 @@ import type { Page } from "@playwright/test";
 import { test, expect, attacherGardeCrash } from "./fixtures";
 import { E2E_EMAIL, reinitialiserJourCoursesDistant } from "./helpers";
 import { remplirLogin } from "./oauth";
-import { ancreParDefaut, cycleDecale, joursDuCycle, libelleCycle } from "../lib/cycles";
+import { ancreParDefaut, cycleDecale, joursDuCycle, datesCycle } from "../lib/cycles";
 
 const JOUR_COURSES = 1; // lundi, cf. reinitialiserJourCoursesDistant
 const LONGUEUR = 7;
 
+// Le navigateur de période affiche les dates du cycle (#352) : on attend `datesCycle`.
 // Cycle suivant le cycle affiché par défaut, et une date INTÉRIEURE à ce cycle
 // (ancre + 2 jours) : prouve que le lien résout la date, pas seulement l'ancre.
 // Calculés à l'appel (et non à l'import) : la date du jour décide du week-end.
 function cibleLien() {
   const suivant = cycleDecale(ancreParDefaut(new Date(), JOUR_COURSES), 1);
   const date = joursDuCycle(suivant, LONGUEUR)[2];
-  return { suivant, date, libelle: libelleCycle(suivant, LONGUEUR) };
+  return { suivant, date, libelle: datesCycle(suivant, LONGUEUR) };
 }
 
 // Pose `vue_planning = "semaine"` UNE fois par onglet : `addInitScript` rejoue à
@@ -91,7 +92,7 @@ test("clic sur Semaine puis Cycle après le lien : cycle par défaut, préféren
   page,
 }) => {
   const { date, libelle } = cibleLien();
-  const libelleDefaut = libelleCycle(ancreParDefaut(new Date(), JOUR_COURSES), LONGUEUR);
+  const libelleDefaut = datesCycle(ancreParDefaut(new Date(), JOUR_COURSES), LONGUEUR);
   await poserVueSemaine(page);
 
   await page.goto(`/planning?cycle=${date}`);

@@ -41,14 +41,14 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import {
+  ancreCourante,
   ancreParDefaut,
   cycleDecale,
+  datesCycle,
   dateVersSemaineJour,
   joursDuCycle,
-  libelleCycle,
   LONGUEUR_DEFAUT,
   remplacerJourDansSemaines,
 } from "@/lib/cycles";
@@ -57,7 +57,11 @@ import {
   DELAI_STEPPER_MS,
   type FileEcritureSlots,
 } from "@/lib/file-ecriture-slots";
-import { libelleJourComplet } from "@/lib/planning-affichage";
+import {
+  decalageCycles,
+  libelleJourComplet,
+  libelleRelatifCycle,
+} from "@/lib/planning-affichage";
 import { modifierPersonnes, personnesDuSlot } from "@/lib/personnes";
 import { estRestes, marquerRestes } from "@/lib/restes";
 import { chargerJourCoursesFoyer } from "@/lib/foyer";
@@ -82,11 +86,17 @@ import { SlotRepas } from "@/components/planning/slot-repas";
 import { SelecteurRecette } from "@/components/planning/selecteur-recette";
 import { ConfirmationModale } from "@/components/ui/confirmation";
 import { FicheRecette } from "@/components/planning/fiche-recette";
+import { NavigateurPeriode } from "@/components/planning/navigateur-periode";
 import type { JourPlanning, Planning, Recette, ReglagesGeneration } from "@/types";
 
 type TypeRepas = "dejeuner" | "diner";
 
 const ID_TOAST_ANNULATION_CYCLE = "annulation-slot-cycle";
+
+// Plage de navigation des cycles (miroir de cyclesSelectionnables et de
+// /courses) : 12 cycles passés → +6 futurs.
+const CYCLES_PASSES = 12;
+const CYCLES_FUTURS = 6;
 
 // Slots d'un jour dans l'ordre d'affichage : déjeuner puis dîner. `recette`
 // est absente si le slot n'a jamais été généré (planning antérieur/créneau
@@ -127,6 +137,9 @@ export function VuePlanningCycle({
   const [lienInitial] = useState(lienCycle);
   const [ancre, setAncre] = useState<string | null>(null);
   const [longueur, setLongueur] = useState<number>(LONGUEUR_DEFAUT);
+  // Jour de courses du foyer (#352) : sert à situer le cycle affiché par rapport
+  // au cycle courant (libellé relatif du navigateur). Lu au montage, avant l'ancre.
+  const [jourCourses, setJourCourses] = useState<number>(1);
   // Plannings des semaines ISO touchées, indexés par semaine.
   const [parSemaine, setParSemaine] = useState<Map<string, Planning>>(new Map());
   const [chargement, setChargement] = useState(true);
@@ -502,6 +515,8 @@ export function VuePlanningCycle({
   useEffect(() => {
     let actif = true;
     async function ancreInitiale(): Promise<string> {
+      const jour = await chargerJourCoursesFoyer().catch(() => 1);
+      if (actif) setJourCourses(jour);
       if (lienInitial !== undefined) {
         try {
           const res = await resoudreAncreCycle(clientParDefaut(), lienInitial, aujourdhuiParis());
@@ -511,7 +526,6 @@ export function VuePlanningCycle({
           console.error("Résolution du cycle du lien échouée (cycle par défaut).", erreur);
         }
       }
-      const jour = await chargerJourCoursesFoyer().catch(() => 1);
       return ancreParDefaut(new Date(), jour);
     }
     void ancreInitiale()
@@ -530,6 +544,9 @@ export function VuePlanningCycle({
     );
   }
 
+  // Position du cycle affiché vs le cycle courant (#352). Calculé ici, après
+  // chargement client : pas de mismatch d'hydratation (SSR = « Chargement… »).
+  const offsetCycle = decalageCycles(ancre, ancreCourante(new Date(), jourCourses));
   const jours = joursDuCycle(ancre, longueur);
   // Chaque date → le JourPlanning correspondant (ou null si non planifié).
   const cellules = jours.map((dateISO) => {
@@ -541,31 +558,19 @@ export function VuePlanningCycle({
 
   return (
     <div>
-      {/* Navigateur de cycle (miroir de /courses) + libellé de la fenêtre +
+      {/* Navigateur de période (#352, partagé avec la semaine et /courses) +
           actions (#279 : génération + accès courses, directement ici). */}
       <div className="mb-6 flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          aria-label="Cycle précédent"
-          onClick={() => void file.vider().then(() => chargerCycle(cycleDecale(ancre, -1)))}
-          className="relative flex size-8 shrink-0 items-center justify-center rounded-full border border-brand-200 text-brand-700 transition after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.92] motion-reduce:active:scale-100"
-        >
-          <ChevronLeft aria-hidden="true" className="size-4" />
-        </button>
-        <span
-          aria-live="polite"
-          className="min-w-[12rem] text-center text-sm font-medium text-brand-900"
-        >
-          {libelleCycle(ancre, longueur)}
-        </span>
-        <button
-          type="button"
-          aria-label="Cycle suivant"
-          onClick={() => void file.vider().then(() => chargerCycle(cycleDecale(ancre, 1)))}
-          className="relative flex size-8 shrink-0 items-center justify-center rounded-full border border-brand-200 text-brand-700 transition after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.92] motion-reduce:active:scale-100"
-        >
-          <ChevronRight aria-hidden="true" className="size-4" />
-        </button>
+        <NavigateurPeriode
+          unite="cycle"
+          libelle={libelleRelatifCycle(offsetCycle)}
+          dates={datesCycle(ancre, longueur)}
+          courante={offsetCycle === 0}
+          peutReculer={offsetCycle > -CYCLES_PASSES}
+          peutAvancer={offsetCycle < CYCLES_FUTURS}
+          onPrecedente={() => void file.vider().then(() => chargerCycle(cycleDecale(ancre, -1)))}
+          onSuivante={() => void file.vider().then(() => chargerCycle(cycleDecale(ancre, 1)))}
+        />
         <button
           type="button"
           // Cycle déjà rempli → confirmation (#334, miroir de RG-74 côté MCP) :

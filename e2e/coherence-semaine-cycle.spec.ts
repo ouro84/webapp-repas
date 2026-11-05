@@ -62,7 +62,9 @@ test("le lien « Liste de courses → » depuis la vue Cycle conserve la même f
 }) => {
   await page.goto("/planning");
   await page.getByRole("button", { name: "Cycle" }).click();
-  const libelleCycle = await page.getByText(/Courses du/).textContent();
+  // #352 : le navigateur de période (libellé relatif + dates) remplace « Courses du… ».
+  const navigateurCycle = page.getByRole("group", { name: "Naviguer entre les cycles" });
+  const libelleCycle = (await navigateurCycle.innerText()).trim();
 
   await page.getByRole("link", { name: "Liste de courses →" }).click();
   await page.waitForURL(/\/courses/);
@@ -72,7 +74,7 @@ test("le lien « Liste de courses → » depuis la vue Cycle conserve la même f
   // one-shot, cf. app/courses/page.tsx), une assertion dessus serait racy par
   // construction (déjà vécu : le paramètre disparaît souvent avant que
   // `toHaveURL` n'ait eu la moindre chance de l'observer).
-  await expect(page.getByText(libelleCycle!)).toBeVisible();
+  await expect(navigateurCycle).toHaveText(libelleCycle);
   // Le paramètre est bien nettoyé une fois appliqué (comportement one-shot).
   await expect(page).toHaveURL(/\/courses$/);
 });

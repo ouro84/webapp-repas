@@ -64,6 +64,7 @@ import {
   semaineISO,
 } from "@/lib/semaines";
 import { ancreDeSemaine } from "@/lib/cycles";
+import { datesDeSemaine, libellePlageDates } from "@/lib/planning-affichage";
 import { chargerJourCoursesFoyer } from "@/lib/foyer";
 import { parseApiError } from "@/lib/errors";
 import {
@@ -80,6 +81,7 @@ const SEMAINES_PASSEES = 12;
 const SEMAINES_FUTURES = 6;
 import { SelecteurRecette } from "@/components/planning/selecteur-recette";
 import { FicheRecette } from "@/components/planning/fiche-recette";
+import { NavigateurPeriode } from "@/components/planning/navigateur-periode";
 import { VuePlanningCycle } from "@/components/planning/vue-cycle";
 import { SlotRepas } from "@/components/planning/slot-repas";
 import { ConfirmationModale } from "@/components/ui/confirmation";
@@ -121,90 +123,6 @@ function useHydratation(): boolean {
     () => () => {},
     () => true,
     () => false
-  );
-}
-
-// Navigateur de semaines (US-14, #5) : stepper borné ‹ [libellé relatif + date] ›
-// qui change la semaine AFFICHÉE (passé stocké → futur). La semaine courante
-// (offset 0) est visuellement marquée (RG). Remplace le sélecteur de génération
-// #55 (génération = semaine affichée).
-function NavigateurSemaine({
-  semaine,
-  offset,
-  peutReculer,
-  peutAvancer,
-  onPrecedente,
-  onSuivante,
-  disabled,
-}: {
-  semaine: string;
-  offset: number; // par rapport à la semaine courante (0 = cette semaine)
-  peutReculer: boolean;
-  peutAvancer: boolean;
-  onPrecedente: () => void;
-  onSuivante: () => void;
-  disabled?: boolean;
-}) {
-  const estCourante = offset === 0;
-  const styleFleche =
-    "relative flex size-8 items-center justify-center rounded-full border border-brand-200 text-brand-700 transition after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.92] motion-reduce:active:scale-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent";
-  return (
-    <div
-      role="group"
-      aria-label="Naviguer entre les semaines"
-      className="inline-flex items-center gap-2"
-    >
-      <button
-        type="button"
-        onClick={onPrecedente}
-        disabled={disabled || !peutReculer}
-        aria-label="Semaine précédente"
-        className={styleFleche}
-      >
-        <ChevronSemaine direction="gauche" />
-      </button>
-      {/* Semaine courante marquée (RG) : fond brand + texte accentué. */}
-      <span
-        aria-live="polite"
-        className={`min-w-[11rem] rounded-lg px-3 py-1 text-center ${estCourante ? "bg-brand-50" : ""}`}
-      >
-        <span
-          className={`block text-sm font-medium ${estCourante ? "text-brand-700" : "text-brand-900"}`}
-        >
-          {libelleRelatif(offset)}
-        </span>
-        <span className="block text-xs text-brand-700/85">
-          {formaterSemaine(semaine)}
-        </span>
-      </span>
-      <button
-        type="button"
-        onClick={onSuivante}
-        disabled={disabled || !peutAvancer}
-        aria-label="Semaine suivante"
-        className={styleFleche}
-      >
-        <ChevronSemaine direction="droite" />
-      </button>
-    </div>
-  );
-}
-
-// Chevron gauche/droite — SVG inline (pas de glyphe texte, cf. audit #51).
-function ChevronSemaine({ direction }: { direction: "gauche" | "droite" }) {
-  return (
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 16 16"
-      className="size-4"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d={direction === "gauche" ? "M10 4l-4 4 4 4" : "M6 4l4 4-4 4"} />
-    </svg>
   );
 }
 
@@ -569,6 +487,20 @@ function ContenuPlanning() {
     : 0;
   const peutReculer = navPret && offsetAffiche > -SEMAINES_PASSEES;
   const peutAvancer = navPret && offsetAffiche < SEMAINES_FUTURES;
+  // Props du navigateur de période (#352) : libellé relatif + plage de dates
+  // (mêmes helpers que la vue Cycle, lib/planning-affichage.ts).
+  const periodeSemaine = {
+    libelle: libelleRelatif(offsetAffiche),
+    dates: navPret
+      ? (() => {
+          const jours = datesDeSemaine(semaineAffichee);
+          return libellePlageDates(jours[0], jours[6]);
+        })()
+      : "",
+    courante: offsetAffiche === 0,
+    peutReculer,
+    peutAvancer,
+  };
   function allerSemaine(delta: number): void {
     if (semaineAffichee) void naviguerVers(semaineDecalee(semaineAffichee, delta));
   }
@@ -925,11 +857,9 @@ function ContenuPlanning() {
           <BasculeVue vue={vue} onChange={setVue} />
           {/* Navigation entre semaines (#5) — après hydratation (date client). */}
           {navPret && (
-            <NavigateurSemaine
-              semaine={semaineAffichee!}
-              offset={offsetAffiche}
-              peutReculer={peutReculer}
-              peutAvancer={peutAvancer}
+            <NavigateurPeriode
+              unite="semaine"
+              {...periodeSemaine}
               onPrecedente={() => allerSemaine(-1)}
               onSuivante={() => allerSemaine(1)}
               disabled={enGeneration}
@@ -1050,11 +980,9 @@ function ContenuPlanning() {
           génération/régénération vise la semaine affichée. */}
       {navPret && (
         <div className="mb-6">
-          <NavigateurSemaine
-            semaine={semaineAffichee!}
-            offset={offsetAffiche}
-            peutReculer={peutReculer}
-            peutAvancer={peutAvancer}
+          <NavigateurPeriode
+            unite="semaine"
+            {...periodeSemaine}
             onPrecedente={() => allerSemaine(-1)}
             onSuivante={() => allerSemaine(1)}
             disabled={enGeneration}

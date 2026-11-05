@@ -36,8 +36,6 @@ import { PulsationAtterrissage } from "@/components/ui/pulsation-atterrissage";
 import { toast } from "sonner";
 import {
   Check,
-  ChevronLeft,
-  ChevronRight,
   Pencil,
   Plus,
   Trash2,
@@ -83,7 +81,10 @@ import {
   etirerCycle,
   type CycleAffiche,
 } from "@/lib/sync";
-import { libelleCycle, LONGUEUR_MAX } from "@/lib/cycles";
+import { ancreCourante, datesCycle, LONGUEUR_MAX } from "@/lib/cycles";
+import { chargerJourCoursesFoyer } from "@/lib/foyer";
+import { decalageCycles, libelleRelatifCycle } from "@/lib/planning-affichage";
+import { NavigateurPeriode } from "@/components/planning/navigateur-periode";
 import { accorderNom } from "@/lib/pluriels";
 import { formaterQuantite } from "@/lib/unites";
 import { LIBELLES_CATEGORIES } from "@/lib/courses";
@@ -157,30 +158,35 @@ function avecTransition(majEtat: () => void): ViewTransition | null {
 // voisin (précédent/suivant) qui EN a — sans ce navigateur dans l'état vide,
 // impossible d'anticiper/consulter un cycle adjacent depuis un cycle vide.
 // ============================================================================
-function NavigateurCycle({ cycle }: { cycle: CycleAffiche }) {
+//
+// #352 : flèches + libellé = NavigateurPeriode (partagé avec /planning) ; le
+// stepper « Couvre N j » reste propre à /courses. Un cycle hors plage atteint
+// par `?ancre=` reste affiché : seules les flèches se désactivent.
+const CYCLES_PASSES = 12;
+const CYCLES_FUTURS = 6;
+
+function NavigateurCycle({
+  cycle,
+  jourCourses,
+}: {
+  cycle: CycleAffiche;
+  jourCourses: number;
+}) {
+  // Rendu après hydratation seulement (cf. garde `hydrate` de la page) : la
+  // date du client ne crée pas de mismatch SSR.
+  const offset = decalageCycles(cycle.ancre, ancreCourante(new Date(), jourCourses));
   return (
     <div className="mt-2 flex flex-col gap-2">
-      <div className="flex items-center gap-1">
-        <button
-          type="button"
-          aria-label="Cycle précédent"
-          onClick={() => void naviguerCycle(-1)}
-          className="relative flex size-7 shrink-0 items-center justify-center rounded-full border border-brand-200 text-brand-700 transition after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.92] motion-reduce:active:scale-100"
-        >
-          <ChevronLeft aria-hidden="true" className="size-4" />
-        </button>
-        <span className="text-xs font-medium text-brand-700/85">
-          {libelleCycle(cycle.ancre, cycle.longueur)}
-        </span>
-        <button
-          type="button"
-          aria-label="Cycle suivant"
-          onClick={() => void naviguerCycle(1)}
-          className="relative flex size-7 shrink-0 items-center justify-center rounded-full border border-brand-200 text-brand-700 transition after:absolute after:-inset-1 after:content-[''] hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.92] motion-reduce:active:scale-100"
-        >
-          <ChevronRight aria-hidden="true" className="size-4" />
-        </button>
-      </div>
+      <NavigateurPeriode
+        unite="cycle"
+        libelle={libelleRelatifCycle(offset)}
+        dates={datesCycle(cycle.ancre, cycle.longueur)}
+        courante={offset === 0}
+        peutReculer={offset > -CYCLES_PASSES}
+        peutAvancer={offset < CYCLES_FUTURS}
+        onPrecedente={() => void naviguerCycle(-1)}
+        onSuivante={() => void naviguerCycle(1)}
+      />
       <div className="flex items-center gap-2 text-xs text-brand-700/85">
         <span>Couvre {cycle.longueur} j</span>
         <button
@@ -239,6 +245,20 @@ function ContenuCourses() {
   // Cycle actuellement affiché ({ ancre, longueur }) et son planning projeté —
   // stores dédiés (#257), distincts de storePlanning (semaine unique).
   const cycle = useCycleAffiche();
+  // Jour de courses du foyer (#352) : situe le cycle affiché vs le cycle
+  // courant (libellé relatif). Même source que lib/sync.ts (fail-open : lundi).
+  const [jourCourses, setJourCourses] = useState<number | null>(null);
+  useEffect(() => {
+    let actif = true;
+    void chargerJourCoursesFoyer()
+      .catch(() => 1)
+      .then((jour) => {
+        if (actif) setJourCourses(jour);
+      });
+    return () => {
+      actif = false;
+    };
+  }, []);
   const planningCycle = useCyclePlanning();
   // Articles manuels du cycle affiché (#216, US-47) — chargés/synchronisés par
   // useSyncCourses (même ancre que les coches), indépendants du planning.
@@ -467,7 +487,9 @@ function ContenuCourses() {
           {/* Navigateur de cycle (#257, M1) : un cycle vide peut avoir un
               voisin non vide — permettre d'anticiper/consulter sans repasser
               par /planning. */}
-          {cycle && <NavigateurCycle cycle={cycle} />}
+          {cycle && jourCourses !== null && (
+            <NavigateurCycle cycle={cycle} jourCourses={jourCourses} />
+          )}
         </div>
         {/* Génération fenêtrée (#259) : remplir le cycle affiché d'un clic,
             sans passer par /planning (D3 « Générer mon cycle »). */}
@@ -536,7 +558,9 @@ function ContenuCourses() {
               n° de semaine, US-03 devient « une fenêtre de N jours » plutôt
               qu'une semaine ISO fixe) + étirement de la fenêtre. Rendu
               seulement une fois le cycle hydraté (évite un flash sans libellé). */}
-          {cycle && <NavigateurCycle cycle={cycle} />}
+          {cycle && jourCourses !== null && (
+            <NavigateurCycle cycle={cycle} jourCourses={jourCourses} />
+          )}
           {/* aria-live : la progression est annoncée à chaque coche. Le « à
               vérifier » reste en terracotta = couleur de marque « Fond de placard »
               (#67 P15), pas un signal d'alerte (cf. #212, clos by-design). */}

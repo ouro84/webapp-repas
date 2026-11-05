@@ -113,7 +113,9 @@ test("changer le jour de courses puis naviguer les cycles", async ({ page }) => 
   // `addInitScript` rejoue à chaque chargement complet : un `page.goto` est
   // donc sûr ici (contrairement à une génération réelle en attente de push).
   await page.goto("/courses");
-  await expect(page.getByText(/Courses du/)).toBeVisible();
+  await expect(
+    page.getByRole("group", { name: "Naviguer entre les cycles" })
+  ).toBeVisible();
 
   // La navigation cycle (‹ Cycle précédent / Cycle suivant ›) n'est rendue
   // que pour un cycle CHARGÉ (liste non vide, cf. app/courses/page.tsx) :
@@ -129,7 +131,7 @@ test("changer le jour de courses puis naviguer les cycles", async ({ page }) => 
   // (backend vide, aucun autre cycle en cache), donc le cycle suivant
   // retombe légitimement en état vide. Le titre h1 « Liste de courses » est
   // commun aux deux états (chargé et vide) : c'est l'assertion robuste,
-  // contrairement à un `/Courses du/` qui ne s'affiche que dans l'état chargé.
+  // contrairement à la liste elle-même qui ne s'affiche que dans l'état chargé.
   await boutonSuivant.click();
   await expect(
     page.getByRole("heading", { name: "Liste de courses" })
