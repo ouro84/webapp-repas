@@ -27,7 +27,9 @@ import type {
 const JOURS_SEMAINE: Jour[] = ["lundi", "mardi", "mercredi", "jeudi", "vendredi"]
 
 // Ordre canonique imposé par le modèle de données (section 5.5 : 7 entrées lundi → dimanche).
-const ORDRE_JOURS: Jour[] = [
+// Source unique (#352) : lib/adapters, lib/cycles et /planning l'importent ; son
+// index est aussi le rang du jour dans sa semaine ISO (lundi = 0).
+export const ORDRE_JOURS: readonly Jour[] = [
   "lundi",
   "mardi",
   "mercredi",

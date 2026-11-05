@@ -22,6 +22,7 @@ import { flushSync } from "react-dom";
 import { toast } from "sonner";
 import {
   joursSansLegume,
+  ORDRE_JOURS,
   prefereVegeSlot,
   recettesUtilisees,
   remplacerSlot,
@@ -99,17 +100,6 @@ const LIBELLES_JOURS: Record<Jour, { complet: string }> = {
   vendredi: { complet: "Vendredi" },
   samedi: { complet: "Samedi" },
   dimanche: { complet: "Dimanche" },
-};
-
-// Index du jour dans sa semaine ISO (lundi = 0), pour retrouver sa date (#352).
-const INDEX_JOUR: Record<Jour, number> = {
-  lundi: 0,
-  mardi: 1,
-  mercredi: 2,
-  jeudi: 3,
-  vendredi: 4,
-  samedi: 5,
-  dimanche: 6,
 };
 
 function cleSlot(jour: Jour, typeRepas: TypeRepas): string {
@@ -841,7 +831,8 @@ function ContenuPlanning() {
   const datesSemaine = datesDeSemaine(planningAffiche.semaine);
   const aujourdhuiISO = navPret ? versISO(new Date()) : null;
   const joursGrille: JourGrille[] = planningAffiche.jours.map((jp, i) => {
-    const dateISO = datesSemaine[INDEX_JOUR[jp.jour]];
+    // Rang du jour dans sa semaine ISO (lundi = 0, ORDRE_JOURS) → sa date (#352).
+    const dateISO = datesSemaine[ORDRE_JOURS.indexOf(jp.jour)];
     return {
       cle: jp.jour,
       dateISO,

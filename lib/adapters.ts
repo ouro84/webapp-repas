@@ -13,21 +13,11 @@ import type {
   DbPlanningSlot,
   Recette,
   Ingredient,
-  Jour,
   JourPlanning,
   Planning,
 } from "@/types"
-
-// Ordre canonique des jours (section 5.5).
-const ORDRE_JOURS: Jour[] = [
-  "lundi",
-  "mardi",
-  "mercredi",
-  "jeudi",
-  "vendredi",
-  "samedi",
-  "dimanche",
-]
+// Ordre canonique des jours (section 5.5) : source unique dans lib/generateur.
+import { ORDRE_JOURS } from "@/lib/generateur"
 
 export function dbIngredientToDomain(
   ri: DbRecette["recette_ingredient"][number]

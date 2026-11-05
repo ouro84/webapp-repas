@@ -7,6 +7,7 @@
 // semaineISO() reconstruit l'identifiant depuis les getters locaux.
 
 import { depuisISO, versISO } from "@/lib/dates-iso"
+import { ORDRE_JOURS } from "@/lib/generateur"
 import { libellePlageDates } from "@/lib/planning-affichage"
 import { lundiDeSemaine, semaineISO } from "@/lib/semaines"
 import type { Jour, Planning, JourPlanning } from "@/types"
@@ -19,10 +20,8 @@ export const LONGUEUR_MAX = 14
 export const CYCLES_PASSES = 12
 export const CYCLES_FUTURS = 6
 
-// ISO : lundi = 1 … dimanche = 7 (Date.getDay renvoie 0 pour dimanche).
-const JOURS_ISO: Jour[] = [
-  "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche",
-]
+// ISO : lundi = 1 … dimanche = 7 (Date.getDay renvoie 0 pour dimanche) ;
+// rang dans ORDRE_JOURS (lib/generateur, source unique) = jour ISO − 1.
 
 function jourISO(d: Date): number {
   return d.getDay() === 0 ? 7 : d.getDay()
@@ -121,7 +120,7 @@ export function estDateISO(date: string): boolean {
 /** Pont vers le stockage par semaine ISO : une date → (semaine, jour). */
 export function dateVersSemaineJour(dateISO: string): { semaine: string; jour: Jour } {
   const d = depuisISO(dateISO)
-  return { semaine: semaineISO(d), jour: JOURS_ISO[jourISO(d) - 1] }
+  return { semaine: semaineISO(d), jour: ORDRE_JOURS[jourISO(d) - 1] }
 }
 
 /** « du 9 au 15 juillet » : plage de dates du cycle, sans préfixe (#352). */
