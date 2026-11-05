@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest"
 import {
   ancreCourante, ancreDeSemaine, ancreParDefaut, cycleDecale, joursDuCycle, semainesDuCycle,
-  cycleTermine, dateVersSemaineJour, estDateISO, libelleCycle, cyclesSelectionnables, LONGUEUR_DEFAUT,
+  cycleTermine, dateVersSemaineJour, datesCycle, estDateISO, libelleCycle, cyclesSelectionnables, LONGUEUR_DEFAUT,
   planningDuCycle, planningGenereParSemaine, remplacerJourDansSemaines,
 } from "@/lib/cycles"
 import type { JourPlanning, Planning } from "@/types"
@@ -283,5 +283,11 @@ describe("cycleTermine (#320, RG-81)", () => {
     // 16 oct + 13 = 29 oct (aujourd'hui) : encore en cours ; un jour plus tôt, terminé.
     expect(cycleTermine("2026-10-16", 14, AUJOURDHUI)).toBe(false)
     expect(cycleTermine("2026-10-15", 14, AUJOURDHUI)).toBe(true)
+  })
+})
+
+describe("datesCycle (#352)", () => {
+  it("plage de dates du cycle, sans préfixe", () => {
+    expect(datesCycle("2026-07-09", 7)).toBe("du 9 au 15 juillet")
   })
 })

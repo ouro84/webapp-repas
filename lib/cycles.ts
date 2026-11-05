@@ -6,6 +6,7 @@
 // calendaire en heure LOCALE (cohérent avec lib/semaines.ts, cf. #171) :
 // semaineISO() reconstruit l'identifiant depuis les getters locaux.
 
+import { libellePlageDates } from "@/lib/planning-affichage"
 import { lundiDeSemaine, semaineISO } from "@/lib/semaines"
 import type { Jour, Planning, JourPlanning } from "@/types"
 
@@ -21,7 +22,7 @@ function jourISO(d: Date): number {
   return d.getDay() === 0 ? 7 : d.getDay()
 }
 
-function versISO(d: Date): string {
+export function versISO(d: Date): string {
   const a = d.getFullYear()
   const m = String(d.getMonth() + 1).padStart(2, "0")
   const j = String(d.getDate()).padStart(2, "0")
@@ -125,17 +126,15 @@ export function dateVersSemaineJour(dateISO: string): { semaine: string; jour: J
   return { semaine: semaineISO(d), jour: JOURS_ISO[jourISO(d) - 1] }
 }
 
+/** « du 9 au 15 juillet » : plage de dates du cycle, sans préfixe (#352). */
+export function datesCycle(ancre: string, longueur: number): string {
+  const jours = joursDuCycle(ancre, longueur)
+  return libellePlageDates(jours[0], jours[jours.length - 1])
+}
+
 /** « Courses du 9 au 15 juillet ». */
 export function libelleCycle(ancre: string, longueur: number): string {
-  const jours = joursDuCycle(ancre, longueur)
-  const debut = depuisISO(jours[0])
-  const fin = depuisISO(jours[jours.length - 1])
-  const memeMois = debut.getMonth() === fin.getMonth()
-  const fmtJour = (d: Date) => d.getDate()
-  const fmtMois = (d: Date) => d.toLocaleDateString("fr-FR", { month: "long" })
-  return memeMois
-    ? `Courses du ${fmtJour(debut)} au ${fmtJour(fin)} ${fmtMois(fin)}`
-    : `Courses du ${fmtJour(debut)} ${fmtMois(debut)} au ${fmtJour(fin)} ${fmtMois(fin)}`
+  return `Courses ${datesCycle(ancre, longueur)}`
 }
 
 /** Plage de cycles navigables (miroir de semainesSelectionnables). */

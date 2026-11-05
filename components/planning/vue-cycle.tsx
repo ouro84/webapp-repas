@@ -57,6 +57,7 @@ import {
   DELAI_STEPPER_MS,
   type FileEcritureSlots,
 } from "@/lib/file-ecriture-slots";
+import { libelleJourComplet } from "@/lib/planning-affichage";
 import { modifierPersonnes, personnesDuSlot } from "@/lib/personnes";
 import { estRestes, marquerRestes } from "@/lib/restes";
 import { chargerJourCoursesFoyer } from "@/lib/foyer";
@@ -86,19 +87,6 @@ import type { JourPlanning, Planning, Recette, ReglagesGeneration } from "@/type
 type TypeRepas = "dejeuner" | "diner";
 
 const ID_TOAST_ANNULATION_CYCLE = "annulation-slot-cycle";
-
-// « jeudi 9 juil. » avec majuscule initiale (les jours du cycle sont des dates
-// concrètes, pas des jours de semaine abstraits comme dans la vue semaine).
-function libelleJourDate(dateISO: string): string {
-  const [a, m, j] = dateISO.split("-").map(Number);
-  const d = new Date(a, m - 1, j);
-  const s = d.toLocaleDateString("fr-FR", {
-    weekday: "long",
-    day: "numeric",
-    month: "short",
-  });
-  return s.charAt(0).toUpperCase() + s.slice(1);
-}
 
 // Slots d'un jour dans l'ordre d'affichage : déjeuner puis dîner. `recette`
 // est absente si le slot n'a jamais été généré (planning antérieur/créneau
@@ -611,7 +599,7 @@ export function VuePlanningCycle({
               className="rounded-lg border border-brand-100 bg-surface p-4"
             >
               <h2 className="mb-3 font-semibold text-brand-900">
-                {libelleJourDate(dateISO)}
+                {libelleJourComplet(dateISO)}
               </h2>
               {jp === null ? (
                 <p className="text-sm text-brand-700/70">Rien de prévu.</p>
@@ -623,7 +611,7 @@ export function VuePlanningCycle({
                       <SlotRepas
                         key={slot.typeRepas}
                         libelle={slot.libelle}
-                        jourLabel={libelleJourDate(dateISO)}
+                        jourLabel={libelleJourComplet(dateISO)}
                         recette={slot.recette}
                         indisponible={false}
                         personnes={personnesDuSlot(jp, slot.typeRepas)}
@@ -664,7 +652,7 @@ export function VuePlanningCycle({
       {/* Sélecteur de recette (US-06) — monté seulement pendant la sélection. */}
       {slotEnSelection && (
         <SelecteurRecette
-          titre={`${slotEnSelection.typeRepas === "diner" ? "Dîner" : "Déjeuner"} de ${libelleJourDate(slotEnSelection.dateISO).toLowerCase()}`}
+          titre={`${slotEnSelection.typeRepas === "diner" ? "Dîner" : "Déjeuner"} de ${libelleJourComplet(slotEnSelection.dateISO).toLowerCase()}`}
           recettes={recettes}
           idsAuPlanning={recettesUtilisees(
             planningDeLaSemaine(slotEnSelection.semaine) ?? { semaine: slotEnSelection.semaine, jours: [] }
