@@ -28,8 +28,9 @@
 // immédiat pour les actions ponctuelles, débounce pour le stepper personnes,
 // une seule écriture en vol par jour, retour à l'état confirmé + toast en cas
 // d'échec. Jamais de `chargerCycle` après une édition : son
-// `setChargement(true)` démonte la grille (« Chargement… », scroll et menus
-// perdus) le temps d'un aller-retour réseau. La file est vidée avant toute
+// `setChargement(true)` estompe la grille et ignore les flèches le temps d'un
+// aller-retour réseau (« Chargement… » seul n'existe qu'au premier chargement),
+// et sa relecture écraserait l'état optimiste. La file est vidée avant toute
 // relecture (navigation, génération) et au démontage.
 //
 // L'en-tête (titre, bascule, « Régénérer », « Liste de courses → » avec l'ancre

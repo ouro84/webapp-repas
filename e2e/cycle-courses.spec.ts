@@ -5,10 +5,10 @@
 // ancreCourante), en lieu et place de la semaine ISO fixe. Deux parcours :
 //  1. Le DÉFAUT (lundi) ne régresse pas : sans planning généré, l'état vide
 //     de /courses s'affiche normalement (aucun crash).
-//  2. Changer le jour vers jeudi ré-ancre la liste : le libellé « Courses
-//     du … » apparaît pour un cycle chargé, et la navigation
-//     ‹ Cycle suivant › ne plante jamais (avec ou sans contenu sur le cycle
-//     visé).
+//  2. Changer le jour vers jeudi ré-ancre la liste : le navigateur de période
+//     (groupe « Naviguer entre les cycles », #352) annonce le cycle chargé, et
+//     la navigation ‹ Cycle suivant › ne plante jamais (avec ou sans contenu
+//     sur le cycle visé).
 //
 // Foyer PARTAGÉ (compte de test) : le jour de courses est remis à lundi en
 // beforeEach ET afterAll pour ne pas faire diverger l'ancre vue par les
@@ -19,8 +19,8 @@
 // persistance du planning est débouncée (800 ms, lib/sync.ts) et il n'y a pas
 // de flush au déchargement de page : un `page.goto` ~150 ms après le clic
 // « Générer » abandonne le contexte JS avant que le push n'ait eu lieu → le
-// backend restait vide → /courses rendait l'état VIDE (pas de « Courses
-// du… », pas de bouton « Cycle suivant ») → timeout d'assertion. Échec
+// backend restait vide → /courses rendait l'état VIDE (« Aucun repas planifié
+// sur ce cycle » au lieu de la liste attendue) → timeout d'assertion. Échec
 // fiable (bloquant CI), pas un flake. Le test injecte désormais directement
 // un planning déterministe dans `cycle_planning` (miroir de
 // `injecterCyclePlanning` dans courses.spec.ts), sans dépendre d'une

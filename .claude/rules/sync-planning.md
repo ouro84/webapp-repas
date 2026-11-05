@@ -25,7 +25,7 @@ La base est la source de vérité ; localStorage est le cache de la semaine affi
 
 ## Rechargements après édition
 
-- **Jamais de `setChargement(true)` sur un rechargement post-édition.** Une édition met l'état local à jour de façon optimiste ; seuls le montage, la navigation et la génération affichent « Chargement… ». Pourquoi : l'état de chargement démonte la grille (scroll, menus, stepper perdus) le temps d'un aller-retour réseau (#301).
+- **Jamais de `setChargement(true)` sur un rechargement post-édition.** Une édition met l'état local à jour de façon optimiste ; seuls le montage, la navigation et la génération passent par un chargement (« Chargement… » au premier chargement seulement, corps estompé ensuite, cf. `courses-cycle.md`). Pourquoi : un chargement estompe la grille et ignore la navigation le temps d'un aller-retour réseau, et sa relecture écraserait l'état optimiste (#301).
 - **Tout patch de `storePlanning` qui reflète une écriture déjà faite en base passe sous la garde `hydratationEnCours`** (cf. `modifierSlotDistant`). Pourquoi : sinon `planifierPush` relance un `sauvegarder_planning` de toute la semaine (double écriture).
 
 ## Navigation entre semaines

@@ -13,7 +13,8 @@
 //   l'autre, et leurs actions ancrées en bas (`SlotRepas`, `mt-auto`) aussi.
 // - Jour courant : pastille « Aujourd’hui » + bordure épaisse de la carte
 //   (mobile). Les cartes de repas du jour sont accentuées par la vue
-//   (`SlotRepas accentue`), qui construit les slots. `aujourdhuiISO` vaut `null`
+//   (`SlotRepas accentue`, effet à `lg` seulement : en mobile, seule la carte du
+//   jour est bordée), qui construit les slots. `aujourdhuiISO` vaut `null`
 //   tant que la date du client n'est pas connue (pas de date au rendu serveur).
 //
 // Présentatif : la vue construit les deux `SlotRepas` de chaque jour (callbacks,
@@ -26,7 +27,10 @@
 // de `key` aux deux paliers (le changer remonte la grille et rejoue l'entrée en
 // cascade), `animerEntree` pose `animate-entree-jour` à `delaiJour(i)`,
 // `enAttente` estompe la grille (toujours cliquable) et `decor` accueille la
-// pulsation d'atterrissage, en premier enfant (sous le contenu `relative`).
+// pulsation d'atterrissage, en premier enfant. Mobile : le `h2` et la grille
+// des cartes (`relative`) restent au-dessus du lavis. Desktop : les cartes ne
+// sont pas positionnées, le halo se peint AU-DESSUS d'elles (seul le `h2`,
+// `relative`, reste dessus) : un lavis translucide, pas un fond (cf. ui.md).
 
 import type { CSSProperties, ReactNode } from "react";
 import { delaiJour } from "@/lib/choregraphie-generation";
