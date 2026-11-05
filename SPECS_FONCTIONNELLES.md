@@ -794,6 +794,24 @@ Réduire à zéro l'effort de planification hebdomadaire des repas, du choix des
 > **When** j'ouvre l'adresse de l'app ou je touche le logo  
 > **Then** j'arrive sur le prochain repas (/ce-soir), quelle que soit l'heure (RG-88)
 
+### US-56 — Cuisiner le prochain repas depuis mon téléphone (#336)
+
+> **En tant que** personne qui cuisine sans avoir préparé le planning, je veux **lire la recette du prochain repas en grand, téléphone posé sur le plan de travail**, sans fenêtre à fermer ni écran qui se met en veille.
+
+> **Given** le prochain repas a une recette  
+> **When** j'ouvre « Ce soir »  
+> **Then** la page affiche le moment du repas, le nom du plat, ses badges et le nombre de personnes, puis les ingrédients et les étapes numérotées en texte lisible à distance, sans fenêtre modale ; l'écran reste allumé tant que la page est affichée (RG-89)
+
+> **Given** je prépare le repas  
+> **When** je coche les ingrédients que j'ai sortis du placard  
+> **Then** mes coches restent en place si je recharge la page, ne sont pas partagées avec le foyer, et repartent de zéro au repas suivant (RG-89)
+
+> **Given** un repas actif suit celui affiché et a une recette  
+> **Then** la page m'indique en bas « Ensuite : {moment}, {plat} » (RG-89)
+
+> **Given** rien n'est prévu pour le prochain repas  
+> **Then** la page me propose « Générer mon planning » si la semaine n'a pas de planning, « Voir le planning » sinon (RG-89)
+
 ---
 
 ## 5. Modèle de données
@@ -1016,6 +1034,14 @@ Le planning s'affiche en liste verticale : une ligne par jour, avec les slots em
 - **À partir de 768 px**, rien ne change : sections libellées dans la barre du haut, pas de barre d'onglets.
 - **Page d'arrivée d'un connecté** : l'adresse racine `/` redirige vers `/ce-soir` (le logo y mène aussi directement) ; `/` reste la vitrine des visiteurs non connectés. Un code d'invitation présent dans l'URL est conservé par la redirection.
 - La barre d'onglets n'apparaît ni déconnecté, ni pendant l'onboarding (`/bienvenue`), ni sur l'écran de consentement d'un assistant (`/oauth/*`).
+
+### RG-89 — Page « Ce soir » en cuisine (US-56, #336)
+
+- **Lecture seule** : la page montre le prochain repas actif (même calcul que la nav, seuil 15 h, créneaux désactivés sautés) dans le flux de la page. Aucune action d'édition (ni changer, ni favori/évité, ni « Modifier la recette ») : un lien « Voir dans le planning » ouvre le planning sur **la semaine du repas** (le week-end, la semaine affichée par défaut serait la suivante). Le corps de la recette est le même que celui de la fiche du planning, en plus grand.
+- **Écran allumé** : l'app demande au navigateur de garder l'écran allumé dès que la recette s'affiche, le redemande au retour sur la page et le libère en la quittant. Pas d'interrupteur. Un navigateur qui refuse ou ne sait pas le faire n'affiche aucune erreur.
+- **Ingrédients cochables** : aide-mémoire « sorti du placard », gardé sur l'appareil uniquement (jamais en base ni partagé avec le foyer), propre au repas affiché (date + créneau). Les coches survivent à un rechargement et repartent de zéro dès que la page affiche un autre repas. Si la recette du créneau change, les coches des ingrédients disparus ne s'affichent plus.
+- **Aperçu « Ensuite »** : en bas de page, le repas actif suivant (« Ensuite : Dîner de demain, {plat} », « restes de {plat} » pour des restes), absent si ce créneau n'a pas de recette.
+- **États** : chargement ; erreur de lecture du planning avec « Réessayer » (distincte d'un planning absent) ; rien de prévu avec une issue (« Générer mon planning » si la semaine du repas n'a aucun planning, « Voir le planning » sinon, les deux ouvrant le planning sur la semaine du repas) ; restes (« Restes de {plat} », sans ingrédients).
 
 ### RG-09 — États de l'interface
 

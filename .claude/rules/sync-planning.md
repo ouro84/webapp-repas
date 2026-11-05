@@ -33,6 +33,7 @@ La base est la source de vérité ; localStorage est le cache de la semaine affi
 - Semaine affichée : store `useSemaineAffichee` (clé `semaine_affichee`). `planning_courant` / `courses_cochees` sont le cache **de cette semaine**.
 - `naviguerVers(semaine)` **flushe d'abord les écritures en attente** (`attendreSync`) puis charge la cible (gardes d'hydratation, sans re-push). Sans ce flush, des données se perdent.
 - Un rechargement complet revient à la semaine par défaut.
+- **Lien `/planning?semaine=AAAA-Wnn`** (#336, `lib/lien-semaine.ts`) : lu une fois au montage (`lireLienSemaine`, plage du navigateur −12/+6, `null` si invalide), passé à `useSync(semaine)` → `hydrater(semaine)`, qui le charge à la place de la semaine par défaut, ou y navigue (`naviguerVers`) si l'app est déjà hydratée ou si le cache local fait foi. Il force la vue Semaine pour la visite (sans écrire la préférence), est ignoré si `?cycle=` est présent, et retiré par `history.replaceState`. Pourquoi : depuis `/ce-soir`, le week-end, la semaine par défaut est la suivante et le repas affiché n'y serait pas.
 - **Semaine passée** (RG-24) : régénérer ou modifier un slot d'une semaine passée **non vide** ouvre une `ConfirmationModale`. Mécanique : chaque action mutante prend `force = false` et, en tête, `confirmerSiPassee(reprise)` diffère l'action puis la rejoue avec `force = true`. `selectionnerRecette` capture le slot **avant** la garde (le sélecteur se ferme). Le stepper personnes n'est pas gardé.
 
 ## Undo (US-09, RG-19)

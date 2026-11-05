@@ -120,6 +120,49 @@ async function jetonTest(request: APIRequestContext): Promise<{
 }
 
 /**
+ * Planifie des repas côté base pour le compte de test (#336) : résout chaque
+ * recette du catalogue par son NOM exact (ids = uuid en base, ≠ fixtures) puis
+ * écrit les slots via la RPC `sauvegarder_slots` (upsert des seuls créneaux
+ * fournis, planning créé s'il n'existe pas). Sert à rendre /ce-soir
+ * déterministe quelle que soit l'heure d'exécution. Nettoyé par
+ * `nettoyerEtatDistant`.
+ */
+export async function planifierRepasDistant(
+  request: APIRequestContext,
+  semaine: string,
+  repas: Array<{ jour: string; typeRepas: "dejeuner" | "diner"; nomRecette: string }>
+): Promise<void> {
+  const { url, headers } = await jetonTest(request);
+  const slots = [];
+  for (const r of repas) {
+    const rep = await request.get(
+      `${url}/rest/v1/recette?select=id&nom=eq.${encodeURIComponent(r.nomRecette)}&limit=1`,
+      { headers }
+    );
+    const lignes = (await rep.json()) as Array<{ id: string }>;
+    if (!rep.ok() || lignes.length === 0) {
+      throw new Error(`Recette du catalogue introuvable : « ${r.nomRecette} »`);
+    }
+    slots.push({
+      recette_id: lignes[0]!.id,
+      jour: r.jour,
+      type_repas: r.typeRepas,
+      personnes: 2,
+      restes: false,
+    });
+  }
+  const ecriture = await request.post(`${url}/rest/v1/rpc/sauvegarder_slots`, {
+    headers: { ...headers, "Content-Type": "application/json" },
+    data: { p_semaine: semaine, p_slots: slots },
+  });
+  if (!ecriture.ok()) {
+    throw new Error(
+      `Écriture des slots impossible : HTTP ${ecriture.status()} ${await ecriture.text()}`
+    );
+  }
+}
+
+/**
  * Remet le jour de courses du foyer de test à LUNDI (1) via PATCH REST — c'est
  * l'ancre du cycle de courses non calendaire (#257, `ancreCourante` de
  * lib/cycles.ts). Le foyer étant partagé (comme les réglages/le profil), une

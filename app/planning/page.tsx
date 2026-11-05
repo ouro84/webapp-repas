@@ -48,6 +48,7 @@ import {
 import { modifierPersonnes, personnesDuSlot } from "@/lib/personnes";
 import { estRestes, marquerRestes } from "@/lib/restes";
 import { lireLienCycle, PARAM_LIEN_CYCLE } from "@/lib/lien-cycle";
+import { lireLienSemaine, PARAM_LIEN_SEMAINE } from "@/lib/lien-semaine";
 import { naviguerVers, useSemaineAffichee, useSync } from "@/lib/sync";
 import { chargerRecettesGerees, type RecetteGeree } from "@/lib/recettes";
 import { chargerPreferences } from "@/lib/preferences";
@@ -344,23 +345,39 @@ function ContenuPlanning() {
   const [paramLienPresent] = useState(() => paramsUrl.has(PARAM_LIEN_CYCLE));
   // Vrai tant que le lien force la vue Cycle ; un clic sur la bascule le coupe.
   const [lienActif, setLienActif] = useState(lienCycle !== null);
+  // Lien `/planning?semaine=AAAA-Wnn` (#336, depuis /ce-soir) : même principe,
+  // lu une fois ; ouvre la vue Semaine sur la semaine du repas (sinon le
+  // week-end afficherait la suivante). Ignoré si un lien de cycle est présent.
+  const [lienSemaine] = useState(() =>
+    lienCycle !== null
+      ? null
+      : lireLienSemaine(paramsUrl.get(PARAM_LIEN_SEMAINE), new Date(), SEMAINES_PASSEES, SEMAINES_FUTURES)
+  );
+  const [paramSemainePresent] = useState(() => paramsUrl.has(PARAM_LIEN_SEMAINE));
+  const [lienSemaineActif, setLienSemaineActif] = useState(lienSemaine !== null);
   // Retrait par `history.replaceState`, comme le relais `?ancre=` de /courses :
   // `router.replace("/planning")` est sans effet en build de prod, où la page
   // statique initialise le routeur sur `/planning` (déjà l'URL « courante »).
   // Next synchronise `useSearchParams` avec l'History API native.
   useEffect(() => {
-    if (!paramLienPresent) return;
+    if (!paramLienPresent && !paramSemainePresent) return;
     const url = new URL(window.location.href);
     url.searchParams.delete(PARAM_LIEN_CYCLE);
+    url.searchParams.delete(PARAM_LIEN_SEMAINE);
     window.history.replaceState(window.history.state, "", url);
-  }, [paramLienPresent]);
+  }, [paramLienPresent, paramSemainePresent]);
   // Le lien force la vue Cycle pour la visite SANS écrire storeVuePlanning : la
   // vue préférée enregistrée reste celle de tous les jours.
-  const vue: "semaine" | "cycle" = lienActif || vueBrute === "cycle" ? "cycle" : "semaine";
+  const vue: "semaine" | "cycle" = lienSemaineActif
+    ? "semaine"
+    : lienActif || vueBrute === "cycle"
+      ? "cycle"
+      : "semaine";
   function setVue(v: "semaine" | "cycle"): void {
     // Choix explicite : écrit la préférence (comportement existant) et
     // désactive le lien pour le reste de la visite.
     setLienActif(false);
+    setLienSemaineActif(false);
     storeVuePlanning.ecrire(v);
   }
 
@@ -383,7 +400,7 @@ function ContenuPlanning() {
   // Synchro + historique : useSync hydrate la semaine affichée au montage et
   // pousse les changements (indicateur) ; useSemaineAffichee donne la semaine
   // courante affichée (navigation #5).
-  const etatSync = useSync();
+  const etatSync = useSync(lienSemaine);
   const semaineAffichee = useSemaineAffichee();
 
   // Chargement des recettes au montage (système externe asynchrone : setState

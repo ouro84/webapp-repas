@@ -68,9 +68,47 @@ export function prochainRepasActif(
   reglages: ReglagesGeneration,
   maxJours = 14
 ): ProchainRepas | null {
-  let date = new Date(maintenant.getFullYear(), maintenant.getMonth(), maintenant.getDate())
-  let typeRepas: TypeRepas = maintenant.getHours() < SEUIL_HEURE_DINER ? "dejeuner" : "diner"
+  const date = new Date(maintenant.getFullYear(), maintenant.getMonth(), maintenant.getDate())
+  const typeRepas: TypeRepas = maintenant.getHours() < SEUIL_HEURE_DINER ? "dejeuner" : "diner"
+  return repasActifDepuis(date, typeRepas, planningsParSemaine, reglages, maxJours)
+}
 
+/**
+ * Repas actif qui SUIT `repas` (#336, aperçu « Ensuite ») — même parcours que
+ * prochainRepasActif, en partant du créneau d'après (dîner du même jour ou
+ * déjeuner du lendemain). L'appelant n'affiche l'aperçu que si ce créneau a
+ * une recette.
+ */
+export function repasActifSuivant(
+  repas: Pick<ProchainRepas, "dateISO" | "typeRepas">,
+  planningsParSemaine: Map<string, Planning>,
+  reglages: ReglagesGeneration,
+  maxJours = 14
+): ProchainRepas | null {
+  const [date, typeRepas] = creneauSuivant(depuisISO(repas.dateISO), repas.typeRepas)
+  return repasActifDepuis(date, typeRepas, planningsParSemaine, reglages, maxJours)
+}
+
+/** Semaine ISO du jour d'un repas — sert à distinguer « aucun planning pour
+ *  cette semaine » (→ Générer) de « créneau vide d'un planning existant » (→ Voir). */
+export function semaineDuRepas(repas: Pick<ProchainRepas, "dateISO">): string {
+  return semaineISO(depuisISO(repas.dateISO))
+}
+
+function creneauSuivant(date: Date, typeRepas: TypeRepas): [Date, TypeRepas] {
+  if (typeRepas === "dejeuner") return [date, "diner"]
+  return [new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1), "dejeuner"]
+}
+
+function repasActifDepuis(
+  depart: Date,
+  typeDepart: TypeRepas,
+  planningsParSemaine: Map<string, Planning>,
+  reglages: ReglagesGeneration,
+  maxJours: number
+): ProchainRepas | null {
+  let date = depart
+  let typeRepas = typeDepart
   for (let i = 0; i < maxJours * 2; i++) {
     const jour = jourDeDate(date)
     if (creneauActif(jour, typeRepas, reglages)) {
@@ -85,12 +123,7 @@ export function prochainRepasActif(
         personnes: jp ? personnesDuSlot(jp, typeRepas) : PERSONNES_DEFAUT,
       }
     }
-    if (typeRepas === "dejeuner") {
-      typeRepas = "diner"
-    } else {
-      typeRepas = "dejeuner"
-      date = new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1)
-    }
+    ;[date, typeRepas] = creneauSuivant(date, typeRepas)
   }
   return null
 }
