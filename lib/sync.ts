@@ -1121,7 +1121,7 @@ function couperTempsReel(): Promise<void> {
   semainePlanningVoulue = null;
   eventsPlanningDifferes.clear();
   // Une lecture encore en vol ne rouvre pas le canal (#355), et la relecture
-  // US-21 ratée n'est plus retentée hors de /planning (reste persistée : refaite
+  // US-21 ratée n'est plus retentée hors de `useSync` (reste persistée : refaite
   // au prochain déclencheur de push). `relecturePlanningDemandee` n'est PAS
   // levé : la relecture finale d'un traitement en cours protège encore le push
   // de sa fusion (elle ne rouvre aucun canal).
@@ -1205,7 +1205,7 @@ function lireRelectureARefaire(): string | null {
 // Nouvelle tentative différée d'une relecture ratée (#355) : sans elle, rien ne
 // la relançait tant que l'utilisateur ne retouchait pas au planning (en ligne,
 // aucun event `online` ne vient). Back-off simple et borné ; seulement pendant
-// que /planning est monté (`abonnementPlanningAutorise`), arrêtée par
+// que `useSync` est monté (`/planning`, `/bienvenue` ; `abonnementPlanningAutorise`), arrêtée par
 // `couperTempsReel`. Hors ligne, l'event `online` relance déjà (`pousser`).
 const RELECTURE_DELAI_INITIAL_MS = 2000;
 const RELECTURE_DELAI_MAX_MS = 30_000;
@@ -1434,12 +1434,15 @@ let semainePlanningAbonnee: string | null = null;
 // retrait) ou un event différé d'une semaine quittée n'est jamais jugé.
 let semainePlanningVoulue: string | null = null;
 let chainePlanning: Promise<void> = Promise.resolve();
-// Vrai seulement entre le montage de /planning (`demarrerSync`) et sa coupure
-// (`couperTempsReel`) (#355). Une lecture encore en vol au démontage
-// (`chargerSemaineDansCache` d'une hydratation, d'une navigation ou d'une
-// relecture US-21) se termine sans rouvrir de canal ni reposer
-// `semainePlanningVoulue` : sinon le canal restait ouvert hors de /planning et
-// ses events étaient jugés (relecture, alerte) sur une page qui ne les attend pas.
+// Vrai seulement entre le montage de `useSync` (`demarrerSync` : `/planning`,
+// `/bienvenue`) et sa coupure (`couperTempsReel`) (#355). Une lecture encore en
+// vol au démontage (`chargerSemaineDansCache` d'une hydratation, d'une
+// navigation ou d'une relecture US-21) se termine sans rouvrir de canal ni
+// reposer `semainePlanningVoulue` : sinon le canal restait ouvert hors de ces
+// pages et ses events étaient jugés (relecture, alerte) sur une page qui ne les
+// attend pas. Exception assumée : une relecture finale (`relecturePlanningDemandee`)
+// déjà demandée au démontage s'exécute encore, et peut ouvrir l'alerte US-21
+// hors de `/planning` (fenêtre étroite).
 let abonnementPlanningAutorise = false;
 
 function synchroniserAbonnementPlanning(semaine: string | null): Promise<void> {
