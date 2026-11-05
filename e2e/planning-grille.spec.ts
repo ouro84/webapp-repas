@@ -18,7 +18,6 @@ import {
   nettoyerLongueursCycleDistantes,
   reinitialiserJourCoursesDistant,
 } from "./helpers";
-import { semaineISO, semaineParDefaut } from "../lib/semaines";
 import { ancreParDefaut } from "../lib/cycles";
 
 test.beforeEach(async ({ request }) => {
@@ -136,8 +135,11 @@ test("desktop 1024 : actions libellées comme en mobile", async ({ page }) => {
 
 test("aujourd'hui marqué, sauf le week-end", async ({ page }) => {
   // Viewport par défaut : 390 px (liste mobile).
-  const enSemaine = semaineParDefaut() === semaineISO();
   await page.goto("/planning");
+  // « Week-end ? » jugé par la date du NAVIGATEUR, celle de l'app (fuseau du
+  // contexte Playwright, minuit) : pas par Node (semaineParDefaut côté test).
+  const jourNavigateur = await page.evaluate(() => new Date().getDay());
+  const enSemaine = jourNavigateur !== 0 && jourNavigateur !== 6;
   await genererSemaine(page);
 
   async function verifierPastille(): Promise<void> {

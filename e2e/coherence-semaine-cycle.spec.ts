@@ -25,6 +25,8 @@ test("« Générer mon cycle » est accessible et fonctionne depuis la vue Cycle
   await expect(page.getByRole("heading", { name: "Mon planning du cycle" })).toBeVisible();
   await expect(page.getByText("Aucun repas planifié sur ce cycle.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Générer mon cycle" })).toBeVisible();
+  // Comme en semaine, l'état vide n'a pas de lien « Liste de courses → ».
+  await expect(page.getByRole("link", { name: "Liste de courses →" })).toHaveCount(0);
 
   await page.getByRole("button", { name: "Générer mon cycle" }).click();
   // Une recette apparaît dans la projection (génération réelle, catalogue seedé CI-only).
