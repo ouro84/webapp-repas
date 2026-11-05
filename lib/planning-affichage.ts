@@ -2,14 +2,13 @@
 // Libellés de dates et découpage d'affichage partagés par les vues Semaine et
 // Cycle du planning (#352). Cœur PUR, testable sans navigateur.
 //
-// Dates ISO "AAAA-MM-JJ" en heure LOCALE (comme lib/cycles.ts : depuisISO /
+// Dates ISO "AAAA-MM-JJ" en heure LOCALE (lib/dates-iso.ts : depuisISO /
 // versISO), jamais d'UTC : le jour calendaire affiché doit être celui visé.
 //
-// Import circulaire assumé avec lib/cycles.ts (qui réutilise libellePlageDates) :
-// sans risque, les deux modules n'utilisent l'autre qu'à l'appel, jamais à
-// l'évaluation du module.
+// lib/cycles.ts importe ce module (libellePlageDates) ; l'inverse n'existe plus :
+// les dates ISO viennent du module feuille lib/dates-iso.ts (#352).
 
-import { depuisISO, versISO } from "@/lib/cycles"
+import { depuisISO, versISO } from "@/lib/dates-iso"
 import { lundiDeSemaine } from "@/lib/semaines"
 
 const MS_PAR_JOUR = 86_400_000

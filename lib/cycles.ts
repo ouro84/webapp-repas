@@ -6,6 +6,7 @@
 // calendaire en heure LOCALE (cohérent avec lib/semaines.ts, cf. #171) :
 // semaineISO() reconstruit l'identifiant depuis les getters locaux.
 
+import { depuisISO, versISO } from "@/lib/dates-iso"
 import { libellePlageDates } from "@/lib/planning-affichage"
 import { lundiDeSemaine, semaineISO } from "@/lib/semaines"
 import type { Jour, Planning, JourPlanning } from "@/types"
@@ -27,17 +28,9 @@ function jourISO(d: Date): number {
   return d.getDay() === 0 ? 7 : d.getDay()
 }
 
-export function versISO(d: Date): string {
-  const a = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, "0")
-  const j = String(d.getDate()).padStart(2, "0")
-  return `${a}-${m}-${j}`
-}
-
-export function depuisISO(dateISO: string): Date {
-  const [a, m, j] = dateISO.split("-").map(Number)
-  return new Date(a, m - 1, j)
-}
+// Réexportées pour les consommateurs historiques ; elles vivent dans le module
+// feuille lib/dates-iso.ts (#352, plus d'import circulaire avec planning-affichage).
+export { depuisISO, versISO }
 
 /** Date ISO de la dernière occurrence du jour de courses ≤ aujourd'hui (D8). */
 export function ancreCourante(aujourdhui: Date, jourCourses: number): string {
