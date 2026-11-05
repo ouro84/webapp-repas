@@ -634,11 +634,9 @@ export function VuePlanningCycle({
   return (
     <>
       {!aDesRepas ? (
-        // Cycle vide → génération directe, sans confirmation (#334).
-        <div
-          aria-busy={chargement}
-          className={`flex flex-1 flex-col transition-opacity duration-200 ${chargement ? "opacity-50" : ""}`}
-        >
+        // Cycle vide → génération directe, sans confirmation (#334). Rechargement :
+        // seul le corps de l'état vide est estompé (titre, bascule, navigateur nets).
+        <div className="flex flex-1 flex-col">
           <EtatVidePlanning
             titre="Mon planning du cycle"
             vue={vue}
@@ -650,6 +648,7 @@ export function VuePlanningCycle({
             libelleAttente="Génération…"
             onGenerer={() => void genererMonCycle()}
             generationEnCours={generationEnCours}
+            chargement={chargement}
           />
         </div>
       ) : (

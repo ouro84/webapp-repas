@@ -75,3 +75,71 @@ describe("NavigateurPeriode : texte brut", () => {
     expect(groupe.textContent).toBe("Ce cycle du 5 au 14 novembre");
   });
 });
+
+// A7 (#352) : passer d'une période remplie à une vide (ou l'inverse) démonte
+// l'en-tête et monte l'état vide ; le navigateur est remonté ailleurs. Le focus
+// clavier doit rester sur la flèche cliquée (même direction, même unité).
+describe("NavigateurPeriode : focus conservé au remontage", () => {
+  function cliquerAuClavier(nom: string) {
+    const bouton = screen.getByRole("button", { name: nom });
+    bouton.focus();
+    fireEvent.click(bouton);
+  }
+
+  it("le nouveau navigateur reprend le focus sur la flèche de même direction", () => {
+    const premier = render(<NavigateurPeriode unite="cycle" {...base} />);
+    cliquerAuClavier("Cycle suivant");
+    premier.unmount(); // focus perdu : retombe sur <body>
+    expect(document.activeElement).toBe(document.body);
+    render(<NavigateurPeriode unite="cycle" {...base} />);
+    expect(document.activeElement?.getAttribute("aria-label")).toBe("Cycle suivant");
+  });
+
+  it("idem vers l'arrière, et une seule fois", () => {
+    const premier = render(<NavigateurPeriode unite="semaine" {...base} />);
+    cliquerAuClavier("Semaine précédente");
+    premier.unmount();
+    const second = render(<NavigateurPeriode unite="semaine" {...base} />);
+    expect(document.activeElement?.getAttribute("aria-label")).toBe("Semaine précédente");
+    (document.activeElement as HTMLElement).blur();
+    second.unmount();
+    render(<NavigateurPeriode unite="semaine" {...base} />);
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it("aucune reprise si le focus a quitté la flèche avant le remontage", async () => {
+    const premier = render(
+      <>
+        <NavigateurPeriode unite="cycle" {...base} />
+        <button type="button">Ailleurs</button>
+      </>
+    );
+    cliquerAuClavier("Cycle suivant");
+    screen.getByRole("button", { name: "Ailleurs" }).focus();
+    // Deux gestes sont séparés par au moins une microtâche (vérification du blur).
+    await Promise.resolve();
+    premier.unmount();
+    render(<NavigateurPeriode unite="cycle" {...base} />);
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it("aucune reprise pour une autre unité", () => {
+    const premier = render(<NavigateurPeriode unite="cycle" {...base} />);
+    cliquerAuClavier("Cycle suivant");
+    premier.unmount();
+    render(<NavigateurPeriode unite="semaine" {...base} />);
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it("aucun vol de focus si un autre élément l'a déjà", () => {
+    const premier = render(<NavigateurPeriode unite="cycle" {...base} />);
+    cliquerAuClavier("Cycle suivant");
+    premier.unmount();
+    const autre = document.createElement("input");
+    document.body.appendChild(autre);
+    autre.focus();
+    render(<NavigateurPeriode unite="cycle" {...base} />);
+    expect(document.activeElement).toBe(autre);
+    autre.remove();
+  });
+});

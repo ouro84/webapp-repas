@@ -1,13 +1,28 @@
+"use client";
+
 // Navigateur de période unique (#352) : stepper ‹ [libellé relatif + dates] ›
 // partagé par la vue Semaine, la vue Cycle et /courses. Purement présentatif :
 // l'appelant calcule libellé, dates, bornes et gère la navigation (US-14, #5).
 //
 // Rendu après hydratation uniquement côté appelants (le libellé relatif dépend
 // de la date du client).
+//
+// Focus conservé au remontage (#352) : quand la navigation fait passer d'une
+// période remplie à une vide (ou l'inverse), l'appelant démonte l'en-tête et
+// monte l'état vide ; le navigateur est remonté ailleurs et la flèche cliquée
+// perd le focus. La flèche activée est donc retenue (`flecheEnAttente`) tant
+// qu'elle garde le focus ; le navigateur de même unité qui se monte ensuite le
+// lui rend, si le focus est retombé sur <body> (jamais de vol de focus).
 
+import { useEffect, useRef } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
 export type UnitePeriode = "semaine" | "cycle";
+
+type Sens = "precedente" | "suivante";
+
+// État module (navigateur) : une seule flèche activée à la fois dans la page.
+let flecheEnAttente: { unite: UnitePeriode; sens: Sens } | null = null;
 
 const LIBELLES: Record<
   UnitePeriode,
@@ -50,6 +65,34 @@ export function NavigateurPeriode({
   disabled?: boolean;
 }) {
   const textes = LIBELLES[unite];
+  const refPrecedente = useRef<HTMLButtonElement>(null);
+  const refSuivante = useRef<HTMLButtonElement>(null);
+
+  // Montage : rend le focus à la flèche activée sur le navigateur démonté.
+  useEffect(() => {
+    const attente = flecheEnAttente;
+    if (attente === null || attente.unite !== unite) return;
+    flecheEnAttente = null;
+    const actif = document.activeElement;
+    if (actif !== null && actif !== document.body) return;
+    const cible = attente.sens === "precedente" ? refPrecedente.current : refSuivante.current;
+    cible?.focus();
+  }, [unite]);
+
+  function activer(sens: Sens, action: () => void): void {
+    flecheEnAttente = { unite, sens };
+    action();
+  }
+
+  // Le focus quitte la flèche par un geste de l'utilisateur : plus rien à rendre.
+  // Vérifié après coup : un `blur` émis par le retrait du bouton du DOM (remontage)
+  // ne doit pas effacer l'attente.
+  function surBlur(bouton: HTMLButtonElement): void {
+    queueMicrotask(() => {
+      if (bouton.isConnected && flecheEnAttente?.unite === unite) flecheEnAttente = null;
+    });
+  }
+
   return (
     <div
       role="group"
@@ -58,7 +101,9 @@ export function NavigateurPeriode({
     >
       <button
         type="button"
-        onClick={onPrecedente}
+        ref={refPrecedente}
+        onClick={() => activer("precedente", onPrecedente)}
+        onBlur={(e) => surBlur(e.currentTarget)}
         disabled={disabled || !peutReculer}
         aria-label={textes.precedente}
         className={STYLE_FLECHE}
@@ -83,7 +128,9 @@ export function NavigateurPeriode({
       </span>
       <button
         type="button"
-        onClick={onSuivante}
+        ref={refSuivante}
+        onClick={() => activer("suivante", onSuivante)}
+        onBlur={(e) => surBlur(e.currentTarget)}
         disabled={disabled || !peutAvancer}
         aria-label={textes.suivante}
         className={STYLE_FLECHE}

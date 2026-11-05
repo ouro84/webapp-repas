@@ -139,4 +139,31 @@ test("naviguer entre les cycles garde l'en-tête et le focus sur la flèche pend
   // Le chargement aboutit : le navigateur annonce un autre cycle.
   await expect(navigateur).not.toHaveText(libelleAvant, { timeout: 10_000 });
   await expect(page.getByRole("group", { name: "Vue du planning" })).toBeVisible();
+
+  // Le cycle suivant est vide : l'en-tête est remplacé par l'état vide et le
+  // navigateur remonté ailleurs ; le focus revient sur la flèche cliquée.
+  await expect(page.getByText("Aucun repas planifié sur ce cycle.")).toBeVisible();
+  await expect
+    .poll(() => page.evaluate(() => document.activeElement?.getAttribute("aria-label")))
+    .toBe("Cycle suivant");
+});
+
+// Jumeau semaine (#352) : semaine remplie → semaine vide, même remontage du
+// navigateur (en-tête → état vide), même reprise du focus.
+test("semaine remplie → semaine vide : le focus reste sur « Semaine suivante » (#352)", async ({
+  page,
+}) => {
+  await page.goto("/planning");
+  await page.getByRole("button", { name: "Générer mon planning" }).click();
+  await expect(
+    page.getByRole("button", { name: /^Voir la recette/ }).first()
+  ).toBeVisible({ timeout: 20_000 });
+
+  await page.getByRole("button", { name: "Semaine suivante" }).click();
+  await expect(page.getByText("Aucun planning pour cette semaine.")).toBeVisible({
+    timeout: 10_000,
+  });
+  await expect
+    .poll(() => page.evaluate(() => document.activeElement?.getAttribute("aria-label")))
+    .toBe("Semaine suivante");
 });
