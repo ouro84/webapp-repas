@@ -10,9 +10,10 @@
 // Focus conservé au remontage (#352) : quand la navigation fait passer d'une
 // période remplie à une vide (ou l'inverse), l'appelant démonte l'en-tête et
 // monte l'état vide ; le navigateur est remonté ailleurs et la flèche cliquée
-// perd le focus. La flèche activée est donc retenue (`flecheEnAttente`) tant
-// qu'elle garde le focus ; le navigateur de même unité qui se monte ensuite le
-// lui rend, si le focus est retombé sur <body> (jamais de vol de focus).
+// perd le focus. La flèche activée est donc retenue (`flecheEnAttente`), si elle
+// a pris le focus au clic et tant qu'elle le garde ; le navigateur de même unité
+// qui se monte dans le même rendu le lui rend, si le focus est retombé sur
+// <body> (jamais de vol de focus).
 
 import { useEffect, useRef } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
@@ -71,16 +72,31 @@ export function NavigateurPeriode({
   // Montage : rend le focus à la flèche activée sur le navigateur démonté.
   useEffect(() => {
     const attente = flecheEnAttente;
-    if (attente === null || attente.unite !== unite) return;
-    flecheEnAttente = null;
-    const actif = document.activeElement;
-    if (actif !== null && actif !== document.body) return;
-    const cible = attente.sens === "precedente" ? refPrecedente.current : refSuivante.current;
-    cible?.focus();
+    if (attente !== null && attente.unite === unite) {
+      flecheEnAttente = null;
+      const actif = document.activeElement;
+      if (actif === null || actif === document.body) {
+        const cible = attente.sens === "precedente" ? refPrecedente.current : refSuivante.current;
+        cible?.focus();
+      }
+    }
+    // Démontage : le remontage rempli ↔ vide a lieu dans le même rendu, ses
+    // effets passent avant cette microtâche. Si aucun navigateur ne l'a reprise
+    // d'ici là (changement de page, flèche désactivée à une borne qui a perdu le
+    // focus sans `blur`), l'attente est effacée : jamais de vol de focus au
+    // retour sur la page.
+    return () => {
+      queueMicrotask(() => {
+        if (flecheEnAttente?.unite === unite) flecheEnAttente = null;
+      });
+    };
   }, [unite]);
 
-  function activer(sens: Sens, action: () => void): void {
-    flecheEnAttente = { unite, sens };
+  // Retenue seulement si la flèche a pris le focus : Safari (macOS, iOS) et
+  // Firefox macOS ne focalisent pas un bouton au clic, il n'y a alors rien à
+  // rendre (et aucun `blur` ne viendrait effacer l'attente).
+  function activer(sens: Sens, action: () => void, bouton: HTMLButtonElement): void {
+    flecheEnAttente = document.activeElement === bouton ? { unite, sens } : null;
     action();
   }
 
@@ -102,7 +118,7 @@ export function NavigateurPeriode({
       <button
         type="button"
         ref={refPrecedente}
-        onClick={() => activer("precedente", onPrecedente)}
+        onClick={(e) => activer("precedente", onPrecedente, e.currentTarget)}
         onBlur={(e) => surBlur(e.currentTarget)}
         disabled={disabled || !peutReculer}
         aria-label={textes.precedente}
@@ -129,7 +145,7 @@ export function NavigateurPeriode({
       <button
         type="button"
         ref={refSuivante}
-        onClick={() => activer("suivante", onSuivante)}
+        onClick={(e) => activer("suivante", onSuivante, e.currentTarget)}
         onBlur={(e) => surBlur(e.currentTarget)}
         disabled={disabled || !peutAvancer}
         aria-label={textes.suivante}

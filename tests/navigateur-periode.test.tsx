@@ -131,6 +131,31 @@ describe("NavigateurPeriode : focus conservé au remontage", () => {
     expect(document.activeElement).toBe(document.body);
   });
 
+  // Safari (macOS, iOS) et Firefox macOS ne focalisent pas un bouton au clic :
+  // aucun `blur` ne viendrait effacer l'attente, et le prochain navigateur de
+  // même unité volerait le focus au chargement de la page.
+  it("clic sans focus : aucune reprise au remontage", () => {
+    const premier = render(<NavigateurPeriode unite="semaine" {...base} />);
+    fireEvent.click(screen.getByRole("button", { name: "Semaine suivante" }));
+    expect(document.activeElement).toBe(document.body);
+    premier.unmount();
+    render(<NavigateurPeriode unite="semaine" {...base} />);
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  // Flèche désactivée à une borne : le focus retombe sur <body> sans `blur`.
+  // Quitter la page (démontage sans remontage dans le même rendu) efface
+  // l'attente : le retour sur la page ne vole pas le focus.
+  it("démontage sans remontage immédiat (changement de page) : l'attente est effacée", async () => {
+    const premier = render(<NavigateurPeriode unite="semaine" {...base} />);
+    cliquerAuClavier("Semaine suivante");
+    premier.rerender(<NavigateurPeriode unite="semaine" {...base} peutAvancer={false} />);
+    premier.unmount();
+    await Promise.resolve(); // la page suivante se monte plus tard
+    render(<NavigateurPeriode unite="semaine" {...base} />);
+    expect(document.activeElement).toBe(document.body);
+  });
+
   it("aucun vol de focus si un autre élément l'a déjà", () => {
     const premier = render(<NavigateurPeriode unite="cycle" {...base} />);
     cliquerAuClavier("Cycle suivant");
