@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest"
-import { prochainRepasActif, libelleContexteRepas, libelleMomentActuel } from "@/lib/prochain-repas"
+import {
+  prochainRepasActif,
+  repasActifSuivant,
+  semaineDuRepas,
+  libelleContexteRepas,
+  libelleMomentActuel,
+} from "@/lib/prochain-repas"
 import { REGLAGES_DEFAUT } from "@/lib/reglages"
 import type { Planning, ReglagesGeneration } from "@/types"
 
@@ -99,6 +105,72 @@ describe("prochainRepasActif", () => {
     expect(r?.dateISO).toBe("2026-07-18")
     expect(r?.typeRepas).toBe("diner")
     expect(r?.recette).toBeUndefined()
+  })
+})
+
+describe("repasActifSuivant (#336, aperçu « Ensuite »)", () => {
+  it("après un déjeuner : le dîner du même jour", () => {
+    const map = new Map([
+      ["2026-W29", planningSemaine("2026-W29", [
+        { jour: "jeudi", dejeuner: recette("dej"), diner: recette("din") },
+      ])],
+    ])
+    const r = repasActifSuivant({ dateISO: "2026-07-16", typeRepas: "dejeuner" }, map, REGLAGES_DEFAUT)
+    expect(r?.dateISO).toBe("2026-07-16")
+    expect(r?.typeRepas).toBe("diner")
+    expect(r?.recette).toEqual(recette("din"))
+  })
+
+  it("après un dîner : le déjeuner du lendemain", () => {
+    const map = new Map([
+      ["2026-W29", planningSemaine("2026-W29", [
+        { jour: "vendredi", dejeuner: recette("dej-ven") },
+      ])],
+    ])
+    const r = repasActifSuivant({ dateISO: "2026-07-16", typeRepas: "diner" }, map, REGLAGES_DEFAUT)
+    expect(r?.dateISO).toBe("2026-07-17")
+    expect(r?.typeRepas).toBe("dejeuner")
+    expect(r?.recette).toEqual(recette("dej-ven"))
+  })
+
+  it("saute les créneaux désactivés", () => {
+    const reglages: ReglagesGeneration = {
+      ...REGLAGES_DEFAUT,
+      plafonds: { ...REGLAGES_DEFAUT.plafonds, dejeunerSemaine: "aucun" },
+    }
+    const map = new Map([
+      ["2026-W29", planningSemaine("2026-W29", [
+        { jour: "vendredi", dejeuner: recette("dej-ven"), diner: recette("din-ven") },
+      ])],
+    ])
+    // Jeudi soir → vendredi midi désactivé → vendredi soir.
+    const r = repasActifSuivant({ dateISO: "2026-07-16", typeRepas: "diner" }, map, reglages)
+    expect(r?.dateISO).toBe("2026-07-17")
+    expect(r?.typeRepas).toBe("diner")
+    expect(r?.recette).toEqual(recette("din-ven"))
+  })
+
+  it("dimanche soir → lundi midi de la semaine suivante", () => {
+    const map = new Map([
+      ["2026-W30", planningSemaine("2026-W30", [
+        { jour: "lundi", dejeuner: recette("dej-lun") },
+      ])],
+    ])
+    const r = repasActifSuivant({ dateISO: "2026-07-19", typeRepas: "diner" }, map, REGLAGES_DEFAUT)
+    expect(r?.dateISO).toBe("2026-07-20")
+    expect(r?.recette).toEqual(recette("dej-lun"))
+  })
+
+  it("créneau suivant sans recette : recette undefined (aperçu absent côté page)", () => {
+    const r = repasActifSuivant({ dateISO: "2026-07-16", typeRepas: "dejeuner" }, new Map(), REGLAGES_DEFAUT)
+    expect(r?.recette).toBeUndefined()
+  })
+})
+
+describe("semaineDuRepas", () => {
+  it("renvoie la semaine ISO du jour du repas", () => {
+    expect(semaineDuRepas({ dateISO: "2026-07-19" })).toBe("2026-W29")
+    expect(semaineDuRepas({ dateISO: "2026-07-20" })).toBe("2026-W30")
   })
 })
 

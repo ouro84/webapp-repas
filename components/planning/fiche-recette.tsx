@@ -9,25 +9,17 @@
 // remonte via onClose.
 //
 // La recette vient du slot du planning (déjà en localStorage) — AUCUN appel
-// réseau. Les quantités sont mises à l'échelle du slot (RG-20, via RG-17) avec
-// le même calcul que la liste de courses (lib/personnes), donc cohérentes.
-// Les ingrédients sont scindés « à acheter » / « fond de placard » (RG-14)
-// pour répondre au besoin « puis-je la faire sans rien acheter ».
+// réseau. Le corps (badges, ingrédients mis à l'échelle, étapes) est partagé
+// avec la page /ce-soir via ContenuRecette (#336).
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { BadgeTemps } from "@/components/planning/badge-temps";
-import { BadgeVegetarien } from "@/components/ui/badge-vegetarien";
-import { BadgeAccompagnement } from "@/components/ui/badge-accompagnement";
-import { BadgeSaison } from "@/components/ui/badge-saison";
+import { BadgesRecette, ContenuRecette } from "@/components/planning/contenu-recette";
 import { TogglePreferenceRecette } from "@/components/ui/toggle-preference-recette";
-import { ingredientsAEchelle } from "@/lib/personnes";
-import { accorderNom } from "@/lib/pluriels";
-import { formaterQuantite } from "@/lib/unites";
 import { chargerPreference, definirPreference } from "@/lib/preferences";
 import type { RecettePreference } from "@/lib/generateur";
-import type { Ingredient, Recette } from "@/types";
+import type { Recette } from "@/types";
 
 export function FicheRecette({
   recette,
@@ -85,16 +77,6 @@ export function FicheRecette({
     });
   }
 
-  // Ingrédients mis à l'échelle du slot puis scindés (RG-20). Même calcul que
-  // la liste de courses : ×N/2 puis arrondi par type d'unité (ingredientsAEchelle).
-  const { aAcheter, fondDePlacard } = useMemo(() => {
-    const misAEchelle = ingredientsAEchelle(recette.ingredients, personnes);
-    return {
-      aAcheter: misAEchelle.filter((i) => !i.fondDePlacard),
-      fondDePlacard: misAEchelle.filter((i) => i.fondDePlacard),
-    };
-  }, [recette, personnes]);
-
   // Ouverture au montage : le parent ne monte ce composant que pendant la
   // consultation. Pas de setState ici — showModal est un effet DOM pur.
   useEffect(() => {
@@ -121,19 +103,7 @@ export function FicheRecette({
           <h2 id="titre-fiche" className="text-lg font-bold text-brand-900">
             {recette.nom}
           </h2>
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <BadgeTemps temps={recette.tempsPreparation} />
-            {recette.vegetarien && <BadgeVegetarien />}
-            {recette.accompagnement && (
-              <BadgeAccompagnement accompagnement={recette.accompagnement} />
-            )}
-            {recette.saisons && recette.saisons.length > 0 && (
-              <BadgeSaison saisons={recette.saisons} />
-            )}
-            <span className="text-xs text-brand-700/85">
-              pour {personnes} personne{personnes > 1 ? "s" : ""}
-            </span>
-          </div>
+          <BadgesRecette recette={recette} personnes={personnes} />
         </div>
         <TogglePreferenceRecette
           preference={preference}
@@ -161,46 +131,7 @@ export function FicheRecette({
       </header>
 
       <div className="flex-1 overflow-y-auto overscroll-contain p-4">
-        {recette.ingredients.length === 0 ? (
-          // RG-09 : tout écran gère son état vide.
-          <p className="py-6 text-center text-sm text-brand-700/85">
-            Aucun ingrédient renseigné pour cette recette.
-          </p>
-        ) : (
-          <div className="space-y-5">
-            {aAcheter.length > 0 ? (
-              <GroupeIngredients titre="À acheter" ingredients={aAcheter} />
-            ) : (
-              <p className="text-sm text-brand-700/85">
-                Rien à acheter — tous les ingrédients sont au fond de placard.
-              </p>
-            )}
-            {fondDePlacard.length > 0 && (
-              <GroupeIngredients
-                titre="Fond de placard (à vérifier)"
-                ingredients={fondDePlacard}
-              />
-            )}
-          </div>
-        )}
-
-        {/* Préparation (RG-43, #233) : liste numérotée des étapes, APRÈS les
-            ingrédients. Masquée si la recette n'a pas d'étapes (catalogue global
-            non renseigné) — pas de section vide ni de placeholder bruyant. */}
-        {recette.etapes && recette.etapes.length > 0 && (
-          <section className="mt-6">
-            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-brand-700/85">
-              Préparation
-            </h3>
-            <ol className="flex list-decimal flex-col gap-2 pl-5 text-sm text-brand-900 marker:font-semibold marker:text-brand-700/85">
-              {recette.etapes.map((etape, index) => (
-                <li key={index} className="pl-1">
-                  {etape}
-                </li>
-              ))}
-            </ol>
-          </section>
-        )}
+        <ContenuRecette recette={recette} personnes={personnes} />
       </div>
 
       {/* Raccourci d'édition (RG-20, #137) : proposé pour toute recette du
@@ -217,38 +148,5 @@ export function FicheRecette({
         </footer>
       )}
     </dialog>
-  );
-}
-
-// Une section d'ingrédients (nom accordé + quantité formatée), même rendu que
-// la liste de courses (lib/unites, lib/pluriels).
-function GroupeIngredients({
-  titre,
-  ingredients,
-}: {
-  titre: string;
-  ingredients: Ingredient[];
-}) {
-  return (
-    <section>
-      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-brand-700/85">
-        {titre}
-      </h3>
-      <ul className="divide-y divide-brand-100">
-        {ingredients.map((ingredient) => (
-          <li
-            key={`${ingredient.nom}-${ingredient.unite}`}
-            className="flex items-center justify-between gap-3 py-2"
-          >
-            <span className="text-sm text-brand-900">
-              {accorderNom(ingredient)}
-            </span>
-            <span className="shrink-0 text-sm font-medium text-brand-700/85">
-              {formaterQuantite(ingredient)}
-            </span>
-          </li>
-        ))}
-      </ul>
-    </section>
   );
 }

@@ -12,7 +12,7 @@
 
 import { useEffect, useState } from "react";
 import { useSyncExternalStore } from "react";
-import { storeCoches, storePlanning } from "@/lib/stockage";
+import { creerStoreJSON, storeCoches, storePlanning } from "@/lib/stockage";
 import {
   basculerCocheArticleManuelDistant,
   chargerArticlesManuelsDistants,
@@ -159,58 +159,6 @@ export function useSemaineAffichee(): string | null {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Factory de store localStorage-JSON pour useSyncExternalStore (#257, refactor
-// post-rétro). CENTRALISE la mémoïsation du parse : `lire` (getSnapshot) DOIT
-// renvoyer une référence STABLE tant que la chaîne brute n'a pas changé — sinon
-// useSyncExternalStore boucle → « Maximum update depth exceeded » (React #185) →
-// error boundary. Ce bug est arrivé en #257 sur un store objet non mémoïsé ; la
-// factory le rend STRUCTURELLEMENT impossible pour tout nouveau store. `ecrire`
-// (null → removeItem) notifie les abonnés ; l'event `storage` couvre les autres
-// onglets. Snapshot serveur = null (prérendu en état vide, cf. lib/stockage).
-// N'utiliser QUE pour des stores JAMAIS poussés en base (cf. commentaires ci-
-// dessous) — la persistance planning/coches a sa propre mécanique.
-// ---------------------------------------------------------------------------
-function creerStoreJSON<T>(cle: string) {
-  const abonnes = new Set<() => void>();
-  let cacheRaw: string | null = null;
-  let cacheParsed: T | null = null;
-  function lire(): T | null {
-    let brut: string | null = null;
-    try {
-      brut = localStorage.getItem(cle);
-    } catch {
-      brut = null;
-    }
-    if (brut !== cacheRaw) {
-      cacheRaw = brut;
-      try {
-        cacheParsed = brut ? (JSON.parse(brut) as T) : null;
-      } catch {
-        cacheParsed = null;
-      }
-    }
-    return cacheParsed;
-  }
-  function ecrire(valeur: T | null): void {
-    if (valeur === null) localStorage.removeItem(cle);
-    else localStorage.setItem(cle, JSON.stringify(valeur));
-    for (const rappel of abonnes) rappel();
-  }
-  return {
-    sAbonner(rappel: () => void): () => void {
-      abonnes.add(rappel);
-      window.addEventListener("storage", rappel);
-      return () => {
-        abonnes.delete(rappel);
-        window.removeEventListener("storage", rappel);
-      };
-    },
-    lire,
-    lireServeur: (): null => null,
-    ecrire,
-  };
-}
 
 // ---------------------------------------------------------------------------
 // Cycle affiché (#257) — store adossé à localStorage. Porte l'ancre (date ISO)
@@ -1746,11 +1694,16 @@ function purgerHistorique(): void {
  * sa semaine) ; sinon on affiche la **semaine par défaut** (courante, ou
  * prochaine le week-end) depuis la base. Aux montages suivants (SPA), on pousse
  * seulement d'éventuels changements en attente — pas de re-tirage.
+ *
+ * `semaineVoulue` (lien `/planning?semaine=`, #336, déjà validé par l'appelant)
+ * remplace la semaine par défaut ; si le cache local fait foi ou si l'app est
+ * déjà hydratée, on y navigue ensuite (`naviguerVers` flushe d'abord).
  */
-export async function hydrater(): Promise<void> {
+export async function hydrater(semaineVoulue: string | null = null): Promise<void> {
   if (dejaHydrate) {
     if (estDirty()) void pousser();
     if (estDirtyCoches()) void flusherCoches();
+    if (semaineVoulue) void naviguerVers(semaineVoulue);
     return;
   }
   dejaHydrate = true;
@@ -1766,12 +1719,14 @@ export async function hydrater(): Promise<void> {
     // /courses → no-op sûr), pas sur la semaine du planning.
     void synchroniserAbonnementCoches(ancreActive());
     void synchroniserAbonnementPlanning(local.semaine);
+    if (semaineVoulue && semaineVoulue !== local.semaine) void naviguerVers(semaineVoulue);
     return;
   }
 
-  // Cas nominal : on affiche la semaine par défaut depuis la base (chargement
-  // forcé — pas de garde « déjà affichée », car le cache peut être vide).
-  await chargerSemaineDansCache(semaineParDefaut());
+  // Cas nominal : on affiche la semaine par défaut (ou celle du lien) depuis la
+  // base (chargement forcé — pas de garde « déjà affichée », car le cache peut
+  // être vide).
+  await chargerSemaineDansCache(semaineVoulue ?? semaineParDefaut());
 }
 
 // Démarre la synchro : abonnement aux écritures (planning + coches), temps réel
@@ -1804,8 +1759,9 @@ function demarrerSync(): () => void {
  * Hook de page : démarre la synchro (planning + coches) et hydrate au montage,
  * renvoie l'état de synchro courant (pour l'indicateur). addEventListener +
  * promesse, pas de setState au montage → conforme à set-state-in-effect.
+ * `semaineVoulue` : cf. hydrater ; doit être stable (lu une fois au montage).
  */
-export function useSync(): EtatSync {
+export function useSync(semaineVoulue: string | null = null): EtatSync {
   const etatCourant = useSyncExternalStore(
     storeEtatSync.sAbonner,
     storeEtatSync.lire,
@@ -1813,9 +1769,9 @@ export function useSync(): EtatSync {
   );
   useEffect(() => {
     const arreter = demarrerSync();
-    void hydrater();
+    void hydrater(semaineVoulue);
     return arreter;
-  }, []);
+  }, [semaineVoulue]);
   return etatCourant;
 }
 

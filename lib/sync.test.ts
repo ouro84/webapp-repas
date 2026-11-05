@@ -112,6 +112,32 @@ describe("hydrater — last-write-wins / dirty-first (RG-23)", () => {
     expect(localStorage.getItem("semaine_affichee")).toBe(def);
   });
 
+  it("semaine voulue (lien /planning?semaine=, #336) → hydrate CETTE semaine, pas la défaut", async () => {
+    const { hydrater } = await chargerSync();
+    const { semaineDecalee, semaineParDefaut } = await import("@/lib/semaines");
+    const voulue = semaineDecalee(semaineParDefaut(), -1);
+    persistance.chargerPlanningDistant.mockResolvedValue({
+      planning: planning(voulue),
+      updatedAt: "2026-06-15T10:00:00.000Z",
+    });
+
+    await hydrater(voulue);
+
+    expect(persistance.chargerPlanningDistant).toHaveBeenCalledWith(voulue);
+    expect(localStorage.getItem("semaine_affichee")).toBe(voulue);
+  });
+
+  it("déjà hydraté + semaine voulue → navigue vers elle (nav SPA depuis /ce-soir)", async () => {
+    const { hydrater } = await chargerSync();
+    const { semaineDecalee, semaineParDefaut } = await import("@/lib/semaines");
+    await hydrater();
+    const voulue = semaineDecalee(semaineParDefaut(), -1);
+
+    await hydrater(voulue);
+
+    await vi.waitFor(() => expect(localStorage.getItem("semaine_affichee")).toBe(voulue));
+  });
+
   it("cache local DIRTY → conservé (jamais écrasé) puis poussé, dirty levé au succès", async () => {
     const local = planning("2026-W10");
     localStorage.setItem("planning_courant", JSON.stringify(local));

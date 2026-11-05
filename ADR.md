@@ -202,7 +202,7 @@ webapp-repas/
 │
 ├── components/
 │   ├── ui/                       # Génériques (logo, nav, badges, confirmation, avatar, thème…)
-│   ├── planning/                 # badge-temps, fiche-recette, selecteur-recette
+│   ├── planning/                 # badge-temps, fiche-recette, contenu-recette (corps partagé fiche + /ce-soir), selecteur-recette
 │   ├── recettes/                 # formulaire-recette
 │   ├── profil/                   # panneau-foyer, edition-identite, modale-doublons, changer-mot-de-passe, assistants-connectes
 │   ├── oauth/                    # ecran-consentement (#305)

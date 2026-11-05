@@ -187,3 +187,56 @@ export function restaurerSnapshotAnnulation(
   localStorage.removeItem(CLE_SNAPSHOT)
   return true
 }
+
+// ---------------------------------------------------------------------------
+// Factory de store localStorage-JSON pour useSyncExternalStore (#257, refactor
+// post-rétro). CENTRALISE la mémoïsation du parse : `lire` (getSnapshot) DOIT
+// renvoyer une référence STABLE tant que la chaîne brute n'a pas changé — sinon
+// useSyncExternalStore boucle → « Maximum update depth exceeded » (React #185) →
+// error boundary. Ce bug est arrivé en #257 sur un store objet non mémoïsé ; la
+// factory le rend STRUCTURELLEMENT impossible pour tout nouveau store. `ecrire`
+// (null → removeItem) notifie les abonnés ; l'event `storage` couvre les autres
+// onglets. Snapshot serveur = null (prérendu en état vide, cf. en-tête).
+// N'utiliser QUE pour des stores JAMAIS poussés en base (cf. stores du cycle dans
+// lib/sync.ts) — la persistance planning/coches a sa propre mécanique.
+// ---------------------------------------------------------------------------
+export function creerStoreJSON<T>(cle: string) {
+  const abonnes = new Set<() => void>();
+  let cacheRaw: string | null = null;
+  let cacheParsed: T | null = null;
+  function lire(): T | null {
+    let brut: string | null = null;
+    try {
+      brut = localStorage.getItem(cle);
+    } catch {
+      brut = null;
+    }
+    if (brut !== cacheRaw) {
+      cacheRaw = brut;
+      try {
+        cacheParsed = brut ? (JSON.parse(brut) as T) : null;
+      } catch {
+        cacheParsed = null;
+      }
+    }
+    return cacheParsed;
+  }
+  function ecrire(valeur: T | null): void {
+    if (valeur === null) localStorage.removeItem(cle);
+    else localStorage.setItem(cle, JSON.stringify(valeur));
+    for (const rappel of abonnes) rappel();
+  }
+  return {
+    sAbonner(rappel: () => void): () => void {
+      abonnes.add(rappel);
+      window.addEventListener("storage", rappel);
+      return () => {
+        abonnes.delete(rappel);
+        window.removeEventListener("storage", rappel);
+      };
+    },
+    lire,
+    lireServeur: (): null => null,
+    ecrire,
+  };
+}
