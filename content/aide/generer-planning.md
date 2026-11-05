@@ -2,13 +2,13 @@ _Le cœur de l'app : obtenir une semaine de repas complète en un geste, et la r
 
 ## Générer ta semaine
 
-Sur la page **Mon planning de la semaine**, si aucun planning n'existe encore, touche le grand bouton **« Générer mon planning »**. L'app compose en quelques secondes une semaine complète : **14 repas** — un déjeuner et un dîner pour chaque jour, week-end compris.
+Sur la page **Mon planning de la semaine**, si aucun planning n'existe encore pour la semaine affichée, tu vois un aperçu de planning et le grand bouton **« Générer mon planning »**. Touche-le : l'app compose en quelques secondes une semaine complète de **14 repas** (un déjeuner et un dîner pour chaque jour, week-end compris).
 
-Pendant le calcul, le bouton affiche **« Génération… »**. Tu n'as rien à choisir : l'app pioche dans ton catalogue de recettes en respectant tes réglages de génération.
+Si le calcul prend un peu de temps, le bouton affiche **« Je compose ta semaine… »** et l'aperçu respire doucement. Tu n'as rien à choisir : l'app pioche dans ton catalogue de recettes en respectant tes réglages de génération. Les jours arrivent ensuite un par un, et la carte d'aujourd'hui s'éclaire brièvement avant le message de confirmation.
 
 ## Régénérer
 
-Une fois une semaine affichée, le bouton en haut devient **« Régénérer »**. Il rebat les cartes : une toute nouvelle sélection de 14 repas remplace l'ancienne.
+Une fois une semaine affichée, le bouton en haut devient **« Régénérer »**. Il rebat les cartes : une toute nouvelle sélection de 14 repas remplace l'ancienne. Pendant le calcul, la semaine actuelle s'estompe, puis la nouvelle arrive jour par jour.
 
 > ↩️ **Tu préférais la version d'avant ?** Juste après une régénération, un bouton **« Annuler »** apparaît (ou `Ctrl/Cmd + Z`). Il restaure **à la fois** le planning précédent **et** les coches de ta liste de courses. Attention : un seul niveau d'annulation, et la fenêtre dure quelques secondes seulement.
 

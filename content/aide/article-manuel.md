@@ -2,7 +2,7 @@ _Ta liste de courses ne contient pas que des ingrédients de recettes. Sacs poub
 
 ## Ajouter un article
 
-Sur la liste de courses, touche **« Ajouter un article »** (en haut, à côté de « Générer mon cycle » — ou au milieu de l'écran si ta liste est encore vide). Un petit formulaire s'ouvre :
+Sur la liste de courses, touche **« Ajouter un article »** (en haut de la liste, ou au milieu de l'écran si ta liste est encore vide). Un petit formulaire s'ouvre :
 
 - **Article** — le nom, seul champ obligatoire (ex. « Sacs poubelle »).
 
