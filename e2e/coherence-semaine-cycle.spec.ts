@@ -65,6 +65,21 @@ test("régénérer un cycle déjà rempli depuis la vue Cycle demande confirmati
   await page.getByRole("button", { name: "Régénérer" }).click();
   await modale.getByRole("button", { name: "Régénérer" }).click();
   await expect(page.getByText("Cycle généré").last()).toBeVisible({ timeout: 20_000 });
+  const recettesCycle = await page
+    .locator("main button[aria-label^='Voir la recette']")
+    .allTextContents();
+
+  // #352 : le cycle (lundi → dimanche, jour de courses par défaut) est la semaine
+  // affichée en vue Semaine, abonnée au temps réel. Sa régénération n'ouvre pas
+  // l'alerte US-21 sur sa propre écriture, et la vue Semaine montre le cycle
+  // régénéré sans relecture.
+  await page.getByRole("button", { name: "Semaine", exact: true }).click();
+  await expect
+    .poll(async () =>
+      (await page.locator("main button[aria-label^='Voir la recette']").allTextContents()).sort()
+    )
+    .toEqual([...recettesCycle].sort());
+  await expect(page.getByRole("dialog", { name: "Planning mis à jour" })).toHaveCount(0);
 });
 
 test("le lien « Liste de courses → » depuis la vue Cycle conserve la même fenêtre", async ({
