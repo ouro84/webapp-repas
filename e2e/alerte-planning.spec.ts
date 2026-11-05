@@ -15,7 +15,7 @@
 // déclenche à nouveau « en magasin » (levée du test.fixme de PR1 #257).
 
 import { test, expect } from "./fixtures";
-import type { Browser, Page } from "@playwright/test";
+import type { Browser, Page, WebSocket } from "@playwright/test";
 import { nettoyerEtatDistant } from "./helpers";
 
 // Ouvre une page authentifiée dans un contexte neuf (un « appareil »).
@@ -33,6 +33,8 @@ test("un membre en magasin est alerté quand le planning change à la maison (US
 }) => {
   // --- Appareil A : génère un planning puis part « en magasin » (courses) ---
   const a = await ouvrirAppareil(browser);
+  // #357 : abonnement du cycle (`/courses`) confirmé par Supabase, pas une attente fixe.
+  const abonnementCycleA = abonnementRealtimePret(a, "planning-cycle:");
   await a.goto("/planning");
   await a.getByRole("button", { name: "Générer mon planning" }).click();
   await expect(a.locator("main ul > li")).toHaveCount(7);
@@ -48,8 +50,8 @@ test("un membre en magasin est alerté quand le planning change à la maison (US
   const b = await ouvrirAppareil(browser);
   await b.goto("/planning");
   await expect(b.locator("main ul > li")).toHaveCount(7); // planning de A hydraté
-  // Laisser à l'abonnement temps réel de A (côté courses) le temps de s'établir.
-  await a.waitForTimeout(2500);
+  // Abonnement temps réel de A (côté courses) confirmé avant que B ne régénère.
+  await abonnementCycleA;
 
   // --- B regénère → le planning de la semaine change ---
   await b.getByRole("button", { name: "Régénérer" }).click();
@@ -64,15 +66,39 @@ test("un membre en magasin est alerté quand le planning change à la maison (US
   await b.context().close();
 });
 
-// Résout quand Supabase Realtime confirme l'abonnement `postgres_changes` du
-// planning de la semaine (message `system` « ok » sur le topic
-// `realtime:planning:<foyer>:<semaine>`, hors canaux `planning-cycle:`). À
-// appeler AVANT `goto` : le WebSocket s'ouvre au chargement. Signal réel plutôt
-// qu'une attente fixe.
-function abonnementPlanningPret(page: Page): Promise<void> {
-  return new Promise((resoudre) => {
-    page.on("websocket", (ws) => {
-      ws.on("framereceived", ({ payload }) => {
+// Résout quand Supabase Realtime confirme un abonnement `postgres_changes`
+// (message `system` « ok ») sur un topic `realtime:<prefixe>…` :
+//  - `planning:` = planning de la semaine (`/planning`, `planning:<foyer>:<semaine>`) ;
+//  - `planning-cycle:` = planning du cycle (`/courses`, #259).
+// À appeler AVANT `goto` : le WebSocket s'ouvre au chargement, et `page.on("websocket")`
+// ne rejoue pas une connexion déjà ouverte. Signal réel plutôt qu'une attente fixe.
+// Rejette après `delaiMs` avec un message qui nomme le protocole attendu, et retire
+// ses écouteurs (WebSocket et page) dès que le signal est reçu ou le délai écoulé.
+function abonnementRealtimePret(
+  page: Page,
+  prefixe: "planning:" | "planning-cycle:",
+  delaiMs = 30_000
+): Promise<void> {
+  const promesse = new Promise<void>((resoudre, rejeter) => {
+    const ecouteurs: Array<() => void> = [];
+    const nettoyer = () => {
+      clearTimeout(minuteur);
+      page.off("websocket", surWebSocket);
+      page.off("close", nettoyer);
+      for (const retirer of ecouteurs) retirer();
+    };
+    const minuteur = setTimeout(() => {
+      nettoyer();
+      rejeter(
+        new Error(
+          `Abonnement temps réel « realtime:${prefixe} » non confirmé après ${delaiMs} ms : ` +
+            "trame attendue = message `system` avec `extension: postgres_changes` et " +
+            "`status: ok` (serialiseur 2.0.0 de realtime-js : [join_ref, ref, topic, event, payload])."
+        )
+      );
+    }, delaiMs);
+    const surWebSocket = (ws: WebSocket) => {
+      const surTrame = ({ payload }: { payload: string | Buffer }) => {
         if (typeof payload !== "string") return;
         try {
           type Charge = { extension?: string; status?: string };
@@ -87,19 +113,28 @@ function abonnementPlanningPret(page: Page): Promise<void> {
                 (brut as { payload?: Charge }).payload,
               ];
           if (
-            topic?.startsWith("realtime:planning:") &&
+            topic?.startsWith(`realtime:${prefixe}`) &&
             event === "system" &&
             charge?.extension === "postgres_changes" &&
             charge.status === "ok"
           ) {
+            nettoyer();
             resoudre();
           }
         } catch {
           // Trame non JSON (heartbeat binaire, etc.) : ignorée.
         }
-      });
-    });
+      };
+      ws.on("framereceived", surTrame);
+      ecouteurs.push(() => ws.off("framereceived", surTrame));
+    };
+    page.on("websocket", surWebSocket);
+    page.on("close", nettoyer);
   });
+  // Un rejet après la fin d'un test qui a échoué plus tôt ne doit pas planter le worker ;
+  // l'appelant qui attend la promesse reçoit bien l'erreur.
+  promesse.catch(() => {});
+  return promesse;
 }
 
 // #355 : A a une édition en attente (son push a échoué, réseau coupé) quand B
@@ -115,7 +150,7 @@ test("une édition en attente survit à la modification d’un autre créneau pa
 
   // --- A génère le planning et attend sa persistance ---
   const a = await ouvrirAppareil(browser);
-  const abonnementA = abonnementPlanningPret(a);
+  const abonnementA = abonnementRealtimePret(a, "planning:");
   await a.goto("/planning");
   await a.getByRole("button", { name: "Générer mon planning" }).click();
   await expect(a.locator("main ul > li")).toHaveCount(7);
