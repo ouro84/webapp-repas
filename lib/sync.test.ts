@@ -2290,4 +2290,33 @@ describe("vague finale de la synchro temps réel (#355)", () => {
     const pousse = await dernierPush();
     expect(jourDe(pousse, "samedi")?.diner?.id).toBe("cycle");
   });
+
+  // --- A6 : régénération du cycle hors ligne, refus AVANT l'appel réseau ---
+  it("useGenerationCycle : envois impossibles → message français, sans appeler la route de génération", async () => {
+    localStorage.setItem("planning_courant", JSON.stringify(planning("2026-W10")));
+    localStorage.setItem("planning_dirty", "1");
+    persistance.sauvegarderPlanningDistant.mockRejectedValue(new Error("hors-ligne"));
+    const fetchSimule = vi.fn().mockRejectedValue(new TypeError("Failed to fetch"));
+    vi.stubGlobal("fetch", fetchSimule);
+    const erreur = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const sync = await chargerSync();
+      const { renderHook } = await import("@testing-library/react");
+      const { result } = renderHook(() =>
+        sync.useGenerationCycle({ ancre: "2026-10-29", longueur: 7 })
+      );
+
+      const rejet = await result.current.genererCycle().catch((e: unknown) => e);
+
+      expect(rejet).toBeInstanceOf(sync.ErreurEnvoisEnAttente);
+      expect((rejet as Error).message).toBe(
+        "Des modifications ne sont pas encore enregistrées. Vérifie ta connexion et réessaie."
+      );
+      expect(fetchSimule).not.toHaveBeenCalled();
+      expect(persistance.sauvegarderCycleDistant).not.toHaveBeenCalled();
+    } finally {
+      erreur.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  }, 10000);
 });

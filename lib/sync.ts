@@ -1642,6 +1642,19 @@ function couperPlanningCycle(): Promise<void> {
 }
 
 /**
+ * Régénération du cycle refusée SANS aucune écriture (#355) : des envois
+ * (planning ou coches) restent en attente et ne partent pas (hors ligne,
+ * relecture US-21 à refaire). Classe dédiée pour que la vue Cycle sache
+ * qu'aucune RPC n'est partie, donc qu'il n'y a rien à relire.
+ */
+export class ErreurEnvoisEnAttente extends Error {
+  constructor() {
+    super("Des modifications ne sont pas encore enregistrées. Vérifie ta connexion et réessaie.");
+    this.name = "ErreurEnvoisEnAttente";
+  }
+}
+
+/**
  * Applique une génération fenêtrée (#259) : persiste le cycle en UNE écriture
  * atomique via la RPC `sauvegarder_cycle` (#304) — jours du cycle sur toutes les
  * semaines ISO touchées (sans écraser les jours voisins) ET purge des coches du
@@ -1666,11 +1679,7 @@ export async function appliquerGenerationCycle(
   ancre: string,
   semaines: SemaineGeneree[]
 ): Promise<void> {
-  if (!(await attendreSync())) {
-    throw new Error(
-      "Des modifications ne sont pas encore enregistrées. Vérifie ta connexion et réessaie."
-    );
-  }
+  if (!(await attendreSync())) throw new ErreurEnvoisEnAttente();
   suppressionAlerteCycle = true;
   try {
     ecrituresPlanningEnVol++;
@@ -1777,6 +1786,10 @@ export function useGenerationCycle(cycle: CycleAffiche | null): {
     if (!cycle) throw new Error("Aucun cycle affiché.");
     setEnGeneration(true);
     try {
+      // Envois vidés AVANT l'appel réseau (#355) : hors ligne, le `fetch`
+      // échouait d'abord avec un « Failed to fetch » brut. `appliquerGenerationCycle`
+      // revide ensuite (un envoi a pu naître pendant la génération).
+      if (!(await attendreSync())) throw new ErreurEnvoisEnAttente();
       const reponse = await fetch("/api/planning/generer", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

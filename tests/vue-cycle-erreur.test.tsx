@@ -31,12 +31,19 @@ vi.mock("@/lib/reglages-data", () => ({ chargerReglages: () => new Promise(() =>
 vi.mock("@/lib/recettes", () => ({ chargerRecettesGerees: () => new Promise(() => {}) }));
 vi.mock("@/lib/preferences", () => ({ chargerPreferences: () => new Promise(() => {}) }));
 vi.mock("@/lib/sync", () => ({
+  // Refus sans RPC (#355) : même contrat que la classe réelle de lib/sync.
+  ErreurEnvoisEnAttente: class ErreurEnvoisEnAttente extends Error {
+    constructor() {
+      super("Des modifications ne sont pas encore enregistrées. Vérifie ta connexion et réessaie.");
+    }
+  },
   definirCycleAffiche: vi.fn(),
   modifierSlotDistant: vi.fn(),
   useGenerationCycle: () => ({ enGeneration: false, genererCycle: m.genererCycle }),
 }));
 
 import { VuePlanningCycle } from "@/components/planning/vue-cycle";
+import { ErreurEnvoisEnAttente } from "@/lib/sync";
 
 beforeEach(() => {
   vi.spyOn(console, "error").mockImplementation(() => {});
@@ -131,11 +138,7 @@ describe("VuePlanningCycle : génération du cycle puis relecture en erreur (#35
 
   it("génération rejetée : toast d'erreur inchangé et cycle relu pour se resynchroniser", async () => {
     const lectures = await afficherCycleVide();
-    m.genererCycle.mockRejectedValue(
-      new Error(
-        "Des modifications ne sont pas encore enregistrées. Vérifie ta connexion et réessaie."
-      )
-    );
+    m.genererCycle.mockRejectedValue(new Error("Impossible de générer le cycle."));
     m.chargerPlanningDistant.mockResolvedValue(null);
 
     fireEvent.click(screen.getByRole("button", { name: /Générer mon cycle/ }));
@@ -144,8 +147,22 @@ describe("VuePlanningCycle : génération du cycle puis relecture en erreur (#35
       expect(m.chargerPlanningDistant).toHaveBeenCalledTimes(lectures)
     );
     expect(toast.error).toHaveBeenCalledTimes(1);
+    expect(toast.error).toHaveBeenCalledWith("Impossible de générer le cycle.");
+  });
+
+  it("refus sans RPC (envois en attente, #355) : un seul toast, aucune relecture du cycle", async () => {
+    await afficherCycleVide();
+    m.genererCycle.mockRejectedValue(new ErreurEnvoisEnAttente());
+    m.chargerPlanningDistant.mockResolvedValue(null);
+
+    fireEvent.click(screen.getByRole("button", { name: /Générer mon cycle/ }));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledTimes(1));
     expect(toast.error).toHaveBeenCalledWith(
       "Des modifications ne sont pas encore enregistrées. Vérifie ta connexion et réessaie."
     );
+    // Laisse au gestionnaire le temps d'aller au bout (une relecture partirait ici).
+    await new Promise((r) => setTimeout(r, 50));
+    expect(m.chargerPlanningDistant).not.toHaveBeenCalled();
   });
 });

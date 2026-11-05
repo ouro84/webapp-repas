@@ -82,7 +82,12 @@ import {
 } from "@/lib/generateur";
 import { chargerReglages } from "@/lib/reglages-data";
 import { REGLAGES_DEFAUT } from "@/lib/reglages";
-import { definirCycleAffiche, modifierSlotDistant, useGenerationCycle } from "@/lib/sync";
+import {
+  definirCycleAffiche,
+  ErreurEnvoisEnAttente,
+  modifierSlotDistant,
+  useGenerationCycle,
+} from "@/lib/sync";
 import { chargerRecettesGerees, type RecetteGeree } from "@/lib/recettes";
 import { chargerPreferences } from "@/lib/preferences";
 import { messagesAvertissementGeneration } from "@/lib/avertissements-generation";
@@ -328,7 +333,11 @@ export function VuePlanningCycle({
       // resterait sur la projection d'avant. `chargerCycle` gère elle-même ses
       // erreurs de lecture (log + toast dédoublonné, état précédent conservé) ;
       // ce toast s'ajoute à celui de l'échec de génération, message distinct.
-      if (ancre !== null) await chargerCycle(ancre);
+      // Refus AVANT toute écriture (envois en attente, #355) : rien n'a changé
+      // en base, la relecture n'ajouterait qu'un second toast (hors ligne).
+      if (ancre !== null && !(erreur instanceof ErreurEnvoisEnAttente)) {
+        await chargerCycle(ancre);
+      }
     } finally {
       generationVerrouillee.current = false;
       setVerrouAffiche(false);
