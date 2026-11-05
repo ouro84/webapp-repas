@@ -800,7 +800,11 @@ Réduire à zéro l'effort de planification hebdomadaire des repas, du choix des
 
 > **Given** le prochain repas a une recette  
 > **When** j'ouvre « Ce soir »  
-> **Then** la page affiche le moment du repas, le nom du plat, ses badges et le nombre de personnes, puis les ingrédients et les étapes numérotées en texte lisible à distance, sans fenêtre modale ; l'écran reste allumé tant que la page est affichée (RG-89)
+> **Then** la page affiche le moment du repas, le nom du plat, ses badges et le nombre de personnes, puis la liste des ingrédients et les étapes numérotées en texte lisible à distance, sans fenêtre modale ; l'écran reste allumé tant que la page est affichée (RG-89)
+
+> **Given** le prochain repas est marqué « restes »  
+> **When** j'ouvre « Ce soir »  
+> **Then** la page m'annonce « {moment} : rien à cuisiner » et « On mange les restes qu'on a dans le frigo », sans nom de plat, avec l'aperçu du repas suivant (RG-89)
 
 > **Given** je prépare le repas  
 > **When** je coche les ingrédients que j'ai sortis du placard  
@@ -1039,9 +1043,10 @@ Le planning s'affiche en liste verticale : une ligne par jour, avec les slots em
 
 - **Lecture seule** : la page montre le prochain repas actif (même calcul que la nav, seuil 15 h, créneaux désactivés sautés) dans le flux de la page. Aucune action d'édition (ni changer, ni favori/évité, ni « Modifier la recette ») : un lien « Voir dans le planning » ouvre le planning sur **la semaine du repas** (le week-end, la semaine affichée par défaut serait la suivante). Le corps de la recette est le même que celui de la fiche du planning, en plus grand.
 - **Écran allumé** : l'app demande au navigateur de garder l'écran allumé dès que la recette s'affiche, le redemande au retour sur la page et le libère en la quittant. Pas d'interrupteur. Un navigateur qui refuse ou ne sait pas le faire n'affiche aucune erreur.
+- **Ingrédients** : une seule liste, dans l'ordre de la recette, sans distinction « à acheter » / « fond de placard » (en cuisine, tout sert ; #349), au format de la liste de courses. Ce sont le titre et la préparation qui priment.
 - **Ingrédients cochables** : aide-mémoire « sorti du placard », gardé sur l'appareil uniquement (jamais en base ni partagé avec le foyer), propre au repas affiché (date + créneau). Les coches survivent à un rechargement et repartent de zéro dès que la page affiche un autre repas. Si la recette du créneau change, les coches des ingrédients disparus ne s'affichent plus.
-- **Aperçu « Ensuite »** : en bas de page, le repas actif suivant (« Ensuite : Dîner de demain, {plat} », « restes de {plat} » pour des restes), absent si ce créneau n'a pas de recette.
-- **États** : chargement ; erreur de lecture du planning avec « Réessayer » (distincte d'un planning absent) ; rien de prévu avec une issue (« Générer mon planning » si la semaine du repas n'a aucun planning, « Voir le planning » sinon, les deux ouvrant le planning sur la semaine du repas) ; restes (« Restes de {plat} », sans ingrédients).
+- **Aperçu « Ensuite »** : en bas de page, le repas actif suivant (« Ensuite : Dîner de demain, {plat} », « Ensuite : Dîner de demain, restes » pour des restes, sans nom de plat), absent si ce créneau n'a pas de recette.
+- **États** : chargement ; erreur de lecture du planning avec « Réessayer » (distincte d'un planning absent) ; rien de prévu avec une issue (« Générer mon planning » si la semaine du repas n'a aucun planning, « Voir le planning » sinon, les deux ouvrant le planning sur la semaine du repas) ; restes (#349) : « {moment court} : rien à cuisiner » (Ce midi, Ce soir, Demain midi, Lundi soir…) et « On mange les restes qu'on a dans le frigo », sans nom de plat ni ingrédients, puis l'aperçu « Ensuite ». La recette conservée sur un créneau en restes est celle qui a été remplacée (RG-22) : l'afficher induirait en erreur.
 
 ### RG-09 — États de l'interface
 

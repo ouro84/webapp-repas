@@ -19,9 +19,11 @@ import Link from "next/link";
 import { chargerReglages } from "@/lib/reglages-data";
 import { REGLAGES_DEFAUT } from "@/lib/reglages";
 import { chargerPlanningDistant } from "@/lib/persistance";
+import { CookingPot } from "lucide-react";
 import {
   libelleContexteRepas,
   libelleMomentActuel,
+  libelleMomentCourt,
   prochainRepasActif,
   repasActifSuivant,
   semaineDuRepas,
@@ -165,55 +167,94 @@ export default function PageCeSoir() {
     );
   }
 
-  const contexte = libelleContexteRepas(prochain.dateISO, prochain.typeRepas, maintenant);
+  // Pied de page commun (recette et restes) : aperçu du repas suivant + lien.
+  const piedDePage = (
+    <PiedDePage
+      suivant={suivant}
+      maintenant={maintenant}
+      lienPlanning={lienPlanningSemaine(semaineDuRepas(prochain))}
+    />
+  );
+
+  // Restes (#349) : la recette d'un créneau en restes est celle qui a été
+  // REMPLACÉE (lib/restes.ts) — jamais affichée ici. Message clair au centre,
+  // marmite = icône des restes du planning.
+  if (prochain.restes) {
+    return (
+      <main id="contenu" className="mx-auto flex w-full max-w-2xl flex-1 flex-col px-4 py-6 md:py-10">
+        <div className="flex flex-1 flex-col items-center justify-center gap-4 py-10 text-center">
+          <div className="flex size-24 items-center justify-center rounded-full bg-brand-50">
+            <CookingPot aria-hidden="true" className="size-12 text-brand-600" />
+          </div>
+          <h1 className="font-display text-3xl font-semibold text-balance text-brand-900 md:text-4xl">
+            {`${libelleMomentCourt(prochain.dateISO, prochain.typeRepas, maintenant)} : rien à cuisiner`}
+          </h1>
+          <p className="text-lg text-brand-700/85">On mange les restes qu’on a dans le frigo.</p>
+        </div>
+        {piedDePage}
+      </main>
+    );
+  }
 
   return (
     <main id="contenu" className="mx-auto w-full max-w-2xl flex-1 px-4 py-6 md:py-10">
       <header>
-        <p className="text-base font-medium text-brand-700">{contexte}</p>
+        <p className="text-base font-medium text-brand-700">
+          {libelleContexteRepas(prochain.dateISO, prochain.typeRepas, maintenant)}
+        </p>
         <h1 className="mt-1 font-display text-3xl font-semibold text-balance text-brand-900 md:text-4xl">
-          {prochain.restes ? `Restes de ${prochain.recette.nom}` : prochain.recette.nom}
+          {prochain.recette.nom}
         </h1>
-        {!prochain.restes && (
-          <BadgesRecette
-            recette={prochain.recette}
-            personnes={prochain.personnes}
-            variante="cuisine"
-          />
-        )}
+        <BadgesRecette
+          recette={prochain.recette}
+          personnes={prochain.personnes}
+          variante="cuisine"
+        />
       </header>
 
-      {!prochain.restes && (
-        <div className="mt-8">
-          <ContenuRecette
-            recette={prochain.recette}
-            personnes={prochain.personnes}
-            variante="cuisine"
-            coches={coches}
-            onBasculerCoche={basculer}
-          />
-        </div>
-      )}
+      <div className="mt-8">
+        <ContenuRecette
+          recette={prochain.recette}
+          personnes={prochain.personnes}
+          variante="cuisine"
+          coches={coches}
+          onBasculerCoche={basculer}
+        />
+      </div>
 
-      <footer className="mt-10 flex flex-col gap-4 border-t border-brand-100 pt-6">
-        {suivant?.recette && (
-          <p className="text-base text-brand-700/85">
-            {/* Espace insécable avant « : » (typographie française). */}
-            <span className="font-semibold text-brand-900">{"Ensuite :"}</span>{" "}
-            {`${libelleContexteRepas(suivant.dateISO, suivant.typeRepas, maintenant)}, ${
-              suivant.restes ? `restes de ${suivant.recette.nom}` : suivant.recette.nom
-            }`}
-          </p>
-        )}
-        <div>
-          <Link
-            href={lienPlanningSemaine(semaineDuRepas(prochain))}
-            className={CLASSES_LIEN_PLANNING}
-          >
-            Voir dans le planning
-          </Link>
-        </div>
-      </footer>
+      {piedDePage}
     </main>
+  );
+}
+
+// Aperçu « Ensuite » (repas actif suivant, absent s'il n'a pas de recette) et
+// lien vers la semaine du repas. Des restes s'annoncent sans nom de plat
+// (#349 : la recette d'un créneau en restes est celle qui a été remplacée).
+function PiedDePage({
+  suivant,
+  maintenant,
+  lienPlanning,
+}: {
+  suivant: ProchainRepas | null;
+  maintenant: Date;
+  lienPlanning: string;
+}) {
+  return (
+    <footer className="mt-10 flex flex-col gap-4 border-t border-brand-100 pt-6">
+      {suivant?.recette && (
+        <p className="text-base text-brand-700/85">
+          {/* Espace insécable avant « : » (typographie française). */}
+          <span className="font-semibold text-brand-900">{"Ensuite :"}</span>{" "}
+          {`${libelleContexteRepas(suivant.dateISO, suivant.typeRepas, maintenant)}, ${
+            suivant.restes ? "restes" : suivant.recette.nom
+          }`}
+        </p>
+      )}
+      <div>
+        <Link href={lienPlanning} className={CLASSES_LIEN_PLANNING}>
+          Voir dans le planning
+        </Link>
+      </div>
+    </footer>
   );
 }

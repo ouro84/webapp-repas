@@ -10,7 +10,7 @@ La recette s'affiche directement dans la page, en grand, pour rester lisible té
 
 En bas de page, **« Ensuite »** t'indique le repas d'après (par exemple « Ensuite : Dîner de demain, Pâtes à la carbonara »).
 
-Si le repas est marqué **« Restes »**, la page l'indique à la place (pas d'ingrédients à préparer).
+Si le repas est marqué **« Restes »**, rien à cuisiner : la page te l'annonce (par exemple « Ce midi : rien à cuisiner ») et te rappelle qu'on mange ce qu'il y a dans le frigo. « Ensuite » te montre toujours le repas d'après.
 
 ## Cocher les ingrédients
 
