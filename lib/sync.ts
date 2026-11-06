@@ -12,7 +12,7 @@
 
 import { useEffect, useState } from "react";
 import { useSyncExternalStore } from "react";
-import { creerStoreJSON, storeCoches, storePlanning } from "@/lib/stockage";
+import { creerStoreJSON, storeCoches, storePlanning, surEditionPlanning } from "@/lib/stockage";
 import {
   basculerCocheArticleManuelDistant,
   chargerArticlesManuelsDistants,
@@ -789,9 +789,11 @@ async function pousser(): Promise<void> {
   }
 }
 
-// À chaque écriture locale du planning : marque `dirty` (le local diverge) et
-// planifie un push débounce. On NE touche PAS l'horodatage (réservé au serveur).
-// Ignoré pendant l'hydratation (sinon on repousserait ce qu'on vient de lire).
+// À chaque édition du planning par l'utilisateur (canal `surEditionPlanning`,
+// #363) : marque `dirty` (le local diverge) et planifie un push débounce. On NE
+// touche PAS l'horodatage (réservé au serveur). Ignoré pendant la lecture de
+// `chargerSemaineDansCache` (limite connue : un geste fait pendant cette lecture
+// est remplacé par le distant).
 function planifierPush(): void {
   if (hydratationEnCours) return;
   localStorage.setItem(CLE_DIRTY, "1");
@@ -1399,8 +1401,8 @@ function confirmeDeLaSemaine(semaine: string): boolean {
  * Relecture US-21 qui rejoue les éditions locales en attente (#355) : lecture
  * brute du distant (sans écraser le cache), puis `fusionnerEditionsLocales`
  * (créneaux modifiés localement et intacts à distance : rejoués ; même créneau
- * modifié des deux côtés : le distant gagne). Le résultat est écrit sous la
- * garde d'hydratation ; `dirty` reste posé si des créneaux ont été rejoués (le
+ * modifié des deux côtés : le distant gagne). Le résultat est écrit
+ * directement dans le store, hors canal d'édition (#363) ; `dirty` reste posé si des créneaux ont été rejoués (le
  * push est replanifié par l'appelant). L'instantané confirmé devient le
  * DISTANT, pas la fusion : seul un push réussi confirme les éditions rejouées.
  * Alerte ssi le distant diffère de l'instantané confirmé (vrai changement
@@ -1439,13 +1441,8 @@ async function relireEnRejouantEditionsLocales(semaine: string): Promise<boolean
   const { planning, rejoues } = base
     ? fusionnerEditionsLocales(base.confirme, base.local, distant.planning)
     : { planning: distant.planning, rejoues: [] };
-  const gardeAvant = hydratationEnCours;
-  hydratationEnCours = true;
-  try {
-    storePlanning.ecrire(JSON.stringify(planning));
-  } finally {
-    hydratationEnCours = gardeAvant;
-  }
+  // Écriture interne : ne passe pas par le canal d'édition, donc aucun push (#363).
+  storePlanning.ecrire(JSON.stringify(planning));
   localStorage.setItem(CLE_MAJ, distant.updatedAt);
   ecrireConfirme(distant.planning);
   if (rejoues.length > 0 || pushEnCours) localStorage.setItem(CLE_DIRTY, "1");
@@ -1454,7 +1451,7 @@ async function relireEnRejouantEditionsLocales(semaine: string): Promise<boolean
   // pendant un push est différé, donc aucun push ne devrait être en vol ici.
   // S'il l'était (parti avec l'ancien planning), il ne doit pas lever `dirty`
   // à son succès : `rePushDemande` lui fait repousser la fusion derrière lui
-  // (la fusion, écrite sous garde d'hydratation, ne passe pas par `planifierPush`).
+  // (la fusion, écrite hors canal d'édition, ne passe pas par `planifierPush`, #363).
   if (pushEnCours) rePushDemande = true;
   if (signaturePlanning(distant.planning) !== signaturePlanning(reference)) {
     declencherAlertePlanning();
@@ -1785,9 +1782,9 @@ export async function appliquerGenerationCycle(
 // Reporte dans le cache `storePlanning` les jours générés de la semaine
 // affichée (#352), comme le fait la RPC `sauvegarder_cycle` en base : seuls les
 // (jour, type_repas) fournis sont remplacés, les autres jours et créneaux
-// restent. Patch sous garde `hydratationEnCours` (la base est déjà à jour, pas
-// de `sauvegarder_planning`) ; une édition locale en attente (dirty) garde son
-// propre minuteur et repoussera la semaine, patch inclus.
+// restent. La base est déjà à jour : écriture directe du store, qui ne pousse
+// rien (seul le canal d'édition pousse, #363) ; une édition locale en attente
+// (dirty) garde son propre minuteur et repoussera la semaine, patch inclus.
 function reporterGenerationSurSemaineAffichee(
   semaines: SemaineGeneree[],
   majs: Record<string, string>
@@ -1805,13 +1802,8 @@ function reporterGenerationSurSemaineAffichee(
   patcherConfirme(semaine, (joursConfirmes) =>
     fusionnerJoursGeneres(joursConfirmes, generee.jours)
   );
-  const gardeAvant = hydratationEnCours;
-  hydratationEnCours = true;
-  try {
-    storePlanning.ecrire(JSON.stringify({ semaine, jours }));
-  } finally {
-    hydratationEnCours = gardeAvant;
-  }
+  // Écriture interne (la base est déjà à jour) : aucun push (#363).
+  storePlanning.ecrire(JSON.stringify({ semaine, jours }));
 }
 
 // Miroir local de l'upsert de `sauvegarder_cycle` sur une semaine : par jour
@@ -2241,9 +2233,9 @@ export async function allerAuCycle(ancre: string): Promise<void> {
  *   #56 PR5) : UNIQUEMENT si la semaine éditée est la semaine actuellement
  *   affichée — sinon ce cache ne représente pas cette semaine, rien à patcher.
  *
- * Ce patch passe sous la garde `hydratationEnCours` (#301) : la base est DÉJÀ
- * à jour via `sauvegarder_slots`, donc `planifierPush` ne doit pas relancer un
- * `sauvegarder_planning` de toute la semaine (double écriture). Une édition
+ * Ce patch écrit le store directement, hors du canal d'édition (#363) : la base
+ * est DÉJÀ à jour via `sauvegarder_slots`, donc aucun `sauvegarder_planning` de
+ * toute la semaine ne doit partir (double écriture, #301). Une édition
  * locale déjà en attente (`planning_dirty`) garde son propre minuteur et
  * repoussera la semaine, patch inclus.
  */
@@ -2265,15 +2257,9 @@ export async function modifierSlotDistant(
       const local = planningLocal();
       if (local && local.semaine === semaine) {
         const jours = remplacerOuInsererJour(local.jours, jourPlanning);
-        // Restaure la valeur précédente (et non `false`) : une relecture
-        // (chargerSemaineDansCache) peut tenir la garde pendant son `await`.
-        const gardeAvant = hydratationEnCours;
-        hydratationEnCours = true;
-        try {
-          storePlanning.ecrire(JSON.stringify({ semaine, jours }));
-        } finally {
-          hydratationEnCours = gardeAvant;
-        }
+        // Écriture directe du store : ne pousse rien (#363), sans toucher à la
+        // garde qu'une relecture (chargerSemaineDansCache) peut tenir.
+        storePlanning.ecrire(JSON.stringify({ semaine, jours }));
       }
     }
   } finally {
@@ -2378,7 +2364,10 @@ export async function hydrater(semaineVoulue: string | null = null): Promise<voi
 // (coches du foyer + présence) + rejeu au retour en ligne. Retourne une fonction
 // d'arrêt (cleanup d'effet).
 function demarrerSync(): () => void {
-  const desabonnerPlanning = storePlanning.sAbonner(planifierPush);
+  // Seul un geste de l'utilisateur (écriture d'intention de lib/stockage.ts,
+  // ou écriture d'un autre onglet) pousse le planning : les écritures internes
+  // de la synchro écrivent le store sans effet de bord (#363).
+  const desabonnerPlanning = surEditionPlanning(planifierPush);
   const desabonnerCoches = storeCoches.sAbonner(surChangementCoches);
   const surRetourEnLigne = () => {
     if (estDirty()) void pousser();

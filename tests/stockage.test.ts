@@ -5,13 +5,17 @@
 // vérifier le cycle capture → écrasement → restauration. jsdom fournit un vrai
 // localStorage, partagé par les stores.
 
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   storePlanning,
   storeCoches,
   capturerSnapshotAnnulation,
   restaurerSnapshotAnnulation,
+  sauvegarderPlanningComplet,
+  sauvegarderRemplacementSlot,
+  surEditionPlanning,
 } from "@/lib/stockage";
+import type { Planning } from "@/types";
 
 beforeEach(() => {
   localStorage.clear();
@@ -81,5 +85,58 @@ describe("snapshot d'annulation (US-09, RG-19)", () => {
 
   it("renvoie false quand aucun snapshot n'existe", () => {
     expect(restaurerSnapshotAnnulation(1000)).toBe(false);
+  });
+});
+
+describe("canal d'édition du planning (#363)", () => {
+  // Seul un geste de l'utilisateur (écriture d'intention) déclenche un push :
+  // les écritures internes de la synchro écrivent storePlanning sans effet de bord.
+  const planning: Planning = { semaine: "2026-W45", jours: [] };
+
+  it("les trois écritures d'intention notifient le canal, une fois chacune", () => {
+    const rappel = vi.fn();
+    const desabonner = surEditionPlanning(rappel);
+    try {
+      sauvegarderRemplacementSlot(planning);
+      expect(rappel).toHaveBeenCalledTimes(1);
+      sauvegarderPlanningComplet(planning);
+      expect(rappel).toHaveBeenCalledTimes(2);
+      capturerSnapshotAnnulation(1000);
+      expect(restaurerSnapshotAnnulation(2000)).toBe(true);
+      expect(rappel).toHaveBeenCalledTimes(3);
+    } finally {
+      desabonner();
+    }
+  });
+
+  it("une écriture directe du store (synchro) ne notifie pas le canal", () => {
+    const rappel = vi.fn();
+    const desabonner = surEditionPlanning(rappel);
+    try {
+      storePlanning.ecrire(JSON.stringify(planning));
+      storePlanning.effacer();
+      expect(rappel).not.toHaveBeenCalled();
+    } finally {
+      desabonner();
+    }
+  });
+
+  it("un event storage (autre onglet) notifie le canal, comme l'ancien abonnement", () => {
+    const rappel = vi.fn();
+    const desabonner = surEditionPlanning(rappel);
+    try {
+      window.dispatchEvent(new StorageEvent("storage", { key: "planning_courant" }));
+      expect(rappel).toHaveBeenCalledTimes(1);
+    } finally {
+      desabonner();
+    }
+  });
+
+  it("après désabonnement, plus aucune notification", () => {
+    const rappel = vi.fn();
+    surEditionPlanning(rappel)();
+    sauvegarderRemplacementSlot(planning);
+    window.dispatchEvent(new StorageEvent("storage", { key: "planning_courant" }));
+    expect(rappel).not.toHaveBeenCalled();
   });
 });
