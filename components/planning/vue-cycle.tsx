@@ -65,8 +65,9 @@ import {
   libelleJourComplet,
   libelleRelatifCycle,
 } from "@/lib/planning-affichage";
-import { modifierPersonnes, PERSONNES_DEFAUT, personnesDuSlot } from "@/lib/personnes";
-import { estRestes, marquerRestes } from "@/lib/restes";
+import { PERSONNES_DEFAUT, personnesDuSlot } from "@/lib/personnes";
+import { estRestes } from "@/lib/restes";
+import { editerSlot, MESSAGES_EDITION } from "@/lib/edition-slot";
 import { chargerJourCoursesFoyer } from "@/lib/foyer";
 import { resoudreCycle } from "@/lib/ancre-cycle";
 import { ancreInitialeCycle } from "@/lib/ancre-initiale-cycle";
@@ -77,8 +78,6 @@ import { ErreurLectureCycle, lireCycle, type CycleLu } from "@/lib/lecture-cycle
 import {
   creneauActif,
   recettesUtilisees,
-  remplacerSlot,
-  remplacerSlotManuel,
   type PreferencesRecettes,
 } from "@/lib/generateur";
 import { chargerReglages } from "@/lib/reglages-data";
@@ -391,9 +390,10 @@ export function VuePlanningCycle({
     return parSemaine.get(semaine) ?? null;
   }
 
-  // Changer (aléatoire, US-04) : réutilise remplacerSlot (pur, biaisé par
-  // préférences/réglages) — même logique que la vue Semaine, seule la
-  // persistance change (écriture directe, cf. modifierSlotDistant).
+  // Changer (aléatoire, US-04) : calcul partagé avec la vue Semaine
+  // (editerSlot, pur, biaisé par préférences/réglages) — seule la persistance
+  // change (écriture directe, cf. modifierSlotDistant). Les avertissements
+  // RG-26/27/28 ne sont pas toastés dans cette vue.
   function changerSlot(
     dateISO: string,
     semaine: string,
@@ -406,15 +406,17 @@ export function VuePlanningCycle({
     }
     const planningSemaine = planningDeLaSemaine(semaine);
     if (!planningSemaine) return;
-    const ancienJourPlanning = planningSemaine.jours.find((jp) => jp.jour === jour);
-    if (!ancienJourPlanning) return;
-    const nouveauPlanning = remplacerSlot(planningSemaine, jour, typeRepas, recettes, reglages, undefined, preferences);
-    if (nouveauPlanning === null) {
-      toast.error("Pas de recette disponible");
+    const edition = editerSlot(planningSemaine, jour, typeRepas, {
+      type: "changer",
+      recettes,
+      reglages,
+      preferences,
+    });
+    if (!edition.ok) {
+      if (edition.motif === "indisponible") toast.error(MESSAGES_EDITION.indisponible);
       return;
     }
-    const nouveauJourPlanning = nouveauPlanning.jours.find((jp) => jp.jour === jour)!;
-    appliquerEdition(semaine, ancienJourPlanning, nouveauJourPlanning, "Recette remplacée");
+    appliquerEdition(semaine, edition.precedent, edition.jour, MESSAGES_EDITION.remplacee);
   }
 
   // Sélection manuelle (US-06) : remplace le slot par la recette choisie —
@@ -426,12 +428,12 @@ export function VuePlanningCycle({
     const executer = () => {
       const planningSemaine = planningDeLaSemaine(cible.semaine);
       if (!planningSemaine) return;
-      const ancienJourPlanning = planningSemaine.jours.find((jp) => jp.jour === cible.jour);
-      if (!ancienJourPlanning) return;
-      const nouveauPlanning = remplacerSlotManuel(planningSemaine, cible.jour, cible.typeRepas, recette);
-      if (nouveauPlanning === null) return;
-      const nouveauJourPlanning = nouveauPlanning.jours.find((jp) => jp.jour === cible.jour)!;
-      appliquerEdition(cible.semaine, ancienJourPlanning, nouveauJourPlanning, "Recette remplacée");
+      const edition = editerSlot(planningSemaine, cible.jour, cible.typeRepas, {
+        type: "selectionner",
+        recette,
+      });
+      if (!edition.ok) return;
+      appliquerEdition(cible.semaine, edition.precedent, edition.jour, MESSAGES_EDITION.remplacee);
     };
     if (confirmerSiPasse(cible.dateISO, executer)) return;
     executer();
@@ -449,15 +451,15 @@ export function VuePlanningCycle({
     if (generationVerrouillee.current) return;
     const planningSemaine = planningDeLaSemaine(semaine);
     if (!planningSemaine) return;
-    const ancienJourPlanning = planningSemaine.jours.find((jp) => jp.jour === jour);
-    if (!ancienJourPlanning) return;
-    const nouveauPlanning = modifierPersonnes(planningSemaine, jour, typeRepas, personnes);
-    if (nouveauPlanning === null) return;
-    const nouveauJourPlanning = nouveauPlanning.jours.find((jp) => jp.jour === jour)!;
-    appliquerLocal(semaine, nouveauJourPlanning);
-    file.planifier(semaine, nouveauJourPlanning, {
+    const edition = editerSlot(planningSemaine, jour, typeRepas, {
+      type: "personnes",
+      personnes,
+    });
+    if (!edition.ok) return;
+    appliquerLocal(semaine, edition.jour);
+    file.planifier(semaine, edition.jour, {
       delaiMs: DELAI_STEPPER_MS,
-      precedent: ancienJourPlanning,
+      precedent: edition.precedent,
     });
   }
 
@@ -478,17 +480,12 @@ export function VuePlanningCycle({
     }
     const planningSemaine = planningDeLaSemaine(semaine);
     if (!planningSemaine) return;
-    const ancienJourPlanning = planningSemaine.jours.find((jp) => jp.jour === jour);
-    if (!ancienJourPlanning) return;
-    const nouveauPlanning = marquerRestes(planningSemaine, jour, typeRepas, valeur);
-    if (nouveauPlanning === null) return;
-    const nouveauJourPlanning = nouveauPlanning.jours.find((jp) => jp.jour === jour)!;
-    appliquerEdition(
-      semaine,
-      ancienJourPlanning,
-      nouveauJourPlanning,
-      valeur ? "Repas marqué « Restes »" : "Repas à cuisiner"
-    );
+    const edition = editerSlot(planningSemaine, jour, typeRepas, {
+      type: "restes",
+      valeur,
+    });
+    if (!edition.ok) return;
+    appliquerEdition(semaine, edition.precedent, edition.jour, MESSAGES_EDITION.restes(valeur));
   }
 
   // Charge (ou recharge) le cycle d'ancre donnée : lit les 1-2 semaines touchées.

@@ -12,6 +12,7 @@ vi.mock("@/lib/supabase/client", () => ({
 
 import { chercherRecettes, idsRecettesDuFoyer } from "@/lib/mcp/recherche-recettes"
 import { creerSupabaseMock, filtre, type AppelTable, type ReponseMock } from "@/tests/fixtures/supabase-mock"
+import { rngSeed } from "@/tests/fixtures/rng"
 
 type Brut = {
   id: string
@@ -47,18 +48,6 @@ function mock(recettes: Brut[], idsFoyer: string[] = [], masquees: string[] = []
       recette_masquee: { data: masquees.map((recette_id) => ({ recette_id })), error: null },
     },
   }).client
-}
-
-// PRNG déterministe (mulberry32), comme `rngSeed` de lib/generateur.test.ts.
-function rngSeed(seed: number): () => number {
-  let a = seed >>> 0
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0
-    let t = a
-    t = Math.imul(t ^ (t >>> 15), t | 1)
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
-  }
 }
 
 describe("chercherRecettes (#320, RG-85)", () => {

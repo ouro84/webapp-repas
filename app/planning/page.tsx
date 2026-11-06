@@ -21,16 +21,12 @@ import { Suspense, useEffect, useMemo, useRef, useState, useSyncExternalStore } 
 import { flushSync } from "react-dom";
 import { toast } from "sonner";
 import {
-  joursSansLegume,
   ORDRE_JOURS,
-  prefereVegeSlot,
   recettesUtilisees,
-  remplacerSlot,
-  remplacerSlotManuel,
-  reposNonSaison,
   retirerCreneauxDesactives,
   type PreferencesRecettes,
 } from "@/lib/generateur";
+import { editerSlot, MESSAGES_EDITION } from "@/lib/edition-slot";
 import {
   storePlanning,
   storeVuePlanning,
@@ -39,8 +35,8 @@ import {
   capturerSnapshotAnnulation,
   restaurerSnapshotAnnulation,
 } from "@/lib/stockage";
-import { modifierPersonnes, personnesDuSlot } from "@/lib/personnes";
-import { estRestes, marquerRestes } from "@/lib/restes";
+import { personnesDuSlot } from "@/lib/personnes";
+import { estRestes } from "@/lib/restes";
 import { lireLienCycle, PARAM_LIEN_CYCLE } from "@/lib/lien-cycle";
 import { lireLienSemaine, PARAM_LIEN_SEMAINE } from "@/lib/lien-semaine";
 import { naviguerVers, useSemaineAffichee, useSync } from "@/lib/sync";
@@ -621,57 +617,37 @@ function ContenuPlanning() {
     if (!force && confirmerSiPassee(() => changerSlot(jour, typeRepas, true))) {
       return;
     }
-    const nouveau = remplacerSlot(
-      planning,
-      jour,
-      typeRepas,
+    // Calcul partagé avec la vue Cycle (lib/edition-slot.ts).
+    const edition = editerSlot(planning, jour, typeRepas, {
+      type: "changer",
       recettes,
       reglages,
-      undefined,
-      preferences
-    );
-    if (nouveau === null) {
-      // Toast en complément du message inline du slot (RG-04)
-      setSlotIndisponible(cleSlot(jour, typeRepas));
-      toast.error("Pas de recette disponible");
-      return;
+      preferences,
+    });
+    if (!edition.ok) {
+      if (edition.motif === "indisponible") {
+        // Toast en complément du message inline du slot (RG-04)
+        setSlotIndisponible(cleSlot(jour, typeRepas));
+        toast.error(MESSAGES_EDITION.indisponible);
+      }
+      return; // slot inexistant : impossible depuis l'UI
     }
     // Snapshot avant écrasement pour l'undo (US-09, RG-19).
     capturerSnapshotAnnulation();
     // Remplacement individuel : les coches sont conservées, l'invalidation
     // par quantité (RG-12) protège les articles dont l'agrégat change.
-    sauvegarderRemplacementSlot(nouveau);
+    sauvegarderRemplacementSlot(edition.planning);
     setSlotIndisponible(null);
-    toast("Recette remplacée", {
+    toast(MESSAGES_EDITION.remplacee, {
       id: ID_TOAST_ANNULATION,
       action: { label: "Annuler", onClick: annulerDerniereAction },
       duration: 5000,
     });
-    // RG-26 — préférence végé souple non honorée sur ce créneau (aucune recette
-    // végé disponible) : on informe sans bloquer le remplacement (#86 PR2).
-    const remplacante =
-      typeRepas === "diner"
-        ? nouveau.jours.find((jp) => jp.jour === jour)?.diner
-        : nouveau.jours.find((jp) => jp.jour === jour)?.dejeuner;
-    if (
-      prefereVegeSlot(jour, typeRepas, reglages) &&
-      remplacante?.vegetarien !== true
-    ) {
-      toast.warning("Pas de recette végétarienne disponible pour ce repas.");
-    }
-    // RG-27 — mix « ≥1 légume/jour » : si après remplacement ce jour n'a
-    // toujours aucun repas « légumes », on prévient (sans bloquer, #49 PR2).
-    if (joursSansLegume(nouveau, reglages).includes(jour)) {
-      toast.warning("Ce jour n’a pas de repas « légumes » (pas assez de recettes légumes).");
-    }
-    // RG-28 — saison : si le remplaçant est hors saison (aucune recette de
-    // saison dispo pour ce slot), on prévient sans bloquer (#23 PR2).
-    if (
-      reposNonSaison(nouveau, reglages).some(
-        (s) => s.jour === jour && s.typeRepas === typeRepas
-      )
-    ) {
-      toast.warning("Ce repas est hors saison (pas assez de recettes de saison).");
+    // Préférences souples non honorées, sans bloquer le remplacement, dans
+    // l'ordre végé (RG-26, #86 PR2), légume (RG-27, #49 PR2), saison (RG-28,
+    // #23 PR2).
+    for (const avertissement of edition.avertissements) {
+      toast.warning(MESSAGES_EDITION.avertissements[avertissement]);
     }
   }
 
@@ -692,19 +668,17 @@ function ContenuPlanning() {
     cible: { jour: Jour; typeRepas: TypeRepas }
   ): void {
     if (planning === null) return;
-    const nouveau = remplacerSlotManuel(
-      planning,
-      cible.jour,
-      cible.typeRepas,
-      recette
-    );
-    if (nouveau === null) return; // slot inexistant : impossible depuis l'UI
+    const edition = editerSlot(planning, cible.jour, cible.typeRepas, {
+      type: "selectionner",
+      recette,
+    });
+    if (!edition.ok) return; // slot inexistant : impossible depuis l'UI
     // Snapshot avant écrasement pour l'undo (US-09, RG-19).
     capturerSnapshotAnnulation();
-    sauvegarderRemplacementSlot(nouveau);
+    sauvegarderRemplacementSlot(edition.planning);
     // Un éventuel « Pas de recette disponible » sur ce slot est obsolète (RG-15).
     setSlotIndisponible(null);
-    toast("Recette remplacée", {
+    toast(MESSAGES_EDITION.remplacee, {
       id: ID_TOAST_ANNULATION,
       action: { label: "Annuler", onClick: annulerDerniereAction },
       duration: 5000,
@@ -720,9 +694,12 @@ function ContenuPlanning() {
     personnes: number
   ): void {
     if (planning === null) return;
-    const nouveau = modifierPersonnes(planning, jour, typeRepas, personnes);
-    if (nouveau === null) return; // slot inexistant : impossible depuis l'UI
-    sauvegarderRemplacementSlot(nouveau);
+    const edition = editerSlot(planning, jour, typeRepas, {
+      type: "personnes",
+      personnes,
+    });
+    if (!edition.ok) return; // slot inexistant : impossible depuis l'UI
+    sauvegarderRemplacementSlot(edition.planning);
   }
 
   // Marque / démarque un slot « restes » (US-12, RG-22). Écriture sans reset
@@ -741,12 +718,15 @@ function ContenuPlanning() {
     ) {
       return;
     }
-    const nouveau = marquerRestes(planning, jour, typeRepas, valeur);
-    if (nouveau === null) return; // slot inexistant : impossible depuis l'UI
+    const edition = editerSlot(planning, jour, typeRepas, {
+      type: "restes",
+      valeur,
+    });
+    if (!edition.ok) return; // slot inexistant : impossible depuis l'UI
     capturerSnapshotAnnulation();
-    sauvegarderRemplacementSlot(nouveau);
+    sauvegarderRemplacementSlot(edition.planning);
     setSlotIndisponible(null);
-    toast(valeur ? "Repas marqué « Restes »" : "Repas à cuisiner", {
+    toast(MESSAGES_EDITION.restes(valeur), {
       id: ID_TOAST_ANNULATION,
       action: { label: "Annuler", onClick: annulerDerniereAction },
       duration: 5000,

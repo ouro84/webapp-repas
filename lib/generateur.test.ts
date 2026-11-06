@@ -33,6 +33,7 @@ import {
   type PreferencesRecettes,
 } from "@/lib/generateur";
 import { RECETTES_FIXTURES } from "@/tests/fixtures/recettes";
+import { rngSeed } from "@/tests/fixtures/rng";
 import { REGLAGES_DEFAUT } from "@/lib/reglages";
 import { saisonDeSemaine } from "@/lib/semaines";
 import type {
@@ -49,22 +50,8 @@ const LONGUES = RECETTES.filter((r) => r.tempsPreparation === "long");
 
 const JOURS_SEMAINE: Jour[] = ["lundi", "mardi", "mercredi", "jeudi", "vendredi"];
 
-// PRNG déterministe (mulberry32) injecté dans genererPlanning/remplacerSlot pour
-// neutraliser l'aléa de RG-03 (#157). Sans seed, la génération pouvait épuiser
-// par hasard le vivier « rapide » (13 recettes) et faire échouer par
-// intermittence les remplacements sur un dîner de semaine (plafond "rapide") —
-// l'assertion `not.toBeNull()` tombait alors ~0,4 % des runs, bloquant la CI
-// (job `test` rouge → `migrate-prod` sauté). Avec un seed fixe, ces tests sont
-// déterministes : ils passent ou échouent toujours, jamais « occasionnellement ».
-function rngSeed(seed: number): () => number {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
+// `rngSeed` (PRNG seedé, tests/fixtures/rng.ts) est injecté dans genererPlanning/
+// remplacerSlot pour neutraliser l'aléa de RG-03 (#157).
 
 // Fabrique n recettes synthétiques d'un temps donné (id/nom uniques).
 function synth(temps: TempsPreparation, n: number, prefixe: string): Recette[] {

@@ -6,8 +6,10 @@ paths:
   - "lib/coches-sync*.ts"
   - "lib/planning-diff*.ts"
   - "lib/adapters*.ts"
+  - "lib/edition-slot*.ts"
   - "app/planning/**"
   - "components/ui/alerte-modif-planning.tsx"
+  - "components/planning/vue-cycle.tsx"
 ---
 
 # Synchronisation multi-appareil et temps réel
@@ -27,6 +29,10 @@ La base est la source de vérité ; localStorage est le cache de la semaine affi
 
 - **Jamais de `setChargement(true)` sur un rechargement post-édition.** Une édition met l'état local à jour de façon optimiste ; seuls le montage, la navigation et la génération passent par un chargement (« Chargement… » au premier chargement seulement, corps estompé ensuite, cf. `courses-cycle.md`). Pourquoi : un chargement estompe la grille et ignore la navigation le temps d'un aller-retour réseau, et sa relecture écraserait l'état optimiste (#301).
 - **Tout patch de `storePlanning` qui reflète une écriture déjà faite en base écrit le store directement** (`modifierSlotDistant`, `reporterGenerationSurSemaineAffichee`, fusion US-21) : hors du canal d'édition, il ne pousse rien (#363). Pourquoi : un `sauvegarder_planning` de toute la semaine serait une double écriture (#301). `hydratationEnCours` ne garde plus que la lecture de `chargerSemaineDansCache` ; **limite connue** : un geste fait pendant cette lecture est remplacé par le distant (même famille que #339 côté coches, #368).
+
+## Édition d'un slot
+
+- Le calcul d'une édition de slot (changer, sélectionner, personnes, restes) passe par `editerSlot` (`lib/edition-slot.ts`, pur) dans les deux vues, textes des toasts compris (`MESSAGES_EDITION`) ; chaque vue garde sa persistance, son undo et sa garde RG-24, et seule la vue Semaine toaste les avertissements RG-26/27/28 (la vue Cycle ne les affiche pas). L'outil MCP `remplacer_repas` réutilise la même règle (`avertissementsRemplacement`) et les mêmes textes (`MESSAGES_EDITION.avertissements`) : un nouvel avertissement se déclare une seule fois, dans `lib/edition-slot.ts`. Pourquoi : les deux vues recopiaient fonction métier, recherche des jours et avertissements ; un hook commun casserait le snapshot mono-niveau de la Semaine ou la file d'écriture par jour du Cycle.
 
 ## Navigation entre semaines
 
