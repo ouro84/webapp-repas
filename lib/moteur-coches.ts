@@ -49,8 +49,7 @@
 //    distant fait foi. Pourquoi : au rechargement, la file rejouée commite
 //    pendant la première lecture, plafonnée par l'appelant ; l'instantané
 //    sans la coche la décochait (base cochée, écho ignoré). Une clé de l'ancre
-//    affichée qui a un
-//    horodatage connu mais plus d'état affiché sort d'un « Tout décocher »
+//    affichée qui a un horodatage connu mais plus d'état affiché sort d'un « Tout décocher »
 //    (rejoué ou non) : son état gardé est « décoché ». Pourquoi : sans cette
 //    règle, une coche rejouée au retour en ligne, commitée pendant la
 //    relecture du cycle, restait décochée à l'écran (base cochée, indicateur
