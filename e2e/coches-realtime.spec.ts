@@ -65,7 +65,8 @@ async function ouvrirCourses(browser: Browser, planning: Planning): Promise<Page
         "planning_a_relire",
         "courses_cochees",
         "courses_cochees_maj",
-        "courses_dirty",
+        "coches_en_attente",
+        "coches_maj",
       ]) {
         localStorage.removeItem(c);
       }

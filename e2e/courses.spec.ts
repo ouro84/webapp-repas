@@ -46,7 +46,8 @@ test.beforeEach(async ({ page, request }) => {
       "planning_confirme",
       "planning_a_relire",
       "courses_cochees_maj",
-      "courses_dirty",
+      "coches_en_attente",
+      "coches_maj",
       "semaine_affichee",
     ]) {
       localStorage.removeItem(c);
@@ -337,9 +338,9 @@ test("l'état coché est resynchronisé depuis la base sur un device au cache vi
   await page.getByRole("checkbox", { name: /lardons/ }).click();
   await expect(page.getByRole("checkbox", { name: /lardons/ })).toBeChecked();
 
-  // Attendre la persistance des coches en base (drapeau dirty effacé).
+  // Attendre la persistance des coches en base (file du moteur vide, #362).
   await expect
-    .poll(async () => page.evaluate(() => localStorage.getItem("courses_dirty")))
+    .poll(async () => page.evaluate(() => localStorage.getItem("coches_en_attente")))
     .toBeNull();
 
   // Simuler un autre device : vider le cache local des coches puis recharger
@@ -347,7 +348,8 @@ test("l'état coché est resynchronisé depuis la base sur un device au cache vi
   await page.evaluate(() => {
     localStorage.removeItem("courses_cochees");
     localStorage.removeItem("courses_cochees_maj");
-    localStorage.removeItem("courses_dirty");
+    localStorage.removeItem("coches_en_attente");
+    localStorage.removeItem("coches_maj");
   });
   await page.reload();
 

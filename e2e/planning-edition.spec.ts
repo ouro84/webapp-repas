@@ -67,7 +67,8 @@ test.beforeEach(async ({ page, request }) => {
       "planning_a_relire",
       "courses_cochees",
       "courses_cochees_maj",
-      "courses_dirty",
+      "coches_en_attente",
+      "coches_maj",
       "semaine_affichee",
     ]) {
       localStorage.removeItem(c);
@@ -157,7 +158,7 @@ test("modifier les personnes invalide la coche de l'article touché, pas les aut
   // La coche est persistée (par CLÉ+quantité, pas par id de recette → valide même
   // pour une fixture) : on attend le flush pour la relire après rechargement.
   await expect
-    .poll(async () => page.evaluate(() => localStorage.getItem("courses_dirty")))
+    .poll(async () => page.evaluate(() => localStorage.getItem("coches_en_attente")))
     .toBeNull();
 
   // Phase 2 — le nombre de personnes passe à 4 (œufs = 12). Simulé par une
