@@ -2,11 +2,16 @@
 // historique multi-semaines (#5). La base Supabase est la source de vérité ;
 // localStorage sert de cache.
 //
-// Lecture/écriture sous RLS propriétaire. Depuis #5 : un planning ET un état de
-// coches PAR (user, semaine) — la sauvegarde remplace seulement la semaine
-// concernée (upsert par semaine), de sorte que les semaines s'accumulent en
-// historique (borné par purge, cf. purgerSemainesAvant). La navigation entre
-// semaines est câblée en PR2.
+// Lecture/écriture sous RLS `mon_foyer()` (#56). Le planning est stocké par
+// (foyer, semaine ISO) : la sauvegarde remplace seulement la semaine concernée,
+// de sorte que les semaines s'accumulent en historique (borné par
+// `purgerSemainesAvant`). Les coches sont stockées par (foyer, ancre de cycle,
+// article) dans `etat_courses_article` (#257, #362), bornées par
+// `purgerCyclesAvant`.
+//
+// Écritures de coche (moteur horodaté, #362) : une erreur PostgREST garde son
+// statut HTTP et son code dans `cause` (`{ status, code }`), pour que la
+// synchro distingue un refus définitif (4xx) d'un échec réseau à rejouer.
 //
 // Lectures à client injecté (#304, RG-71) : le dernier paramètre optionnel
 // permet de les appeler côté serveur EN TANT QUE l'utilisateur (client « par
@@ -340,6 +345,18 @@ export async function chargerEtatCochesDistant(
   return etat
 }
 
+/** Erreur d'une écriture de coche : statut HTTP (0 = réseau) et code PostgREST
+ *  dans `cause`, lus par `estEchecDefinitif` (`lib/sync.ts`). */
+function erreurEcriture(
+  message: string,
+  error: { message: string; code?: string },
+  status: number | undefined
+): Error {
+  return new Error(`${message} : ${error.message}`, {
+    cause: { status: status ?? 0, code: error.code ?? "" },
+  })
+}
+
 /** `updated_at` de la première ligne renvoyée par un `.select("updated_at")`. */
 function majEcrite(data: unknown, message: string): string {
   const maj = (data as { updated_at: string }[] | null)?.[0]?.updated_at
@@ -355,7 +372,7 @@ export async function cocherArticleDistant(
   quantite: number,
   supabase: ClientSupabase = clientParDefaut()
 ): Promise<string> {
-  const { data, error } = await supabase
+  const { data, error, status } = await supabase
     .from("etat_courses_article")
     .upsert(
       { ancre, cle, quantite, coche: true },
@@ -363,7 +380,7 @@ export async function cocherArticleDistant(
     )
     .select("updated_at")
   if (error) {
-    throw new Error(`Cochage impossible : ${error.message}`)
+    throw erreurEcriture("Cochage impossible", error, status)
   }
   return majEcrite(data, "Cochage impossible")
 }
@@ -376,7 +393,7 @@ export async function decocherArticleDistant(
   cle: string,
   supabase: ClientSupabase = clientParDefaut()
 ): Promise<string> {
-  const { data, error } = await supabase
+  const { data, error, status } = await supabase
     .from("etat_courses_article")
     .upsert(
       { ancre, cle, quantite: 0, coche: false },
@@ -384,7 +401,7 @@ export async function decocherArticleDistant(
     )
     .select("updated_at")
   if (error) {
-    throw new Error(`Décochage impossible : ${error.message}`)
+    throw erreurEcriture("Décochage impossible", error, status)
   }
   return majEcrite(data, "Décochage impossible")
 }
@@ -393,17 +410,17 @@ export async function decocherArticleDistant(
  *  régénération RG-13). Un seul UPDATE par ancre plutôt que N décochages ; les
  *  lignes sont conservées (`coche = false`). Renvoie `{ cle, maj }` par ligne. */
 export async function viderCochesDistantes(
-  ancre: string
+  ancre: string,
+  supabase: ClientSupabase = clientParDefaut()
 ): Promise<Array<{ cle: string; maj: string }>> {
-  const supabase = createClient()
-  const { data, error } = await supabase
+  const { data, error, status } = await supabase
     .from("etat_courses_article")
     .update({ coche: false })
     .eq("ancre", ancre)
     .eq("coche", true)
     .select("cle, updated_at")
   if (error) {
-    throw new Error(`Vidage des coches impossible : ${error.message}`)
+    throw erreurEcriture("Vidage des coches impossible", error, status)
   }
   return ((data ?? []) as Array<{ cle: string; updated_at: string }>).map((l) => ({
     cle: l.cle,
@@ -528,13 +545,13 @@ export async function basculerCocheArticleManuelDistant(
   coche: boolean,
   supabase: ClientSupabase = clientParDefaut()
 ): Promise<string | null> {
-  const { data, error } = await supabase
+  const { data, error, status } = await supabase
     .from("article_manuel")
     .update({ coche })
     .eq("id", id)
     .select("updated_at")
   if (error) {
-    throw new Error(`Cochage de l'article manuel impossible : ${error.message}`)
+    throw erreurEcriture("Cochage de l'article manuel impossible", error, status)
   }
   return (data as { updated_at: string }[] | null)?.[0]?.updated_at ?? null
 }
@@ -552,16 +569,16 @@ export async function supprimerArticleManuelDistant(id: string): Promise<void> {
  *  décoche SANS supprimer, contrairement aux ingrédients dérivés).
  *  Renvoie l'`updated_at` serveur de chaque ligne décochée. */
 export async function viderCochesArticlesManuelsDistantes(
-  ancre: string
+  ancre: string,
+  supabase: ClientSupabase = clientParDefaut()
 ): Promise<{ id: string; majLe: string }[]> {
-  const supabase = createClient()
-  const { data, error } = await supabase
+  const { data, error, status } = await supabase
     .from("article_manuel")
     .update({ coche: false })
     .eq("ancre", ancre)
     .select("id, updated_at")
   if (error) {
-    throw new Error(`Décochage des articles manuels impossible : ${error.message}`)
+    throw erreurEcriture("Décochage des articles manuels impossible", error, status)
   }
   return ((data ?? []) as { id: string; updated_at: string }[]).map((l) => ({
     id: l.id,

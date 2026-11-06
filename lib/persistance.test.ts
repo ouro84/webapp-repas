@@ -13,7 +13,6 @@ vi.mock("@/lib/supabase/client", () => ({
   }),
 }))
 
-import { createClient } from "@/lib/supabase/client"
 import {
   chargerArticlesManuelsDistants,
   chargerCochesDistantes,
@@ -26,6 +25,7 @@ import {
   decocherArticleDistant,
   sauvegarderCycleDistant,
   sauvegarderSlotsDistant,
+  viderCochesArticlesManuelsDistantes,
   viderCochesDistantes,
 } from "@/lib/persistance"
 import { chargerJourCoursesFoyer } from "@/lib/foyer"
@@ -291,8 +291,7 @@ describe("écritures — client injecté (#306)", () => {
         },
       },
     })
-    vi.mocked(createClient).mockReturnValueOnce(client as unknown as ReturnType<typeof createClient>)
-    const maj = await viderCochesDistantes("2026-10-29")
+    const maj = await viderCochesDistantes("2026-10-29", client)
     expect(maj).toEqual([
       { cle: "a|g", maj: "2026-11-06T10:00:00Z" },
       { cle: "b|piece", maj: "2026-11-06T10:00:01Z" },
@@ -309,10 +308,54 @@ describe("écritures — client injecté (#306)", () => {
     const { client } = creerSupabaseMock({
       tables: { etat_courses_article: { data: null, error: { message: "boom" } } },
     })
-    vi.mocked(createClient).mockReturnValueOnce(client as unknown as ReturnType<typeof createClient>)
-    await expect(viderCochesDistantes("2026-10-29")).rejects.toThrow(
+    await expect(viderCochesDistantes("2026-10-29", client)).rejects.toThrow(
       "Vidage des coches impossible : boom"
     )
+  })
+
+  it("viderCochesArticlesManuelsDistantes décoche via le client injecté et renvoie les horodatages", async () => {
+    const { client, appels } = creerSupabaseMock({
+      tables: {
+        article_manuel: {
+          data: [{ id: "a1", updated_at: "2026-11-06T10:00:00Z" }],
+          error: null,
+        },
+      },
+    })
+    const lignes = await viderCochesArticlesManuelsDistantes("2026-10-29", client)
+    expect(lignes).toEqual([{ id: "a1", majLe: "2026-11-06T10:00:00Z" }])
+    expect(appels[0].ops).toEqual([
+      ["update", { coche: false }],
+      ["eq", "ancre", "2026-10-29"],
+      ["select", "id, updated_at"],
+    ])
+  })
+
+  it("écritures de coche : statut HTTP et code PostgREST gardés dans `cause`", async () => {
+    const refus = creerSupabaseMock({
+      tables: {
+        etat_courses_article: { data: null, error: { message: "RLS", code: "42501" }, status: 403 },
+        article_manuel: { data: null, error: { message: "RLS", code: "42501" }, status: 403 },
+      },
+    })
+    const attendue = { cause: { status: 403, code: "42501" } }
+    await expect(cocherArticleDistant("a", "k", 1, refus.client)).rejects.toMatchObject(attendue)
+    await expect(decocherArticleDistant("a", "k", refus.client)).rejects.toMatchObject(attendue)
+    await expect(viderCochesDistantes("a", refus.client)).rejects.toMatchObject(attendue)
+    await expect(basculerCocheArticleManuelDistant("a1", true, refus.client)).rejects.toMatchObject(
+      attendue
+    )
+    await expect(viderCochesArticlesManuelsDistantes("a", refus.client)).rejects.toMatchObject(
+      attendue
+    )
+
+    // Échec réseau (statut absent ou 0) : `status: 0`, transitoire côté synchro.
+    const reseau = creerSupabaseMock({
+      tables: { etat_courses_article: { data: null, error: { message: "Failed to fetch" } } },
+    })
+    await expect(cocherArticleDistant("a", "k", 1, reseau.client)).rejects.toMatchObject({
+      cause: { status: 0, code: "" },
+    })
   })
 
   it("chargerEtatCochesDistant lit lignes cochées ET décochées, sans filtre coche", async () => {

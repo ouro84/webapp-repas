@@ -12,6 +12,8 @@ export type ReponseMock = {
   data: unknown
   error: { message: string; code?: string } | null
   count?: number | null
+  /** Statut HTTP de la réponse PostgREST (0 = échec réseau). */
+  status?: number
 }
 export type AppelTable = { table: string; ops: Array<[string, ...unknown[]]> }
 export type AppelRpc = { nom: string; args: unknown }
