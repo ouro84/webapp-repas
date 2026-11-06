@@ -8,7 +8,7 @@
 // Realtime, avec localStorage jsdom. Chaque test repart d'un module sync neuf
 // (vi.resetModules) pour réinitialiser l'état singleton (dejaHydrate, dirty…).
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { JourPlanning, Planning } from "@/types";
 
 // Mocks des accès distants — objet hoisté stable, réinitialisé à chaque test.
@@ -82,30 +82,37 @@ async function majRenvoyee(mock: ReturnType<typeof vi.fn>, cle: string): Promise
   return (await mock.mock.results[appel].value) as string;
 }
 
-// Capture l'écouteur `online` posé par le module chargé dans CE test (à appeler
-// avant le montage). Pourquoi : un `window.dispatchEvent` réveille aussi ceux
-// des modules d'autres tests restés montés, qui relisent avec les mocks du test
-// courant et réécrivent le localStorage partagé (lectures comptées en double,
-// blob écrasé après coup).
-function capturerRetourEnLigne() {
-  const espion = vi.spyOn(window, "addEventListener");
-  return {
-    declencher() {
-      for (const [type, ecouteur] of espion.mock.calls) {
-        if (type === "online") (ecouteur as EventListener)(new Event("online"));
-      }
-    },
-    restaurer: () => espion.mockRestore(),
-  };
-}
-
-// Recharge un module sync VIERGE (état singleton réinitialisé).
+// Recharge un module sync VIERGE (état singleton réinitialisé). Le module est
+// retenu pour être arrêté après le test (#371).
+let moduleCourant: typeof import("@/lib/sync") | null = null;
 async function chargerSync() {
   vi.resetModules();
-  return import("@/lib/sync");
+  moduleCourant = await import("@/lib/sync");
+  return moduleCourant;
 }
 
-beforeEach(() => {
+// Isolation entre tests (#371) : `globals: false` désactive le nettoyage
+// automatique de Testing Library, et `vi.resetModules` donne à chaque test sa
+// propre instance (de sync ET de Testing Library). On démonte donc les hooks de
+// l'instance importée par le test (import dynamique, même registre), ce qui
+// retire leurs écouteurs `window`, puis on arrête minuteurs, moteurs et temps
+// réel du module. Sans cela, un `online` réveillait les modules des tests
+// précédents, qui relisaient avec les mocks du test courant.
+afterEach(async () => {
+  const { cleanup } = await import("@testing-library/react");
+  cleanup();
+  rtlAvant?.cleanup();
+  rtlAvant = null;
+  await moduleCourant?.arreterSync();
+  moduleCourant = null;
+});
+
+// Instance de Testing Library du registre d'AVANT `chargerSync()` : un test qui
+// l'importe avant de recharger le module rend ses hooks avec elle (#371).
+let rtlAvant: typeof import("@testing-library/react") | null = null;
+
+beforeEach(async () => {
+  rtlAvant = await import("@testing-library/react");
   localStorage.clear();
   realtime.rappels.length = 0;
   tic = 0;
@@ -1068,7 +1075,6 @@ describe("articles manuels : coche sur le moteur horodaté (#362)", () => {
 
   it("hors ligne : la coche ne rejette pas, reste affichée, passe « hors ligne » et part au retour en ligne", async () => {
     const erreur = vi.spyOn(console, "error").mockImplementation(() => {});
-    const enLigne = capturerRetourEnLigne();
     try {
       const { sync, waitFor, act, etat, articles, demonter } = await preparer();
       // Base simulée : le retour en ligne relit aussi les articles du cycle, et
@@ -1103,7 +1109,7 @@ describe("articles manuels : coche sur le moteur horodaté (#362)", () => {
       expect(articles()[0].coche).toBe(true);
       expect(localStorage.getItem("coches_manuels_en_attente")).not.toBeNull();
 
-      act(() => enLigne.declencher());
+      act(() => window.dispatchEvent(new Event("online")));
 
       await waitFor(() => expect(localStorage.getItem("coches_manuels_en_attente")).toBeNull());
       expect(persistance.basculerCocheArticleManuelDistant).toHaveBeenCalledTimes(2);
@@ -1117,7 +1123,6 @@ describe("articles manuels : coche sur le moteur horodaté (#362)", () => {
       await waitFor(() => expect(etat()).toBe("synchronise"));
       demonter();
     } finally {
-      enLigne.restaurer();
       erreur.mockRestore();
     }
   });
@@ -3181,7 +3186,6 @@ describe("coches d'ingrédients : génération et hydratation en échec (#362)",
     );
     persistance.cocherArticleDistant.mockRejectedValueOnce(new Error("réseau coupé"));
     const erreur = vi.spyOn(console, "error").mockImplementation(() => {});
-    const enLigne = capturerRetourEnLigne();
     try {
       const sync = await chargerSync();
       const { storeCoches } = await import("@/lib/stockage");
@@ -3204,14 +3208,13 @@ describe("coches d'ingrédients : génération et hydratation en échec (#362)",
         repondreRpc({ "2026-W29": horloge() });
         await generation;
       });
-      act(() => enLigne.declencher()); // rejeu de la file
+      act(() => window.dispatchEvent(new Event("online"))); // rejeu de la file
       await waitFor(() => expect(localStorage.getItem("coches_en_attente")).toBeNull());
 
       expect(persistance.cocherArticleDistant).toHaveBeenCalledTimes(1);
       expect(localStorage.getItem("courses_cochees")).toBeNull();
       vue.unmount();
     } finally {
-      enLigne.restaurer();
       erreur.mockRestore();
     }
   });
@@ -3221,7 +3224,6 @@ describe("coches d'ingrédients : génération et hydratation en échec (#362)",
     // cycle part avant le commit de la coche rejouée et revient après son
     // écho ; son instantané (ligne absente) ne doit pas la décocher.
     const erreur = vi.spyOn(console, "error").mockImplementation(() => {});
-    const enLigne = capturerRetourEnLigne();
     try {
       const sync = await chargerSync();
       const { storeCoches } = await import("@/lib/stockage");
@@ -3257,7 +3259,7 @@ describe("coches d'ingrédients : génération et hydratation en échec (#362)",
       await waitFor(() => expect(localStorage.getItem("coches_en_attente")).not.toBeNull());
       await waitFor(() => expect(persistance.cocherArticleDistant).toHaveBeenCalledTimes(1));
 
-      act(() => enLigne.declencher());
+      act(() => window.dispatchEvent(new Event("online")));
       await act(async () => {
         await new Promise((r) => setTimeout(r, 40)); // commit fait, relecture en vol
       });
@@ -3271,7 +3273,6 @@ describe("coches d'ingrédients : génération et hydratation en échec (#362)",
       expect(JSON.parse(localStorage.getItem("courses_cochees") ?? "{}")).toEqual({ "pain|piece": 1 });
       vue.unmount();
     } finally {
-      enLigne.restaurer();
       erreur.mockRestore();
     }
   });
@@ -3629,7 +3630,7 @@ describe("vague finale du moteur de coches (#362)", () => {
         async (_ancre: string, cle: string, quantite: number) => {
           const rang = ++ecritures;
           // La k-ième coche est commitée pendant la k-ième lecture.
-          while (lectures < rang) await new Promise((r) => setTimeout(r, 2));
+          for (let i = 0; i < 1000 && lectures < rang; i++) await new Promise((r) => setTimeout(r, 2));
           await new Promise((r) => setTimeout(r, 5));
           const maj = horloge();
           enBase[cle] = { coche: true, valeur: quantite, maj };
@@ -3695,7 +3696,7 @@ describe("vague finale du moteur de coches (#362)", () => {
       persistance.basculerCocheArticleManuelDistant.mockImplementation(
         async (id: string, coche: boolean) => {
           const rang = ++ecritures;
-          while (lectures < rang) await new Promise((r) => setTimeout(r, 2));
+          for (let i = 0; i < 1000 && lectures < rang; i++) await new Promise((r) => setTimeout(r, 2));
           await new Promise((r) => setTimeout(r, 5));
           const maj = horloge();
           const article = enBase.find((a) => a.id === id)!;
@@ -3733,7 +3734,6 @@ describe("vague finale du moteur de coches (#362)", () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const { renderHook, act } = await import("@testing-library/react");
     const sync = await chargerSync();
-    const enLigne = capturerRetourEnLigne();
     const vue = renderHook(() => sync.useSyncCourses(ANCRE));
     try {
       await vi.advanceTimersByTimeAsync(0);
@@ -3744,14 +3744,13 @@ describe("vague finale du moteur de coches (#362)", () => {
       const lectures = persistance.chargerEtatCochesDistant.mock.calls.length;
       expect(lectures).toBe(6); // quota épuisé
 
-      act(() => enLigne.declencher());
+      act(() => window.dispatchEvent(new Event("online")));
       await vi.advanceTimersByTimeAsync(0);
       expect(persistance.chargerEtatCochesDistant).toHaveBeenCalledTimes(lectures + 1);
       await vi.advanceTimersByTimeAsync(2000);
       expect(persistance.chargerEtatCochesDistant).toHaveBeenCalledTimes(lectures + 2);
     } finally {
       vue.unmount();
-      enLigne.restaurer();
       vi.useRealTimers();
       erreur.mockRestore();
     }
@@ -3760,7 +3759,6 @@ describe("vague finale du moteur de coches (#362)", () => {
   it("retour en ligne : les canaux temps réel ratés hors ligne sont rouverts", async () => {
     persistance.chargerFoyerId.mockRejectedValue(new Error("hors ligne"));
     const erreur = vi.spyOn(console, "error").mockImplementation(() => {});
-    const enLigne = capturerRetourEnLigne();
     try {
       const sync = await chargerSync();
       const { renderHook, waitFor, act } = await import("@testing-library/react");
@@ -3773,13 +3771,12 @@ describe("vague finale du moteur de coches (#362)", () => {
       expect(rappel("article_manuel")).toBeUndefined();
 
       persistance.chargerFoyerId.mockResolvedValue("foyer-1");
-      act(() => enLigne.declencher());
+      act(() => window.dispatchEvent(new Event("online")));
 
       await waitFor(() => expect(rappel("etat_courses_article")).toBeDefined());
       await waitFor(() => expect(rappel("article_manuel")).toBeDefined());
       vue.unmount();
     } finally {
-      enLigne.restaurer();
       erreur.mockRestore();
     }
   });
@@ -4055,5 +4052,54 @@ describe("lecteur de cycle unique : échec d'une semaine sur deux (chantier 05)"
     expect((echec as InstanceType<typeof ErreurLectureCycle>).semainesEnEchec).toEqual(["2026-W46"]);
     expect((echec as Error).message).toBe("Certains jours du cycle n'ont pas pu être chargés.");
     expect(localStorage.getItem("cycle_planning")).toBe(local);
+  });
+});
+
+// Isolation entre tests (#371) : un test qui laisse un hook monté et un push
+// débouncé armé ne doit rien déclencher dans le test suivant. Les deux `it` sont
+// volontairement dépendants de leur ordre (exécution séquentielle du fichier).
+describe("isolation entre tests (#371)", () => {
+  it("A : laisse useSyncCourses monté (écouteur online, moteurs, minuteurs)", async () => {
+    const sync = await chargerSync();
+    const { renderHook } = await import("@testing-library/react");
+    localStorage.setItem("cycle_affiche", JSON.stringify({ ancre: "2026-07-13", longueur: 7 }));
+    renderHook(() => sync.useSyncCourses("2026-07-13"));
+    await vi.waitFor(() => expect(persistance.chargerEtatCochesDistant).toHaveBeenCalled());
+  });
+
+  it("B : un retour en ligne ne réveille aucun module d'un test précédent", async () => {
+    await chargerSync();
+    localStorage.setItem("cycle_affiche", JSON.stringify({ ancre: "2026-07-13", longueur: 7 }));
+    window.dispatchEvent(new Event("online"));
+    await new Promise((r) => setTimeout(r, 300));
+    expect(persistance.chargerEtatCochesDistant).not.toHaveBeenCalled();
+    expect(persistance.chargerArticlesManuelsDistants).not.toHaveBeenCalled();
+  });
+
+  it("C : laisse useSync monté avec un push débouncé armé", async () => {
+    const sync = await chargerSync();
+    const stockage = await import("@/lib/stockage");
+    const { renderHook } = await import("@testing-library/react");
+    const { semaineParDefaut } = await import("@/lib/semaines");
+    const semaine = semaineParDefaut();
+    persistance.chargerPlanningDistant.mockResolvedValue({
+      planning: planning(semaine),
+      updatedAt: "2026-06-15T10:00:00.000000+00:00",
+    });
+    renderHook(() => sync.useSync());
+    await vi.waitFor(() => expect(localStorage.getItem("semaine_affichee")).toBe(semaine));
+    stockage.sauvegarderRemplacementSlot(planning(semaine));
+    expect(persistance.sauvegarderPlanningDistant).not.toHaveBeenCalled();
+  });
+
+  it("D : le push débouncé du test précédent ne part pas", async () => {
+    await chargerSync();
+    const { semaineParDefaut } = await import("@/lib/semaines");
+    // Le module précédent relit le planning local au déclenchement : on le
+    // repose pour que seul l'arrêt de son minuteur l'empêche de pousser.
+    localStorage.setItem("planning_courant", JSON.stringify(planning(semaineParDefaut())));
+    localStorage.setItem("planning_dirty", "1");
+    await new Promise((r) => setTimeout(r, 1000)); // > débounce (800 ms)
+    expect(persistance.sauvegarderPlanningDistant).not.toHaveBeenCalled();
   });
 });
