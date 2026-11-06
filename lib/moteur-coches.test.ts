@@ -346,6 +346,75 @@ describe("moteur de coche horodaté (#362)", () => {
     expect(cochee(TOMATES)).toBe(false)
   })
 
+  // Moteur neuf (rechargement) dont la file rejouée commite pendant la
+  // PREMIÈRE lecture de l'ancre : aucune ancre encore affichée.
+  async function moteurNeufAvecFile(op: "cle" | "vider") {
+    const stockage = fauxStockage()
+    const avant = monter(stockage)
+    avant.moteur.hydrater(A, {})
+    if (op === "cle") avant.moteur.poser(A, TOMATES, coche())
+    else avant.moteur.toutDecocher(A)
+    avant.appels[0].rejeter(new Error("Failed to fetch"))
+    await attendre()
+    return monter(stockage)
+  }
+
+  it("première hydratation (ligne absente) : la coche rejouée confirmée pendant la lecture reste", async () => {
+    const { moteur, appels, cochee } = await moteurNeufAvecFile("cle")
+    const rejeu = moteur.rejouer()
+    const depuis = moteur.marquerLecture()
+    await attendre()
+    ecriture(appels[0]).resoudre(T1)
+    await rejeu
+
+    moteur.hydrater(A, {}, depuis) // instantané d'avant la création de la ligne
+
+    expect(cochee(TOMATES)).toBe(true)
+    moteur.surEvent(A, TOMATES, coche(), T1) // notre écho : ignoré
+    expect(cochee(TOMATES)).toBe(true)
+  })
+
+  it("première hydratation (ligne plus ancienne) : la coche rejouée confirmée pendant la lecture reste", async () => {
+    const { moteur, appels, cochee } = await moteurNeufAvecFile("cle")
+    const rejeu = moteur.rejouer()
+    const depuis = moteur.marquerLecture()
+    await attendre()
+    ecriture(appels[0]).resoudre(T1)
+    await rejeu
+
+    moteur.hydrater(A, { [TOMATES]: { ...decoche(), maj: T0 } }, depuis)
+
+    expect(cochee(TOMATES)).toBe(true)
+    moteur.surEvent(A, TOMATES, decoche(), T0) // écho périmé : ignoré
+    expect(cochee(TOMATES)).toBe(true)
+  })
+
+  it("première hydratation : « Tout décocher » rejoué, commité pendant la lecture, reste décoché", async () => {
+    const { moteur, appels, cochee } = await moteurNeufAvecFile("vider")
+    const rejeu = moteur.rejouer()
+    const depuis = moteur.marquerLecture()
+    await attendre()
+    vidage(appels[0]).resoudre([{ cle: TOMATES, maj: T1 }])
+    await rejeu
+
+    moteur.hydrater(A, { [TOMATES]: { ...coche(), maj: T0 } }, depuis) // instantané d'avant
+
+    expect(cochee(TOMATES)).toBe(false)
+  })
+
+  it("première hydratation : commit AVANT la lecture, ligne absente = purge (le distant fait foi)", async () => {
+    const { moteur, appels, cochee } = await moteurNeufAvecFile("cle")
+    const rejeu = moteur.rejouer()
+    await attendre()
+    ecriture(appels[0]).resoudre(T1)
+    await rejeu
+    const depuis = moteur.marquerLecture()
+
+    moteur.hydrater(A, {}, depuis) // ligne purgée entre-temps
+
+    expect(cochee(TOMATES)).toBe(false)
+  })
+
   it("ligne absente d'une lecture sans confirmation pendant celle-ci : purge (décochée)", async () => {
     const { moteur, appels, cochee } = monter()
     moteur.hydrater(A, { [RIZ]: { ...coche(200), maj: T0 } })

@@ -137,6 +137,10 @@ export function reinitialiserCacheFoyer(): void {
   etatPlanning = "synchronise";
   etatsMoteurs.coches = "synchronise";
   etatsMoteurs.coches_manuels = "synchronise";
+  // Republié : sans cela, l'indicateur gardait l'état de l'ancien foyer
+  // (« hors ligne ») jusqu'au rechargement. Les moteurs recréés relisent un
+  // stockage déjà purgé (files vides).
+  publierEtat();
   blobConnu = {};
   localStorage.removeItem("planning_snapshot"); // CLE_SNAPSHOT de lib/stockage
   // Le foyer a changé → le cycle affiché et son planning projeté (#257) sont
@@ -349,7 +353,9 @@ let ancreArticlesManuelsChargee: string | null = null;
 let saisiesArticlesManuels = 0;
 
 // Lectures au plus : la première, plus deux relectures si l'utilisateur saisit
-// pendant la lecture. Au-delà, on applique quand même (coches en file protégées).
+// pendant la lecture. Au-delà, on applique quand même : coches en file protégées
+// (dirty-first), coches commitées pendant la lecture aussi (règle 6 du moteur,
+// première hydratation comprise).
 const LECTURES_ARTICLES_MAX = 3;
 
 // Coche des articles manuels sur le moteur horodaté (#362, RG-41) : deuxième
@@ -1015,15 +1021,17 @@ const stockageMoteurCoches: StockageCoches = {
 };
 
 /** Échec d'écriture de coche définitif (règle 5 du moteur) : statut HTTP 4xx
- *  hors 408 / 429, porté par `cause.status` (`lib/persistance.ts`). Une erreur
- *  réseau (statut 0 ou absent), un 5xx, 408 ou 429 restent transitoires : rejoués.
- *  Pourquoi : rejouée, une écriture refusée (RLS, requête invalide) bloquait
- *  toute la file à vie ; abandonnée, elle est journalisée (un geste perdu). */
+ *  hors 401 / 408 / 429, porté par `cause.status` (`lib/persistance.ts`). Une
+ *  erreur réseau (statut 0 ou absent), un 5xx, 401, 408 ou 429 restent
+ *  transitoires : rejoués. Pourquoi : rejouée, une écriture refusée (RLS,
+ *  requête invalide) bloquait toute la file à vie ; abandonnée, elle est
+ *  journalisée (un geste perdu). 401 : au retour du réseau, le jeton expiré
+ *  peut partir avant que son rafraîchissement aboutisse ; le geste est rejoué. */
 export function estEchecDefinitif(erreur: unknown): boolean {
   if (!(erreur instanceof Error)) return false;
   const statut = (erreur.cause as { status?: unknown } | undefined)?.status;
   if (typeof statut !== "number" || statut < 400 || statut >= 500) return false;
-  return statut !== 408 && statut !== 429;
+  return statut !== 401 && statut !== 408 && statut !== 429;
 }
 
 // Moteur des coches d'ingrédients, créé au premier usage : il relit sa file
@@ -1037,10 +1045,10 @@ function moteurCoches(): MoteurCoches<number> {
       // Décoche = ligne conservée `coche = false` (upsert) : la cible ne
       // disparaît jamais, le transport ne renvoie donc jamais `null`.
       // Chaque écriture commitée compte comme un geste (jumeau de
-      // `saisiesArticlesManuels++`) : une lecture qui la chevauche est relue.
-      // Pourquoi : au rechargement, le moteur neuf n'a pas encore d'ancre
-      // affichée (règle 6 sautée) ; la coche rejouée, commitée pendant la
-      // première lecture, était décochée par son instantané.
+      // `saisiesArticlesManuels++`) : une lecture qui la chevauche est relue,
+      // pour un instantané plus frais. Au-delà du plafond de relectures, c'est
+      // la règle 6 du moteur (première hydratation comprise) qui garde la
+      // coche rejouée commitée pendant la lecture.
       async ecrire(ancre, cle, etat) {
         const maj = etat.coche
           ? await cocherArticleDistant(ancre, cle, etat.valeur)

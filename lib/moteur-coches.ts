@@ -43,8 +43,13 @@
 //      encore à l'instantané).
 //    Sinon le distant fait foi, et une ligne absente vaut purge (sémantique du
 //    DELETE : décochée), y compris pour une clé confirmée AVANT la lecture.
-//    Sans hydratation préalable de cette ancre (premier chargement, autre
-//    ancre), le distant fait foi. Une clé de l'ancre affichée qui a un
+//    Première hydratation de l'ancre (rechargement, autre ancre affichée) :
+//    seules les clés confirmées pendant la lecture sont jugées ainsi, avec
+//    l'état confirmé (rien n'est encore affiché) ; pour les autres, le
+//    distant fait foi. Pourquoi : au rechargement, la file rejouée commite
+//    pendant la première lecture, plafonnée par l'appelant ; l'instantané
+//    sans la coche la décochait (base cochée, écho ignoré). Une clé de l'ancre
+//    affichée qui a un
 //    horodatage connu mais plus d'état affiché sort d'un « Tout décocher »
 //    (rejoué ou non) : son état gardé est « décoché ». Pourquoi : sans cette
 //    règle, une coche rejouée au retour en ligne, commitée pendant la
@@ -157,11 +162,13 @@ export function creerMoteurCoches<V>(deps: {
   // Jeton du flush courant (cf. `terminerFlush`).
   let flushCourant: object | null = null
   // Confirmations (réponse d'écriture, événement appliqué) numérotées, par
-  // ancre puis par clé : une clé confirmée après `marquerLecture()` n'est pas
-  // purgée par une lecture qui ne la contient pas (règle 6). En mémoire seule :
-  // une lecture ne survit pas à un rechargement.
+  // ancre puis par clé, avec l'état confirmé (`null` = vidage : décoché,
+  // valeur inconnue) : une clé confirmée après `marquerLecture()` n'est pas
+  // défaite par une lecture qui ne la contient pas (règle 6). En mémoire
+  // seule : une lecture ne survit pas à un rechargement.
   let sequenceConfirmations = 0
-  const confirmations = new Map<string, Map<string, number>>()
+  type Confirmation = { numero: number; etat: Etat<V> | null }
+  const confirmations = new Map<string, Map<string, Confirmation>>()
 
   // --- Stockage --------------------------------------------------------------
 
@@ -252,10 +259,10 @@ export function creerMoteurCoches<V>(deps: {
     return cleHorodatage(majConnues.get(ancre)?.get(cle))
   }
 
-  function confirmer(ancre: string, cle: string): void {
+  function confirmer(ancre: string, cle: string, etat: Etat<V> | null): void {
     let cles = confirmations.get(ancre)
     if (!cles) confirmations.set(ancre, (cles = new Map()))
-    cles.set(cle, ++sequenceConfirmations)
+    cles.set(cle, { numero: ++sequenceConfirmations, etat })
   }
 
   // Retient `maj` s'il est plus récent que l'horodatage connu de la clé.
@@ -301,7 +308,7 @@ export function creerMoteurCoches<V>(deps: {
       if (connue !== null && event.micro <= connue) continue
       afficher(cle, event.etat)
       retenirMaj(terminee.ancre, cle, event.maj)
-      confirmer(terminee.ancre, cle)
+      confirmer(terminee.ancre, cle, event.etat)
     }
     persisterMaj()
   }
@@ -366,7 +373,7 @@ export function creerMoteurCoches<V>(deps: {
         } else {
           for (const { cle, maj } of lignes) {
             retenirMaj(op.ancre, cle, maj)
-            confirmer(op.ancre, cle)
+            confirmer(op.ancre, cle, op.type === "cle" ? op.etat : null)
           }
           // Aussi pour une ancre non affichée : l'horodatage retenu survit à
           // un rechargement (`jugerDifferes` ne persiste que l'ancre affichée).
@@ -449,7 +456,7 @@ export function creerMoteurCoches<V>(deps: {
       }
       afficher(cle, etat)
       retenirMaj(ancre, cle, maj)
-      confirmer(ancre, cle)
+      confirmer(ancre, cle, etat)
       persisterMaj()
     },
 
@@ -477,18 +484,25 @@ export function creerMoteurCoches<V>(deps: {
       // (`null` = rien à afficher, la vue vidée est déjà décochée).
       const gardees = new Map<string, Etat<V> | null>()
       for (const [cle, maj] of anciennes) {
-        if (!memeAncre || estOccupee(ancre, cle)) continue
+        if (estOccupee(ancre, cle)) continue
+        const confirmation = confirmees?.get(cle)
+        const confirmeePendantLecture =
+          depuis !== undefined && confirmation !== undefined && confirmation.numero > depuis
+        // Première hydratation : rien d'affiché à garder, seul l'état
+        // confirmé pendant la lecture est connu.
+        if (!memeAncre && !confirmeePendantLecture) continue
         const connue = cleHorodatage(maj)
         const lue = distant[cle]
         const perimee =
           lue !== undefined
             ? connue !== null && (cleHorodatage(lue.maj) ?? Infinity) < connue
-            : depuis !== undefined && (confirmees?.get(cle) ?? 0) > depuis
+            : confirmeePendantLecture
         if (!perimee) continue
         // Horodatage connu sans état affiché, sur l'ancre affichée : seul un
         // « Tout décocher » (qui vide `affichees`) y mène ; l'état est décoché.
-        const precedente =
-          precedentes.get(cle) ?? (lue ? { coche: false, valeur: lue.valeur } : null)
+        // Idem pour un vidage confirmé (état `null`) en première hydratation.
+        const connu = memeAncre ? precedentes.get(cle) : (confirmation?.etat ?? undefined)
+        const precedente = connu ?? (lue ? { coche: false, valeur: lue.valeur } : null)
         gardees.set(cle, precedente)
       }
       const nouvelles = new Map<string, string>()
