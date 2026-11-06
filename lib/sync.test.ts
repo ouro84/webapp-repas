@@ -2872,3 +2872,85 @@ describe("seul un geste de l'utilisateur pousse le planning (#363)", () => {
     });
   });
 });
+
+describe("lecteur de cycle unique : échec d'une semaine sur deux (chantier 05)", () => {
+  // Cycle de 7 j ancré le vendredi 2026-11-06 : ven/sam/dim en W45, lun→jeu en W46.
+  const ANCRE = "2026-11-06";
+  const SEMAINES = ["2026-W45", "2026-W46"];
+  // Longueur volontairement ≠ 7 (que renvoie `chargerLongueurCycle`) : un
+  // `definirCycleAffiche` posé malgré l'échec la ramènerait à 7 et se verrait.
+  const CYCLE_AFFICHE = JSON.stringify({ ancre: ANCRE, longueur: 10 });
+
+  function localCycle(): string {
+    return JSON.stringify({
+      semaine: ANCRE,
+      jours: [jourPlanningSimple("lundi", { id: "local", nom: "Repas local" })],
+    });
+  }
+
+  // W45 se lit, W46 rejette : la lecture du cycle échoue donc en entier.
+  function w46EnEchec(): Error {
+    const cause = new Error("réseau coupé");
+    persistance.chargerPlanningDistant.mockImplementation(async (semaine: string) => {
+      if (semaine === "2026-W46") throw cause;
+      return {
+        planning: { semaine, jours: [jourPlanningSimple("lundi", { id: "distant", nom: "Repas distant" })] },
+        updatedAt: "2026-11-06T10:00:00.000Z",
+      };
+    });
+    return cause;
+  }
+
+  // Verrou d'un comportement existant (passe dès l'écriture du test) : la
+  // lecture échouée est journalisée par le catch de `chargerCycleDansCache`,
+  // sans écraser le cache ni le cycle affiché (pas de projection partielle).
+  it("hydratation /courses : une semaine en échec journalise ErreurLectureCycle et laisse le cache intact", async () => {
+    const local = localCycle();
+    localStorage.setItem("cycle_planning", local);
+    localStorage.setItem("cycle_affiche", CYCLE_AFFICHE);
+    const cause = w46EnEchec();
+    const erreur = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const { useSyncCourses } = await chargerSync();
+      const { ErreurLectureCycle } = await import("@/lib/lecture-cycle");
+      const { renderHook } = await import("@testing-library/react");
+
+      renderHook(() => useSyncCourses(ANCRE));
+      await vi.waitFor(() =>
+        expect(erreur).toHaveBeenCalledWith("Chargement du cycle échoué.", expect.anything())
+      );
+
+      expect(persistance.chargerPlanningDistant.mock.calls.map(([s]) => s)).toEqual(SEMAINES);
+      const journalisee = erreur.mock.calls.find(([m]) => m === "Chargement du cycle échoué.")![1];
+      expect(journalisee).toBeInstanceOf(ErreurLectureCycle);
+      expect((journalisee as InstanceType<typeof ErreurLectureCycle>).semainesEnEchec).toEqual([
+        "2026-W46",
+      ]);
+      expect((journalisee as Error).cause).toBe(cause);
+      expect(localStorage.getItem("cycle_planning")).toBe(local);
+      expect(localStorage.getItem("cycle_affiche")).toBe(CYCLE_AFFICHE);
+    } finally {
+      erreur.mockRestore();
+    }
+  });
+
+  // Verrou d'un comportement existant : après une génération, la relecture
+  // propage l'ErreurLectureCycle à l'appelant (la vue décide du toast).
+  it("relecture après génération : rejette ErreurLectureCycle, cache intact", async () => {
+    const local = localCycle();
+    localStorage.setItem("cycle_planning", local);
+    localStorage.setItem("cycle_affiche", JSON.stringify({ ancre: ANCRE, longueur: 7 }));
+    w46EnEchec();
+    const { appliquerGenerationCycle } = await chargerSync();
+    const { ErreurLectureCycle } = await import("@/lib/lecture-cycle");
+
+    const echec = await appliquerGenerationCycle(ANCRE, [
+      { semaine: "2026-W45", jours: [jourPlanningSimple("lundi", { id: "r1", nom: "R1" })] },
+    ]).catch((e: unknown) => e);
+
+    expect(echec).toBeInstanceOf(ErreurLectureCycle);
+    expect((echec as InstanceType<typeof ErreurLectureCycle>).semainesEnEchec).toEqual(["2026-W46"]);
+    expect((echec as Error).message).toBe("Certains jours du cycle n'ont pas pu être chargés.");
+    expect(localStorage.getItem("cycle_planning")).toBe(local);
+  });
+});

@@ -211,4 +211,66 @@ describe("VuePlanningCycle : génération du cycle puis relecture en erreur (#35
       { id: "echec-chargement-cycle" }
     );
   });
+
+  it("cycle rempli sur deux semaines, une seule en échec à la relecture : l'état affiché est conservé, sans projection partielle (chantier 05)", async () => {
+    m.jourCourses = 5; // vendredi : ven/sam/dim en semaine N, lun→jeu en N+1
+    // jsdom n'implémente pas <dialog>.showModal (confirmation de régénération, #334).
+    HTMLDialogElement.prototype.showModal = function () {
+      this.setAttribute("open", "");
+    };
+    const jours = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"] as const;
+    let version = "ancien";
+    let semaineEnEchec: string | undefined;
+    m.chargerPlanningDistant.mockImplementation(async (semaine: string) => {
+      if (semaine === semaineEnEchec) throw new Error("réseau");
+      return {
+        planning: {
+          semaine,
+          jours: jours.map((jour) => ({
+            jour,
+            diner: {
+              id: `${version}-${semaine}-${jour}`,
+              nom: `${version}-${semaine}-${jour}`,
+              tempsPreparation: "rapide" as const,
+              ingredients: [],
+            },
+          })),
+        },
+        updatedAt: "2026-11-06T10:00:00Z",
+      };
+    });
+    rendre();
+    const recettesAffichees = () =>
+      screen
+        .queryAllByLabelText(/^Voir la recette : /)
+        .map((el) => el.getAttribute("aria-label")!.replace("Voir la recette : ", ""));
+    await waitFor(() => expect(recettesAffichees().length).toBeGreaterThan(0));
+    const semaines = [...new Set(m.chargerPlanningDistant.mock.calls.map(([s]) => s as string))];
+    expect(semaines).toHaveLength(2);
+    const avant = recettesAffichees();
+    // Les deux semaines du cycle sont affichées.
+    for (const s of semaines) expect(avant.some((nom) => nom.includes(s))).toBe(true);
+
+    // Relecture après génération : la 1re semaine renvoie du contenu NOUVEAU, la
+    // 2e échoue. Aucun jour nouveau ne doit apparaître (pas de projection partielle).
+    version = "nouveau";
+    semaineEnEchec = semaines[1];
+    m.chargerPlanningDistant.mockClear();
+    m.genererCycle.mockResolvedValue({
+      vegeNonHonore: false,
+      mixNonHonore: false,
+      saisonNonHonore: false,
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Régénérer" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Régénérer" }).at(-1)!);
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+    // La relecture a bien lu les deux semaines (la 1re réussit, la 2e échoue).
+    const relues = m.chargerPlanningDistant.mock.calls.map(([s]) => s as string);
+    expect(relues).toEqual(expect.arrayContaining(semaines));
+    expect(recettesAffichees()).toEqual(avant);
+    expect(recettesAffichees().some((nom) => nom.startsWith("nouveau-"))).toBe(false);
+    expect(screen.queryByText("Impossible de charger le cycle.")).toBeNull();
+    expect(screen.queryByText("Aucun repas planifié sur ce cycle.")).toBeNull();
+  });
 });

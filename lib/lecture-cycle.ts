@@ -32,7 +32,13 @@ export class ErreurLectureCycle extends Error {
   readonly causes: unknown[]
 
   constructor(semainesEnEchec: string[], causes: unknown[]) {
-    super(`Lecture du cycle échouée (semaines : ${semainesEnEchec.join(", ")}).`)
+    // Message lisible par l'utilisateur : les appelants l'affichent tel quel
+    // dans un toast (`erreur.message`). Le détail technique vit dans
+    // `semainesEnEchec`, `causes` et `cause` (chaînée : une cause, ou un
+    // AggregateError quand plusieurs semaines échouent).
+    super("Certains jours du cycle n'ont pas pu être chargés.", {
+      cause: causes.length === 1 ? causes[0] : new AggregateError(causes),
+    })
     this.name = "ErreurLectureCycle"
     this.semainesEnEchec = semainesEnEchec
     this.causes = causes

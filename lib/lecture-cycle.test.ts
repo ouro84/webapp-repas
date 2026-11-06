@@ -100,7 +100,9 @@ describe("lireCycle", () => {
     expect(e.semainesEnEchec).toEqual(["2026-W46"])
     expect(e.causes[0]).toBe(cause)
     expect(e.causes).toHaveLength(1)
-    expect(e.message).toBe("Lecture du cycle échouée (semaines : 2026-W46).")
+    // Message lisible tel quel dans un toast ; la cause unique est chaînée.
+    expect(e.message).toBe("Certains jours du cycle n'ont pas pu être chargés.")
+    expect(e.cause).toBe(cause)
     lecturesAvec(client)
   })
 
@@ -116,6 +118,9 @@ describe("lireCycle", () => {
     expect(erreur).toBeInstanceOf(ErreurLectureCycle)
     expect(erreur.semainesEnEchec).toEqual(["2026-W45", "2026-W46"])
     expect(erreur.causes).toEqual([c45, c46])
+    // Plusieurs causes : agrégées dans `cause`, dans l'ordre du cycle.
+    expect(erreur.cause).toBeInstanceOf(AggregateError)
+    expect((erreur.cause as AggregateError).errors).toEqual([c45, c46])
     lecturesAvec(client)
   })
 
