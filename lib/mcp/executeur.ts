@@ -18,7 +18,7 @@ import { cleJeton } from "@/lib/jeton-panier"
 import { retirerArticlesCoches } from "@/lib/liste-courses"
 import { chargerListeCoursesCycle } from "@/lib/liste-courses-cycle"
 import { ErreurOutil } from "@/lib/mcp/erreurs"
-import { cocherArticleDansCycle, type CochageMcp } from "@/lib/mcp/ecriture-courses"
+import { cocherArticleDansCycle, type CochageMcp, type DesignationArticle } from "@/lib/mcp/ecriture-courses"
 import { versArticle } from "@/lib/mcp/lecture"
 import { rapporterPanier } from "@/lib/mcp/panier"
 import { MESSAGES_PANIER, type RapportPanier } from "@/lib/panier"
@@ -31,6 +31,9 @@ export type ArticleDemande = {
   rayon: string
   placard: boolean
   manuel: boolean
+  // Référence stable de l'article (#372), à recopier telle quelle dans
+  // cocher_article_demande. Le jeton, lui, reste signé sur le libellé.
+  ref: string
   jeton: string
 }
 
@@ -170,6 +173,7 @@ async function preparerPrise(
         rayon: a.rayon,
         placard: a.placard,
         manuel: a.manuel,
+        ref: a.ref,
         jeton: jetons[n],
       })),
     },
@@ -181,17 +185,25 @@ async function preparerPrise(
  * (`demande_panier_en_cours`), jamais celui du jour, sans argument `ancre` à
  * inventer. Vise exactement `demande.ancre`, sans la re-résoudre : si le jour de
  * courses change pendant le run, la coche ne part pas sur un autre cycle. Ne
- * décoche jamais. Ambiguïté → `candidats`, rien coché, comme
- * `cocher_article`. Sans demande prise, OMQ05 : l'exécuteur s'arrête (RG-83).
+ * décoche jamais. Désignation par `ref` (prioritaire, #372) ou par libellé,
+ * via le même `cocherArticleDansCycle` que `cocher_article` (règle du jumeau).
+ * Ambiguïté de libellé → `candidats`, rien coché, comme `cocher_article`. Sans
+ * demande prise, OMQ05 : l'exécuteur s'arrête (RG-83).
  */
 export async function cocherArticleDemande(
   supabase: ClientSupabase,
-  args: { libelle: string; quantite?: string }
+  args: DesignationArticle
 ): Promise<CochageMcp> {
   const { data, error } = await supabase.rpc("demande_panier_en_cours")
   if (error) throw new Error(`Lecture de la demande de panier en cours impossible : ${error.message}`)
   if (!data) throw new ErreurOutil(MESSAGES_PANIER.OMQ05)
   const { ancre } = data as DemandeEnCours
   const longueur = await chargerLongueurCycle(ancre, supabase)
-  return cocherArticleDansCycle(supabase, { libelle: args.libelle, quantite: args.quantite }, { ancre, longueur })
+  // Seules les clés de désignation passent : jamais `coche` (cet outil ne décoche pas).
+  const designation: DesignationArticle = {
+    ...(args.ref !== undefined ? { ref: args.ref } : {}),
+    ...(args.libelle !== undefined ? { libelle: args.libelle } : {}),
+    ...(args.quantite !== undefined ? { quantite: args.quantite } : {}),
+  }
+  return cocherArticleDansCycle(supabase, designation, { ancre, longueur })
 }

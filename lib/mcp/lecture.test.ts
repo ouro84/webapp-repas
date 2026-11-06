@@ -298,7 +298,7 @@ describe("lireListeCourses (RG-78)", () => {
     const noms = resultat.categories.flatMap((c) => c.articles.map((a) => a.nom))
     expect(noms).not.toContain("tomate") // cochée
     expect(resultat.categories.map((c) => c.categorie)).toEqual(["Légumes & Fruits", "Épicerie"])
-    expect(resultat.categories[1].articles).toEqual([{ nom: "Piles", quantite: "", manuel: true }])
+    expect(resultat.categories[1].articles).toEqual([{ nom: "Piles", quantite: "", manuel: true, ref: "man:m1" }])
     expect(resultat.a_verifier_au_placard.map((a) => a.nom)).toEqual(["huile"])
     expect(resultat.nombre_articles).toBe(noms.length + resultat.a_verifier_au_placard.length)
   })
@@ -309,6 +309,36 @@ describe("lireListeCourses (RG-78)", () => {
     const articles = resultat.categories.flatMap((c) => c.articles)
     expect(articles.find((a) => a.nom === "tomate")).toMatchObject({ coche: true, quantite: "400 g" })
     expect(articles.find((a) => a.nom === "poireau")).toMatchObject({ coche: false })
+  })
+
+  it("lireListeCourses : chaque article porte une ref stable ; « lait » en l et en g → deux ref distinctes (#372)", async () => {
+    vi.spyOn(listeCoursesCycle, "chargerListeCoursesCycle").mockResolvedValue({
+      ancre: "2026-10-29",
+      longueur: 7,
+      liste: {
+        normal: [
+          {
+            categorie: "produits-frais",
+            ingredients: [
+              { nom: "lait", quantite: 1, unite: "l", categorie: "produits-frais", fondDePlacard: false },
+              { nom: "lait", quantite: 200, unite: "g", categorie: "produits-frais", fondDePlacard: false },
+            ],
+          },
+          {
+            categorie: "autre",
+            ingredients: [
+              { nom: "Lait", quantite: 0, unite: "piece", categorie: "autre", fondDePlacard: false, source: "manuel", id: "m1" },
+            ],
+          },
+        ],
+        fondDePlacard: [{ nom: "sel", quantite: 5, unite: "g", categorie: "epicerie", fondDePlacard: true }],
+      },
+      coches: {},
+    })
+    const { client } = mock()
+    const resultat = await lireListeCourses(client, {}, JEUDI)
+    const refs = [...resultat.categories.flatMap((c) => c.articles), ...resultat.a_verifier_au_placard].map((a) => a.ref)
+    expect(refs).toEqual(["ing:lait|l", "ing:lait|g", "man:m1", "ing:sel|g"])
   })
 
   it("lireListeCourses : passe le client injecté à chargerListeCoursesCycle (jamais le défaut)", async () => {

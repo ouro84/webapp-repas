@@ -388,6 +388,28 @@ describe("POST /api/mcp — panier : lancement par l’assistant (#320, #330)", 
     expect(description("lancer_demande_panier")).toContain("accord explicite")
   })
 
+  it("cocher_article transmet la ref ; lire_liste_courses et cocher_article disent de la recopier telle quelle (#372)", async () => {
+    m.cocherArticle.mockResolvedValue({ modifie: true, article: {} })
+    const { result: appel } = await lire(
+      await appeler("tools/call", { name: "cocher_article", arguments: { ref: "man:a1" } })
+    )
+    expect(appel?.isError).toBeFalsy()
+    expect(m.cocherArticle).toHaveBeenCalledWith({ jeton: "jwt-oauth" }, { ref: "man:a1" }, expect.any(Date))
+    const { result } = await lire(await appeler("tools/list"))
+    const outils = result?.tools as Array<{ name: string; description: string; inputSchema: { properties: Record<string, unknown> } }>
+    const outil = (nom: string) => outils.find((t) => t.name === nom)!
+    expect(Object.keys(outil("cocher_article").inputSchema.properties)).toContain("ref")
+    expect(outil("lire_liste_courses").description).toContain("`ref`")
+    expect(outil("lire_liste_courses").description).toContain("telle quelle")
+    expect(outil("cocher_article").description).toContain("telle quelle")
+  })
+
+  it("cocher_article sans ref ni libellé : refusé par le schéma, outil non appelé (#372)", async () => {
+    const { result } = await lire(await appeler("tools/call", { name: "cocher_article", arguments: { coche: false } }))
+    expect(result?.isError).toBe(true)
+    expect(m.cocherArticle).not.toHaveBeenCalled()
+  })
+
   it("l’endpoint général n’expose plus prendre_demande_panier ni rapporter_panier (#330)", async () => {
     const { result } = await lire(await appeler("tools/list"))
     const noms = (result?.tools as Array<{ name: string }>).map((t) => t.name)

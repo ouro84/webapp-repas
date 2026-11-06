@@ -55,6 +55,7 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ### Ajouté
 
+- Assistant IA : chaque article de la liste de courses porte une référence stable, que l’assistant peut utiliser pour cocher l’article sans risque de confusion entre deux articles de même nom (#372).
 - Hermes : skill « préparer mon cycle » (tendances confirmées, ajustements, deux validations, panier et partage WhatsApp sur ordre) et mesure de la durée machine d’un run (#320).
 - Lien vers un cycle : `/planning?cycle=AAAA-MM-JJ` ouvre la vue Cycle sur ce cycle, sans changer ta vue préférée, y compris après connexion (#320).
 - Assistant connecté (MCP) : lancer le remplissage du panier d’un cycle, cocher un article dans un cycle précis (#320).
