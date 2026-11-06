@@ -9,7 +9,7 @@ paths:
 
 ## Topologie (`.github/workflows/ci.yml`)
 
-- **Sur PR** : `unit` (lint + Vitest, en parallèle) ; `migrate-staging` (un seul `db push`, pour éviter deux push concurrents sur l'historique) ; `playwright-cache` ; puis `e2e` (matrice de 2 jobs : `jetable`, `--workers=4`, et `partage`, `workers: 1`, compte `claude-e2e-p1`). Le serveur e2e est `next build && next start` en CI, `next dev` en local.
+- **Sur PR** : `unit` (lint + Vitest, en parallèle) ; `migrate-staging` (un seul `db push`, pour éviter deux push concurrents sur l'historique) ; `playwright-cache` ; puis `e2e` (matrice de 2 jobs : `jetable`, `--workers=4`, et `partage`, `workers: 1`, compte `claude-e2e-p1`), **sérialisés** (`strategy.max-parallel: 1`, `partage` listé avant `jetable`). Le serveur e2e est `next build && next start` en CI, `next dev` en local.
 - **Sur push `main`** (et `workflow_dispatch`) : seulement `migrate-prod`. `migrate-prod` n'a pas de `needs` vers les jobs de PR, car un `needs` sur un job skipped le rendrait skipped.
 - Vercel déploie via son propre webhook, indépendamment d'Actions.
 
@@ -19,6 +19,7 @@ Les minutes facturées sont la **somme des durées de chaque job** (arrondie à 
 - `concurrency` par `github.ref`, avec `cancel-in-progress` **sauf sur `main`** (ne jamais couper un `migrate-prod`) ;
 - **tout job de test porte `if: github.event_name == 'pull_request'`** : le tree mergé a déjà passé la CI pendant la PR ;
 - e2e consolidés en 2 jobs. Le découpage en 6 jobs (5 comptes `p1…p5`, désormais dormants) a été abandonné, car le coût fixe par job (~1 min 30) brûlait les minutes. Le restaurer suppose de ré-arbitrer minutes contre horloge ;
+- **jobs e2e sérialisés** (`strategy.max-parallel: 1`) : `partage` et `jetable` tapent le même Supabase de staging, qui gèle parfois ~30 s sous charge, et deux jobs en parallèle aggravaient ces gels (échecs de génération réelle). Coût : ~4 min d'horloge de plus par run ; minutes facturées inchangées (somme des durées). GitHub ne garantit pas l'ordre strict de la matrice : seule compte l'absence de parallélisme, `partage` est listé en premier par convention. Pourquoi : un e2e connu flaky ne part pas en CI, et la charge concurrente sur staging en fabriquait (#357) ;
 - `paths-ignore` sur `pull_request` : `**/*.md`, `content/aide/**`, `revueDesign/**`, `.claude/**`, `.gitignore` (une PR doc-only ne lance aucune CI). Toute nouvelle origine de doc pure peut y être ajoutée. `push: main` reste sans filtre.
 
 ## Cache du navigateur Playwright

@@ -38,10 +38,12 @@ import {
 import { parserCoches, type Coches } from "@/lib/coches";
 import {
   appliquerEvent,
+  appliquerOp,
   deriverOps,
   type EventCoche,
 } from "@/lib/coches-sync";
 import { signaturePlanning } from "@/lib/planning-diff";
+import { fusionnerEditionsLocales } from "@/lib/planning-fusion";
 import { ORDRE_JOURS } from "@/lib/generateur";
 import { createClient } from "@/lib/supabase/client";
 import { semaineDecalee, semaineISO, semaineParDefaut } from "@/lib/semaines";
@@ -63,6 +65,17 @@ import type { RealtimeChannel } from "@supabase/supabase-js";
 // par donnée synchronisée : planning et coches (US-13).
 const CLE_MAJ = "planning_courant_maj";
 const CLE_DIRTY = "planning_dirty";
+// Dernier planning CONFIRMÉ par le serveur pour la semaine affichée (#355) :
+// écrit à chaque pull (`chargerSemaineDansCache`), après chaque push réussi (le
+// planning poussé) et par les écritures qui patchent le cache (`modifierSlotDistant`,
+// `appliquerGenerationCycle`). Base de comparaison des éditions locales en
+// attente quand une relecture US-21 arrive (`relireEnRejouantEditionsLocales`).
+const CLE_CONFIRME = "planning_confirme";
+// Semaine dont la dernière relecture US-21 avec rejeu a échoué (#355) : aucun
+// push de cette semaine avant une relecture réussie. Persistée pour survivre à
+// un rechargement : sinon `hydrater` (« local fait foi ») pousserait le local
+// sans relire et effacerait le changement distant que la lecture devait intégrer.
+const CLE_A_RELIRE = "planning_a_relire";
 // Coches : depuis #56 PR4 (par-article), seul `courses_dirty` (file d'opérations
 // à pousser) sert. `courses_cochees_maj` est legacy — plus écrit, mais purgé au
 // changement de foyer et en e2e pour ne pas laisser de valeur orpheline.
@@ -96,6 +109,8 @@ export function reinitialiserCacheFoyer(): void {
   storeCoches.effacer();
   localStorage.removeItem(CLE_MAJ);
   localStorage.removeItem(CLE_DIRTY);
+  localStorage.removeItem(CLE_CONFIRME); // instantané confirmé (#355) de l'ancien foyer
+  localStorage.removeItem(CLE_A_RELIRE); // relecture à refaire (#355) de l'ancien foyer
   localStorage.removeItem(CLE_MAJ_COCHES);
   localStorage.removeItem(CLE_DIRTY_COCHES);
   localStorage.removeItem("planning_snapshot"); // CLE_SNAPSHOT de lib/stockage
@@ -653,17 +668,68 @@ function planningLocal(): Planning | null {
   }
 }
 
+// Instantané confirmé (#355, `CLE_CONFIRME`). Illisible = absent : la relecture
+// US-21 retombe alors sur « le distant fait foi ».
+function lireConfirme(): Planning | null {
+  const brut = localStorage.getItem(CLE_CONFIRME);
+  if (brut === null) return null;
+  try {
+    return JSON.parse(brut) as Planning;
+  } catch {
+    return null;
+  }
+}
+
+function ecrireConfirme(planning: Planning | null): void {
+  if (planning === null) localStorage.removeItem(CLE_CONFIRME);
+  else localStorage.setItem(CLE_CONFIRME, JSON.stringify(planning));
+}
+
+// Patche l'instantané confirmé de `semaine` comme le cache (écriture déjà faite
+// en base par une RPC partielle : `sauvegarder_slots`, `sauvegarder_cycle`).
+// Sans instantané de cette semaine, rien à patcher.
+function patcherConfirme(
+  semaine: string,
+  patch: (jours: JourPlanning[]) => JourPlanning[]
+): void {
+  const confirme = lireConfirme();
+  if (confirme === null || confirme.semaine !== semaine) return;
+  ecrireConfirme({ ...confirme, jours: patch(confirme.jours) });
+}
+
+// Vrai si tout jour présent dans `confirme` l'est aussi dans `local` (#355).
+// Une semaine PARTIELLE est normale (`dbPlanningToDomain` ne garde que les jours
+// ayant au moins un créneau : week-end « Aucun », semaine coupée par un cycle,
+// RG-44/46) ; seul un local qui aurait PERDU des jours rend le rejeu douteux.
+function joursConserves(confirme: Planning, local: Planning): boolean {
+  return confirme.jours.every((jc) => local.jours.some((jl) => jl.jour === jc.jour));
+}
+
 // Pousse le planning courant en base. Sérialisé (garde `pushEnCours`) pour
 // éviter les delete→insert concurrents (duplicate key / RLS). Au succès,
 // l'horodatage local prend la valeur serveur renvoyée et `dirty` est levé ;
 // à l'échec (réseau/hors-ligne), `dirty` reste et le push sera rejoué.
 async function pousser(): Promise<void> {
+  // Relecture US-21 en cours (#355) : `dirty` reste posé, elle relance le push
+  // à sa fin. Garde ICI et pas seulement dans `relancerPush` : `attendreSync`,
+  // le remontage de `hydrater`, le retour en ligne et le re-push de fin de
+  // `pousser` l'appellent directement. Parti pendant la lecture,
+  // `sauvegarder_planning` (toute la semaine) effacerait en base le changement
+  // distant en cours de lecture.
+  if (traitementPlanningEnCours) return;
   if (pushEnCours) {
     rePushDemande = true;
     return;
   }
   const planning = planningLocal();
   if (planning === null) return; // rien à pousser
+  // Relecture ratée pour cette semaine (#355) : la refaire d'abord. Pousser le
+  // local sans elle effacerait le changement de l'autre membre ; c'est elle
+  // qui relancera le push (de la fusion) si elle réussit.
+  if (lireRelectureARefaire() === planning.semaine) {
+    void traiterChangementPlanningDistant(planning.semaine);
+    return;
+  }
 
   pushEnCours = true;
   rePushDemande = false; // toute écriture pendant ce push le repassera à true
@@ -673,6 +739,8 @@ async function pousser(): Promise<void> {
     const majServeur = await sauvegarderPlanningDistant(planning);
     retenirHorodatageEcrit(planning.semaine, majServeur);
     localStorage.setItem(CLE_MAJ, majServeur);
+    // La base contient désormais exactement le planning poussé (#355).
+    ecrireConfirme(planning);
     // Ne lever `dirty` que si AUCUNE écriture locale n'est survenue pendant le
     // push (sinon le local a re-divergé → on garde dirty et on rejoue).
     if (!rePushDemande) localStorage.removeItem(CLE_DIRTY);
@@ -696,13 +764,29 @@ async function pousser(): Promise<void> {
 function planifierPush(): void {
   if (hydratationEnCours) return;
   localStorage.setItem(CLE_DIRTY, "1");
+  relancerPush();
+}
+
+// (Re)planifie le push débouncé du planning courant, hors garde d'hydratation
+// (aussi utilisé par la relecture US-21 qui rejoue des éditions locales, #355).
+function relancerPush(): void {
   // Écriture pendant un push en cours : il rejouera (pas de clear de dirty).
   if (pushEnCours) {
     rePushDemande = true;
     return;
   }
+  // Relecture US-21 en cours : `dirty` suffit, elle replanifie le push à sa fin
+  // (pas de minuteur inutile ; `pousser` est de toute façon gardé, #355).
+  if (traitementPlanningEnCours) return;
   if (minuteur) clearTimeout(minuteur);
   minuteur = setTimeout(() => void pousser(), DELAI_DEBOUNCE_MS);
+}
+
+// Suspend le push débouncé en attente (la relecture US-21 le replanifie si
+// `dirty` reste posé, cf. traiterChangementPlanningDistant).
+function suspendrePush(): void {
+  if (minuteur) clearTimeout(minuteur);
+  minuteur = null;
 }
 
 // La logique « le local non poussé/non horodaté fait foi, sinon la base »
@@ -733,6 +817,13 @@ let minuteurCoches: ReturnType<typeof setTimeout> | null = null;
 let applicationDistanteEnCours = false;
 // Dernier état réconcilié avec la base — référence du diff.
 let cochesConnues: Coches = {};
+// Clés des ops du flush en cours dont l'écriture n'est pas encore confirmée
+// (vide hors flush ; chaque clé est retirée après son `await` réussi, toutes
+// après `viderCochesDistantes`). Un event temps réel sur l'une d'elles peut être
+// l'écho de cette écriture (cf. appliquerEventLocal, #357). Appartenance aux
+// ops, et non écart blob poussé / référence : la référence bouge avec les
+// events reçus en vol, et une clé qu'aucune op ne touche passait pour « en vol ».
+let clesEnVol: Set<string> = new Set();
 
 function estDirtyCoches(): boolean {
   return localStorage.getItem(CLE_DIRTY_COCHES) === "1";
@@ -764,8 +855,10 @@ function ecrireBlob(blob: Coches): void {
 
 // Pousse en base le DIFF entre `cochesConnues` et le blob courant. Sérialisé
 // (garde `flushCochesEnCours`) ; recalcule le diff à chaque passage → converge
-// même si l'état a rebougé pendant un flush. Au succès, `cochesConnues` rattrape
-// le local et `courses_dirty` est levé ; à l'échec (hors-ligne) il est rejoué.
+// même si l'état a rebougé pendant un flush. Chaque op passée en base est
+// appliquée à `cochesConnues` (référence courante, pas l'instantané poussé,
+// #357) ; au succès `courses_dirty` est levé ; à l'échec (hors-ligne) le reste
+// est rejoué.
 async function flusherCoches(): Promise<void> {
   if (flushCochesEnCours) {
     reFlushCochesDemande = true;
@@ -784,12 +877,21 @@ async function flusherCoches(): Promise<void> {
   }
 
   flushCochesEnCours = true;
+  clesEnVol = new Set(ops.map((op) => op.cle));
   reFlushCochesDemande = false;
   definirEtat("sauvegarde");
   try {
+    // La référence avance op par op, sur sa valeur COURANTE (#357) : jamais
+    // l'instantané `local`, qui effacerait ce que les events reçus pendant le
+    // vol y ont mis (coche d'un autre membre oubliée, sa décoche ignorée, puis
+    // annulée en base par notre geste suivant). Op par op aussi pour qu'un
+    // échec à mi-parcours garde en référence les ops déjà passées en base.
     if (Object.keys(local).length === 0) {
       // Vidage complet (Tout décocher / régénération RG-13) → un seul DELETE.
+      // Les ops sont alors les `decocher` de toutes les clés connues au départ.
       await viderCochesDistantes(ancre);
+      cochesConnues = ops.reduce(appliquerOp, cochesConnues);
+      clesEnVol.clear();
     } else {
       for (const op of ops) {
         if (op.type === "cocher") {
@@ -797,9 +899,10 @@ async function flusherCoches(): Promise<void> {
         } else {
           await decocherArticleDistant(ancre, op.cle);
         }
+        cochesConnues = appliquerOp(cochesConnues, op);
+        clesEnVol.delete(op.cle);
       }
     }
-    cochesConnues = local;
     if (!reFlushCochesDemande) localStorage.removeItem(CLE_DIRTY_COCHES);
     definirEtat("synchronise");
   } catch (erreur) {
@@ -807,6 +910,7 @@ async function flusherCoches(): Promise<void> {
     console.error("Synchronisation des coches échouée (sera rejouée).", erreur);
   } finally {
     flushCochesEnCours = false;
+    clesEnVol.clear();
     if (reFlushCochesDemande) {
       reFlushCochesDemande = false;
       void flusherCoches();
@@ -914,10 +1018,22 @@ async function assurerFoyerId(): Promise<string | null> {
 
 // Applique un event Realtime au blob local (sans redériver d'opérations) et
 // réconcilie la référence `cochesConnues` (l'état distant fait foi pour la clé).
+//
+// Sauf si la clé porte un geste local pas encore confirmé (#357) : écart entre
+// le local et la référence (ops en attente du débounce), ou op du flush en
+// cours sur cette clé pas encore confirmée (`clesEnVol`). L'event ne met alors à jour QUE la référence ; le local fait foi
+// et le flush suivant le pousse (le dernier geste gagne en base, RG-32).
+// Pourquoi : le temps réel livre l'écho d'une écriture avec un retard
+// variable ; l'écho de la coche arrivé après la décoche recochait l'article à
+// l'écran et, local et référence redevenus égaux, la décoche ne partait jamais.
 function appliquerEventLocal(event: EventCoche): void {
   const avant = cochesLocales();
-  const apres = appliquerEvent(avant, event);
+  const gesteEnAttente =
+    cochesConnues[event.cle] !== avant[event.cle] ||
+    clesEnVol.has(event.cle);
   cochesConnues = appliquerEvent(cochesConnues, event);
+  if (gesteEnAttente) return;
+  const apres = appliquerEvent(avant, event);
   if (apres === avant) return; // idempotent (écho de notre propre écriture)
   applicationDistanteEnCours = true;
   ecrireBlob(apres);
@@ -1037,6 +1153,13 @@ function couperTempsReel(): Promise<void> {
   // ou différé par une écriture en vol, n'est plus jugé après la coupure.
   semainePlanningVoulue = null;
   eventsPlanningDifferes.clear();
+  // Une lecture encore en vol ne rouvre pas le canal (#355), et la relecture
+  // US-21 ratée n'est plus retentée hors de `useSync` (reste persistée : refaite
+  // au prochain déclencheur de push). `relecturePlanningDemandee` n'est PAS
+  // levé : la relecture finale d'un traitement en cours protège encore le push
+  // de sa fusion (elle ne rouvre aucun canal).
+  abonnementPlanningAutorise = false;
+  annulerNouvelleRelecture();
   return Promise.all([
     chaineCoches,
     chainePlanning,
@@ -1099,21 +1222,213 @@ export function useAlertePlanning(): boolean {
 }
 
 let traitementPlanningEnCours = false;
+// Event distant reçu PENDANT un traitement (#355) : sa semaine, pour UNE
+// relecture finale (plusieurs events pendant la lecture = une seule relecture).
+// Jeté, il laissait la fusion (sans ce changement) repartir en push et
+// l'effacer en base.
+let relecturePlanningDemandee: string | null = null;
+// Semaine dont la dernière relecture avec rejeu a échoué (#355) : `pousser`
+// refait la relecture avant tout push de cette semaine. Levé par toute lecture
+// réussie (rejeu ou `chargerSemaineDansCache`, cf. `relectureReussie`).
+// Persistée (`CLE_A_RELIRE`) : un rechargement ne doit pas pousser sans relire.
+function lireRelectureARefaire(): string | null {
+  return localStorage.getItem(CLE_A_RELIRE);
+}
+
+// Nouvelle tentative différée d'une relecture ratée (#355) : sans elle, rien ne
+// la relançait tant que l'utilisateur ne retouchait pas au planning (en ligne,
+// aucun event `online` ne vient). Back-off simple et borné ; seulement pendant
+// que `useSync` est monté (`/planning`, `/bienvenue` ; `abonnementPlanningAutorise`), arrêtée par
+// `couperTempsReel`. Hors ligne, l'event `online` relance déjà (`pousser`).
+const RELECTURE_DELAI_INITIAL_MS = 2000;
+const RELECTURE_DELAI_MAX_MS = 30_000;
+const RELECTURE_TENTATIVES_MAX = 5;
+let minuteurRelecture: ReturnType<typeof setTimeout> | null = null;
+let tentativesRelecture = 0;
+
+function planifierNouvelleRelecture(semaine: string): void {
+  if (!abonnementPlanningAutorise) return;
+  if (typeof navigator !== "undefined" && navigator.onLine === false) return;
+  if (tentativesRelecture >= RELECTURE_TENTATIVES_MAX) return; // reste : les déclencheurs de push
+  const delai = Math.min(
+    RELECTURE_DELAI_INITIAL_MS * 2 ** tentativesRelecture,
+    RELECTURE_DELAI_MAX_MS
+  );
+  tentativesRelecture++;
+  if (minuteurRelecture) clearTimeout(minuteurRelecture);
+  minuteurRelecture = setTimeout(() => {
+    minuteurRelecture = null;
+    if (lireRelectureARefaire() !== semaine || semaineActive() !== semaine) return;
+    void traiterChangementPlanningDistant(semaine);
+  }, delai);
+}
+
+function annulerNouvelleRelecture(): void {
+  if (minuteurRelecture) clearTimeout(minuteurRelecture);
+  minuteurRelecture = null;
+  tentativesRelecture = 0;
+}
+
+// Relecture ratée : aucun push avant une relecture réussie, indicateur
+// « hors-ligne » (le changement distant n'est pas encore intégré), nouvelle
+// tentative différée.
+function relectureRatee(semaine: string): void {
+  localStorage.setItem(CLE_A_RELIRE, semaine);
+  definirEtat("hors-ligne");
+  planifierNouvelleRelecture(semaine);
+}
+
+// Toute lecture réussie de la semaine rétablit l'indicateur (le push éventuel
+// le repassera par « sauvegarde ») et lève la relecture à refaire, seulement si
+// c'est la MÊME semaine (#355) : lire une autre semaine n'intègre pas le
+// changement distant non relu de celle-ci.
+function relectureReussie(semaine: string): void {
+  if (lireRelectureARefaire() === semaine) {
+    localStorage.removeItem(CLE_A_RELIRE);
+    annulerNouvelleRelecture();
+  }
+  if (!pushEnCours && !flushCochesEnCours) definirEtat("synchronise");
+}
 
 // Re-pull forcé du planning de la semaine puis, si le contenu a changé, alerte.
+// Avec des éditions locales en attente (`dirty`) et un instantané confirmé
+// exploitable, elles sont rejouées sur le distant au lieu d'être écrasées (#355).
 async function traiterChangementPlanningDistant(semaine: string): Promise<void> {
-  if (traitementPlanningEnCours) return;
+  if (traitementPlanningEnCours) {
+    relecturePlanningDemandee = semaine;
+    return;
+  }
   if (semaine !== semaineActive()) return; // l'utilisateur a navigué entre-temps
   traitementPlanningEnCours = true;
+  // Pas de push pendant la relecture : parti maintenant, `sauvegarder_planning`
+  // (toute la semaine) écraserait en base le changement qu'on est en train de
+  // lire. Replanifié à la fin si des éditions restent à pousser.
+  suspendrePush();
   try {
+    // Fusion ou remplacement décidés APRÈS la lecture, dès qu'un instantané
+    // confirmé de la semaine existe (#355), même sans édition en attente au
+    // départ : un clic pendant la lecture pose `dirty` pendant l'`await`.
+    if (confirmeDeLaSemaine(semaine) && (await relireEnRejouantEditionsLocales(semaine))) {
+      return;
+    }
     const sigAvant = signaturePlanning(planningLocal());
-    await chargerSemaineDansCache(semaine); // force le re-pull du planning
+    // Force le re-pull du planning. Lecture ratée : même protection que le
+    // rejeu (#355), sinon le `finally` relançait le push (`dirty` toujours
+    // posé) et `sauvegarder_planning` effaçait le changement distant non relu.
+    // Aussi sans édition en attente : une édition ultérieure pousserait toute
+    // la semaine sans ce changement.
+    if (!(await chargerSemaineDansCache(semaine))) {
+      relectureRatee(semaine);
+      return;
+    }
     if (semaineActive() === semaine && signaturePlanning(planningLocal()) !== sigAvant) {
       declencherAlertePlanning();
     }
   } finally {
     traitementPlanningEnCours = false;
+    const aRelire = relecturePlanningDemandee;
+    relecturePlanningDemandee = null;
+    if (aRelire !== null && aRelire === semaineActive()) {
+      // Relecture finale AVANT tout push, contre l'instantané devenu « distant ».
+      // Elle reprend la garde synchroniquement et relancera le push à sa fin.
+      void traiterChangementPlanningDistant(aRelire);
+    } else if (estDirty() && lireRelectureARefaire() !== semaine) {
+      // Lecture ratée : pas de push avant une relecture réussie (refaite par
+      // `pousser` au prochain déclencheur : édition, retour en ligne, navigation,
+      // rechargement ; ou par la nouvelle tentative différée, #355).
+      relancerPush();
+    }
   }
+}
+
+// Le rejeu des éditions locales (#355) n'est sûr que si l'on sait ce qui a
+// changé localement : instantané confirmé de la MÊME semaine que le cache, et
+// aucun jour du confirmé perdu par le local (une semaine partielle, elle, est
+// normale : week-end « Aucun », créneau désactivé, cf. `joursConserves`).
+// Sinon : chemin historique, le distant fait foi.
+function baseDuRejeu(semaine: string): { confirme: Planning; local: Planning } | null {
+  if (!estDirty()) return null;
+  const local = planningLocal();
+  const confirme = lireConfirme();
+  if (local === null || confirme === null) return null;
+  if (local.semaine !== semaine || confirme.semaine !== semaine) return null;
+  if (!joursConserves(confirme, local)) return null;
+  return { confirme, local };
+}
+
+// Instantané confirmé de la semaine relue : la relecture lit alors le distant
+// SANS toucher au cache et décide fusion ou remplacement APRÈS la lecture
+// (#355). Décidé avant, une édition faite pendant la lecture (`dirty` posé
+// pendant l'`await`) était écrasée par le chemin historique.
+function confirmeDeLaSemaine(semaine: string): boolean {
+  return lireConfirme()?.semaine === semaine && planningLocal()?.semaine === semaine;
+}
+
+/**
+ * Relecture US-21 qui rejoue les éditions locales en attente (#355) : lecture
+ * brute du distant (sans écraser le cache), puis `fusionnerEditionsLocales`
+ * (créneaux modifiés localement et intacts à distance : rejoués ; même créneau
+ * modifié des deux côtés : le distant gagne). Le résultat est écrit sous la
+ * garde d'hydratation ; `dirty` reste posé si des créneaux ont été rejoués (le
+ * push est replanifié par l'appelant). L'instantané confirmé devient le
+ * DISTANT, pas la fusion : seul un push réussi confirme les éditions rejouées.
+ * Alerte ssi le distant diffère de l'instantané confirmé (vrai changement
+ * distant). Sans édition en attente APRÈS la lecture, le cache est simplement
+ * remplacé par le distant (alerte ssi il diffère du cache d'avant) : la
+ * décision suit la lecture, pour qu'un clic fait pendant l'`await` soit rejoué
+ * et non écrasé (#355). Renvoie `false` si ni le rejeu ni le remplacement ne
+ * sont applicables après la lecture (semaine supprimée à distance, local ayant
+ * perdu des jours…) : l'appelant reprend alors le chemin historique.
+ */
+async function relireEnRejouantEditionsLocales(semaine: string): Promise<boolean> {
+  let distant: Awaited<ReturnType<typeof chargerPlanningDistant>>;
+  try {
+    distant = await chargerPlanningDistant(semaine);
+  } catch (erreur) {
+    // Cache et `dirty` intacts ; le push attend une relecture réussie (cf.
+    // `lireRelectureARefaire`), sinon il effacerait le changement distant.
+    relectureRatee(semaine);
+    console.error("Relecture du planning échouée (éditions locales conservées).", erreur);
+    return true;
+  }
+  relectureReussie(semaine);
+  // Navigation pendant la lecture : la semaine quittée n'est plus en cache.
+  if (semaineActive() !== semaine) return true;
+  // Relu APRÈS l'await : inclut les éditions faites pendant la lecture.
+  const base = baseDuRejeu(semaine);
+  if (distant === null) return false;
+  // Éditions en attente mais rejeu douteux (local ayant perdu des jours) :
+  // chemin historique, le distant fait foi.
+  if (base === null && estDirty()) return false;
+  // Aucune édition en attente : remplacement par le distant (une seule
+  // lecture), comparé au cache d'avant pour l'alerte, comme le chemin historique.
+  const reference = base?.confirme ?? planningLocal();
+  if (reference === null) return false;
+
+  const { planning, rejoues } = base
+    ? fusionnerEditionsLocales(base.confirme, base.local, distant.planning)
+    : { planning: distant.planning, rejoues: [] };
+  const gardeAvant = hydratationEnCours;
+  hydratationEnCours = true;
+  try {
+    storePlanning.ecrire(JSON.stringify(planning));
+  } finally {
+    hydratationEnCours = gardeAvant;
+  }
+  localStorage.setItem(CLE_MAJ, distant.updatedAt);
+  ecrireConfirme(distant.planning);
+  if (rejoues.length > 0 || pushEnCours) localStorage.setItem(CLE_DIRTY, "1");
+  else localStorage.removeItem(CLE_DIRTY);
+  // Défensif : `pousser` est gardé pendant le traitement et un event reçu
+  // pendant un push est différé, donc aucun push ne devrait être en vol ici.
+  // S'il l'était (parti avec l'ancien planning), il ne doit pas lever `dirty`
+  // à son succès : `rePushDemande` lui fait repousser la fusion derrière lui
+  // (la fusion, écrite sous garde d'hydratation, ne passe pas par `planifierPush`).
+  if (pushEnCours) rePushDemande = true;
+  if (signaturePlanning(distant.planning) !== signaturePlanning(reference)) {
+    declencherAlertePlanning();
+  }
+  return true;
 }
 
 function surEventPlanning(
@@ -1152,8 +1467,19 @@ let semainePlanningAbonnee: string | null = null;
 // retrait) ou un event différé d'une semaine quittée n'est jamais jugé.
 let semainePlanningVoulue: string | null = null;
 let chainePlanning: Promise<void> = Promise.resolve();
+// Vrai seulement entre le montage de `useSync` (`demarrerSync` : `/planning`,
+// `/bienvenue`) et sa coupure (`couperTempsReel`) (#355). Une lecture encore en
+// vol au démontage (`chargerSemaineDansCache` d'une hydratation, d'une
+// navigation ou d'une relecture US-21) se termine sans rouvrir de canal ni
+// reposer `semainePlanningVoulue` : sinon le canal restait ouvert hors de ces
+// pages et ses events étaient jugés (relecture, alerte) sur une page qui ne les
+// attend pas. Exception assumée : une relecture finale (`relecturePlanningDemandee`)
+// déjà demandée au démontage s'exécute encore, et peut ouvrir l'alerte US-21
+// hors de `/planning` (fenêtre étroite).
+let abonnementPlanningAutorise = false;
 
 function synchroniserAbonnementPlanning(semaine: string | null): Promise<void> {
+  if (semaine !== null && !abonnementPlanningAutorise) return chainePlanning;
   semainePlanningVoulue = semaine;
   for (const s of [...eventsPlanningDifferes.keys()]) {
     if (s !== semaine) eventsPlanningDifferes.delete(s);
@@ -1209,7 +1535,19 @@ async function majAbonnementPlanning(semaine: string | null): Promise<void> {
 // ---------------------------------------------------------------------------
 let suppressionAlerteCycle = false;
 let traitementCycleEnCours = false;
+// Event distant reçu PENDANT une re-projection du cycle (#355, jumeau de
+// `relecturePlanningDemandee`) : UNE re-projection finale à la fin du traitement
+// (une rafale = une seule). Jeté, le changement d'un autre membre écrit après la
+// lecture en cours n'apparaissait ni dans la liste ni dans l'alerte.
+let rejouerTraitementCycle = false;
 const eventsCycleDifferes = new Map<string, Set<number>>();
+// Re-projection demandée PENDANT la fenêtre de génération (#355), typiquement
+// la re-projection finale d'un traitement qui se termine pendant une
+// génération : différée comme les events (jugée par `jugerEventsCycleDifferes`)
+// au lieu d'être jetée. Ses horodatages ne sont plus connus ici (déjà triés
+// par `surEventPlanningCycle`) : c'est un drapeau, pas une entrée de
+// `eventsCycleDifferes`.
+let reprojectionCycleDifferee = false;
 
 // Juge les events du cycle différés, une fois la dernière écriture planning
 // terminée et hors fenêtre de génération.
@@ -1217,7 +1555,12 @@ function jugerEventsCycleDifferes(): void {
   if (ecrituresPlanningEnVol > 0 || suppressionAlerteCycle) return;
   const differes = [...eventsCycleDifferes];
   eventsCycleDifferes.clear();
-  if (differes.some(([semaine, cles]) => [...cles].some((cle) => !estEchoPlanning(semaine, cle)))) {
+  const reprojection = reprojectionCycleDifferee;
+  reprojectionCycleDifferee = false;
+  if (
+    reprojection ||
+    differes.some(([semaine, cles]) => [...cles].some((cle) => !estEchoPlanning(semaine, cle)))
+  ) {
     void traiterChangementCycleDistant();
   }
 }
@@ -1237,7 +1580,14 @@ async function rechargerProjectionCycle(ancre: string, longueur: number): Promis
 }
 
 async function traiterChangementCycleDistant(): Promise<void> {
-  if (suppressionAlerteCycle || traitementCycleEnCours) return;
+  if (suppressionAlerteCycle) {
+    reprojectionCycleDifferee = true; // jugée à la fin de la génération (#355)
+    return;
+  }
+  if (traitementCycleEnCours) {
+    rejouerTraitementCycle = true; // re-projection finale (#355)
+    return;
+  }
   const courant = lireCycleAffiche();
   if (!courant) return;
   traitementCycleEnCours = true;
@@ -1252,6 +1602,10 @@ async function traiterChangementCycleDistant(): Promise<void> {
     }
   } finally {
     traitementCycleEnCours = false;
+    if (rejouerTraitementCycle) {
+      rejouerTraitementCycle = false;
+      void traiterChangementCycleDistant();
+    }
   }
 }
 
@@ -1326,6 +1680,8 @@ async function majAbonnementPlanningCycle(
 
 function couperPlanningCycle(): Promise<void> {
   eventsCycleDifferes.clear(); // plus rien à juger après la coupure (#352)
+  rejouerTraitementCycle = false; // ni re-projection finale (#355)
+  reprojectionCycleDifferee = false; // ni re-projection différée (#355)
   chainePlanningCycle = chainePlanningCycle
     .then(async () => {
       for (const canal of canauxPlanningCycle.values()) {
@@ -1335,6 +1691,19 @@ function couperPlanningCycle(): Promise<void> {
     })
     .catch((e) => console.error("Arrêt temps réel du planning (cycle) échoué.", e));
   return chainePlanningCycle;
+}
+
+/**
+ * Régénération du cycle refusée SANS aucune écriture (#355) : des envois
+ * (planning ou coches) restent en attente et ne partent pas (hors ligne,
+ * relecture US-21 à refaire). Classe dédiée pour que la vue Cycle sache
+ * qu'aucune RPC n'est partie, donc qu'il n'y a rien à relire.
+ */
+export class ErreurEnvoisEnAttente extends Error {
+  constructor() {
+    super("Des modifications ne sont pas encore enregistrées. Vérifie ta connexion et réessaie.");
+    this.name = "ErreurEnvoisEnAttente";
+  }
 }
 
 /**
@@ -1351,11 +1720,18 @@ function couperPlanningCycle(): Promise<void> {
  * cette semaine, garderait l'ancien contenu et son prochain push écraserait le
  * cycle). Côté cycle, `suppressionAlerteCycle` diffère en plus les events
  * jusqu'à la fin de la re-projection (`jugerEventsCycleDifferes`).
+ *
+ * Envois vidés d'abord (#355, comme `naviguerVers`) : un push planning en
+ * attente (`sauvegarder_planning`, toute la semaine) parti APRÈS la RPC
+ * écraserait les jours générés de la semaine affichée ; s'il ne peut pas partir
+ * (hors ligne, relecture US-21 à refaire), la génération est refusée avec un
+ * message, sans RPC.
  */
 export async function appliquerGenerationCycle(
   ancre: string,
   semaines: SemaineGeneree[]
 ): Promise<void> {
+  if (!(await attendreSync())) throw new ErreurEnvoisEnAttente();
   suppressionAlerteCycle = true;
   try {
     ecrituresPlanningEnVol++;
@@ -1394,6 +1770,10 @@ function reporterGenerationSurSemaineAffichee(
   if (local !== null && local.semaine !== semaine) return; // cache incohérent : ne pas toucher
   const jours = fusionnerJoursGeneres(local?.jours ?? [], generee.jours);
   localStorage.setItem(CLE_MAJ, maj);
+  // L'instantané confirmé suit la base, comme le cache (jumeau, #355).
+  patcherConfirme(semaine, (joursConfirmes) =>
+    fusionnerJoursGeneres(joursConfirmes, generee.jours)
+  );
   const gardeAvant = hydratationEnCours;
   hydratationEnCours = true;
   try {
@@ -1458,6 +1838,10 @@ export function useGenerationCycle(cycle: CycleAffiche | null): {
     if (!cycle) throw new Error("Aucun cycle affiché.");
     setEnGeneration(true);
     try {
+      // Envois vidés AVANT l'appel réseau (#355) : hors ligne, le `fetch`
+      // échouait d'abord avec un « Failed to fetch » brut. `appliquerGenerationCycle`
+      // revide ensuite (un envoi a pu naître pendant la génération).
+      if (!(await attendreSync())) throw new ErreurEnvoisEnAttente();
       const reponse = await fetch("/api/planning/generer", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1606,6 +1990,13 @@ async function attendreSync(): Promise<boolean> {
     i < 100 && (pushEnCours || flushCochesEnCours || estDirty() || estDirtyCoches());
     i++
   ) {
+    // Push bloqué par une relecture US-21 (#355) puis replanifié à sa fin : on
+    // le part tout de suite plutôt que d'attendre le débounce. Seulement s'il
+    // y a un minuteur (pas de rafale de pushes après un échec hors ligne).
+    if (minuteur && estDirty() && !pushEnCours && !traitementPlanningEnCours) {
+      suspendrePush();
+      void pousser();
+    }
     await new Promise((r) => setTimeout(r, 30));
   }
   return !(estDirty() || estDirtyCoches());
@@ -1617,7 +2008,11 @@ async function attendreSync(): Promise<boolean> {
 // touche PLUS aux coches : elles sont propres au CYCLE (clé = ancre, ≠ semaine)
 // et gérées par chargerCycleDansCache (/courses). La page /planning n'affiche
 // pas la liste de courses, donc aucun besoin d'y hydrater les coches.
-async function chargerSemaineDansCache(semaine: string): Promise<void> {
+// Renvoie `true` si la lecture a réussi (#355) : une lecture ratée est loggée
+// et laisse le cache intact, à l'appelant de protéger le push s'il le faut
+// (relecture US-21, cf. traiterChangementPlanningDistant).
+async function chargerSemaineDansCache(semaine: string): Promise<boolean> {
+  let lu = false;
   hydratationEnCours = true;
   try {
     const distant = await chargerPlanningDistant(semaine);
@@ -1628,8 +2023,12 @@ async function chargerSemaineDansCache(semaine: string): Promise<void> {
       storePlanning.effacer();
       localStorage.removeItem(CLE_MAJ);
     }
+    // Cache = base : c'est le nouveau planning confirmé de la semaine (#355).
+    ecrireConfirme(distant ? distant.planning : null);
     localStorage.removeItem(CLE_DIRTY);
+    relectureReussie(semaine); // lève aussi la relecture à refaire (#355)
     definirEtat("synchronise");
+    lu = true;
   } catch (erreur) {
     console.error("Chargement de la semaine échoué.", erreur);
   } finally {
@@ -1638,6 +2037,7 @@ async function chargerSemaineDansCache(semaine: string): Promise<void> {
   definirSemaineAffichee(semaine);
   // (Ré)abonne le temps réel du planning à la semaine désormais affichée.
   void synchroniserAbonnementPlanning(semaine);
+  return lu;
 }
 
 /**
@@ -1829,11 +2229,11 @@ export async function modifierSlotDistant(
 
     if (semaine === localStorage.getItem(CLE_SEMAINE)) {
       localStorage.setItem(CLE_MAJ, maj);
+      // L'instantané confirmé suit la base, comme le cache (jumeau, #355).
+      patcherConfirme(semaine, (jours) => remplacerOuInsererJour(jours, jourPlanning));
       const local = planningLocal();
       if (local && local.semaine === semaine) {
-        const jours = local.jours.map((jp) =>
-          jp.jour === jourPlanning.jour ? jourPlanning : jp
-        );
+        const jours = remplacerOuInsererJour(local.jours, jourPlanning);
         // Restaure la valeur précédente (et non `false`) : une relecture
         // (chargerSemaineDansCache) peut tenir la garde pendant son `await`.
         const gardeAvant = hydratationEnCours;
@@ -1848,6 +2248,23 @@ export async function modifierSlotDistant(
   } finally {
     terminerEcriturePlanning();
   }
+}
+
+// Remplace le jour édité, ou l'insère à sa place (lundi → dimanche) s'il est
+// absent (#355) : une semaine partielle (jour sans aucun créneau) n'a pas ce
+// jour en cache. Ignoré, un repas ajouté depuis la vue Cycle sur ce jour
+// manquait au cache, et le push suivant (`sauvegarder_planning`, toute la
+// semaine) le supprimait en base. Même placement que `fusionnerJoursGeneres`.
+function remplacerOuInsererJour(
+  jours: JourPlanning[],
+  jourPlanning: JourPlanning
+): JourPlanning[] {
+  const parJour = new Map(jours.map((jp) => [jp.jour, jp] as const));
+  parJour.set(jourPlanning.jour, jourPlanning);
+  return ORDRE_JOURS.flatMap((jour) => {
+    const jp = parJour.get(jour);
+    return jp ? [jp] : [];
+  });
 }
 
 /**
@@ -1908,6 +2325,8 @@ export async function hydrater(semaineVoulue: string | null = null): Promise<voi
   if (local && (estDirty() || lireMajLocale() === 0)) {
     // Cas e2e/offline : le local fait foi, on ne le remplace pas.
     definirSemaineAffichee(local.semaine);
+    // Relecture US-21 ratée avant le rechargement (`CLE_A_RELIRE`, #355) :
+    // `pousser` la refait d'abord et ne pousse que la fusion.
     if (estDirty()) void pousser();
     await hydraterCoches();
     // Coches clées par CYCLE (#257) : réabonnement sur l'ancre active (null hors
@@ -1940,6 +2359,7 @@ function demarrerSync(): () => void {
   // déjà connue (nav SPA « à chaud » ; au chargement froid, l'abonnement est posé
   // par hydrater/chargerSemaineDansCache/chargerCycleDansCache une fois résolu).
   // La PRÉSENCE est gérée à part (usePresenceCourses).
+  abonnementPlanningAutorise = true; // jusqu'à couperTempsReel (#355)
   void synchroniserAbonnementCoches(ancreActive());
   void synchroniserAbonnementPlanning(semaineActive());
   return () => {

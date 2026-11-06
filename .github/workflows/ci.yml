@@ -145,6 +145,13 @@ jobs:
   #    même sur un compte unique. Coût : ~20 min d'horloge (vs ~5) — assumé.
   # Comptes p2..p5 désormais DORMANTS (accumulation assumée sur staging, sans
   # impact). Aucun changement de specs/helpers (E2E_EMAIL lu depuis l'env).
+  # SÉRIALISÉS (#357, `max-parallel: 1`) : les deux jobs tapent le MÊME Supabase
+  # de staging, qui gèle parfois ~30 s sous charge ; en parallèle, chacun
+  # aggravait les gels de l'autre (échecs de génération réelle). `partage` est
+  # listé avant `jetable` ; GitHub ne garantit pas l'ordre strict de la matrice,
+  # seule compte l'absence de parallélisme contre staging. Coût : ~4 min de plus
+  # par run CI en horloge (le job le plus court ne recouvre plus le plus long) ;
+  # minutes facturées inchangées (somme des durées de jobs).
   e2e:
     # Cf. `unit` : non re-joué sur push vers main (déjà validé par la PR).
     if: github.event_name == 'pull_request'
@@ -155,18 +162,19 @@ jobs:
     timeout-minutes: 25
     strategy:
       fail-fast: false
+      max-parallel: 1
       matrix:
         include:
-          - name: jetable
-            project: e2e-jetable
-            workers: 4
-            files: ""
-            email: claude-e2e-test@example.com
           - name: partage
             project: e2e-partage
             workers: 1
             files: ""
             email: claude-e2e-p1@example.com
+          - name: jetable
+            project: e2e-jetable
+            workers: 4
+            files: ""
+            email: claude-e2e-test@example.com
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7

@@ -82,7 +82,12 @@ import {
 } from "@/lib/generateur";
 import { chargerReglages } from "@/lib/reglages-data";
 import { REGLAGES_DEFAUT } from "@/lib/reglages";
-import { definirCycleAffiche, modifierSlotDistant, useGenerationCycle } from "@/lib/sync";
+import {
+  definirCycleAffiche,
+  ErreurEnvoisEnAttente,
+  modifierSlotDistant,
+  useGenerationCycle,
+} from "@/lib/sync";
 import { chargerRecettesGerees, type RecetteGeree } from "@/lib/recettes";
 import { chargerPreferences } from "@/lib/preferences";
 import { messagesAvertissementGeneration } from "@/lib/avertissements-generation";
@@ -99,6 +104,9 @@ import type { JourPlanning, Planning, Recette, ReglagesGeneration } from "@/type
 type TypeRepas = "dejeuner" | "diner";
 
 const ID_TOAST_ANNULATION_CYCLE = "annulation-slot-cycle";
+// Toast d'échec de lecture du cycle : id fixe pour dédoublonner les échecs
+// successifs et le lever dès qu'une lecture réussit (#357).
+const ID_TOAST_ECHEC_CYCLE = "echec-chargement-cycle";
 
 // Slots d'un jour dans l'ordre d'affichage : déjeuner puis dîner. `recette`
 // est absente si le jour n'est pas planifié (`jp` nul), si le slot n'a jamais
@@ -306,8 +314,13 @@ export function VuePlanningCycle({
       })) {
         toast.warning(message);
       }
-      // Recharge la projection affichée pour refléter le nouveau contenu.
-      if (ancre !== null) await chargerCycle(ancre);
+      // Recharge la projection affichée pour refléter le nouveau contenu. Une
+      // relecture ratée (`false`, jamais une exception) est retentée une fois
+      // (#357) : le cycle est déjà généré en base, l'afficher périmé trompe.
+      if (ancre !== null) {
+        const ok = await chargerCycle(ancre);
+        if (!ok) await chargerCycle(ancre);
+      }
     } catch (erreur) {
       console.error("Génération du cycle échouée.", erreur);
       toast.error(
@@ -315,6 +328,16 @@ export function VuePlanningCycle({
           ? erreur.message
           : "Impossible de générer le cycle. Vérifie ta connexion et réessaie."
       );
+      // Resynchronise l'affichage (#357) : la base peut déjà contenir le cycle
+      // généré (RPC passée, relecture échouée) ; sans cette relecture la vue
+      // resterait sur la projection d'avant. `chargerCycle` gère elle-même ses
+      // erreurs de lecture (log + toast dédoublonné, état précédent conservé) ;
+      // ce toast s'ajoute à celui de l'échec de génération, message distinct.
+      // Refus AVANT toute écriture (envois en attente, #355) : rien n'a changé
+      // en base, la relecture n'ajouterait qu'un second toast (hors ligne).
+      if (ancre !== null && !(erreur instanceof ErreurEnvoisEnAttente)) {
+        await chargerCycle(ancre);
+      }
     } finally {
       generationVerrouillee.current = false;
       setVerrouAffiche(false);
@@ -503,7 +526,8 @@ export function VuePlanningCycle({
       if (echec) {
         if (!initial) {
           toast.error(
-            "Certains jours du cycle n'ont pas pu être chargés. Réessaie."
+            "Certains jours du cycle n'ont pas pu être chargés. Réessaie.",
+            { id: ID_TOAST_ECHEC_CYCLE }
           );
         }
         return false;
@@ -521,6 +545,8 @@ export function VuePlanningCycle({
       // MÊME cycle que celui affiché ici. Écriture localStorage pure, sans
       // effet de bord coches/réaltime (cf. definirCycleAffiche).
       definirCycleAffiche(ancreCible, long);
+      // Lecture réussie : un toast d'échec précédent est périmé.
+      toast.dismiss(ID_TOAST_ECHEC_CYCLE);
       return true;
     } finally {
       setChargement(false);
