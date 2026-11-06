@@ -28,9 +28,9 @@
 
 **Files:** Modify `lib/sync.ts`, `lib/sync.test.ts`, `.claude/rules/sync-planning.md` (une puce de test) ; si utile `vitest.config.ts` / setup global.
 
-- [ ] **Step 1: Test qui échoue** : dans `lib/sync.test.ts`, un test A monte `useSync()` sans `unmount()` et arme un push débouncé (édition d'intention) ; le test B suivant vérifie qu'aucun `sauvegarderPlanningDistant` ne part pendant 1 s sans geste. Il échoue aujourd'hui (le minuteur de A pousse).
-- [ ] **Step 2:** `export function arreterSync(): void` dans `lib/sync.ts`, documentée « réservée aux tests » : coupe le minuteur de push et les minuteurs de relecture (planning, coches), appelle `arreter()` sur les moteurs instanciés, coupe le temps réel. Aucun appel en production.
-- [ ] **Step 3:** `afterEach` dans `lib/sync.test.ts` : `cleanup()` de l'instance de Testing Library du test (import dynamique, même registre que le test), puis `arreterSync()` du module chargé par `chargerSync()` (retenu dans une variable de fichier).
-- [ ] **Step 4:** Supprimer `capturerRetourEnLigne` si les tests qui l'utilisent passent avec un `window.dispatchEvent(new Event("online"))` ordinaire ; sinon le garder et noter pourquoi.
-- [ ] **Step 5:** `npx vitest run --maxWorkers=1 lib/sync.test.ts` vert 3 fois de suite ; suite complète verte ; `tsc` ; `eslint .`.
-- [ ] **Step 6:** Commit `test: isolation des tests de la synchro, démontage et arrêt du module (#371)`.
+- [x] **Step 1: Tests qui échouent** (deux paires dépendantes de l'ordre, `describe("isolation entre tests (#371)")`) : A laisse `useSyncCourses` monté, B déclenche `online` sans rien monter → aucune relecture (rouge sans `cleanup`) ; C laisse `useSync` monté avec un push débouncé armé, D repose le planning local et attend 1 s → aucun push (rouge sans `suspendrePush` dans `arreterSync`). Les boucles d'attente non bornées des tests de rechargement sont bornées (un échec ne contamine plus le test suivant).
+- [x] **Step 2:** `export async function arreterSync(): Promise<void>` dans `lib/sync.ts`, documentée « réservée aux tests » : coupe le minuteur de push et les minuteurs de relecture (planning, coches), appelle `arreter()` sur les moteurs instanciés, attend la coupure du temps réel et de la présence. Aucun appel en production.
+- [x] **Step 3:** `afterEach` dans `lib/sync.test.ts` : `cleanup()` des deux instances de Testing Library (celle retenue en `beforeEach`, avant `chargerSync()`, et celle du registre courant), puis `await arreterSync()` du module chargé par `chargerSync()` (retenu dans une variable de fichier).
+- [x] **Step 4:** Supprimer `capturerRetourEnLigne` si les tests qui l'utilisent passent avec un `window.dispatchEvent(new Event("online"))` ordinaire ; sinon le garder et noter pourquoi.
+- [x] **Step 5:** `npx vitest run --maxWorkers=1 lib/sync.test.ts` vert 3 fois de suite ; suite complète verte ; `tsc` ; `eslint .`.
+- [x] **Step 6:** Commit `test: isolation des tests de la synchro, démontage et arrêt du module (#371)`.

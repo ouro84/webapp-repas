@@ -101,11 +101,18 @@ async function chargerSync() {
 afterEach(async () => {
   const { cleanup } = await import("@testing-library/react");
   cleanup();
-  moduleCourant?.arreterSync();
+  rtlAvant?.cleanup();
+  rtlAvant = null;
+  await moduleCourant?.arreterSync();
   moduleCourant = null;
 });
 
-beforeEach(() => {
+// Instance de Testing Library du registre d'AVANT `chargerSync()` : un test qui
+// l'importe avant de recharger le module rend ses hooks avec elle (#371).
+let rtlAvant: typeof import("@testing-library/react") | null = null;
+
+beforeEach(async () => {
+  rtlAvant = await import("@testing-library/react");
   localStorage.clear();
   realtime.rappels.length = 0;
   tic = 0;
@@ -3623,7 +3630,7 @@ describe("vague finale du moteur de coches (#362)", () => {
         async (_ancre: string, cle: string, quantite: number) => {
           const rang = ++ecritures;
           // La k-ième coche est commitée pendant la k-ième lecture.
-          while (lectures < rang) await new Promise((r) => setTimeout(r, 2));
+          for (let i = 0; i < 1000 && lectures < rang; i++) await new Promise((r) => setTimeout(r, 2));
           await new Promise((r) => setTimeout(r, 5));
           const maj = horloge();
           enBase[cle] = { coche: true, valeur: quantite, maj };
@@ -3689,7 +3696,7 @@ describe("vague finale du moteur de coches (#362)", () => {
       persistance.basculerCocheArticleManuelDistant.mockImplementation(
         async (id: string, coche: boolean) => {
           const rang = ++ecritures;
-          while (lectures < rang) await new Promise((r) => setTimeout(r, 2));
+          for (let i = 0; i < 1000 && lectures < rang; i++) await new Promise((r) => setTimeout(r, 2));
           await new Promise((r) => setTimeout(r, 5));
           const maj = horloge();
           const article = enBase.find((a) => a.id === id)!;
@@ -4067,5 +4074,32 @@ describe("isolation entre tests (#371)", () => {
     await new Promise((r) => setTimeout(r, 300));
     expect(persistance.chargerEtatCochesDistant).not.toHaveBeenCalled();
     expect(persistance.chargerArticlesManuelsDistants).not.toHaveBeenCalled();
+  });
+
+  it("C : laisse useSync monté avec un push débouncé armé", async () => {
+    const sync = await chargerSync();
+    const stockage = await import("@/lib/stockage");
+    const { renderHook } = await import("@testing-library/react");
+    const { semaineParDefaut } = await import("@/lib/semaines");
+    const semaine = semaineParDefaut();
+    persistance.chargerPlanningDistant.mockResolvedValue({
+      planning: planning(semaine),
+      updatedAt: "2026-06-15T10:00:00.000000+00:00",
+    });
+    renderHook(() => sync.useSync());
+    await vi.waitFor(() => expect(localStorage.getItem("semaine_affichee")).toBe(semaine));
+    stockage.sauvegarderRemplacementSlot(planning(semaine));
+    expect(persistance.sauvegarderPlanningDistant).not.toHaveBeenCalled();
+  });
+
+  it("D : le push débouncé du test précédent ne part pas", async () => {
+    await chargerSync();
+    const { semaineParDefaut } = await import("@/lib/semaines");
+    // Le module précédent relit le planning local au déclenchement : on le
+    // repose pour que seul l'arrêt de son minuteur l'empêche de pousser.
+    localStorage.setItem("planning_courant", JSON.stringify(planning(semaineParDefaut())));
+    localStorage.setItem("planning_dirty", "1");
+    await new Promise((r) => setTimeout(r, 1000)); // > débounce (800 ms)
+    expect(persistance.sauvegarderPlanningDistant).not.toHaveBeenCalled();
   });
 });

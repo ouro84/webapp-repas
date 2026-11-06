@@ -156,15 +156,15 @@ export function reinitialiserCacheFoyer(): void {
  * retirés par leur démontage (`cleanup` de Testing Library), pas ici. Pourquoi :
  * chaque test recharge un module neuf (`vi.resetModules`) ; sans arrêt, les
  * minuteurs et moteurs d'un test réagissaient pendant les suivants. Aucun appel
- * en production.
+ * en production. @internal
  */
-export function arreterSync(): void {
+export async function arreterSync(): Promise<void> {
   suspendrePush();
   annulerNouvelleRelecture();
   annulerRelectureCoches();
   moteurIngredients?.arreter();
   moteurArticlesManuels?.arreter();
-  void couperTempsReel();
+  await Promise.all([couperTempsReel(), couperPresence()]);
 }
 
 // ---------------------------------------------------------------------------
