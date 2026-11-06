@@ -220,9 +220,9 @@ describe("VuePlanningCycle : génération du cycle puis relecture en erreur (#35
     };
     const jours = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"] as const;
     let version = "ancien";
-    let semaineEnEchec: string | undefined;
+    const echec: { semaine?: string } = {};
     m.chargerPlanningDistant.mockImplementation(async (semaine: string) => {
-      if (semaine === semaineEnEchec) throw new Error("réseau");
+      if (semaine === echec.semaine) throw new Error("réseau");
       return {
         planning: {
           semaine,
@@ -254,7 +254,7 @@ describe("VuePlanningCycle : génération du cycle puis relecture en erreur (#35
     // Relecture après génération : la 1re semaine renvoie du contenu NOUVEAU, la
     // 2e échoue. Aucun jour nouveau ne doit apparaître (pas de projection partielle).
     version = "nouveau";
-    semaineEnEchec = semaines[1];
+    echec.semaine = semaines[1];
     m.chargerPlanningDistant.mockClear();
     m.genererCycle.mockResolvedValue({
       vegeNonHonore: false,
