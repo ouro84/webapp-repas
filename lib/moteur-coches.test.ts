@@ -280,6 +280,54 @@ describe("moteur de coche horodaté (#362)", () => {
     expect(cochee(TOMATES)).toBe(true)
   })
 
+  it("relecture périmée (ligne plus ancienne) : la coche confirmée et son horodatage restent", async () => {
+    const { moteur, appels, cochee } = monter()
+    moteur.hydrater(A, { [TOMATES]: { ...decoche(), maj: T0 } })
+    moteur.poser(A, TOMATES, coche())
+    ecriture(appels[0]).resoudre(T1) // commit retenu
+    await attendre()
+    moteur.surEvent(A, TOMATES, coche(), T1) // notre écho : ignoré
+
+    // Lecture partie avant le commit, livrée après.
+    moteur.hydrater(A, { [TOMATES]: { ...decoche(), maj: T0 } })
+
+    expect(cochee(TOMATES)).toBe(true)
+    // L'horodatage connu reste T1 : un écho périmé (T0) ne décoche pas…
+    moteur.surEvent(A, TOMATES, decoche(), T0)
+    expect(cochee(TOMATES)).toBe(true)
+    // … un commit plus récent d'un autre membre, si.
+    moteur.surEvent(A, TOMATES, decoche(), T2)
+    expect(cochee(TOMATES)).toBe(false)
+  })
+
+  it("relecture périmée (ligne absente) : la coche confirmée pendant la lecture reste", async () => {
+    const { moteur, appels, cochee } = monter()
+    moteur.hydrater(A, {})
+    moteur.poser(A, TOMATES, coche())
+    const depuis = moteur.marquerLecture() // lecture partie avant le commit
+    ecriture(appels[0]).resoudre(T1)
+    await attendre()
+    moteur.surEvent(A, TOMATES, coche(), T1) // notre écho : ignoré
+
+    moteur.hydrater(A, {}, depuis) // instantané d'avant la création de la ligne
+
+    expect(cochee(TOMATES)).toBe(true)
+  })
+
+  it("ligne absente d'une lecture sans confirmation pendant celle-ci : purge (décochée)", async () => {
+    const { moteur, appels, cochee } = monter()
+    moteur.hydrater(A, { [RIZ]: { ...coche(200), maj: T0 } })
+    moteur.poser(A, TOMATES, coche())
+    ecriture(appels[0]).resoudre(T1) // confirmée AVANT la lecture
+    await attendre()
+    const depuis = moteur.marquerLecture()
+
+    moteur.hydrater(A, {}, depuis) // lignes purgées entre-temps
+
+    expect(cochee(TOMATES)).toBe(false)
+    expect(cochee(RIZ)).toBe(false)
+  })
+
   it("DELETE (purge) : décoche", () => {
     const { moteur, cochee } = monter()
     moteur.hydrater(A, { [TOMATES]: { ...coche(), maj: T1 } })

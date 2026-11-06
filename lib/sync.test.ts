@@ -3173,6 +3173,60 @@ describe("coches d'ingrédients : génération et hydratation en échec (#362)",
     }
   });
 
+  it("retour en ligne : la coche rejouée, commitée pendant la relecture (écho reçu avant elle), reste cochée", async () => {
+    // Jumeau ingrédients de la coche manuelle hors ligne : la relecture du
+    // cycle part avant le commit de la coche rejouée et revient après son
+    // écho ; son instantané (ligne absente) ne doit pas la décocher.
+    const erreur = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const sync = await chargerSync();
+      const { storeCoches } = await import("@/lib/stockage");
+      const { renderHook, waitFor, act } = await import("@testing-library/react");
+      const vue = renderHook(() => sync.useSyncCourses(ANCRE));
+      await waitFor(() => expect(persistance.chargerArticlesManuelsDistants).toHaveBeenCalled());
+      await waitFor(() => expect(rappelCoches()).toBeDefined());
+
+      const enBase: Record<string, { coche: boolean; valeur: number; maj: string }> = {};
+      let relectureLivree = false;
+      persistance.chargerEtatCochesDistant.mockImplementation(async () => {
+        const instantane = { ...enBase }; // lu à l'appel, livré plus tard
+        await new Promise((r) => setTimeout(r, 200));
+        relectureLivree = true;
+        return instantane;
+      });
+      let majCommit = "";
+      persistance.cocherArticleDistant
+        .mockRejectedValueOnce(new Error("réseau coupé"))
+        .mockImplementation(async (_ancre: string, cle: string, quantite: number) => {
+          await new Promise((r) => setTimeout(r, 5)); // commit pendant la relecture
+          majCommit = horloge();
+          enBase[cle] = { coche: true, valeur: quantite, maj: majCommit };
+          return majCommit;
+        });
+
+      act(() => storeCoches.ecrire(JSON.stringify({ "pain|piece": 1 })));
+      await waitFor(() => expect(localStorage.getItem("coches_en_attente")).not.toBeNull());
+      await waitFor(() => expect(persistance.cocherArticleDistant).toHaveBeenCalledTimes(1));
+
+      act(() => {
+        window.dispatchEvent(new Event("online"));
+      });
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 40)); // commit fait, relecture en vol
+      });
+      expect(localStorage.getItem("coches_en_attente")).toBeNull();
+      expect(relectureLivree).toBe(false);
+      act(() => rappelCoches()!.rappel(ligneCoche("pain|piece", majCommit))); // notre écho
+      await waitFor(() => expect(relectureLivree).toBe(true), { timeout: 2000 });
+      await act(async () => {});
+
+      expect(JSON.parse(localStorage.getItem("courses_cochees") ?? "{}")).toEqual({ "pain|piece": 1 });
+      vue.unmount();
+    } finally {
+      erreur.mockRestore();
+    }
+  });
+
   it("lecture des coches en échec (en ligne) : nouvelle tentative, puis le temps réel s'applique", async () => {
     persistance.chargerEtatCochesDistant.mockRejectedValueOnce(new Error("503"));
     const erreur = vi.spyOn(console, "error").mockImplementation(() => {});

@@ -28,6 +28,22 @@
 // 5. Échec d'écriture : l'opération reste en file, « hors-ligne », arrêt du
 //    flush, aucun rejet vers l'appelant ; un geste ou `rejouer()` le relance.
 //    `null` du transport (cible disparue) : opération retirée et journalisée.
+// 6. Relecture périmée (`hydrater`) : une lecture partie avant un commit peut
+//    revenir après lui (et après son écho, déjà ignoré). Pour une clé hors
+//    file de l'ancre affichée, l'état affiché et son horodatage connu sont
+//    GARDÉS (le distant est jeté) si :
+//    - la ligne lue porte un horodatage strictement plus ancien que l'horodatage
+//      connu (l'ordre des commits suffit : le distant est un état dépassé) ;
+//    - ou la ligne est ABSENTE de la lecture et la clé a été confirmée (réponse
+//      d'écriture ou événement appliqué) APRÈS le début de la lecture, marqué
+//      par `marquerLecture()` et passé en `depuis` (la ligne n'existait pas
+//      encore à l'instantané).
+//    Sinon le distant fait foi, et une ligne absente vaut purge (sémantique du
+//    DELETE : décochée), y compris pour une clé confirmée AVANT la lecture.
+//    Sans état affiché connu (premier chargement, autre ancre), le distant fait
+//    foi. Pourquoi : sans cette règle, une coche rejouée au retour en ligne,
+//    commitée pendant la relecture du cycle, restait décochée à l'écran (base
+//    cochée, indicateur « synchronise ») jusqu'à la lecture suivante.
 
 import { cleHorodatage } from "@/lib/horodatage"
 
@@ -56,8 +72,16 @@ export type MoteurCoches<V> = {
   toutDecocher(ancre: string): void
   /** Événement temps réel ; `etat === null` = DELETE (purge). */
   surEvent(ancre: string, cle: string, etat: Etat<V> | null, maj: string | null): void
-  /** Charge l'état distant de l'ancre affichée ; dirty-first : une clé en file garde le local. */
-  hydrater(ancre: string, distant: Record<string, Etat<V> & { maj: string }>): void
+  /** Charge l'état distant de l'ancre affichée ; dirty-first : une clé en file
+   *  garde le local, une clé confirmée plus récemment que la lecture aussi
+   *  (règle 6). `depuis` = valeur de `marquerLecture()` prise avant la lecture. */
+  hydrater(
+    ancre: string,
+    distant: Record<string, Etat<V> & { maj: string }>,
+    depuis?: number
+  ): void
+  /** Marque le début d'une lecture distante ; à repasser à `hydrater`. */
+  marquerLecture(): number
   /** Rejoue la file hors ligne (retour réseau, montage). Ne rejette jamais. */
   rejouer(): Promise<void>
   enAttente(): boolean
@@ -98,6 +122,12 @@ export function creerMoteurCoches<V>(deps: {
   const differes = new Map<string, EventDiffere<V>>()
   let flushActif = false
   let flushEnCours: Promise<void> | null = null
+  // Confirmations (réponse d'écriture, événement appliqué) numérotées, par
+  // ancre puis par clé : une clé confirmée après `marquerLecture()` n'est pas
+  // purgée par une lecture qui ne la contient pas (règle 6). En mémoire seule :
+  // une lecture ne survit pas à un rechargement.
+  let sequenceConfirmations = 0
+  const confirmations = new Map<string, Map<string, number>>()
 
   // --- Stockage --------------------------------------------------------------
 
@@ -174,6 +204,12 @@ export function creerMoteurCoches<V>(deps: {
     return cleHorodatage(majConnues.get(ancre)?.get(cle))
   }
 
+  function confirmer(ancre: string, cle: string): void {
+    let cles = confirmations.get(ancre)
+    if (!cles) confirmations.set(ancre, (cles = new Map()))
+    cles.set(cle, ++sequenceConfirmations)
+  }
+
   // Retient `maj` s'il est plus récent que l'horodatage connu de la clé.
   function retenirMaj(ancre: string, cle: string, maj: string): void {
     const micro = cleHorodatage(maj)
@@ -217,6 +253,7 @@ export function creerMoteurCoches<V>(deps: {
       if (connue !== null && event.micro <= connue) continue
       afficher(cle, event.etat)
       retenirMaj(terminee.ancre, cle, event.maj)
+      confirmer(terminee.ancre, cle)
     }
     persisterMaj()
   }
@@ -262,7 +299,10 @@ export function creerMoteurCoches<V>(deps: {
             `Coche abandonnée : cible disparue (ancre ${op.ancre}, clé ${op.type === "cle" ? op.cle : "*"}).`
           )
         } else {
-          for (const { cle, maj } of lignes) retenirMaj(op.ancre, cle, maj)
+          for (const { cle, maj } of lignes) {
+            retenirMaj(op.ancre, cle, maj)
+            confirmer(op.ancre, cle)
+          }
         }
         jugerDifferes(op)
       }
@@ -317,6 +357,7 @@ export function creerMoteurCoches<V>(deps: {
         // DELETE : purge (vieux cycle, compte, foyer), sans horodatage.
         if (estOccupee(ancre, cle)) return
         majConnues.get(ancre)?.delete(cle)
+        confirmations.get(ancre)?.delete(cle)
         persisterMaj()
         const affichee = affichees.get(cle)
         if (affichee?.coche) afficher(cle, { coche: false, valeur: affichee.valeur })
@@ -336,10 +377,15 @@ export function creerMoteurCoches<V>(deps: {
       }
       afficher(cle, etat)
       retenirMaj(ancre, cle, maj)
+      confirmer(ancre, cle)
       persisterMaj()
     },
 
-    hydrater(ancre, distant) {
+    hydrater(ancre, distant, depuis) {
+      // État affiché avant la lecture (règle 6) : seulement s'il est celui de
+      // cette ancre.
+      const precedentes =
+        ancreAffichee === ancre ? new Map(affichees) : new Map<string, Etat<V>>()
       ancreAffichee = ancre
       differes.clear()
       affichees.clear()
@@ -350,12 +396,31 @@ export function creerMoteurCoches<V>(deps: {
       for (const autre of [...majConnues.keys()]) {
         if (autre !== ancre && !file.some((op) => op.ancre === autre)) majConnues.delete(autre)
       }
+      for (const autre of [...confirmations.keys()]) {
+        if (autre !== ancre) confirmations.delete(autre)
+      }
+      const confirmees = confirmations.get(ancre)
+      // Clés hors file dont la lecture est périmée (règle 6) : état gardé.
+      const gardees = new Map<string, Etat<V>>()
+      for (const [cle, maj] of anciennes) {
+        const precedente = precedentes.get(cle)
+        if (precedente === undefined || estOccupee(ancre, cle)) continue
+        const connue = cleHorodatage(maj)
+        const lue = distant[cle]
+        const perimee =
+          lue !== undefined
+            ? connue !== null && (cleHorodatage(lue.maj) ?? Infinity) < connue
+            : depuis !== undefined && (confirmees?.get(cle) ?? 0) > depuis
+        if (perimee) gardees.set(cle, precedente)
+      }
       const nouvelles = new Map<string, string>()
       for (const [cle, maj] of anciennes) {
-        if (estOccupee(ancre, cle)) nouvelles.set(cle, maj)
+        if (estOccupee(ancre, cle) || gardees.has(cle)) nouvelles.set(cle, maj)
       }
       majConnues.set(ancre, nouvelles)
+      for (const [cle, etat] of gardees) afficher(cle, etat)
       for (const [cle, { maj, ...etat }] of Object.entries(distant)) {
+        if (gardees.has(cle)) continue
         if (estOccupee(ancre, cle)) {
           // Dirty-first : le local fait foi ; le distant est jugé à la fin
           // de l'écriture, comme un événement reçu pendant le vol.
@@ -376,6 +441,10 @@ export function creerMoteurCoches<V>(deps: {
 
     rejouer() {
       return lancerFlush()
+    },
+
+    marquerLecture() {
+      return sequenceConfirmations
     },
 
     enAttente() {

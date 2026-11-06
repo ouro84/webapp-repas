@@ -388,6 +388,9 @@ async function chargerArticlesManuelsDansCache(ancre: string): Promise<void> {
   ancreArticlesManuelsChargee = ancre;
   for (let lecture = 1; ; lecture++) {
     const saisiesAvant = saisiesArticlesManuels;
+    // Début de lecture marqué : une coche confirmée pendant la lecture n'est
+    // pas défaite par son instantané (règle 6 du moteur).
+    const depuis = moteurArticles().marquerLecture();
     const liste = await chargerArticlesManuelsDistants(ancre);
     if (ancreArticlesManuelsChargee !== ancre) return;
     if (saisiesAvant !== saisiesArticlesManuels && lecture < LECTURES_ARTICLES_MAX) continue;
@@ -397,7 +400,7 @@ async function chargerArticlesManuelsDansCache(ancre: string): Promise<void> {
     for (const article of liste) {
       distant[article.id] = { coche: article.coche, valeur: null, maj: article.majLe ?? "" };
     }
-    moteurArticles().hydrater(ancre, distant);
+    moteurArticles().hydrater(ancre, distant, depuis);
     return;
   }
 }
@@ -1054,6 +1057,10 @@ function surChangementCoches(): void {
 async function lireEtHydraterCoches(ancre: string): Promise<void> {
   for (let essai = 0; ; essai += 1) {
     const gestes = gestesCoches;
+    // Début de lecture marqué : une coche confirmée pendant la lecture (coche
+    // rejouée au retour en ligne, écho déjà reçu) n'est pas défaite par son
+    // instantané (règle 6 du moteur).
+    const depuis = moteurCoches().marquerLecture();
     const distant = await chargerEtatCochesDistant(ancre);
     if (ancreActive() !== ancre) return;
     if (gestes !== gestesCoches && essai < 2) continue;
@@ -1061,7 +1068,7 @@ async function lireEtHydraterCoches(ancre: string): Promise<void> {
     for (const [cle, { coche, valeur, maj }] of Object.entries(distant)) {
       etats[cle] = { coche, valeur, maj };
     }
-    moteurCoches().hydrater(ancre, etats);
+    moteurCoches().hydrater(ancre, etats, depuis);
     return;
   }
 }
