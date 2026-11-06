@@ -1,13 +1,12 @@
-// Logique PURE de synchronisation des coches par-article (#56 PR4, US-20).
+// Logique PURE de synchronisation des coches par-article (#56 PR4, US-20, #362).
 //
 // La liste de courses reste représentée localement par un BLOB
 // `Record<"nom|unité", quantité>` (cf. lib/coches.ts, localStorage
 // "courses_cochees") — ni la page ni lib/coches.ts ne changent. Côté base, en
-// revanche, chaque article est une LIGNE (#56 PR4) : pour synchroniser sans
-// s'écraser entre membres (RG-32), on ne pousse plus le blob entier mais des
-// OPÉRATIONS par-article, dérivées par DIFF entre l'état déjà synchronisé et le
-// nouvel état local. En sens inverse, les events temps réel reçus des autres
-// membres sont fusionnés dans le blob.
+// revanche, chaque article est une LIGNE : pour synchroniser sans s'écraser
+// entre membres (RG-32), on ne pousse pas le blob entier mais des GESTES
+// par-article, dérivés par DIFF entre le dernier blob connu de la synchro et le
+// nouvel état local, puis confiés au moteur horodaté (lib/moteur-coches.ts).
 //
 // Aucune dépendance à React, au navigateur ni à Supabase : testable en isolation.
 
@@ -35,40 +34,4 @@ export function deriverOps(connu: Coches, nouveau: Coches): OpCoche[] {
     if (!(cle in nouveau)) ops.push({ type: "decocher", cle })
   }
   return ops
-}
-
-/** Event temps réel normalisé (issu d'un payload Supabase postgres_changes). */
-export type EventCoche =
-  | { type: "upsert"; cle: string; quantite: number }
-  | { type: "supprime"; cle: string }
-
-/**
- * Applique un event temps réel à un blob (immuable) : `upsert` pose la
- * quantité, `supprime` retire la clé. Idempotent — recevoir l'écho de sa propre
- * écriture ne change rien (même valeur) et ne doit donc générer aucune nouvelle
- * opération en aval.
- */
-export function appliquerEvent(blob: Coches, event: EventCoche): Coches {
-  if (event.type === "supprime") {
-    if (!(event.cle in blob)) return blob
-    const suivant = { ...blob }
-    delete suivant[event.cle]
-    return suivant
-  }
-  if (blob[event.cle] === event.quantite) return blob
-  return { ...blob, [event.cle]: event.quantite }
-}
-
-/**
- * Applique à un blob (immuable) une opération POUSSÉE en base : `cocher` pose
- * la quantité, `decocher` retire la clé. Sert à faire avancer la référence
- * `cochesConnues` op par op au fil d'un flush (#357) : les clés que le flush
- * n'a pas touchées gardent ce que les events temps réel reçus pendant le vol y
- * ont mis (reprendre l'instantané du blob poussé les effacerait).
- */
-export function appliquerOp(blob: Coches, op: OpCoche): Coches {
-  if (op.type === "cocher") {
-    return appliquerEvent(blob, { type: "upsert", cle: op.cle, quantite: op.quantite })
-  }
-  return appliquerEvent(blob, { type: "supprime", cle: op.cle })
 }

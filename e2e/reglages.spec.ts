@@ -24,7 +24,10 @@ test.beforeEach(async ({ page, request }) => {
       "planning_a_relire",
       "courses_cochees",
       "courses_cochees_maj",
-      "courses_dirty",
+      "coches_en_attente",
+      "coches_maj",
+      "coches_manuels_en_attente",
+      "coches_manuels_maj",
       "semaine_affichee",
     ]) {
       localStorage.removeItem(c);
