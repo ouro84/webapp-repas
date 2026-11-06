@@ -16,7 +16,7 @@ La base est la source de vérité ; localStorage est le cache de la semaine affi
 
 ## Planning : cache local, push débouncé, horloge serveur
 
-- `useSync()` (page `/planning`) hydrate au montage. Un gestionnaire abonné à `storePlanning` pousse en base (débounce 800 ms) à chaque écriture locale, sans qu'aucun handler de page n'ait à le faire.
+- `useSync()` (page `/planning`) hydrate au montage. **Seul un geste de l'utilisateur pousse en base** (débounce 800 ms) : `planifierPush` est abonné au canal `surEditionPlanning` (`lib/stockage.ts`), notifié par les écritures d'intention `sauvegarderPlanningComplet`, `sauvegarderRemplacementSlot`, `restaurerSnapshotAnnulation`, et par l'event `storage` des autres onglets. Toute édition du planning par une page passe par l'une d'elles, jamais par `storePlanning.ecrire` (#363). Pourquoi : une écriture directe du store ne pousse plus rien ; avant, toute écriture poussait et chaque écriture interne devait désarmer le push sous une garde.
 - **Écriture planning = RPC atomique** `sauvegarder_planning(p_semaine, p_slots)` : upsert par (foyer, semaine), qui **remplace toute la semaine**. Le foyer est dérivé côté serveur.
 - **Dirty-first** : une édition pose `planning_dirty` et, tant qu'il est posé, **le local fait foi**. Un pull n'a lieu que si le cache est vide ou si l'`updated_at` serveur est **strictement** plus récent que `planning_courant_maj`. Un cache non horodaté (offline, injecté en test) compte comme le plus frais.
 - **Horloge 100 % serveur** : un trigger SQL `BEFORE INSERT OR UPDATE` pose `updated_at = now()` et écrase toute valeur client. Les payloads omettent donc `updated_at`, et le client lit la valeur renvoyée par le RETURNING.
@@ -26,7 +26,7 @@ La base est la source de vérité ; localStorage est le cache de la semaine affi
 ## Rechargements après édition
 
 - **Jamais de `setChargement(true)` sur un rechargement post-édition.** Une édition met l'état local à jour de façon optimiste ; seuls le montage, la navigation et la génération passent par un chargement (« Chargement… » au premier chargement seulement, corps estompé ensuite, cf. `courses-cycle.md`). Pourquoi : un chargement estompe la grille et ignore la navigation le temps d'un aller-retour réseau, et sa relecture écraserait l'état optimiste (#301).
-- **Tout patch de `storePlanning` qui reflète une écriture déjà faite en base passe sous la garde `hydratationEnCours`** (cf. `modifierSlotDistant`). Pourquoi : sinon `planifierPush` relance un `sauvegarder_planning` de toute la semaine (double écriture).
+- **Tout patch de `storePlanning` qui reflète une écriture déjà faite en base écrit le store directement** (`modifierSlotDistant`, `reporterGenerationSurSemaineAffichee`, fusion US-21) : hors du canal d'édition, il ne pousse rien (#363). Pourquoi : un `sauvegarder_planning` de toute la semaine serait une double écriture (#301). `hydratationEnCours` ne garde plus que la lecture de `chargerSemaineDansCache` ; **limite connue** : un geste fait pendant cette lecture est remplacé par le distant (même famille que #339 côté coches, suivi en issue).
 
 ## Navigation entre semaines
 
