@@ -22,6 +22,7 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ### Corrigé
 
+- Assistant connecté (MCP) : si le jour de courses du foyer ne peut pas être lu, générer un cycle, lire le planning ou la liste de courses, cocher ou ajouter un article échoue avec un message, au lieu de viser par erreur le cycle qui commence le lundi (une génération avec remplacement pouvait écraser ce cycle) (#360).
 - Liste de courses : un article décoché juste après l’avoir coché ne se recoche plus tout seul quelques instants plus tard, et la décoche est bien enregistrée pour tout le foyer. Un article décoché après un envoi de coches interrompu (connexion coupée) est lui aussi bien décoché pour tout le foyer (#357).
 - Planning : une modification faite pendant qu’un autre membre du foyer modifie un autre repas n’est plus perdue, y compris sur une semaine dont certains jours ou repas sont désactivés, et même si elle est faite pendant la relecture du changement de l’autre membre (#355).
 - Vue Cycle : un repas ajouté sur un jour qui n’en avait aucun n’est plus effacé par la modification suivante faite en vue Semaine (#355).
@@ -92,6 +93,7 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ### Corrigé
 
+- Assistant connecté (MCP) : si le jour de courses du foyer ne peut pas être lu, générer un cycle, lire le planning ou la liste de courses, cocher ou ajouter un article échoue avec un message, au lieu de viser par erreur le cycle qui commence le lundi (une génération avec remplacement pouvait écraser ce cycle) (#360).
 - Vue Cycle — chaque modification (changer, choisir une recette, nombre de personnes, restes, annuler) rechargeait toute la grille avec un écran « Chargement… » : le défilement sautait et les menus se refermaient (#301). La modification s'affiche désormais **instantanément** et s'enregistre en arrière-plan ; le nombre de personnes accepte plusieurs clics d'affilée et n'est enregistré qu'une fois. En cas d'échec réseau, la valeur précédente revient avec un message d'erreur.
 - Vue Cycle : des jours (typiquement vendredi/samedi/dimanche si ton jour de courses n'est pas lundi) pouvaient disparaître de l'affichage juste après une édition, en cas d'incident réseau ponctuel — sans aucun message d'erreur. La page confond désormais correctement « pas de repas prévu » et « impossible à charger » (un message s'affiche dans ce second cas, et l'affichage précédent est conservé plutôt que vidé).
 - Barre de navigation qui débordait de l'écran sur mobile : depuis l'ajout du lien « Ce soir / Ce midi », les quatre libellés de section — plus le logo, l'aide et l'avatar — demandaient **480 px** de large, soit davantage qu'un écran de téléphone (390 px sur un iPhone 12). La page se laissait donc **faire défiler horizontalement** et le contenu n'était plus centré. Sur mobile, les sections s'affichent désormais **en icônes** (planning, courses, recettes, prochain repas) ; les libellés texte réapparaissent dès qu'il y a la place (tablette et ordinateur). Vérifié de 320 à 1280 px de large.
@@ -139,6 +141,7 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ### Corrigé
 
+- Assistant connecté (MCP) : si le jour de courses du foyer ne peut pas être lu, générer un cycle, lire le planning ou la liste de courses, cocher ou ajouter un article échoue avec un message, au lieu de viser par erreur le cycle qui commence le lundi (une génération avec remplacement pouvait écraser ce cycle) (#360).
 - Robustesse hors-ligne / mode privé (#169, #170) : une indisponibilité de Supabase au niveau du proxy ne rend plus l'app inaccessible (dégradation en « non connecté » au lieu d'une erreur 500), et un `localStorage` indisponible (navigation privée stricte, quota dépassé) ne casse plus l'app (le cache local devient best-effort, la base restant la source de vérité). Aucun changement visible en fonctionnement normal.
 - Badges recette perdus après synchronisation (#164) : un planning rechargé depuis la base (autre appareil, navigation entre semaines, cache vidé) **conserve désormais les flags végétarien / accompagnement / saison** de ses recettes. Auparavant la requête de chargement les omettait → badges manquants sur les cards et la fiche, et avertissements « repas non honorés / hors-saison » faussés. Invisible juste après une génération, le bug ne frappait que les plannings hydratés — d'où l'absence de détection. Garde de non-régression ajoutée (audit QA).
 - Feedback sur catalogue indisponible (#166) : si la liste des recettes ne se charge pas sur le planning (réseau, session), un message le signale au lieu d'un « Pas de recette disponible » trompeur ; le profil réessaie son chargement au lieu de rester bloqué sur un avatar neutre ; les lectures de planning local corrompu sont désormais tracées (plus de `catch` muet).
@@ -200,6 +203,7 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ### Corrigé
 
+- Assistant connecté (MCP) : si le jour de courses du foyer ne peut pas être lu, générer un cycle, lire le planning ou la liste de courses, cocher ou ajouter un article échoue avec un message, au lieu de viser par erreur le cycle qui commence le lundi (une génération avec remplacement pouvait écraser ce cycle) (#360).
 - Résultats de recherche masqués par le clavier mobile (#98) : dans le sélecteur de recette, taper une recherche cachait les résultats derrière le clavier logiciel (le bottom sheet glissait dessous). Deux correctifs combinés : viewport `interactive-widget=resizes-content` (Android/Chrome — le clavier réduit le viewport de layout) et ajustement dynamique du sheet via l'API `visualViewport` (iOS/Safari, où `interactive-widget` n'est pas implémenté — `lib/clavier.ts`). Les résultats restent désormais visibles et défilables clavier ouvert.
 
 ### Modifié
@@ -230,6 +234,7 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ### Corrigé
 
+- Assistant connecté (MCP) : si le jour de courses du foyer ne peut pas être lu, générer un cycle, lire le planning ou la liste de courses, cocher ou ajouter un article échoue avec un message, au lieu de viser par erreur le cycle qui commence le lundi (une génération avec remplacement pouvait écraser ce cycle) (#360).
 - Retour à ESLint 9 : ESLint 10 est incompatible avec `eslint-plugin-react` 7.x embarqué par `eslint-config-next` ; les majeures d'eslint sont ignorées par Dependabot jusqu'au support de la v10 (#44)
 
 ## [1.0.0] - 2026-06-05

@@ -82,17 +82,3 @@ export async function resoudreCycle(
     },
   }
 }
-
-// Transitoire (#360, retirée en Task 3) : ancien contrat « ancre seule ».
-export type ResolutionAncre =
-  | { ok: true; ancre: string }
-  | { ok: false; motif: "invalide" | "hors_plage" }
-
-export async function resoudreAncreCycle(
-  supabase: ClientSupabase,
-  date: string,
-  aujourdhui: Date
-): Promise<ResolutionAncre> {
-  const r = await resoudreCycle(supabase, { date }, aujourdhui)
-  return r.ok ? { ok: true, ancre: r.cycle.ancre } : r
-}

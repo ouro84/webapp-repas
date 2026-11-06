@@ -5,7 +5,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { ancreInitialeCycle, jourCoursesOuLundi } from "@/lib/ancre-initiale-cycle"
 import { ancreParDefaut } from "@/lib/cycles"
-import type { ResolutionAncre } from "@/lib/ancre-cycle"
+import type { ResolutionCycle } from "@/lib/ancre-cycle"
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -50,7 +50,11 @@ describe("ancreInitialeCycle", () => {
   it("lien : la résolution démarre sans attendre la lecture du jour de courses", async () => {
     const jour = differee<number>()
     const resoudreLien = vi.fn(
-      (): Promise<ResolutionAncre> => Promise.resolve({ ok: true, ancre: "2026-11-12" })
+      (): Promise<ResolutionCycle> =>
+        Promise.resolve({
+          ok: true,
+          cycle: { ancre: "2026-11-12", longueur: 7, jours: [], semaines: [], du: "2026-11-12", au: "2026-11-18" },
+        })
     )
     const resultat = ancreInitialeCycle({
       chargerJour: () => jour.promesse,
