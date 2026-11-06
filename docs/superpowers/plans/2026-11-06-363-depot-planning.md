@@ -14,7 +14,7 @@
 
 1. **Abandon de la phase A (comptabilité commune `ecrituresPlanningEnVol++` / `terminerEcriturePlanning`).** Dans `pousser`, le re-push repart dans le `finally` AVANT `terminerEcriturePlanning` : le compteur ne retombe jamais à 0 entre deux pushes, donc les events différés ne sont pas jugés entre eux. Un wrapper commun inverserait cet ordre. Le gain (3 paires de lignes) ne passe pas le test de suppression.
 2. **Asymétrie des patchs jumeaux conservée.** `reporterGenerationSurSemaineAffichee` sort tôt si le cache vise une autre semaine (ni `CLE_MAJ`, ni confirmé) et écrit le store même sans cache local. `modifierSlotDistant` pose `CLE_MAJ` et le confirmé dès que la semaine est affichée, et n'écrit le store que si le cache porte cette semaine. Les unifier changerait le comportement ; c'est hors périmètre, à décider avec Arnaud.
-3. **`chargerSemaineDansCache` garde `hydratationEnCours` pendant son `await` (iso).** Bug latent : un geste fait pendant cette lecture n'est pas poussé et le cache est remplacé par le distant. C'est la même famille que #339 côté coches. Le corriger touche au chemin de relecture US-21 (#355) : issue séparée.
+3. **`chargerSemaineDansCache` garde `hydratationEnCours` pendant son `await` (iso).** Bug latent : un geste fait pendant cette lecture n'est pas poussé et le cache est remplacé par le distant. C'est la même famille que #339 côté coches. Le corriger touche au chemin de relecture US-21 (#355) : issue #368.
 4. **Iso multi-onglet** : l'ancien abonnement écoutait aussi `window` `storage` (toute clé). Le canal garde cet écouteur tel quel.
 
 ## Global Constraints

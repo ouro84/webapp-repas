@@ -289,8 +289,8 @@ function jourPlanningSimple(
   } as JourPlanning;
 }
 
-describe("modifierSlotDistant — édition ponctuelle découplée de gestePlanning (suite #279)", () => {
-  it("persiste UNIQUEMENT le jour fourni, sans toucher gestePlanning si semaine ≠ affichée", async () => {
+describe("modifierSlotDistant — édition ponctuelle découplée de storePlanning (suite #279)", () => {
+  it("persiste UNIQUEMENT le jour fourni, sans toucher storePlanning si semaine ≠ affichée", async () => {
     localStorage.setItem("semaine_affichee", "2026-W10"); // autre semaine que celle éditée
     const { modifierSlotDistant } = await chargerSync();
 
@@ -300,10 +300,10 @@ describe("modifierSlotDistant — édition ponctuelle découplée de gestePlanni
       "2026-W12",
       [jourPlanningSimple("lundi", { id: "r1", nom: "R1" })]
     );
-    expect(localStorage.getItem("planning_courant")).toBeNull(); // gestePlanning intact
+    expect(localStorage.getItem("planning_courant")).toBeNull(); // storePlanning intact
   });
 
-  it("met à jour gestePlanning ET planning_courant_maj si la semaine éditée EST l'affichée", async () => {
+  it("met à jour storePlanning ET planning_courant_maj si la semaine éditée EST l'affichée", async () => {
     localStorage.setItem("semaine_affichee", "2026-W12");
     localStorage.setItem(
       "planning_courant",
@@ -324,7 +324,7 @@ describe("modifierSlotDistant — édition ponctuelle découplée de gestePlanni
     expect(localStorage.getItem("planning_courant_maj")).toBe("2026-07-16T15:00:00.000Z");
   });
 
-  it("patche gestePlanning SANS planifier de push sauvegarder_planning (pas de double écriture, #301)", async () => {
+  it("patche storePlanning SANS planifier de push sauvegarder_planning (pas de double écriture, #301)", async () => {
     const { semaineParDefaut } = await import("@/lib/semaines");
     const semaine = semaineParDefaut();
     persistance.chargerPlanningDistant.mockResolvedValue({
@@ -334,7 +334,7 @@ describe("modifierSlotDistant — édition ponctuelle découplée de gestePlanni
     persistance.sauvegarderSlotsDistant.mockResolvedValue("2026-07-16T15:00:00.000Z");
     const { useSync, modifierSlotDistant } = await chargerSync();
     const { renderHook } = await import("@testing-library/react");
-    renderHook(() => useSync()); // abonne planifierPush à gestePlanning
+    renderHook(() => useSync()); // abonne planifierPush au canal d'édition (#363)
     await vi.waitFor(() => expect(localStorage.getItem("semaine_affichee")).toBe(semaine));
     await vi.waitFor(() => expect(localStorage.getItem("planning_courant")).not.toBeNull());
 
@@ -2841,10 +2841,16 @@ describe("seul un geste de l'utilisateur pousse le planning (#363)", () => {
     renderHook(() => sync.useSync());
     await vi.waitFor(() => expect(localStorage.getItem("semaine_affichee")).toBe(semaine));
 
-    stockage.storePlanning.ecrire(JSON.stringify({ semaine, jours: [] }));
-    await new Promise((r) => setTimeout(r, 1200));
-    expect(persistance.sauvegarderPlanningDistant).not.toHaveBeenCalled();
-    expect(localStorage.getItem("planning_dirty")).toBeNull();
+    // Horloge simulée : au-delà du débounce (800 ms), sans attendre en vrai.
+    vi.useFakeTimers();
+    try {
+      stockage.storePlanning.ecrire(JSON.stringify({ semaine, jours: [] }));
+      await vi.advanceTimersByTimeAsync(1200);
+      expect(persistance.sauvegarderPlanningDistant).not.toHaveBeenCalled();
+      expect(localStorage.getItem("planning_dirty")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
 
     stockage.sauvegarderRemplacementSlot(planning(semaine));
     await vi.waitFor(() => expect(persistance.sauvegarderPlanningDistant).toHaveBeenCalledTimes(1), {

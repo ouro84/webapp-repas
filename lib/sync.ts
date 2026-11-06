@@ -1401,8 +1401,8 @@ function confirmeDeLaSemaine(semaine: string): boolean {
  * Relecture US-21 qui rejoue les éditions locales en attente (#355) : lecture
  * brute du distant (sans écraser le cache), puis `fusionnerEditionsLocales`
  * (créneaux modifiés localement et intacts à distance : rejoués ; même créneau
- * modifié des deux côtés : le distant gagne). Le résultat est écrit sous la
- * garde d'hydratation ; `dirty` reste posé si des créneaux ont été rejoués (le
+ * modifié des deux côtés : le distant gagne). Le résultat est écrit
+ * directement dans le store, hors canal d'édition (#363) ; `dirty` reste posé si des créneaux ont été rejoués (le
  * push est replanifié par l'appelant). L'instantané confirmé devient le
  * DISTANT, pas la fusion : seul un push réussi confirme les éditions rejouées.
  * Alerte ssi le distant diffère de l'instantané confirmé (vrai changement
@@ -1451,7 +1451,7 @@ async function relireEnRejouantEditionsLocales(semaine: string): Promise<boolean
   // pendant un push est différé, donc aucun push ne devrait être en vol ici.
   // S'il l'était (parti avec l'ancien planning), il ne doit pas lever `dirty`
   // à son succès : `rePushDemande` lui fait repousser la fusion derrière lui
-  // (la fusion, écrite sous garde d'hydratation, ne passe pas par `planifierPush`).
+  // (la fusion, écrite hors canal d'édition, ne passe pas par `planifierPush`, #363).
   if (pushEnCours) rePushDemande = true;
   if (signaturePlanning(distant.planning) !== signaturePlanning(reference)) {
     declencherAlertePlanning();

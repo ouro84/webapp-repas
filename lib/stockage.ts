@@ -77,7 +77,10 @@ function creerStoreLocal(cle: string): StoreLocal {
 // Stores de l'application
 // ============================================================================
 
-/** Planning courant (SPECS 5.6, clé `planning_courant`). */
+/** Planning courant (SPECS 5.6, clé `planning_courant`).
+ *  ⚠️ Lecture libre ; ÉCRITURE réservée à la synchro (lib/sync.ts) et aux
+ *  écritures d'intention ci-dessous : une écriture directe ne pousse jamais
+ *  (#363, garde ESLint sur app/ et components/). */
 export const storePlanning = creerStoreLocal("planning_courant")
 
 /** Coches de la liste de courses (US-05, RG-12, clé `courses_cochees`). */
