@@ -11,6 +11,7 @@ vi.mock("@/lib/supabase/client", () => ({
 }))
 
 import { chargerListeCoursesCycle } from "@/lib/liste-courses-cycle"
+import { ErreurLectureCycle } from "@/lib/lecture-cycle"
 import {
   creerSupabaseMock,
   filtre,
@@ -143,8 +144,14 @@ describe("chargerListeCoursesCycle", () => {
   it("planning illisible : erreur propagée", async () => {
     const { client } = mock({ planning: { data: null, error: { message: "JWT expired" } } })
 
-    await expect(chargerListeCoursesCycle(client, CYCLE_29)).rejects.toThrow(
-      "Chargement du planning distant impossible : JWT expired"
-    )
+    // Lecteur de cycle unique (chantier 05) : l'échec remonte en
+    // ErreurLectureCycle, la cause d'origine de chaque semaine conservée.
+    const erreur = await chargerListeCoursesCycle(client, CYCLE_29).catch((e: unknown) => e)
+    expect(erreur).toBeInstanceOf(ErreurLectureCycle)
+    const { causes } = erreur as ErreurLectureCycle
+    expect(causes.length).toBeGreaterThan(0)
+    for (const cause of causes) {
+      expect((cause as Error).message).toBe("Chargement du planning distant impossible : JWT expired")
+    }
   })
 })

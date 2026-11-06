@@ -9,12 +9,20 @@ import type { Planning } from "@/types"
 vi.mock("@/lib/persistance", () => ({
   chargerPlanningDistant: vi.fn(),
 }))
+vi.mock("@/lib/supabase/par-defaut", () => ({
+  clientParDefaut: vi.fn(),
+}))
 
 import { chargerPlanningDistant } from "@/lib/persistance"
+import { clientParDefaut } from "@/lib/supabase/par-defaut"
 import { ErreurLectureCycle, lireCycle } from "@/lib/lecture-cycle"
 
 const mockCharger = vi.mocked(chargerPlanningDistant)
-const client = {} as ClientSupabase
+const mockClientParDefaut = vi.mocked(clientParDefaut)
+// Objets distinctifs : l'identité (`===`) prouve que c'est CE client qui est
+// transmis, là où l'égalité profonde accepterait n'importe quel `{}`.
+const client = { marque: "client-injecte" } as unknown as ClientSupabase
+const clientDefaut = { marque: "client-par-defaut" } as unknown as ClientSupabase
 
 // Cycle de 7 j ancré le vendredi 2026-11-06 : ven/sam/dim en W45, lun→jeu en W46.
 const ANCRE = "2026-11-06"
@@ -31,6 +39,12 @@ function reponse(planning: Planning) {
   return { planning, updatedAt: "2026-11-06T10:00:00Z" }
 }
 
+// Chaque lecture a reçu exactement ce client (identité, pas égalité profonde).
+function lecturesAvec(attendu: ClientSupabase) {
+  expect(mockCharger).toHaveBeenCalled()
+  for (const [, c] of mockCharger.mock.calls) expect(c === attendu).toBe(true)
+}
+
 function lectureParSemaine(parSemaine: Record<string, Planning | null | Error>) {
   mockCharger.mockImplementation(async (semaine?: string) => {
     const valeur = parSemaine[semaine ?? ""]
@@ -42,6 +56,8 @@ function lectureParSemaine(parSemaine: Record<string, Planning | null | Error>) 
 describe("lireCycle", () => {
   beforeEach(() => {
     mockCharger.mockReset()
+    mockClientParDefaut.mockReset()
+    mockClientParDefaut.mockReturnValue(clientDefaut)
   })
 
   it("lit chaque semaine touchée avec le client passé et recombine le planning du cycle", async () => {
@@ -50,9 +66,9 @@ describe("lireCycle", () => {
     const cycle = await lireCycle({ ancre: ANCRE, longueur: 7 }, client)
 
     expect(cycle.semaines).toEqual(["2026-W45", "2026-W46"])
-    expect(mockCharger).toHaveBeenCalledTimes(2)
-    expect(mockCharger).toHaveBeenCalledWith("2026-W45", client)
-    expect(mockCharger).toHaveBeenCalledWith("2026-W46", client)
+    expect(mockCharger.mock.calls.map(([semaine]) => semaine)).toEqual(["2026-W45", "2026-W46"])
+    lecturesAvec(client)
+    expect(mockClientParDefaut).not.toHaveBeenCalled()
     expect([...cycle.parSemaine.keys()]).toEqual(["2026-W45", "2026-W46"])
     expect(cycle.parSemaine.get("2026-W46")).toBe(planningW46)
     expect(cycle.planning.semaine).toBe(ANCRE)
@@ -68,6 +84,7 @@ describe("lireCycle", () => {
 
     expect(cycle.semaines).toEqual(["2026-W45", "2026-W46"])
     expect([...cycle.parSemaine.keys()]).toEqual(["2026-W45"])
+    lecturesAvec(client)
     expect(cycle.planning.jours.map((j) => j.jour)).toEqual(["vendredi", "samedi", "dimanche"])
   })
 
@@ -84,6 +101,7 @@ describe("lireCycle", () => {
     expect(e.causes[0]).toBe(cause)
     expect(e.causes).toHaveLength(1)
     expect(e.message).toBe("Lecture du cycle échouée (semaines : 2026-W46).")
+    lecturesAvec(client)
   })
 
   it("liste toutes les semaines en échec dans l'ordre du cycle", async () => {
@@ -98,5 +116,25 @@ describe("lireCycle", () => {
     expect(erreur).toBeInstanceOf(ErreurLectureCycle)
     expect(erreur.semainesEnEchec).toEqual(["2026-W45", "2026-W46"])
     expect(erreur.causes).toEqual([c45, c46])
+    lecturesAvec(client)
+  })
+
+  it("sans client : appelle clientParDefaut une seule fois et transmet son client à chaque lecture", async () => {
+    lectureParSemaine({ "2026-W45": planningW45, "2026-W46": planningW46 })
+
+    await lireCycle({ ancre: ANCRE, longueur: 7 })
+
+    expect(mockClientParDefaut).toHaveBeenCalledTimes(1)
+    expect(mockCharger).toHaveBeenCalledTimes(2)
+    lecturesAvec(clientDefaut)
+  })
+
+  it("avec un client : n'appelle jamais clientParDefaut (défaut paresseux)", async () => {
+    lectureParSemaine({ "2026-W45": null, "2026-W46": null })
+
+    await lireCycle({ ancre: ANCRE, longueur: 7 }, client)
+
+    expect(mockClientParDefaut).not.toHaveBeenCalled()
+    lecturesAvec(client)
   })
 })

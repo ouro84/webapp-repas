@@ -10,6 +10,8 @@ import { toast } from "sonner";
 const m = vi.hoisted(() => ({
   chargerPlanningDistant: vi.fn(),
   genererCycle: vi.fn(),
+  // Jour de courses du foyer (1 = lundi : cycle calendaire, une seule semaine ISO).
+  jourCourses: 1,
 }));
 
 vi.mock("sonner", () => ({
@@ -24,7 +26,7 @@ vi.mock("@/lib/persistance", () => ({
   chargerLongueurCycle: () => Promise.resolve(7),
   chargerPlanningDistant: m.chargerPlanningDistant,
 }));
-vi.mock("@/lib/foyer", () => ({ chargerJourCoursesFoyer: () => Promise.resolve(1) }));
+vi.mock("@/lib/foyer", () => ({ chargerJourCoursesFoyer: () => Promise.resolve(m.jourCourses) }));
 vi.mock("@/lib/ancre-cycle", () => ({ resoudreCycle: vi.fn() }));
 vi.mock("@/lib/supabase/par-defaut", () => ({ clientParDefaut: vi.fn() }));
 vi.mock("@/lib/reglages-data", () => ({ chargerReglages: () => new Promise(() => {}) }));
@@ -49,6 +51,7 @@ beforeEach(() => {
   vi.spyOn(console, "error").mockImplementation(() => {});
   m.chargerPlanningDistant.mockReset();
   m.genererCycle.mockReset();
+  m.jourCourses = 1;
   vi.mocked(toast.error).mockClear();
   vi.mocked(toast.dismiss).mockClear();
 });
@@ -170,5 +173,42 @@ describe("VuePlanningCycle : génération du cycle puis relecture en erreur (#35
     await new Promise((r) => setTimeout(r, 50));
     expect(m.chargerPlanningDistant).not.toHaveBeenCalled();
     expect(screen.getByText("Aucun repas planifié sur ce cycle.")).toBeTruthy();
+  });
+
+  it("cycle à cheval sur deux semaines, une seule en échec à la relecture : log de la semaine en échec, puis toast (chantier 05)", async () => {
+    m.jourCourses = 5; // vendredi : ven/sam/dim en semaine N, lun→jeu en N+1
+    const lectures = await afficherCycleVide();
+    expect(lectures).toBe(2);
+    const erreurConsole = vi.mocked(console.error);
+    erreurConsole.mockClear();
+    m.genererCycle.mockResolvedValue(sansAvertissement);
+    // Relecture après génération : la 2e semaine du cycle échoue une fois, la
+    // 1re réussit (aucune ligne) ; la resynchronisation qui suit réussit.
+    let semaineEnEchec: string | undefined;
+    m.chargerPlanningDistant.mockImplementation(async (semaine: string) => {
+      if (semaineEnEchec === undefined && m.chargerPlanningDistant.mock.calls.length === 2) {
+        semaineEnEchec = semaine;
+        throw new Error("réseau");
+      }
+      return null;
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Générer mon cycle/ }));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledTimes(1));
+    expect(semaineEnEchec).toBeDefined();
+    const logsSemaine = erreurConsole.mock.calls.filter(
+      ([message]) => typeof message === "string" && message.startsWith("Chargement du planning de la semaine")
+    );
+    expect(logsSemaine).toHaveLength(1);
+    expect(logsSemaine[0][0]).toBe(`Chargement du planning de la semaine ${semaineEnEchec} échoué.`);
+    expect(logsSemaine[0][1]).toEqual(new Error("réseau"));
+    // Le log précède le toast.
+    const ordreLog = erreurConsole.mock.invocationCallOrder[erreurConsole.mock.calls.indexOf(logsSemaine[0])];
+    expect(ordreLog).toBeLessThan(vi.mocked(toast.error).mock.invocationCallOrder[0]);
+    expect(toast.error).toHaveBeenCalledWith(
+      "Certains jours du cycle n'ont pas pu être chargés. Réessaie.",
+      { id: "echec-chargement-cycle" }
+    );
   });
 });
