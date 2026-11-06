@@ -12,9 +12,10 @@
 // reçu pendant notre écriture (limite (b)) ; cf. `.claude/rules/sync-planning.md`.
 //
 // Règles (cf. spec docs/superpowers/specs/2026-11-06-362-phase2-moteur-coches.md) :
-// 1. File persistée : au plus une opération par (ancre, clé), le dernier geste
-//    remplace ; plus des opérations `vider(ancre)`, qui effacent les opérations
-//    de clé antérieures de la même ancre.
+// 1. File persistée (RG-12, persistance et invalidation des coches) : au plus
+//    une opération par (ancre, clé), le dernier geste remplace ; plus des
+//    opérations `vider(ancre)`, qui effacent les opérations de clé
+//    antérieures de la même ancre.
 // 2. Flush séquentiel, dans l'ordre de la file : jamais deux écritures en vol
 //    (donc jamais deux sur une même clé). À la réponse, l'horodatage connu de
 //    la clé devient le `maj` renvoyé, puis les événements différés sont jugés.
@@ -222,58 +223,68 @@ export function creerMoteurCoches<V>(deps: {
 
   // --- Flush -----------------------------------------------------------------
 
+  // Le flush est marqué terminé DANS la boucle, de façon synchrone, avant
+  // d'annoncer « synchronise » / « hors-ligne ». Pourquoi : levé dans un
+  // `finally` d'une fonction appelante, il ne l'était qu'une microtâche plus
+  // tard ; un geste posé entre-temps rejoignait le flush fini et restait en
+  // file, sans envoi, sous l'indicateur « synchronise ».
+  function terminerFlush(): void {
+    flushActif = false
+    flushEnCours = null
+  }
+
   async function flusher(): Promise<void> {
     flushActif = true
     try {
-      await viderFile()
-    } finally {
-      // Levé dans la même microtâche que la fin de la boucle : un geste posé
-      // juste après relance un flush au lieu de rejoindre celui qui se termine.
-      flushActif = false
-      flushEnCours = null
-    }
-  }
-
-  async function viderFile(): Promise<void> {
-    surEtat("sauvegarde")
-    while (file.length > 0) {
-      const op = file[0]
-      let lignes: Array<{ cle: string; maj: string }> | null
-      try {
-        if (op.type === "cle") {
-          const maj = await transport.ecrire(op.ancre, op.cle, op.etat)
-          lignes = maj === null ? null : [{ cle: op.cle, maj }]
-        } else {
-          lignes = await transport.vider(op.ancre)
+      surEtat("sauvegarde")
+      while (file.length > 0) {
+        const op = file[0]
+        let lignes: Array<{ cle: string; maj: string }> | null
+        try {
+          if (op.type === "cle") {
+            const maj = await transport.ecrire(op.ancre, op.cle, op.etat)
+            lignes = maj === null ? null : [{ cle: op.cle, maj }]
+          } else {
+            lignes = await transport.vider(op.ancre)
+          }
+        } catch (erreur) {
+          terminerFlush()
+          surEtat("hors-ligne")
+          journal("Synchronisation des coches échouée (sera rejouée).", erreur)
+          return
         }
-      } catch (erreur) {
-        surEtat("hors-ligne")
-        journal("Synchronisation des coches échouée (sera rejouée).", erreur)
-        return
+        // Retrait par identité : un geste arrivé pendant le vol a pu remplacer
+        // cette opération (il reste en file) ou un vidage l'effacer.
+        file = file.filter((o) => o.id !== op.id)
+        persisterFile()
+        if (lignes === null) {
+          journal(
+            `Coche abandonnée : cible disparue (ancre ${op.ancre}, clé ${op.type === "cle" ? op.cle : "*"}).`
+          )
+        } else {
+          for (const { cle, maj } of lignes) retenirMaj(op.ancre, cle, maj)
+        }
+        jugerDifferes(op)
       }
-      // Retrait par identité : un geste arrivé pendant le vol a pu remplacer
-      // cette opération (il reste en file) ou un vidage l'effacer.
-      file = file.filter((o) => o.id !== op.id)
-      persisterFile()
-      if (lignes === null) {
-        journal(
-          `Coche abandonnée : cible disparue (ancre ${op.ancre}, clé ${op.type === "cle" ? op.cle : "*"}).`
-        )
-      } else {
-        for (const { cle, maj } of lignes) retenirMaj(op.ancre, cle, maj)
-      }
-      jugerDifferes(op)
+      terminerFlush()
+      surEtat("synchronise")
+    } finally {
+      // Filet pour une exception inattendue (vue, `surEtat`) : sans lui, le
+      // moteur se croirait en flush pour toujours. Synchrone lui aussi.
+      if (flushActif) terminerFlush()
     }
-    surEtat("synchronise")
   }
 
   function lancerFlush(): Promise<void> {
-    if (flushActif && flushEnCours) return flushEnCours
+    // Pendant la partie synchrone du premier tour (avant le premier `await`),
+    // `flushEnCours` n'est pas encore posé : l'op ajoutée est prise par la
+    // boucle en cours.
+    if (flushActif) return flushEnCours ?? Promise.resolve()
     if (file.length === 0) return Promise.resolve()
     const flush = flusher()
-    // Un flush terminé de façon synchrone (transport qui lève sans attendre)
-    // ne doit pas rester mémorisé comme « en cours ».
-    flushEnCours = flushActif ? flush : null
+    // Un flush fini de façon synchrone (transport qui lève sans attendre) a
+    // déjà appelé `terminerFlush` : ne pas le mémoriser comme en cours.
+    if (flushActif) flushEnCours = flush
     return flush
   }
 

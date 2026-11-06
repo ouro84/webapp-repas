@@ -310,6 +310,19 @@ describe("moteur de coche horodaté (#362)", () => {
     expect(etats.at(-1)).toBe("synchronise")
   })
 
+  it("un geste posé juste après la dernière réponse d'un flush part bien", async () => {
+    const { moteur, appels } = monter()
+    moteur.hydrater(A, {})
+    moteur.poser(A, TOMATES, coche())
+
+    ecriture(appels[0]).resoudre(T1)
+    queueMicrotask(() => moteur.poser(A, RIZ, coche(200)))
+    await attendre()
+
+    expect(appels).toHaveLength(2)
+    expect(ecriture(appels[1]).cle).toBe(RIZ)
+  })
+
   it("un transport qui lève de façon synchrone ne bloque pas le flush suivant", async () => {
     const stockage = fauxStockage()
     let lever = true
