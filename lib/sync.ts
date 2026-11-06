@@ -53,9 +53,9 @@ import {
   ancreParDefaut,
   cycleDecale,
   LONGUEUR_DEFAUT,
-  planningDuCycle,
   semainesDuCycle,
 } from "@/lib/cycles";
+import { lireCycle } from "@/lib/lecture-cycle";
 import { chargerJourCoursesFoyer } from "@/lib/foyer";
 import { jourCoursesOuLundi } from "@/lib/ancre-initiale-cycle";
 import { parseApiError } from "@/lib/errors";
@@ -1810,15 +1810,10 @@ function jugerEventsCycleDifferes(): void {
 // Re-projette le cycle affiché depuis la base (planning des 1-2 semaines
 // touchées). Écrase la projection locale (contrairement à chargerCycleDansCache,
 // PAS de dirty-first : un re-pull US-21/génération DOIT refléter la base).
+// Lecture via `lireCycle` (chantier 05) : une semaine en échec rejette
+// l'ensemble (ErreurLectureCycle), propagée à l'appelant comme avant.
 async function rechargerProjectionCycle(ancre: string, longueur: number): Promise<void> {
-  const semaines = semainesDuCycle(ancre, longueur);
-  const resultats = await Promise.all(semaines.map((s) => chargerPlanningDistant(s)));
-  const plannings: Planning[] = [];
-  semaines.forEach((s, i) => {
-    const r = resultats[i];
-    if (r) plannings.push(r.planning);
-  });
-  definirCyclePlanning(planningDuCycle(plannings, ancre, longueur));
+  definirCyclePlanning((await lireCycle({ ancre, longueur })).planning);
 }
 
 async function traiterChangementCycleDistant(): Promise<void> {
@@ -2320,16 +2315,10 @@ async function chargerCycleDansCache(
     // ligne) ne sont pas perdus : ils restent dans la file du moteur, avec
     // leur ancre.
     if (lireCycleAffiche()?.ancre !== ancre) viderBlobLocal();
-    const semaines = semainesDuCycle(ancre, longueur);
-    const resultats = await Promise.all(
-      semaines.map((s) => chargerPlanningDistant(s))
-    );
-    const plannings: Planning[] = [];
-    semaines.forEach((s, i) => {
-      const r = resultats[i];
-      if (r) plannings.push(r.planning);
-    });
-    const projete = planningDuCycle(plannings, ancre, longueur);
+    // Lecture via `lireCycle` (chantier 05) : une semaine en échec rejette
+    // l'ensemble (jamais de projection partielle), journalisé par le catch
+    // ci-dessous sans écraser le cache.
+    const projete = (await lireCycle({ ancre, longueur })).planning;
     // Local fait foi si le backend n'a RIEN pour cette ancre (#257) — miroir du
     // « planning local non horodaté fait foi » du #6/#104, adapté au cycle (qui
     // n'a pas d'horodatage propre : c'est un planning SYNTHÉTIQUE, jamais poussé

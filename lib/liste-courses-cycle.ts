@@ -4,18 +4,14 @@
 // assembleur pur que /courses (lib/liste-courses.ts, règle du jumeau). /courses
 // reste sur ses stores temps réel (lib/sync.ts) et n'appelle pas ce service.
 
-import {
-  chargerArticlesManuelsDistants,
-  chargerCochesDistantes,
-  chargerPlanningDistant,
-} from "@/lib/persistance"
+import { chargerArticlesManuelsDistants, chargerCochesDistantes } from "@/lib/persistance"
 import { chargerReglages } from "@/lib/reglages-data"
 import { REGLAGES_DEFAUT } from "@/lib/reglages"
-import { planningDuCycle, semainesDuCycle } from "@/lib/cycles"
+import { lireCycle } from "@/lib/lecture-cycle"
 import { assemblerListeCourses } from "@/lib/liste-courses"
 import type { Coches } from "@/lib/coches"
 import type { ClientSupabase } from "@/lib/supabase/types"
-import type { ListeCourses, Planning, ReglagesGeneration } from "@/types"
+import type { ListeCourses, ReglagesGeneration } from "@/types"
 
 export type ListeCoursesCycle = {
   ancre: string
@@ -37,11 +33,9 @@ export async function chargerListeCoursesCycle(
   supabase: ClientSupabase,
   { ancre, longueur }: { ancre: string; longueur: number }
 ): Promise<ListeCoursesCycle> {
-  const resultats = await Promise.all(
-    semainesDuCycle(ancre, longueur).map((s) => chargerPlanningDistant(s, supabase))
-  )
-  const plannings: Planning[] = resultats.flatMap((r) => (r ? [r.planning] : []))
-  const planning = planningDuCycle(plannings, ancre, longueur)
+  // Lecteur de cycle unique (chantier 05) : une semaine illisible rejette
+  // l'ensemble (ErreurLectureCycle), propagée.
+  const { planning } = await lireCycle({ ancre, longueur }, supabase)
 
   const [reglages, articlesManuels, coches] = await Promise.all([
     chargerReglages(supabase).catch((erreur): ReglagesGeneration => {

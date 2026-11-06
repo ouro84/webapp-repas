@@ -38,7 +38,7 @@
 // la vue Semaine (EntetePlanning / EtatVidePlanning, #352).
 //
 // Projection : on lit les plannings des 1-2 semaines ISO que le cycle touche
-// (chargerPlanningDistant, base = source de vérité) et on rend chaque JOUR du
+// (lireCycle, base = source de vérité) et on rend chaque JOUR du
 // cycle (date concrète) via lib/cycles (fonctions pures).
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -72,7 +72,8 @@ import { resoudreCycle } from "@/lib/ancre-cycle";
 import { ancreInitialeCycle } from "@/lib/ancre-initiale-cycle";
 import { clientParDefaut } from "@/lib/supabase/par-defaut";
 import { aujourdhuiParis } from "@/lib/semaines";
-import { chargerLongueurCycle, chargerPlanningDistant } from "@/lib/persistance";
+import { chargerLongueurCycle } from "@/lib/persistance";
+import { ErreurLectureCycle, lireCycle, type CycleLu } from "@/lib/lecture-cycle";
 import {
   creneauActif,
   recettesUtilisees,
@@ -508,22 +509,21 @@ export function VuePlanningCycle({
     setChargement(true);
     try {
       const long = await chargerLongueurCycle(ancreCible).catch(() => LONGUEUR_DEFAUT);
-      const semaines = Array.from(
-        new Set(
-          joursDuCycle(ancreCible, long).map((d) => dateVersSemaineJour(d).semaine)
-        )
-      );
-      let echec = false;
-      const resultats = await Promise.all(
-        semaines.map((s) =>
-          chargerPlanningDistant(s).catch((erreur) => {
-            console.error(`Chargement du planning de la semaine ${s} échoué.`, erreur);
-            echec = true;
-            return null;
-          })
-        )
-      );
-      if (echec) {
+      // Lecteur de cycle unique (chantier 05) : l'échec d'une semaine rejette
+      // l'ensemble (ErreurLectureCycle), l'absence de ligne est ignorée. Toute
+      // autre erreur suit le même chemin : `chargerCycle` ne lève jamais, ses
+      // appelants s'en remettent à son booléen (#357).
+      let lu: CycleLu;
+      try {
+        lu = await lireCycle({ ancre: ancreCible, longueur: long });
+      } catch (erreur) {
+        if (erreur instanceof ErreurLectureCycle) {
+          erreur.semainesEnEchec.forEach((s, i) => {
+            console.error(`Chargement du planning de la semaine ${s} échoué.`, erreur.causes[i]);
+          });
+        } else {
+          console.error("Chargement du cycle échoué.", erreur);
+        }
         if (!initial) {
           toast.error(
             "Certains jours du cycle n'ont pas pu être chargés. Réessaie.",
@@ -532,13 +532,8 @@ export function VuePlanningCycle({
         }
         return false;
       }
-      const map = new Map<string, Planning>();
-      semaines.forEach((s, i) => {
-        const r = resultats[i];
-        if (r) map.set(s, r.planning);
-      });
       setLongueur(long);
-      setParSemaine(map);
+      setParSemaine(lu.parSemaine);
       setAncre(ancreCible);
       // Répercute dans le store partagé (#279) : nécessaire pour que la
       // génération (ci-dessous) et le lien « Liste de courses → » ciblent le
