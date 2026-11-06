@@ -87,8 +87,35 @@ export const storeCoches = creerStoreLocal("courses_cochees")
 export const storeVuePlanning = creerStoreLocal("vue_planning")
 
 // ============================================================================
+// Canal d'édition du planning (#363) — seul un GESTE de l'utilisateur
+// (écriture d'intention ci-dessous) déclenche un push. La synchro (lib/sync.ts)
+// s'y abonne ; ses propres écritures de `storePlanning` (hydratation, patchs
+// d'une écriture déjà faite en base, fusion US-21) ne notifient rien, sans
+// garde à poser. Comme l'ancien abonnement à `storePlanning`, le canal écoute
+// aussi l'event `storage` (écritures des autres onglets, toute clé).
+// ============================================================================
+
+const editionsPlanning = new Set<() => void>()
+
+function notifierEditionPlanning(): void {
+  for (const rappel of editionsPlanning) rappel()
+}
+
+/** Abonne `rappel` aux éditions du planning par l'utilisateur ; renvoie le
+ *  désabonnement. */
+export function surEditionPlanning(rappel: () => void): () => void {
+  editionsPlanning.add(rappel)
+  window.addEventListener("storage", rappel)
+  return () => {
+    editionsPlanning.delete(rappel)
+    window.removeEventListener("storage", rappel)
+  }
+}
+
+// ============================================================================
 // Écritures métier — le cycle de vie des coches (RG-13) est centralisé ici
-// pour ne pas disperser la règle dans les pages.
+// pour ne pas disperser la règle dans les pages. Toute écriture du planning
+// par l'utilisateur passe par l'une d'elles (canal d'édition, #363).
 // ============================================================================
 
 /**
@@ -98,6 +125,7 @@ export const storeVuePlanning = creerStoreLocal("vue_planning")
 export function sauvegarderPlanningComplet(planning: Planning): void {
   storePlanning.ecrire(JSON.stringify(planning))
   storeCoches.effacer()
+  notifierEditionPlanning()
 }
 
 /**
@@ -107,6 +135,7 @@ export function sauvegarderPlanningComplet(planning: Planning): void {
  */
 export function sauvegarderRemplacementSlot(planning: Planning): void {
   storePlanning.ecrire(JSON.stringify(planning))
+  notifierEditionPlanning()
 }
 
 // ============================================================================
@@ -185,6 +214,7 @@ export function restaurerSnapshotAnnulation(
     storeCoches.ecrire(snapshot.coches)
   }
   localStorage.removeItem(CLE_SNAPSHOT)
+  notifierEditionPlanning() // l'annulation est un geste : elle se pousse (#363)
   return true
 }
 

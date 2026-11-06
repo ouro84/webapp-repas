@@ -1,49 +1,70 @@
-# DepotPlanning (#363) : grill et plan
+# Écrire le planning = une intention (#363) Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Statut :** grill et plan rédigés le 2026-11-06, pendant une session autonome. **Pas de code.** Ce chantier change le déclencheur de push du planning, cœur de la synchro, couvert surtout en e2e. Pas sous auto-merge sans relecture humaine du plan.
+**Goal:** Seul un geste de l'utilisateur (écriture d'intention de `lib/stockage.ts`) déclenche un push du planning. Les écritures internes de la synchro n'ont plus à désarmer le push sous la garde `hydratationEnCours`.
 
-**Goal:** Écrire le planning devient un appel d'intention à un module `DepotPlanning`. Écrire dans `storePlanning` ne déclenche plus de push. La comptabilité d'écriture (en vol, horodatage retenu, instantané confirmé, patch du cache, fin d'écriture) n'existe qu'une fois.
+**Architecture:** `lib/stockage.ts` gagne un canal `surEditionPlanning(rappel)`. Il est notifié par les trois écritures d'intention (`sauvegarderPlanningComplet`, `sauvegarderRemplacementSlot`, `restaurerSnapshotAnnulation`) et, comme l'ancien abonnement, par l'event `storage` des autres onglets. `storePlanning` redevient un simple cache que la synchro écrit sans effet de bord. `lib/sync.ts` s'abonne à ce canal à la place de `storePlanning.sAbonner(planifierPush)`.
 
-**Spec:** issue #363 ; revue d'architecture 2026-11-06 (candidat 03) ; `.claude/rules/sync-planning.md` (l. 59-62, « jumeaux »).
+**Tech Stack:** Next.js 16, Vitest + jsdom (`lib/sync.test.ts`, `tests/stockage.test.ts`), Playwright staging.
 
-## Auto-grill (décisions retenues)
+**Spec:** issue #363 ; revue d'architecture 2026-11-06 (candidat 03) ; auto-grill Q1 à Q7 (session du 2026-11-06, après le merge de #364) ; `.claude/rules/sync-planning.md`.
 
-1. **Le push implicite disparaît-il d'un coup ?** Non. En phase A, on garde `storePlanning.sAbonner(planifierPush)` et on fait passer les écrivains un par un par le dépôt. En phase B, on retire l'abonnement quand plus aucun écrivain n'écrit le store directement. Pourquoi : chaque étape reste e2e-testable et réversible.
-2. **Interface.** `ecrireSemaine(planning)` (édition locale débouncée, aujourd'hui `sauvegarderPlanning` / `sauvegarderRemplacementSlot` puis `pousser`), `ecrireSlots(semaine, slots)` (`modifierSlotDistant`), `ecrireCycle(ancre, semaines)` (`appliquerGenerationCycle`), plus `appliquerDistant(planning)` pour hydratation et relecture, qui ne pousse jamais. Elle remplace les 4 `hydratationEnCours = true … gardeAvant`.
-3. **Où vit le module ?** Il reste dans `lib/sync.ts` tant que le chantier 07 (seams internes) n'est pas fait. Un fichier à part exigerait d'exporter ~15 singletons. Le module est une section avec une interface exportée réduite ; les pages n'importent plus `storePlanning` en écriture.
-4. **Comptabilité commune.** Une fonction interne `avecEcriturePlanning(semaine, ecrire: () => Promise<majServeur>)` fait `ecrituresPlanningEnVol++`, `retenirHorodatageEcrit`, `ecrireConfirme` / `patcherConfirme`, `terminerEcriturePlanning`. Les trois écrivains l'appellent.
-5. **Annuler (6 s, `stockage.ts:137-181`).** Il passe par `ecrireSemaine(snapshot)`. C'est une écriture locale ordinaire.
-6. **`app/recettes/page.tsx:69`** (renommage d'une recette présente au planning) passe par `ecrireSemaine`.
-7. **Tests.** Un `describe` « contrat d'écriture » par sorte d'écrivain, avec les cas « écho avant réponse » (#352), « édition pendant l'écriture » et « semaine partielle » (#355). Les `describe` nommés par bug restent tant qu'ils passent (filet).
-8. **E2E staging obligatoire :** `planning*.spec.ts`, `edition-vue-cycle.spec.ts`, `synchro*.spec.ts`, avec `--retries=2`.
+## Décisions d'auto-grill
 
-## Question ouverte à trancher avant la phase A (relevée en étudiant le code)
+1. **Abandon de la phase A (comptabilité commune `ecrituresPlanningEnVol++` / `terminerEcriturePlanning`).** Dans `pousser`, le re-push repart dans le `finally` AVANT `terminerEcriturePlanning` : le compteur ne retombe jamais à 0 entre deux pushes, donc les events différés ne sont pas jugés entre eux. Un wrapper commun inverserait cet ordre. Le gain (3 paires de lignes) ne passe pas le test de suppression.
+2. **Asymétrie des patchs jumeaux conservée.** `reporterGenerationSurSemaineAffichee` sort tôt si le cache vise une autre semaine (ni `CLE_MAJ`, ni confirmé) et écrit le store même sans cache local. `modifierSlotDistant` pose `CLE_MAJ` et le confirmé dès que la semaine est affichée, et n'écrit le store que si le cache porte cette semaine. Les unifier changerait le comportement ; c'est hors périmètre, à décider avec Arnaud.
+3. **`chargerSemaineDansCache` garde `hydratationEnCours` pendant son `await` (iso).** Bug latent : un geste fait pendant cette lecture n'est pas poussé et le cache est remplacé par le distant. C'est la même famille que #339 côté coches. Le corriger touche au chemin de relecture US-21 (#355) : issue séparée.
+4. **Iso multi-onglet** : l'ancien abonnement écoutait aussi `window` `storage` (toute clé). Le canal garde cet écouteur tel quel.
 
-Les deux patchs « jumeaux » du cache ne sont **pas** symétriques :
-- `reporterGenerationSurSemaineAffichee` (≈ l. 1790) sort tôt si le cache vise une autre semaine, **avant** de poser `CLE_MAJ` et l'instantané confirmé, et écrit le store même sans cache local (jours générés seuls).
-- `modifierSlotDistant` (≈ l. 2260) pose `CLE_MAJ` et `patcherConfirme` dès que `semaine` est la semaine affichée, et n'écrit le store que si le cache local porte cette semaine.
+## Global Constraints
 
-Une fonction commune `patcherSemaineAffichee(semaine, maj, transformer)` impose de choisir une des deux sémantiques. Pour que la phase A reste iso, il faut soit garder deux variantes, soit prouver (test + e2e) que l'écart est inobservable. À décider avec Arnaud.
+- Français ; commentaires citant US-21, RG-19, #301, #355.
+- Comportement iso. Seule différence : une écriture directe de `storePlanning` ne pousse plus rien (contrat nouveau, documenté dans `sync-planning.md`).
+- `hydratationEnCours` ne sert plus qu'à `chargerSemaineDansCache` (et à `planifierPush`, qui l'honore).
 
-## Phase A : comptabilité commune (iso-comportement)
+## Review Focus
 
-### Task A1 : `avecEcriturePlanning`
-- Modify: `lib/sync.ts` (`pousser` 712-759, `appliquerGenerationCycle` ~1730, `modifierSlotDistant` 2219-2251).
-- Tests d'abord : pour chaque écrivain, un écho Realtime portant l'`updated_at` renvoyé, arrivé AVANT la résolution de la RPC, n'ouvre pas l'alerte US-21 et ne déclenche pas de relecture.
-- Commit `refactor: comptabilité d'écriture du planning commune (#363)`.
+- Undo (`restaurerSnapshotAnnulation`) après une régénération : le planning restauré est bien poussé (dirty + push).
+- Génération de `/bienvenue` (`sauvegarderPlanningComplet`, `useSync` monté) : poussée.
+- Écriture d'un autre onglet (`storage`) : `planifierPush` appelé comme avant.
+- `modifierSlotDistant`, `appliquerGenerationCycle` et la fusion US-21 : aucun `sauvegarder_planning` déclenché.
+- `reinitialiserCacheFoyer` : aucun push planifié.
 
-### Task A2 : `appliquerDistant`
-- Remplace les 4 sites `hydratationEnCours = true; storePlanning.ecrire(...); hydratationEnCours = gardeAvant` (1412, 1778, 2016, 2240).
-- Test : `appliquerDistant` pendant une hydratation en cours ne lève pas la garde de l'appelant (garde réentrante, revue #301).
+---
 
-## Phase B : écrire = intention
+### Task 1: canal `surEditionPlanning` dans `lib/stockage.ts`
 
-### Task B1 : `ecrireSemaine` et migration des pages
-- `app/planning/page.tsx` (643, 704, 725, 747), `app/recettes/page.tsx:69`, `lib/stockage.ts` (annuler) passent par `ecrireSemaine`. `sauvegarderRemplacementSlot` est supprimée (test de suppression : simple relais).
+**Files:**
+- Modify: `lib/stockage.ts`
+- Test: `tests/stockage.test.ts`
 
-### Task B2 : retrait de `storePlanning.sAbonner(planifierPush)`
-- `ecrireSemaine` appelle `planifierPush` explicitement ; `hydratationEnCours` disparaît.
-- `grep -rn "storePlanning\.ecrire" app components lib` → seulement dans le dépôt.
-- Règle `sync-planning.md` : remplacer l'entrée « jumeaux » par « toute écriture du planning passe par le dépôt ».
+**Interfaces:**
+- Produces: `export function surEditionPlanning(rappel: () => void): () => void` : abonne `rappel` aux trois écritures d'intention ET à `window` `storage` ; renvoie le désabonnement (les deux).
+
+- [ ] **Step 1: Tests qui échouent** :
+  - `sauvegarderRemplacementSlot`, `sauvegarderPlanningComplet` et `restaurerSnapshotAnnulation` (snapshot valide) appellent le rappel une fois ;
+  - `storePlanning.ecrire` seul ne l'appelle pas ;
+  - un `StorageEvent` sur `window` l'appelle ;
+  - après désabonnement, plus aucun appel.
+- [ ] **Step 2:** `npx vitest run tests/stockage.test.ts` → échec.
+- [ ] **Step 3:** Implémenter.
+- [ ] **Step 4:** Vert.
+- [ ] **Step 5:** Commit `refactor: canal d'édition du planning dans stockage (#363)`.
+
+### Task 2: la synchro s'abonne au canal ; gardes retirées
+
+**Files:**
+- Modify: `lib/sync.ts` (`demarrerSync` ≈ l. 2380 ; gardes ≈ l. 1442, 1808, 2270 ; commentaires des fonctions concernées)
+- Test: `lib/sync.test.ts` (8 sites qui simulent un geste par `storePlanning.ecrire` → `sauvegarderRemplacementSlot`, via `await import("@/lib/stockage")` comme les tests existants ; nouveau test)
+- Doc: `.claude/rules/sync-planning.md` (première puce de « Planning » et puce « Tout patch de `storePlanning`… sous la garde `hydratationEnCours` »), `CHANGELOG.md` : aucune entrée (refactor sans effet visible).
+
+**Interfaces:**
+- Consumes: `surEditionPlanning` (Task 1).
+
+- [ ] **Step 1: Test qui échoue** : synchro démarrée (`useSync`), `storePlanning.ecrire(...)` direct → après 1 200 ms, `sauvegarderPlanningDistant` non appelé et `planning_dirty` absent ; `sauvegarderRemplacementSlot(...)` → appelé.
+- [ ] **Step 2:** Basculer les 8 sites des tests existants sur `sauvegarderRemplacementSlot` ; `npx vitest run lib/sync.test.ts` → seul le nouveau test échoue.
+- [ ] **Step 3:** `demarrerSync` : `surEditionPlanning(planifierPush)` ; retirer les trois `gardeAvant` (écriture directe du store).
+- [ ] **Step 4:** `npx vitest run lib/sync.test.ts tests` vert ; `npx tsc --noEmit` ; `npx eslint lib/sync.ts lib/stockage.ts`.
+- [ ] **Step 5:** E2E staging, spec par spec : `planning`, `planning-edition`, `planning-grille`, `edition-vue-cycle`, `alerte-planning`, `coherence-semaine-cycle`, `cycle-courses`, `lien-cycle` (`--retries=2`).
+- [ ] **Step 6:** Commit `refactor: seul un geste de l'utilisateur pousse le planning (#363)` ; issue pour le bug latent de la décision 3 ; `graphify update .`.
