@@ -289,6 +289,8 @@ export async function chargerCochesDistantes(
     .from("etat_courses_article")
     .select("cle, quantite")
     .eq("ancre", ancre)
+    // Une ligne `coche = false` est une décoche horodatée, jamais une coche (#362).
+    .eq("coche", true)
 
   if (error) {
     throw new Error(`Chargement des coches distantes impossible : ${error.message}`)

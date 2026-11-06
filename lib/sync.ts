@@ -1078,6 +1078,7 @@ type LigneArticle = Partial<{
   ancre: string;
   cle: string;
   quantite: number;
+  coche: boolean;
 }>;
 
 function surEventCoche(
@@ -1099,8 +1100,10 @@ function surEventCoche(
   if (ligne.foyer_id && ligne.foyer_id !== foyer) return;
   if (ligne.ancre && ligne.ancre !== ancre) return;
   if (!ligne.cle) return;
+  // Une ligne `coche = false` (décoche à ligne conservée, #362) est une décoche,
+  // comme un DELETE.
   appliquerEventLocal(
-    payload.eventType === "DELETE"
+    payload.eventType === "DELETE" || ligne.coche === false
       ? { type: "supprime", cle: ligne.cle }
       : { type: "upsert", cle: ligne.cle, quantite: Number(ligne.quantite) }
   );
