@@ -73,7 +73,11 @@ export async function POST(request: Request) {
   // fausse viserait un autre cycle que celui que l'exécuteur lit et coche.
   let ancre: string
   try {
-    const resolution = await resoudreCycle(supabase, { date: corps.ancre }, aujourdhuiParis())
+    const resolution = await resoudreCycle(
+      supabase,
+      corps.ancre === undefined ? {} : { date: corps.ancre },
+      aujourdhuiParis()
+    )
     if (!resolution.ok) {
       return apiError(ROUTE, `ancre ${resolution.motif}`, "Cycle invalide.", 400)
     }

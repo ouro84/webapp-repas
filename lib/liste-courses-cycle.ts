@@ -37,7 +37,6 @@ export async function chargerListeCoursesCycle(
   supabase: ClientSupabase,
   { ancre, longueur }: { ancre: string; longueur: number }
 ): Promise<ListeCoursesCycle> {
-
   const resultats = await Promise.all(
     semainesDuCycle(ancre, longueur).map((s) => chargerPlanningDistant(s, supabase))
   )
