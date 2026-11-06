@@ -2462,6 +2462,20 @@ describe("coches d'ingrédients : écho Realtime d'une écriture dépassée (RG-
     return { storeCoches, waitFor, act, coches, evenement };
   }
 
+  it("un UPDATE coche = false (décoche à ligne conservée, #362) décoche l'article", async () => {
+    const { storeCoches, waitFor, act, coches } = await preparer();
+    act(() => storeCoches.ecrire(JSON.stringify({ "pain|piece": 1 })));
+    await waitFor(() => expect(localStorage.getItem("courses_dirty")).toBeNull(), { timeout: 3000 });
+    const abonnement = realtime.rappels.find((r) => r.filtre.table === "etat_courses_article")!;
+    const ligne = (coche: boolean) => ({ foyer_id: "foyer-1", ancre: ANCRE, cle: "pain|piece", quantite: 1, coche });
+
+    act(() => abonnement.rappel({ eventType: "UPDATE", new: ligne(false), old: {} }));
+    expect(coches()).toEqual({});
+
+    act(() => abonnement.rappel({ eventType: "UPDATE", new: ligne(true), old: {} }));
+    expect(coches()).toEqual({ "pain|piece": 1 });
+  });
+
   it("l'écho de la coche reçu après la décoche ne recoche pas et la décoche part", async () => {
     const { storeCoches, waitFor, act, coches, evenement } = await preparer();
 

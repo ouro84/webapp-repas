@@ -74,6 +74,16 @@ describe("lectures du cycle — client injecté", () => {
     expect(filtre(appels[0], "eq", "ancre")).toBe("2026-10-29")
   })
 
+  it("chargerCochesDistantes ne lit que les coches actives (coche = true, #362)", async () => {
+    const { client, appels } = creerSupabaseMock({
+      tables: { etat_courses_article: { data: [], error: null } },
+    })
+
+    await chargerCochesDistantes("2026-10-29", client)
+    // Une ligne `coche = false` est une décoche horodatée, jamais une coche.
+    expect(filtre(appels[0], "eq", "coche")).toBe(true)
+  })
+
   it("chargerArticlesManuelsDistants mappe les lignes de l'ancre", async () => {
     const { client, appels } = creerSupabaseMock({
       tables: {
