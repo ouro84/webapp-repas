@@ -116,6 +116,11 @@ const DELAI_DEBOUNCE_MS = 800;
  * (CLE_SEMAINE) est conservée : elle reste pertinente d'un foyer à l'autre.
  */
 export function reinitialiserCacheFoyer(): void {
+  // D'abord arrêter les moteurs de l'ancien foyer : un flush en vol finit sans
+  // réécrire sa file purgée ci-dessous ni continuer avec les opérations
+  // suivantes, et le blob effacé ci-dessous n'est plus pris pour un geste.
+  moteurIngredients?.arreter();
+  moteurArticlesManuels?.arreter();
   storePlanning.effacer();
   storeCoches.effacer();
   localStorage.removeItem(CLE_MAJ);
@@ -129,6 +134,7 @@ export function reinitialiserCacheFoyer(): void {
   // foyer abandonnées) ; la page est rechargée ensuite par l'appelant.
   moteurIngredients = null;
   moteurArticlesManuels = null;
+  etatPlanning = "synchronise";
   etatsMoteurs.coches = "synchronise";
   etatsMoteurs.coches_manuels = "synchronise";
   blobConnu = {};
@@ -153,27 +159,49 @@ function definirEtat(nouvel: EtatSync): void {
   for (const rappel of abonnesEtat) rappel();
 }
 
-// Indicateur commun aux deux moteurs de coche (#362) : chacun annonce son
-// propre état, l'indicateur prend le pire (« hors-ligne » > « sauvegarde » >
-// « synchronise »). Pourquoi : un moteur qui finit son envoi ne doit pas
-// annoncer « synchronise » pendant que l'autre garde des coches en file.
+// Indicateur composé (#362) : le planning (push, relecture US-21) et chacun
+// des deux moteurs de coche annoncent leur propre état ; l'indicateur affiche
+// le pire (« hors-ligne » > « sauvegarde » > « synchronise »). Pourquoi : un
+// moteur qui finit son envoi annonçait « synchronise » pendant qu'un push
+// planning restait en échec, et un push réussi le faisait pendant que des
+// coches restaient en file.
 type NomMoteur = "coches" | "coches_manuels";
+let etatPlanning: EtatSync = "synchronise";
 const etatsMoteurs: Record<NomMoteur, EtatSync> = {
   coches: "synchronise",
   coches_manuels: "synchronise",
 };
 
+/** Pire des états (« hors-ligne » > « sauvegarde » > « synchronise »). */
+export function composerEtatSync(etats: readonly EtatSync[]): EtatSync {
+  if (etats.includes("hors-ligne")) return "hors-ligne";
+  if (etats.includes("sauvegarde")) return "sauvegarde";
+  return "synchronise";
+}
+
+// « synchronise » n'est jamais publié avec des coches en file : un moteur neuf
+// (file relue après un rechargement, jamais envoyée) annonce « synchronise »
+// sans avoir rien envoyé. Sa file est alors relancée ; son flush publiera
+// « sauvegarde » puis son vrai état. Sans effet si un envoi est en cours.
+function publierEtat(): void {
+  const compose = composerEtatSync([etatPlanning, ...Object.values(etatsMoteurs)]);
+  if (compose === "synchronise" && cochesEnAttente()) {
+    rejouerCoches();
+    return;
+  }
+  definirEtat(compose);
+}
+
+// État du planning (push, relecture US-21, lectures de semaine ou de cycle).
+function definirEtatPlanning(nouvel: EtatSync): void {
+  etatPlanning = nouvel;
+  publierEtat();
+}
+
 function surEtatMoteur(nom: NomMoteur): (nouvel: EtatSync) => void {
   return (nouvel) => {
     etatsMoteurs[nom] = nouvel;
-    const etats = Object.values(etatsMoteurs);
-    definirEtat(
-      etats.includes("hors-ligne")
-        ? "hors-ligne"
-        : etats.includes("sauvegarde")
-          ? "sauvegarde"
-          : "synchronise"
-    );
+    publierEtat();
   };
 }
 
@@ -370,6 +398,7 @@ function moteurArticles(): MoteurCoches<null> {
     stockage: stockageMoteurCoches,
     surEtat: surEtatMoteur("coches_manuels"),
     journal: (message, erreur) => console.error(message, erreur),
+    estDefinitive: estEchecDefinitif,
   }));
 }
 
@@ -525,7 +554,14 @@ export async function basculerCocheArticle(ingredient: Ingredient): Promise<void
     if (ingredient.id) basculerCocheArticleManuel(ingredient.id);
     return;
   }
-  ecrireBlob(basculerCoche(cochesLocales(), ingredient));
+  // Geste sur UN article : décocher le dernier coché vide le blob, mais ne
+  // doit pas devenir un vidage de l'ancre (cf. `gesteUnitaire`).
+  gesteUnitaire = true;
+  try {
+    ecrireBlob(basculerCoche(cochesLocales(), ingredient));
+  } finally {
+    gesteUnitaire = false;
+  }
 }
 
 /** « Tout décocher » (RG-13, RG-41) : blob vidé et articles manuels décochés
@@ -806,7 +842,7 @@ async function pousser(): Promise<void> {
   pushEnCours = true;
   rePushDemande = false; // toute écriture pendant ce push le repassera à true
   ecrituresPlanningEnVol++; // anti-écho US-21 (#352), cf. surEventPlanning
-  definirEtat("sauvegarde");
+  definirEtatPlanning("sauvegarde");
   try {
     const majServeur = await sauvegarderPlanningDistant(planning);
     retenirHorodatageEcrit(planning.semaine, majServeur);
@@ -816,9 +852,9 @@ async function pousser(): Promise<void> {
     // Ne lever `dirty` que si AUCUNE écriture locale n'est survenue pendant le
     // push (sinon le local a re-divergé → on garde dirty et on rejoue).
     if (!rePushDemande) localStorage.removeItem(CLE_DIRTY);
-    definirEtat("synchronise");
+    definirEtatPlanning("synchronise");
   } catch (erreur) {
-    definirEtat("hors-ligne");
+    definirEtatPlanning("hors-ligne");
     console.error("Synchronisation du planning échouée (sera rejouée).", erreur);
   } finally {
     pushEnCours = false;
@@ -887,9 +923,15 @@ let applicationDistanteEnCours = false;
 // Dernier blob connu de la synchro (gestes déjà confiés au moteur + écritures
 // du moteur) : référence du diff des gestes.
 let blobConnu: Coches = {};
-// Compte les gestes confiés au moteur : une lecture des coches distantes
-// pendant laquelle un geste a été fait est relue (cf. lireEtHydraterCoches).
+// Compte les gestes confiés au moteur et ses écritures commitées : une lecture
+// des coches distantes qui chevauche l'un ou l'autre est relue (cf.
+// lireEtHydraterCoches).
 let gestesCoches = 0;
+// Vrai pendant l'écriture du blob par `basculerCocheArticle` (un seul article) :
+// un blob vidé y est une décoche unitaire, pas « Tout décocher ». Pourquoi :
+// un vidage de l'ancre effaçait en base la coche d'un autre membre pas encore
+// reçue. « Tout décocher », RG-13 et l'annulation US-09 gardent le vidage.
+let gesteUnitaire = false;
 
 // Semaine du planning actif (#5) — clé de la chaîne PLANNING (push + temps réel
 // planning sur /planning). NE clé PLUS les coches (cf. ancreActive).
@@ -972,6 +1014,18 @@ const stockageMoteurCoches: StockageCoches = {
   },
 };
 
+/** Échec d'écriture de coche définitif (règle 5 du moteur) : statut HTTP 4xx
+ *  hors 408 / 429, porté par `cause.status` (`lib/persistance.ts`). Une erreur
+ *  réseau (statut 0 ou absent), un 5xx, 408 ou 429 restent transitoires : rejoués.
+ *  Pourquoi : rejouée, une écriture refusée (RLS, requête invalide) bloquait
+ *  toute la file à vie ; abandonnée, elle est journalisée (un geste perdu). */
+export function estEchecDefinitif(erreur: unknown): boolean {
+  if (!(erreur instanceof Error)) return false;
+  const statut = (erreur.cause as { status?: unknown } | undefined)?.status;
+  if (typeof statut !== "number" || statut < 400 || statut >= 500) return false;
+  return statut !== 408 && statut !== 429;
+}
+
 // Moteur des coches d'ingrédients, créé au premier usage : il relit sa file
 // persistée à ce moment-là (jamais au chargement du module, prérendu compris).
 let moteurIngredients: MoteurCoches<number> | null = null;
@@ -982,11 +1036,23 @@ function moteurCoches(): MoteurCoches<number> {
     transport: {
       // Décoche = ligne conservée `coche = false` (upsert) : la cible ne
       // disparaît jamais, le transport ne renvoie donc jamais `null`.
-      ecrire: (ancre, cle, etat) =>
-        etat.coche
-          ? cocherArticleDistant(ancre, cle, etat.valeur)
-          : decocherArticleDistant(ancre, cle),
-      vider: (ancre) => viderCochesDistantes(ancre),
+      // Chaque écriture commitée compte comme un geste (jumeau de
+      // `saisiesArticlesManuels++`) : une lecture qui la chevauche est relue.
+      // Pourquoi : au rechargement, le moteur neuf n'a pas encore d'ancre
+      // affichée (règle 6 sautée) ; la coche rejouée, commitée pendant la
+      // première lecture, était décochée par son instantané.
+      async ecrire(ancre, cle, etat) {
+        const maj = etat.coche
+          ? await cocherArticleDistant(ancre, cle, etat.valeur)
+          : await decocherArticleDistant(ancre, cle);
+        gestesCoches += 1;
+        return maj;
+      },
+      async vider(ancre) {
+        const lignes = await viderCochesDistantes(ancre);
+        gestesCoches += 1;
+        return lignes;
+      },
     },
     vue: {
       appliquer(cle, etat) {
@@ -1002,6 +1068,7 @@ function moteurCoches(): MoteurCoches<number> {
     stockage: stockageMoteurCoches,
     surEtat: surEtatMoteur("coches"),
     journal: (message, erreur) => console.error(message, erreur),
+    estDefinitive: estEchecDefinitif,
   }));
 }
 
@@ -1035,7 +1102,7 @@ function surChangementCoches(): void {
   if (ancre === null) return; // aucun cycle affiché : rien à pousser
   gestesCoches += 1;
   const moteur = moteurCoches();
-  if (Object.keys(local).length === 0) {
+  if (Object.keys(local).length === 0 && !gesteUnitaire) {
     moteur.toutDecocher(ancre);
     return;
   }
@@ -1088,6 +1155,9 @@ let minuteurRelectureCoches: ReturnType<typeof setTimeout> | null = null;
 let tentativesRelectureCoches = 0;
 let ancreRelectureCoches: string | null = null;
 
+// Invariant : sans effet avant `demarrerSyncCoches` (et après `couperTempsReel`) :
+// seule `/courses` (`useSyncCourses`) relit les coches en tâche de fond.
+// `/planning` (`hydraterCoches`) n'en relit qu'une fois, sans nouvelle tentative.
 function planifierRelectureCoches(ancre: string): void {
   if (!relectureCochesAutorisee) return;
   if (typeof navigator !== "undefined" && navigator.onLine === false) return;
@@ -1116,13 +1186,29 @@ function annulerRelectureCoches(): void {
   ancreRelectureCoches = null;
 }
 
-// Relit les coches du cycle (ingrédients puis articles manuels) ; un échec est
+// Lit les coches du cycle : ingrédients et articles manuels (#216, même ancre ;
+// leur coche est hydratée dans son moteur, qui garde le local d'un article dont
+// la coche est en file ; une saisie faite pendant la lecture n'est pas écrasée,
+// cf. chargerArticlesManuelsDansCache). Les deux lectures partent ensemble et
+// la première erreur est relancée après les deux. Pourquoi : en séquence, une
+// lecture des coches en échec sautait celle des articles (liste sans ses
+// articles manuels jusqu'à la nouvelle tentative).
+async function lireCochesDuCycle(ancre: string): Promise<void> {
+  const resultats = await Promise.allSettled([
+    lireEtHydraterCoches(ancre),
+    chargerArticlesManuelsDansCache(ancre),
+  ]);
+  for (const resultat of resultats) {
+    if (resultat.status === "rejected") throw resultat.reason;
+  }
+}
+
+// Relit les coches du cycle (ingrédients et articles manuels) ; un échec est
 // journalisé et retenté plus tard.
 async function relireCoches(ancre: string): Promise<void> {
   try {
-    await lireEtHydraterCoches(ancre);
+    await lireCochesDuCycle(ancre);
     if (ancreActive() !== ancre) return;
-    await chargerArticlesManuelsDansCache(ancre);
     annulerRelectureCoches();
   } catch (erreur) {
     console.error("Relecture des coches distantes échouée.", erreur);
@@ -1426,20 +1512,21 @@ function annulerNouvelleRelecture(): void {
 // tentative différée.
 function relectureRatee(semaine: string): void {
   localStorage.setItem(CLE_A_RELIRE, semaine);
-  definirEtat("hors-ligne");
+  definirEtatPlanning("hors-ligne");
   planifierNouvelleRelecture(semaine);
 }
 
 // Toute lecture réussie de la semaine rétablit l'indicateur (le push éventuel
 // le repassera par « sauvegarde ») et lève la relecture à refaire, seulement si
 // c'est la MÊME semaine (#355) : lire une autre semaine n'intègre pas le
-// changement distant non relu de celle-ci.
+// changement distant non relu de celle-ci. Les coches en file gardent l'état de
+// leurs moteurs (indicateur composé, cf. `publierEtat`).
 function relectureReussie(semaine: string): void {
   if (lireRelectureARefaire() === semaine) {
     localStorage.removeItem(CLE_A_RELIRE);
     annulerNouvelleRelecture();
   }
-  if (!pushEnCours && !cochesEnAttente()) definirEtat("synchronise");
+  if (!pushEnCours) definirEtatPlanning("synchronise");
 }
 
 // Re-pull forcé du planning de la semaine puis, si le contenu a changé, alerte.
@@ -2026,8 +2113,10 @@ async function rafraichirCycleGenere(): Promise<void> {
   // part après une écriture déjà en vol (la vue est vidée au passage).
   // Articles manuels : `sauvegarder_cycle` ne touche pas `article_manuel`
   // (RG-41, seule une purge de cycle les touche), leur file reste intacte.
+  // Seule la file de CETTE ancre compte : une opération d'un autre cycle
+  // (hors ligne) ne doit pas faire partir un vidage inutile.
   const moteur = moteurCoches();
-  if (moteur.enAttente()) moteur.toutDecocher(courant.ancre);
+  if (moteur.enAttente(courant.ancre)) moteur.toutDecocher(courant.ancre);
   viderBlobLocal();
   await rechargerProjectionCycle(courant.ancre, courant.longueur);
 }
@@ -2171,7 +2260,7 @@ async function chargerSemaineDansCache(semaine: string): Promise<boolean> {
     ecrireConfirme(distant ? distant.planning : null);
     localStorage.removeItem(CLE_DIRTY);
     relectureReussie(semaine); // lève aussi la relecture à refaire (#355)
-    definirEtat("synchronise");
+    definirEtatPlanning("synchronise");
     lu = true;
   } catch (erreur) {
     console.error("Chargement de la semaine échoué.", erreur);
@@ -2262,20 +2351,19 @@ async function chargerCycleDansCache(
     // relire (cf. lireEtHydraterCoches).
     rejouerCoches();
     try {
-      await lireEtHydraterCoches(ancre);
-      // Articles manuels (#216) : scopés par la même ancre ; leur coche est
-      // hydratée dans son moteur (#362), qui garde le local d'un article dont
-      // la coche est en file. Une saisie faite pendant la lecture n'est pas
-      // écrasée par son résultat (cf. chargerArticlesManuelsDansCache).
-      await chargerArticlesManuelsDansCache(ancre);
+      await lireCochesDuCycle(ancre);
       annulerRelectureCoches();
     } catch (erreur) {
       planifierRelectureCoches(ancre); // sinon le temps réel resterait muet
       throw erreur;
     }
     // Des coches encore en file gardent l'indicateur des moteurs (« sauvegarde »
-    // ou « hors-ligne ») : ils repassent eux-mêmes à « synchronise » à la fin.
-    if (!cochesEnAttente()) definirEtat("synchronise");
+    // ou « hors-ligne ») : ils repassent eux-mêmes à « synchronise » à la fin
+    // (indicateur composé, cf. `publierEtat`). Un push planning en échec ou une
+    // relecture US-21 à refaire gardent aussi le leur.
+    if (!pushEnCours && !estDirty() && lireRelectureARefaire() === null) {
+      definirEtatPlanning("synchronise");
+    }
   } catch (erreur) {
     console.error("Chargement du cycle échoué.", erreur);
   }
@@ -2546,11 +2634,16 @@ function demarrerSyncCoches(): () => void {
   // Retour en ligne : la file des coches part, puis les coches du cycle
   // affiché sont relues (événements manqués hors ligne ; hydratation jamais
   // faite si la page a été chargée hors ligne, sans quoi le moteur ignore
-  // les événements Realtime).
+  // les événements Realtime). Le quota de nouvelles tentatives est réarmé
+  // (épuisé hors ligne, il ne retentait plus rien), et les canaux temps réel
+  // ratés hors ligne (foyer illisible) sont rouverts ; idempotent sinon.
   const surRetourEnLigne = () => {
+    annulerRelectureCoches();
     rejouerCoches();
     const ancre = ancreActive();
     if (ancre === null) return;
+    void synchroniserAbonnementCoches(ancre);
+    void synchroniserAbonnementArticlesManuels(ancre);
     void relireCoches(ancre);
   };
   window.addEventListener("online", surRetourEnLigne);
