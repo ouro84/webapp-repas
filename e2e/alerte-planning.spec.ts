@@ -15,8 +15,8 @@
 // déclenche à nouveau « en magasin » (levée du test.fixme de PR1 #257).
 
 import { test, expect } from "./fixtures";
-import type { Browser, Page, WebSocket } from "@playwright/test";
-import { nettoyerEtatDistant } from "./helpers";
+import type { Browser, Page } from "@playwright/test";
+import { abonnementRealtimePret, nettoyerEtatDistant } from "./helpers";
 
 // Ouvre une page authentifiée dans un contexte neuf (un « appareil »).
 async function ouvrirAppareil(browser: Browser): Promise<Page> {
@@ -65,87 +65,6 @@ test("un membre en magasin est alerté quand le planning change à la maison (US
   await a.context().close();
   await b.context().close();
 });
-
-// Résout quand Supabase Realtime confirme un abonnement `postgres_changes`
-// (message `system` « ok ») sur un topic `realtime:<prefixe>…` :
-//  - `planning:` = planning de la semaine (`/planning`, `planning:<foyer>:<semaine>`) ;
-//  - `planning-cycle:` = planning du cycle (`/courses`, #259).
-// À appeler AVANT `goto` : le WebSocket s'ouvre au chargement, et `page.on("websocket")`
-// ne rejoue pas une connexion déjà ouverte. Signal réel plutôt qu'une attente fixe.
-// Rejette après `delaiMs` avec un message qui nomme le protocole attendu, ou dès que
-// la page se ferme avant le signal (#357 : sinon la promesse restait en suspens et
-// l'appelant n'échouait qu'au timeout du test), et retire ses écouteurs (WebSocket
-// et page) dès que le signal est reçu, le délai écoulé ou la page fermée.
-function abonnementRealtimePret(
-  page: Page,
-  prefixe: "planning:" | "planning-cycle:",
-  delaiMs = 30_000
-): Promise<void> {
-  const promesse = new Promise<void>((resoudre, rejeter) => {
-    const ecouteurs: Array<() => void> = [];
-    const nettoyer = () => {
-      clearTimeout(minuteur);
-      page.off("websocket", surWebSocket);
-      page.off("close", surFermeture);
-      for (const retirer of ecouteurs) retirer();
-    };
-    const surFermeture = () => {
-      nettoyer();
-      rejeter(
-        new Error(
-          `Page fermée avant la confirmation de l'abonnement temps réel « realtime:${prefixe} ».`
-        )
-      );
-    };
-    const minuteur = setTimeout(() => {
-      nettoyer();
-      rejeter(
-        new Error(
-          `Abonnement temps réel « realtime:${prefixe} » non confirmé après ${delaiMs} ms : ` +
-            "trame attendue = message `system` avec `extension: postgres_changes` et " +
-            "`status: ok` (serialiseur 2.0.0 de realtime-js : [join_ref, ref, topic, event, payload])."
-        )
-      );
-    }, delaiMs);
-    const surWebSocket = (ws: WebSocket) => {
-      const surTrame = ({ payload }: { payload: string | Buffer }) => {
-        if (typeof payload !== "string") return;
-        try {
-          type Charge = { extension?: string; status?: string };
-          const brut: unknown = JSON.parse(payload);
-          // Sérialiseur 2.0.0 de realtime-js : [join_ref, ref, topic, event, payload] ;
-          // 1.0.0 : objet { topic, event, payload }.
-          const [topic, event, charge] = Array.isArray(brut)
-            ? [brut[2] as string, brut[3] as string, brut[4] as Charge]
-            : [
-                (brut as { topic?: string }).topic,
-                (brut as { event?: string }).event,
-                (brut as { payload?: Charge }).payload,
-              ];
-          if (
-            topic?.startsWith(`realtime:${prefixe}`) &&
-            event === "system" &&
-            charge?.extension === "postgres_changes" &&
-            charge.status === "ok"
-          ) {
-            nettoyer();
-            resoudre();
-          }
-        } catch {
-          // Trame non JSON (heartbeat binaire, etc.) : ignorée.
-        }
-      };
-      ws.on("framereceived", surTrame);
-      ecouteurs.push(() => ws.off("framereceived", surTrame));
-    };
-    page.on("websocket", surWebSocket);
-    page.on("close", surFermeture);
-  });
-  // Un rejet après la fin d'un test qui a échoué plus tôt ne doit pas planter le worker ;
-  // l'appelant qui attend la promesse reçoit bien l'erreur.
-  promesse.catch(() => {});
-  return promesse;
-}
 
 // #355 : A a une édition en attente (son push a échoué, réseau coupé) quand B
 // modifie un AUTRE créneau. La relecture US-21 de A rejoue son édition sur le

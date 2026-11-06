@@ -48,6 +48,8 @@ test.beforeEach(async ({ page, request }) => {
       "courses_cochees_maj",
       "coches_en_attente",
       "coches_maj",
+      "coches_manuels_en_attente",
+      "coches_manuels_maj",
       "semaine_affichee",
     ]) {
       localStorage.removeItem(c);
@@ -350,6 +352,8 @@ test("l'état coché est resynchronisé depuis la base sur un device au cache vi
     localStorage.removeItem("courses_cochees_maj");
     localStorage.removeItem("coches_en_attente");
     localStorage.removeItem("coches_maj");
+    localStorage.removeItem("coches_manuels_en_attente");
+    localStorage.removeItem("coches_manuels_maj");
   });
   await page.reload();
 

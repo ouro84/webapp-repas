@@ -21,9 +21,14 @@
 // `::view-transition` (cf. e2e.md). Le sujet ici est la synchro, pas l'animation.
 
 import { test, expect, attacherGardeCrash } from "./fixtures";
-import type { APIRequestContext, Browser, Page, WebSocket } from "@playwright/test";
+import type { APIRequestContext, Browser, Page } from "@playwright/test";
 import { recetteFixture } from "../tests/fixtures/recettes";
-import { jetonTest, nettoyerEtatDistant, reinitialiserJourCoursesDistant } from "./helpers";
+import {
+  abonnementRealtimePret,
+  jetonTest,
+  nettoyerEtatDistant,
+  reinitialiserJourCoursesDistant,
+} from "./helpers";
 import { semaineISO } from "../lib/semaines";
 import { ancreParDefaut } from "../lib/cycles";
 import type { Jour, Planning, Recette } from "../types";
@@ -56,73 +61,6 @@ function planningDeterministe(): Planning {
     semaine: semaineISO(),
     jours: choisies.map((recette, i) => ({ jour: jours[i]!, diner: recette })),
   };
-}
-
-// Résout quand le canal temps réel dont le topic commence par `realtime:<prefixe>`
-// confirme son abonnement `postgres_changes` (même protocole que
-// `abonnementRealtimePret` d'alerte-planning.spec : sérialiseur 2.0.0 de
-// realtime-js, trames `[join_ref, ref, topic, event, payload]`). À poser AVANT
-// le `goto`. Rejette après `delaiMs` ou si la page se ferme avant le signal.
-function abonnementPret(
-  page: Page,
-  prefixe: "coches:" | "articles-manuels:",
-  delaiMs = 30_000
-): Promise<void> {
-  const promesse = new Promise<void>((resoudre, rejeter) => {
-    const ecouteurs: Array<() => void> = [];
-    const nettoyer = () => {
-      clearTimeout(minuteur);
-      page.off("websocket", surWebSocket);
-      page.off("close", surFermeture);
-      for (const retirer of ecouteurs) retirer();
-    };
-    const surFermeture = () => {
-      nettoyer();
-      rejeter(new Error(`Page fermée avant l'abonnement temps réel « realtime:${prefixe} ».`));
-    };
-    const minuteur = setTimeout(() => {
-      nettoyer();
-      rejeter(
-        new Error(
-          `Abonnement temps réel « realtime:${prefixe} » non confirmé après ${delaiMs} ms ` +
-            "(trame attendue : `system`, `extension: postgres_changes`, `status: ok`)."
-        )
-      );
-    }, delaiMs);
-    const surWebSocket = (ws: WebSocket) => {
-      const surTrame = ({ payload }: { payload: string | Buffer }) => {
-        if (typeof payload !== "string") return;
-        try {
-          type Charge = { extension?: string; status?: string };
-          const brut: unknown = JSON.parse(payload);
-          const [topic, event, charge] = Array.isArray(brut)
-            ? [brut[2] as string, brut[3] as string, brut[4] as Charge]
-            : [
-                (brut as { topic?: string }).topic,
-                (brut as { event?: string }).event,
-                (brut as { payload?: Charge }).payload,
-              ];
-          if (
-            topic?.startsWith(`realtime:${prefixe}`) &&
-            event === "system" &&
-            charge?.extension === "postgres_changes" &&
-            charge.status === "ok"
-          ) {
-            nettoyer();
-            resoudre();
-          }
-        } catch {
-          // Trame non JSON (heartbeat binaire, etc.) : ignorée.
-        }
-      };
-      ws.on("framereceived", surTrame);
-      ecouteurs.push(() => ws.off("framereceived", surTrame));
-    };
-    page.on("websocket", surWebSocket);
-    page.on("close", surFermeture);
-  });
-  promesse.catch(() => {});
-  return promesse;
 }
 
 // Gardes anti-crash des pages créées à la main (cf. e2e/fixtures.ts).
@@ -167,8 +105,8 @@ async function ouvrirCourses(browser: Browser, planning: Planning): Promise<Page
   );
   const page = await context.newPage();
   gardesCrash.push(attacherGardeCrash(page));
-  const coches = abonnementPret(page, "coches:");
-  const articles = abonnementPret(page, "articles-manuels:");
+  const coches = abonnementRealtimePret(page, "coches:");
+  const articles = abonnementRealtimePret(page, "articles-manuels:");
   await page.goto("/courses");
   await expect(page.getByRole("checkbox", { name: /tomate/ })).toBeVisible();
   await Promise.all([coches, articles]);
@@ -220,6 +158,15 @@ test("coche et décoche concurrentes du même article : A, B et la base finissen
   try {
     const tomateA = deviceA.getByRole("checkbox", { name: /tomate/ });
     const tomateB = deviceB.getByRole("checkbox", { name: /tomate/ });
+    // Écritures de coche de B (upsert REST) : prouve que son clic atteint la
+    // base, et pas seulement son écran (sinon « A, B et la base d'accord »
+    // passerait avec un B qui n'a rien envoyé).
+    let ecrituresB = 0;
+    deviceB.on("requestfinished", (requete) => {
+      if (requete.method() !== "GET" && requete.url().includes("/rest/v1/etat_courses_article")) {
+        ecrituresB += 1;
+      }
+    });
 
     // A coche puis décoche en moins de 300 ms, B coche en même temps. Le délai
     // fixe est le sujet du test (deux gestes rapprochés), pas une attente d'état.
@@ -236,6 +183,7 @@ test("coche et décoche concurrentes du même article : A, B et la base finissen
     // commitées), puis même état chez A, chez B et en base.
     await attendreFileVide(deviceA, "coches_en_attente");
     await attendreFileVide(deviceB, "coches_en_attente");
+    expect(ecrituresB, "le clic de B doit avoir écrit en base").toBeGreaterThan(0);
     const lireEtats = async () => ({
       a: await tomateA.isChecked(),
       b: await tomateB.isChecked(),
@@ -283,13 +231,24 @@ test("coche d'un article manuel hors ligne : pas de toast, enregistrée au retou
     await expect(deviceA.locator("[data-sonner-toast]")).toHaveCount(0, { timeout: 10_000 });
 
     // A hors ligne coche l'article : coché à l'écran, mis en file, sans toast.
+    // L'absence de toast ne se juge qu'APRÈS la preuve que l'échec réseau a été
+    // traité (journal du moteur), puis reste stable : sinon `toHaveCount(0)`
+    // passerait à son premier essai, avant tout toast éventuel.
     await deviceA.context().setOffline(true);
+    const echecTraite = deviceA.waitForEvent("console", {
+      predicate: (message) => message.text().includes("Synchronisation des coches échouée"),
+      timeout: 15_000,
+    });
     await deviceA.getByRole("checkbox", { name: nom }).click();
     await expect(deviceA.getByRole("checkbox", { name: nom })).toBeChecked();
+    await echecTraite;
     await expect
       .poll(() => deviceA.evaluate(() => localStorage.getItem("coches_manuels_en_attente")))
       .not.toBeNull();
-    await expect(deviceA.locator("[data-sonner-toast]")).toHaveCount(0);
+    for (let i = 0; i < 4; i += 1) {
+      expect(await deviceA.locator("[data-sonner-toast]").count()).toBe(0);
+      await deviceA.waitForTimeout(250);
+    }
     expect(await cocheEnBase(request, session, cheminArticle)).toBe(false);
     await expect(deviceB.getByRole("checkbox", { name: nom })).not.toBeChecked();
 
