@@ -817,10 +817,13 @@ let minuteurCoches: ReturnType<typeof setTimeout> | null = null;
 let applicationDistanteEnCours = false;
 // Dernier état réconcilié avec la base — référence du diff.
 let cochesConnues: Coches = {};
-// Blob en cours d'écriture par `flusherCoches` (null hors flush) : un event
-// temps réel sur une clé qu'il modifie peut être l'écho de cette écriture
-// (cf. appliquerEventLocal, #357).
-let cochesEnVol: Coches | null = null;
+// Clés des ops du flush en cours dont l'écriture n'est pas encore confirmée
+// (vide hors flush ; chaque clé est retirée après son `await` réussi, toutes
+// après `viderCochesDistantes`). Un event temps réel sur l'une d'elles peut être
+// l'écho de cette écriture (cf. appliquerEventLocal, #357). Appartenance aux
+// ops, et non écart blob poussé / référence : la référence bouge avec les
+// events reçus en vol, et une clé qu'aucune op ne touche passait pour « en vol ».
+let clesEnVol: Set<string> = new Set();
 
 function estDirtyCoches(): boolean {
   return localStorage.getItem(CLE_DIRTY_COCHES) === "1";
@@ -874,7 +877,7 @@ async function flusherCoches(): Promise<void> {
   }
 
   flushCochesEnCours = true;
-  cochesEnVol = local;
+  clesEnVol = new Set(ops.map((op) => op.cle));
   reFlushCochesDemande = false;
   definirEtat("sauvegarde");
   try {
@@ -888,6 +891,7 @@ async function flusherCoches(): Promise<void> {
       // Les ops sont alors les `decocher` de toutes les clés connues au départ.
       await viderCochesDistantes(ancre);
       cochesConnues = ops.reduce(appliquerOp, cochesConnues);
+      clesEnVol.clear();
     } else {
       for (const op of ops) {
         if (op.type === "cocher") {
@@ -896,6 +900,7 @@ async function flusherCoches(): Promise<void> {
           await decocherArticleDistant(ancre, op.cle);
         }
         cochesConnues = appliquerOp(cochesConnues, op);
+        clesEnVol.delete(op.cle);
       }
     }
     if (!reFlushCochesDemande) localStorage.removeItem(CLE_DIRTY_COCHES);
@@ -905,7 +910,7 @@ async function flusherCoches(): Promise<void> {
     console.error("Synchronisation des coches échouée (sera rejouée).", erreur);
   } finally {
     flushCochesEnCours = false;
-    cochesEnVol = null;
+    clesEnVol.clear();
     if (reFlushCochesDemande) {
       reFlushCochesDemande = false;
       void flusherCoches();
@@ -1015,8 +1020,8 @@ async function assurerFoyerId(): Promise<string | null> {
 // réconcilie la référence `cochesConnues` (l'état distant fait foi pour la clé).
 //
 // Sauf si la clé porte un geste local pas encore confirmé (#357) : écart entre
-// le local et la référence (ops en attente du débounce), ou écriture en vol qui
-// la modifie. L'event ne met alors à jour QUE la référence ; le local fait foi
+// le local et la référence (ops en attente du débounce), ou op du flush en
+// cours sur cette clé pas encore confirmée (`clesEnVol`). L'event ne met alors à jour QUE la référence ; le local fait foi
 // et le flush suivant le pousse (le dernier geste gagne en base, RG-32).
 // Pourquoi : le temps réel livre l'écho d'une écriture avec un retard
 // variable ; l'écho de la coche arrivé après la décoche recochait l'article à
@@ -1025,7 +1030,7 @@ function appliquerEventLocal(event: EventCoche): void {
   const avant = cochesLocales();
   const gesteEnAttente =
     cochesConnues[event.cle] !== avant[event.cle] ||
-    (cochesEnVol !== null && cochesEnVol[event.cle] !== cochesConnues[event.cle]);
+    clesEnVol.has(event.cle);
   cochesConnues = appliquerEvent(cochesConnues, event);
   if (gesteEnAttente) return;
   const apres = appliquerEvent(avant, event);
