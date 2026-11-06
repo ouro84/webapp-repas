@@ -78,3 +78,22 @@ export function lireJeton(
   if (maintenantMs > lu.exp * 1000) return { ok: false, raison: "expire" };
   return { ok: true, demandeId: lu.demandeId };
 }
+
+// Garde des jetons d'une ligne (#330, RG-83) : l'article doit venir d'une demande OMQ prise par ce
+// run. Le jeton ne porte pas le libellé, seulement sa signature : `chronodrive` ne peut vérifier la
+// SIGNATURE d'un jeton que contre `terme`. Pour une ligne fusionnée, au moins un jeton doit vérifier
+// `terme` (signature + expiration) ; les autres (co-jetons) doivent avoir un format et une
+// expiration valides et la même demande, mais leur signature n'est pas lue : n'importe quel MAC hex
+// de 32 caractères passe pour un co-jeton. Sans conséquence : seul le jeton de `terme` autorise
+// l'ajout. Pourquoi : sans demande prise, aucun jeton n'est signé, donc rien ne part chez Chronodrive ;
+// un jeton d'une demande précédente expire (30 min) et ne couvre que son propre libellé.
+export function jetonsValides(secret: string, jetons: string[], terme: string, maintenant: number): boolean {
+  const lus = jetons.map((j) => lireJeton(j, maintenant));
+  const demandes = new Set<string>();
+  for (const l of lus) {
+    if (!l.ok) return false;
+    demandes.add(l.demandeId);
+  }
+  if (demandes.size !== 1) return false;
+  return jetons.some((j) => verifierJeton(secret, j, terme, maintenant).ok);
+}

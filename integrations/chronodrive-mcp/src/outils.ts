@@ -8,7 +8,6 @@ import { z } from "zod";
 
 import {
   chargerFavoris,
-  DUREE_FAVORIS_MS,
   noterProduits,
   produitVu,
   rechercher,
@@ -18,8 +17,9 @@ import {
 } from "./catalogue.ts";
 import { ErreurChronodrive, erreurDeConnexion } from "./client.ts";
 import { normaliserTerme, type Correspondance, type Correspondances, type EntreeCorrespondance } from "./correspondances.ts";
-import { lireJeton, verifierJeton } from "./jetons.ts";
-import { ajouterLignes, ErreurPanierChange, lirePanierCourant, PRODUIT_INCONNU, refuserLot, type ResultatAjout } from "./panier.ts";
+import { creerGardeAjout } from "./garde-ajout.ts";
+import { jetonsValides } from "./jetons.ts";
+import { ajouterLignes, ErreurPanierChange, lirePanierCourant, refuserLot, type ResultatAjout } from "./panier.ts";
 
 export type CacheCorrespondances = Pick<Correspondances, "connues" | "memoriser" | "oublier">;
 
@@ -53,7 +53,6 @@ const TAILLE_VERIFICATION = 20;
 
 export const JETON_INVALIDE =
   "jeton OMQ invalide ou expiré pour cet article : reprends les jetons renvoyés par prendre_demande_panier";
-export const PRODUIT_NON_PROPOSE = "produit non proposé pour cet article : relance chercher_produits pour ce terme";
 
 // Erreur destinée au LLM, rédigée ici : son message est sûr.
 export class ErreurOutil extends Error {
@@ -166,78 +165,11 @@ export function creerServeur(deps: Dependances): McpServer {
     }
   }
 
-  // Produits proposés par `chercher_produits`, par client puis par terme normalisé : numéro de
-  // l'appel où le terme a été cherché pour la première fois, instant de sa dernière recherche, et
-  // id → instant de la dernière proposition pour CE terme (cache, favoris, recherche renvoyés).
-  // Tout expire après 30 min et est élagué à chaque appel. `ajouter_au_panier` refuse sans POST une
-  // ligne dont le produit n'a pas été proposé pour son terme. Pourquoi : au run réel, l'id des
-  // lasagnes proposé pour « œufs » a été recopié sur la ligne « lait » ; « vu par ailleurs »
-  // (`produitVu`) ne suffit pas.
-  type TermeCherche = { premierAppel: number; chercheA: number; ids: Map<string, number> };
-  const propositions = new WeakMap<object, { appels: number; termes: Map<string, TermeCherche> }>();
+  // Garde par terme (src/garde-ajout.ts) : produits proposés par `chercher_produits`, par client
+  // et par terme, 30 min ; `ajouter_au_panier` refuse sans POST une ligne dont le produit n'a pas
+  // été proposé pour son terme (RG-82).
+  const garde = creerGardeAjout(horloge);
   const instant = deps.maintenant ?? Date.now;
-  const frais = (a: number) => instant() - a <= DUREE_FAVORIS_MS;
-
-  // Un appel de `chercher_produits` = un numéro ; `premierAppel` d'un terme n'est jamais rajeuni
-  // tant que son entrée vit (chaque recherche la prolonge de 30 min).
-  function noterPropositions(client: object, lot: [string, Produit[]][]): void {
-    let etat = propositions.get(client);
-    if (!etat) propositions.set(client, (etat = { appels: 0, termes: new Map() }));
-    for (const [cle, t] of etat.termes) {
-      if (!frais(t.chercheA)) etat.termes.delete(cle);
-      else for (const [id, a] of t.ids) if (!frais(a)) t.ids.delete(id);
-    }
-    const appel = ++etat.appels;
-    const a = instant();
-    for (const [terme, produits] of lot) {
-      const cle = normaliserTerme(terme);
-      let t = etat.termes.get(cle);
-      if (!t) etat.termes.set(cle, (t = { premierAppel: appel, chercheA: a, ids: new Map() }));
-      t.chercheA = a;
-      for (const p of produits) if (p.id) t.ids.set(p.id, a);
-    }
-  }
-
-  function termeCherche(client: object, terme: string): TermeCherche | undefined {
-    const t = propositions.get(client)?.termes.get(normaliserTerme(terme));
-    return t && frais(t.chercheA) ? t : undefined;
-  }
-
-  // Produit proposé pour le terme de la ligne. Avec une reformulation (`terme_recherche` distinct
-  // de `terme` une fois normalisé), elle seule valide le produit, et seulement si l'article lui-même
-  // a été cherché et si la reformulation a été cherchée pour la première fois dans un appel
-  // STRICTEMENT postérieur. Pourquoi : `{terme: "lait", terme_recherche: "œufs"}` passerait sinon
-  // avec n'importe quel produit proposé pour « œufs » ; la skill cherche ses reformulations après coup.
-  function propose(client: object, terme: string, termeRecherche: string | undefined, productId: string): boolean {
-    const article = termeCherche(client, terme);
-    let valide = article;
-    if (termeRecherche && normaliserTerme(termeRecherche) !== normaliserTerme(terme)) {
-      const reformulation = termeCherche(client, termeRecherche);
-      if (!article || !reformulation || reformulation.premierAppel <= article.premierAppel) return false;
-      valide = reformulation;
-    }
-    const a = valide?.ids.get(productId);
-    return a !== undefined && frais(a);
-  }
-
-  // Garde des jetons d'une ligne (#330, RG-83) : l'article doit venir d'une demande OMQ prise par ce
-  // run. Le jeton ne porte pas le libellé, seulement sa signature : `chronodrive` ne peut vérifier la
-  // SIGNATURE d'un jeton que contre `terme`. Pour une ligne fusionnée, au moins un jeton doit vérifier
-  // `terme` (signature + expiration) ; les autres (co-jetons) doivent avoir un format et une
-  // expiration valides et la même demande, mais leur signature n'est pas lue : n'importe quel MAC hex
-  // de 32 caractères passe pour un co-jeton. Sans conséquence : seul le jeton de `terme` autorise
-  // l'ajout. Pourquoi : sans demande prise, aucun jeton n'est signé, donc rien ne part chez Chronodrive ;
-  // un jeton d'une demande précédente expire (30 min) et ne couvre que son propre libellé.
-  function jetonsValides(secret: string, jetons: string[], t: string, maintenant: number): boolean {
-    const lus = jetons.map((j) => lireJeton(j, maintenant));
-    const demandes = new Set<string>();
-    for (const l of lus) {
-      if (!l.ok) return false;
-      demandes.add(l.demandeId);
-    }
-    if (demandes.size !== 1) return false;
-    return jetons.some((j) => verifierJeton(secret, j, t, maintenant).ok);
-  }
 
   // Un seul lot d'ajout à la fois : deux lots parallèles entremêleraient leurs relectures
   // avant/après du panier, et l'écart de quantité ne serait plus attribuable (RG-83).
@@ -372,7 +304,7 @@ export function creerServeur(deps: Dependances): McpServer {
       // chargement + 29 min serait refusé à l'ajout deux minutes plus tard (« vu il y a plus de 30 min »).
       // Les 30 min de `produitVu` courent ainsi depuis le dernier affichage au LLM.
       noterProduits(client, montresParTerme.flatMap(([, montres]) => montres), horloge);
-      noterPropositions(client, montresParTerme);
+      garde.noterRecherche(client, montresParTerme);
       return { resultats, ...etat };
     },
   );
@@ -441,13 +373,14 @@ export function creerServeur(deps: Dependances): McpServer {
         // (donc aucun login) ni lecture du panier.
         const jetonOk = lignes.map(({ terme: t, jetons }) => jetonsValides(secret, jetons, t, maintenant));
         const client = jetonOk.some(Boolean) ? deps.client() : null;
-        // Puis garde par terme (`propose`). Un produit jamais vu en recherche ou en favoris (même s'il
-        // est dans le panier) garde le refus « produit inconnu » ; un produit vu pour un autre terme,
-        // ou avec une reformulation non valable, est « non proposé ».
+        // Puis garde par terme (`garde.verdictProduit`). Un produit jamais vu en recherche ou en favoris
+        // (même s'il est dans le panier) garde le refus « produit inconnu » ; un produit vu pour un autre
+        // terme, ou avec une reformulation non valable, est « non proposé ».
         const aEnvoyer = lignes.map(({ terme: t, terme_recherche, productId, quantite, quantite_omq: quantiteOmq }, i) => {
           if (!client || !jetonOk[i]) return { productId, quantite, refus: JETON_INVALIDE };
-          if (propose(client, t, terme_recherche, productId)) return { productId, quantite, quantiteOmq };
-          return { productId, quantite, refus: produitVu(client, productId, horloge) ? PRODUIT_NON_PROPOSE : PRODUIT_INCONNU };
+          const verdict = garde.verdictProduit(client, { terme: t, terme_recherche, productId });
+          if (verdict === "ok") return { productId, quantite, quantiteOmq };
+          return { productId, quantite, refus: verdict };
         });
         // Tout est refusé : aucune lecture du panier ni appel à Chronodrive.
         const bilan = client === null || aEnvoyer.every((l) => l.refus) ? refuserLot(aEnvoyer) : await ajouterLignes(client, aEnvoyer, horloge);
