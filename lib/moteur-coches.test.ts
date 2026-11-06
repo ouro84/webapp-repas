@@ -314,6 +314,28 @@ describe("moteur de coche horodaté (#362)", () => {
     expect(cochee(TOMATES)).toBe(true)
   })
 
+  it("« Tout décocher » rejoué, commité pendant une relecture périmée : reste décoché", async () => {
+    const { moteur, appels, cochee } = monter()
+    moteur.hydrater(A, { [TOMATES]: { ...coche(), maj: T0 } })
+    moteur.toutDecocher(A)
+    vidage(appels[0]).rejeter(new Error("Failed to fetch")) // hors ligne
+    await attendre()
+
+    // Retour en ligne : rejeu du vidage, relecture partie avant son commit.
+    const rejeu = moteur.rejouer()
+    const depuis = moteur.marquerLecture()
+    vidage(appels[1]).resoudre([{ cle: TOMATES, maj: T1 }])
+    await rejeu
+    moteur.surEvent(A, TOMATES, decoche(), T1) // notre écho : ignoré
+
+    moteur.hydrater(A, { [TOMATES]: { ...coche(), maj: T0 } }, depuis) // instantané d'avant
+
+    expect(cochee(TOMATES)).toBe(false)
+    // L'horodatage connu reste T1 : un écho périmé de la coche (T0) ne recoche pas.
+    moteur.surEvent(A, TOMATES, coche(), T0)
+    expect(cochee(TOMATES)).toBe(false)
+  })
+
   it("ligne absente d'une lecture sans confirmation pendant celle-ci : purge (décochée)", async () => {
     const { moteur, appels, cochee } = monter()
     moteur.hydrater(A, { [RIZ]: { ...coche(200), maj: T0 } })

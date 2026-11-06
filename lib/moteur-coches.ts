@@ -40,8 +40,10 @@
 //      encore à l'instantané).
 //    Sinon le distant fait foi, et une ligne absente vaut purge (sémantique du
 //    DELETE : décochée), y compris pour une clé confirmée AVANT la lecture.
-//    Sans état affiché connu (premier chargement, autre ancre), le distant fait
-//    foi. Pourquoi : sans cette règle, une coche rejouée au retour en ligne,
+//    Sans hydratation préalable de cette ancre (premier chargement, autre
+//    ancre), le distant fait foi. Une clé de l'ancre affichée qui a un
+//    horodatage connu mais plus d'état affiché sort d'un « Tout décocher »
+//    (rejoué ou non) : son état gardé est « décoché ». Pourquoi : sans cette règle, une coche rejouée au retour en ligne,
 //    commitée pendant la relecture du cycle, restait décochée à l'écran (base
 //    cochée, indicateur « synchronise ») jusqu'à la lecture suivante.
 
@@ -384,8 +386,8 @@ export function creerMoteurCoches<V>(deps: {
     hydrater(ancre, distant, depuis) {
       // État affiché avant la lecture (règle 6) : seulement s'il est celui de
       // cette ancre.
-      const precedentes =
-        ancreAffichee === ancre ? new Map(affichees) : new Map<string, Etat<V>>()
+      const memeAncre = ancreAffichee === ancre
+      const precedentes = memeAncre ? new Map(affichees) : new Map<string, Etat<V>>()
       ancreAffichee = ancre
       differes.clear()
       affichees.clear()
@@ -400,25 +402,30 @@ export function creerMoteurCoches<V>(deps: {
         if (autre !== ancre) confirmations.delete(autre)
       }
       const confirmees = confirmations.get(ancre)
-      // Clés hors file dont la lecture est périmée (règle 6) : état gardé.
-      const gardees = new Map<string, Etat<V>>()
+      // Clés hors file dont la lecture est périmée (règle 6) : état gardé
+      // (`null` = rien à afficher, la vue vidée est déjà décochée).
+      const gardees = new Map<string, Etat<V> | null>()
       for (const [cle, maj] of anciennes) {
-        const precedente = precedentes.get(cle)
-        if (precedente === undefined || estOccupee(ancre, cle)) continue
+        if (!memeAncre || estOccupee(ancre, cle)) continue
         const connue = cleHorodatage(maj)
         const lue = distant[cle]
         const perimee =
           lue !== undefined
             ? connue !== null && (cleHorodatage(lue.maj) ?? Infinity) < connue
             : depuis !== undefined && (confirmees?.get(cle) ?? 0) > depuis
-        if (perimee) gardees.set(cle, precedente)
+        if (!perimee) continue
+        // Horodatage connu sans état affiché, sur l'ancre affichée : seul un
+        // « Tout décocher » (qui vide `affichees`) y mène ; l'état est décoché.
+        const precedente =
+          precedentes.get(cle) ?? (lue ? { coche: false, valeur: lue.valeur } : null)
+        gardees.set(cle, precedente)
       }
       const nouvelles = new Map<string, string>()
       for (const [cle, maj] of anciennes) {
         if (estOccupee(ancre, cle) || gardees.has(cle)) nouvelles.set(cle, maj)
       }
       majConnues.set(ancre, nouvelles)
-      for (const [cle, etat] of gardees) afficher(cle, etat)
+      for (const [cle, etat] of gardees) if (etat) afficher(cle, etat)
       for (const [cle, { maj, ...etat }] of Object.entries(distant)) {
         if (gardees.has(cle)) continue
         if (estOccupee(ancre, cle)) {
