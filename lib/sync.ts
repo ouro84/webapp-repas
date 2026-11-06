@@ -36,6 +36,7 @@ import {
   type SaisieArticleManuel,
 } from "@/lib/persistance";
 import { basculerCoche, parserCoches, type Coches } from "@/lib/coches";
+import { cleHorodatage } from "@/lib/horodatage";
 import {
   appliquerEvent,
   appliquerOp,
@@ -619,18 +620,6 @@ let minuteur: ReturnType<typeof setTimeout> | null = null;
 const HORODATAGES_RETENUS_PAR_SEMAINE = 32;
 const SEMAINES_RETENUES = 8;
 const horodatagesEcrits = new Map<string, number[]>();
-
-// `updated_at` → entier en microsecondes, ou null s'il est absent ou illisible
-// (ex. un DELETE dont `old` ne porte que la clé primaire : ignoré, comme avant).
-// Postgres tronque les zéros finaux (« .94056 » = 940 560 µs) : on complète.
-function cleHorodatage(iso: string | null | undefined): number | null {
-  if (!iso) return null;
-  const ms = Date.parse(iso);
-  if (!Number.isFinite(ms)) return null;
-  const fraction = /\.(\d+)/.exec(iso)?.[1] ?? "";
-  const micro = Number((fraction + "000000").slice(0, 6));
-  return Math.floor(ms / 1000) * 1_000_000 + micro;
-}
 
 // Borné : par semaine (les plus anciens sortent d'abord) et en nombre de
 // semaines. Un écho très tardif d'un horodatage oublié est juste relu.
