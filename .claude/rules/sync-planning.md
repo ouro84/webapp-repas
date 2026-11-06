@@ -87,3 +87,7 @@ La base est la source de vérité ; localStorage est le cache de la semaine affi
 ## Changement de foyer
 
 Après jonction, sortie ou déconnexion, appeler `reinitialiserCacheFoyer()` (vide planning, coches, drapeaux, horodatages, instantané confirmé, relecture à refaire et snapshot ; garde `semaine_affichee`) puis recharger. Il arrête d'abord les deux moteurs de coche (`arreter()`) : un flush en vol finit sans réécrire la file purgée ni envoyer la suite sous le nouveau foyer. Il republie ensuite l'indicateur (`publierEtat`), sinon il gardait l'état de l'ancien foyer. Sans cela, le dirty-first ferait foi avec l'ancien cache et un push différé l'écrirait sous le nouveau foyer.
+
+## Tests de `lib/sync.ts`
+
+- **Chaque test charge un module neuf (`chargerSync()`, `vi.resetModules`) et l'`afterEach` le démonte puis l'arrête** : `cleanup()` de l'instance de Testing Library importée par le test (import dynamique, même registre), puis `arreterSync()` (minuteurs, moteurs de coches, temps réel ; réservée aux tests). Un nouveau minuteur ou moteur de module s'ajoute à `arreterSync`. Pourquoi : `globals: false` désactive le nettoyage automatique, et un hook resté monté gardait son écouteur `online` ; un retour en ligne réveillait les modules des tests précédents, qui relisaient avec les mocks du test courant (#371). Un `window.dispatchEvent(new Event("online"))` suffit donc dans un test.

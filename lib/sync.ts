@@ -149,6 +149,24 @@ export function reinitialiserCacheFoyer(): void {
   localStorage.removeItem(CLE_CYCLE_PLANNING);
 }
 
+/**
+ * Arrête l'instance du module (#371), réservé aux tests : coupe les minuteurs
+ * (push débouncé, relectures du planning et des coches), arrête les moteurs de
+ * coches et le temps réel. Les écouteurs `window` posés par les hooks sont
+ * retirés par leur démontage (`cleanup` de Testing Library), pas ici. Pourquoi :
+ * chaque test recharge un module neuf (`vi.resetModules`) ; sans arrêt, les
+ * minuteurs et moteurs d'un test réagissaient pendant les suivants. Aucun appel
+ * en production.
+ */
+export function arreterSync(): void {
+  suspendrePush();
+  annulerNouvelleRelecture();
+  annulerRelectureCoches();
+  moteurIngredients?.arreter();
+  moteurArticlesManuels?.arreter();
+  void couperTempsReel();
+}
+
 // ---------------------------------------------------------------------------
 // État de synchro (indicateur UI, bonus) — petit store externe en mémoire.
 // ---------------------------------------------------------------------------
