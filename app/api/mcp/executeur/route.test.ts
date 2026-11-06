@@ -116,7 +116,7 @@ describe("POST /api/mcp/executeur — outils (#330)", () => {
     expect(result?.structuredContent).toEqual({ demande: null, raison: "Aucune demande en attente." })
   })
 
-  it("cocher_article_demande appelle cocherArticleDemande avec libellé, quantité et date de Paris", async () => {
+  it("cocher_article_demande appelle cocherArticleDemande avec libellé et quantité (cycle de la demande, jamais la date du jour)", async () => {
     m.cocherArticleDemande.mockResolvedValue({ modifie: true, article: {} })
     const { result } = await lire(
       await appeler("tools/call", {
@@ -127,8 +127,7 @@ describe("POST /api/mcp/executeur — outils (#330)", () => {
     expect(result?.isError).toBeFalsy()
     expect(m.cocherArticleDemande).toHaveBeenCalledWith(
       { jeton: "jwt-oauth" },
-      { libelle: "lait", quantite: "2 L" },
-      expect.any(Date)
+      { libelle: "lait", quantite: "2 L" }
     )
   })
 

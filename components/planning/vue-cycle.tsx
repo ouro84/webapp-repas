@@ -68,7 +68,7 @@ import {
 import { modifierPersonnes, PERSONNES_DEFAUT, personnesDuSlot } from "@/lib/personnes";
 import { estRestes, marquerRestes } from "@/lib/restes";
 import { chargerJourCoursesFoyer } from "@/lib/foyer";
-import { resoudreAncreCycle } from "@/lib/ancre-cycle";
+import { resoudreCycle } from "@/lib/ancre-cycle";
 import { ancreInitialeCycle } from "@/lib/ancre-initiale-cycle";
 import { clientParDefaut } from "@/lib/supabase/par-defaut";
 import { aujourdhuiParis } from "@/lib/semaines";
@@ -555,7 +555,7 @@ export function VuePlanningCycle({
 
   // Montage : un SEUL chargement initial (jamais le cycle par défaut affiché
   // puis remplacé). Avec un lien profond (#320, RG-87) : ancre résolue par
-  // `resoudreAncreCycle` (même résolution que le MCP et la route panier),
+  // `resoudreCycle` (même résolution que le MCP et la route panier),
   // EN PARALLÈLE de la lecture du jour de courses ; hors plage / invalide /
   // lecture échouée → ancre par défaut. Sans lien : ancre par défaut dérivée du
   // jour de courses du foyer (même règle que /courses, ancreParDefaut → décalage
@@ -567,7 +567,7 @@ export function VuePlanningCycle({
     let actif = true;
     void ancreInitialeCycle({
       chargerJour: () => chargerJourCoursesFoyer(),
-      resoudreLien: (date) => resoudreAncreCycle(clientParDefaut(), date, aujourdhuiParis()),
+      resoudreLien: (date) => resoudreCycle(clientParDefaut(), { date }, aujourdhuiParis()),
       lien: lienInitial,
       maintenant: new Date(),
     })

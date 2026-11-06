@@ -18,10 +18,10 @@ import type { Ingredient } from "@/types"
 // Jeudi 29 octobre 2026, jour de courses jeudi → ancre 2026-10-29.
 const JEUDI = new Date(2026, 9, 29, 12)
 
-function mock() {
+function mock(foyers: { data: unknown; error: { message: string } | null } = { data: { jour_courses: 4 }, error: null }) {
   return creerSupabaseMock({
     tables: {
-      foyers: { data: { jour_courses: 4 }, error: null },
+      foyers,
       cycle_courses: { data: null, error: null },
       article_manuel: {
         data: { id: "a1", libelle: "Bougies", quantite: null, unite: null, categorie: "autre", fond_de_placard: false, coche: false },
@@ -207,5 +207,35 @@ describe("cocherArticle (RG-77, RG-10, RG-12)", () => {
     liste([ing("carottes", 400, "g")])
     const { client } = mock()
     await expect(cocherArticle(client, { libelle: "chocolat" }, JEUDI)).rejects.toThrow("lire_liste_courses")
+  })
+})
+
+describe("sans ancre, jour de courses illisible (#360)", () => {
+  // Avant #360, ces outils retombaient sur lundi et écrivaient dans un autre cycle.
+  const FOYERS_KO = [
+    { data: null, error: { message: "réseau coupé" } },
+    { data: null, error: null },
+  ]
+
+  it("ajouterArticleCourses : rejet (pas une ErreurOutil), aucun article écrit", async () => {
+    for (const foyers of FOYERS_KO) {
+      const { client, appels } = mock(foyers)
+      const appel = ajouterArticleCourses(client, { libelle: "Bougies" }, JEUDI)
+      await expect(appel).rejects.toThrow()
+      await expect(appel).rejects.not.toBeInstanceOf(ErreurOutil)
+      expect(appels.filter((a) => a.table !== "foyers")).toEqual([])
+    }
+  })
+
+  it("cocherArticle : rejet (pas une ErreurOutil), aucune lecture de liste ni coche", async () => {
+    for (const foyers of FOYERS_KO) {
+      const espion = vi.spyOn(listeCoursesCycle, "chargerListeCoursesCycle")
+      const { client, appels } = mock(foyers)
+      const appel = cocherArticle(client, { libelle: "tomate" }, JEUDI)
+      await expect(appel).rejects.toThrow()
+      await expect(appel).rejects.not.toBeInstanceOf(ErreurOutil)
+      expect(espion).not.toHaveBeenCalled()
+      expect(appels.filter((a) => a.table !== "foyers")).toEqual([])
+    }
   })
 })

@@ -7,21 +7,19 @@
 
 import {
   basculerCocheArticleManuelDistant,
-  chargerLongueurCycle,
   cocherArticleDistant,
   creerArticleManuelDistant,
   decocherArticleDistant,
 } from "@/lib/persistance"
-import { chargerJourCoursesFoyer } from "@/lib/foyer"
 import { chargerListeCoursesCycle } from "@/lib/liste-courses-cycle"
 import { articleManuelVersIngredient } from "@/lib/articles-manuels"
-import { ancreParDefaut, joursDuCycle } from "@/lib/cycles"
 import { cleAgregation } from "@/lib/courses"
 import { estCoche } from "@/lib/coches"
 import { accorderNom } from "@/lib/pluriels"
 import { normaliser } from "@/lib/recherche"
 import { ErreurOutil } from "@/lib/mcp/erreurs"
-import { ancreDemandee, libellePeriode, versArticle, type ArticleMcp } from "@/lib/mcp/lecture"
+import { cycleVise } from "@/lib/mcp/cycle"
+import { libellePeriode, versArticle, type ArticleMcp } from "@/lib/mcp/lecture"
 import type { ClientSupabase } from "@/lib/supabase/types"
 import type { CategorieIngredient, Ingredient, Unite } from "@/types"
 
@@ -52,8 +50,7 @@ export async function ajouterArticleCourses(
   const q = args.quantite
   const quantite = q !== undefined && Number.isFinite(q) && q > 0 ? q : null
 
-  const ancre = ancreParDefaut(aujourdhui, await chargerJourCoursesFoyer(supabase))
-  const longueur = await chargerLongueurCycle(ancre, supabase)
+  const { ancre, du, au } = await cycleVise(supabase, undefined, aujourdhui)
   const article = await creerArticleManuelDistant(
     ancre,
     {
@@ -65,9 +62,6 @@ export async function ajouterArticleCourses(
     },
     supabase
   )
-  const jours = joursDuCycle(ancre, longueur)
-  const du = jours[0]
-  const au = jours[jours.length - 1]
   return {
     article: versArticle(articleManuelVersIngredient(article), null),
     periode: { du, au, libelle: libellePeriode(du, au) },
@@ -99,24 +93,22 @@ export async function cocherArticle(
   args: { libelle: string; coche?: boolean; quantite?: string; ancre?: string },
   aujourdhui: Date = new Date()
 ): Promise<CochageMcp> {
-  const cycle = args.ancre !== undefined ? await ancreDemandee(supabase, args.ancre, aujourdhui) : undefined
-  return cocherArticleDansCycle(supabase, args, cycle, aujourdhui)
+  return cocherArticleDansCycle(supabase, args, await cycleVise(supabase, args.ancre, aujourdhui))
 }
 
 /**
- * Cœur de `cocher_article` sur une ancre DÉJÀ résolue (ou, si `undefined`, le
- * cycle courant). N'appelle jamais `ancreDemandee` : l'exécuteur de panier
- * (#330, RG-83) coche exactement le cycle de sa demande, même si le jour de
- * courses change pendant le run (une re-résolution viserait un autre cycle).
+ * Cœur de `cocher_article` sur un cycle DÉJÀ résolu. Ne résout jamais le
+ * cycle : l'exécuteur de panier (#330, RG-83) coche exactement le cycle de sa
+ * demande, même si le jour de courses change pendant le run (une re-résolution
+ * viserait un autre cycle).
  */
 export async function cocherArticleDansCycle(
   supabase: ClientSupabase,
   args: { libelle: string; coche?: boolean; quantite?: string },
-  ancreCycle: string | undefined,
-  aujourdhui: Date = new Date()
+  cycle: { ancre: string; longueur: number }
 ): Promise<CochageMcp> {
   const coche = args.coche !== false
-  const { ancre, liste, coches } = await chargerListeCoursesCycle(supabase, { aujourdhui, ancre: ancreCycle })
+  const { ancre, liste, coches } = await chargerListeCoursesCycle(supabase, cycle)
   let articles = [...liste.normal.flatMap((l) => l.ingredients), ...liste.fondDePlacard]
   if (args.quantite !== undefined) {
     const voulue = args.quantite.trim()

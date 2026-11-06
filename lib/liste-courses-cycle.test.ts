@@ -18,9 +18,6 @@ import {
   type ReponseMock,
 } from "@/tests/fixtures/supabase-mock"
 
-// Jeudi 29 octobre 2026, jour de courses du foyer = jeudi (4) → ancre
-// 2026-10-29, cycle de 7 j sur 2026-W44 (jeu→dim) et 2026-W45 (lun→mer).
-const JEUDI = new Date("2026-10-29T12:00:00Z")
 
 function slot(jour: string, recette: string, ingredient: string) {
   return {
@@ -90,11 +87,13 @@ beforeEach(() => {
   vi.restoreAllMocks()
 })
 
+const CYCLE_29 = { ancre: "2026-10-29", longueur: 7 }
+
 describe("chargerListeCoursesCycle", () => {
-  it("cycle courant par défaut : ancre du jour de courses du foyer", async () => {
+  it("cycle déjà résolu : ses semaines lues, ni foyer ni longueur relus (#360)", async () => {
     const { client, appels } = mock()
 
-    const r = await chargerListeCoursesCycle(client, { aujourdhui: JEUDI })
+    const r = await chargerListeCoursesCycle(client, CYCLE_29)
 
     expect(r.ancre).toBe("2026-10-29")
     expect(r.longueur).toBe(7)
@@ -102,10 +101,11 @@ describe("chargerListeCoursesCycle", () => {
       .filter((a) => a.table === "planning")
       .map((a) => filtre(a, "eq", "semaine"))
     expect(semainesLues).toEqual(["2026-W44", "2026-W45"])
+    expect(appels.some((a) => a.table === "foyers" || a.table === "cycle_courses")).toBe(false)
   })
 
   it("liste = ingrédients des repas du cycle + articles manuels", async () => {
-    const r = await chargerListeCoursesCycle(mock().client, { aujourdhui: JEUDI })
+    const r = await chargerListeCoursesCycle(mock().client, CYCLE_29)
 
     expect(noms(r.liste)).toEqual(expect.arrayContaining(["tomate", "poireau", "Piles"]))
   })
@@ -113,7 +113,7 @@ describe("chargerListeCoursesCycle", () => {
   it("coches de l'ancre renvoyées", async () => {
     const { client, appels } = mock()
 
-    const r = await chargerListeCoursesCycle(client, { aujourdhui: JEUDI })
+    const r = await chargerListeCoursesCycle(client, CYCLE_29)
 
     expect(r.coches).toEqual({ "tomate|piece": 1 })
     for (const table of ["etat_courses_article", "article_manuel"]) {
@@ -122,10 +122,10 @@ describe("chargerListeCoursesCycle", () => {
     }
   })
 
-  it("ancre explicite prioritaire", async () => {
+  it("autre cycle : ses lectures, sans lecture du foyer", async () => {
     const { client, appels } = mock()
 
-    const r = await chargerListeCoursesCycle(client, { ancre: "2026-11-05", aujourdhui: JEUDI })
+    const r = await chargerListeCoursesCycle(client, { ancre: "2026-11-05", longueur: 7 })
 
     expect(r.ancre).toBe("2026-11-05")
     expect(appels.some((a) => a.table === "foyers")).toBe(false)
@@ -135,7 +135,7 @@ describe("chargerListeCoursesCycle", () => {
     vi.spyOn(console, "error").mockImplementation(() => {})
     const { client } = mock({ reglages: { data: null, error: { message: "boom" } } })
 
-    const r = await chargerListeCoursesCycle(client, { aujourdhui: JEUDI })
+    const r = await chargerListeCoursesCycle(client, CYCLE_29)
 
     expect(noms(r.liste)).toEqual(expect.arrayContaining(["tomate", "poireau"]))
   })
@@ -143,7 +143,7 @@ describe("chargerListeCoursesCycle", () => {
   it("planning illisible : erreur propagée", async () => {
     const { client } = mock({ planning: { data: null, error: { message: "JWT expired" } } })
 
-    await expect(chargerListeCoursesCycle(client, { aujourdhui: JEUDI })).rejects.toThrow(
+    await expect(chargerListeCoursesCycle(client, CYCLE_29)).rejects.toThrow(
       "Chargement du planning distant impossible : JWT expired"
     )
   })

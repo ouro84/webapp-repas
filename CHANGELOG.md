@@ -22,6 +22,7 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ### Corrigé
 
+- Assistant connecté (MCP) : si le jour de courses du foyer ne peut pas être lu, générer un cycle, lire le planning ou la liste de courses, cocher ou ajouter un article échoue avec un message, au lieu de viser par erreur le cycle qui commence le lundi (une génération avec remplacement pouvait écraser ce cycle) (#360).
 - Liste de courses : un article décoché juste après l’avoir coché ne se recoche plus tout seul quelques instants plus tard, et la décoche est bien enregistrée pour tout le foyer. Un article décoché après un envoi de coches interrompu (connexion coupée) est lui aussi bien décoché pour tout le foyer (#357).
 - Planning : une modification faite pendant qu’un autre membre du foyer modifie un autre repas n’est plus perdue, y compris sur une semaine dont certains jours ou repas sont désactivés, et même si elle est faite pendant la relecture du changement de l’autre membre (#355).
 - Vue Cycle : un repas ajouté sur un jour qui n’en avait aucun n’est plus effacé par la modification suivante faite en vue Semaine (#355).

@@ -7,7 +7,7 @@
 // indépendants) ; hors plage / invalide / résolution en échec → ancre par défaut.
 
 import { ancreParDefaut } from "@/lib/cycles"
-import type { ResolutionAncre } from "@/lib/ancre-cycle"
+import type { ResolutionCycle } from "@/lib/ancre-cycle"
 
 /**
  * Jour de courses lu, ou lundi (1) si la lecture échoue — repli loggé
@@ -34,7 +34,7 @@ export async function ancreInitialeCycle({
   maintenant,
 }: {
   chargerJour: () => Promise<number>
-  resoudreLien: (date: string) => Promise<ResolutionAncre>
+  resoudreLien: (date: string) => Promise<ResolutionCycle>
   lien?: string
   maintenant: Date
 }): Promise<{ jourCourses: number; ancre: string }> {
@@ -43,7 +43,7 @@ export async function ancreInitialeCycle({
       ? Promise.resolve(null)
       : resoudreLien(lien).then(
           // hors_plage / invalide : repli silencieux sur le cycle par défaut.
-          (res) => (res.ok ? res.ancre : null),
+          (res) => (res.ok ? res.cycle.ancre : null),
           (erreur: unknown) => {
             console.error("Résolution du cycle du lien échouée (cycle par défaut).", erreur)
             return null

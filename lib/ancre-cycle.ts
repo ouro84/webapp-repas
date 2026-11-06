@@ -1,40 +1,84 @@
-// Résolution d'une date quelconque en ANCRE de cycle (#320, RG-85), partagée par
-// les outils MCP (`ancreDemandee`) et par `POST /api/panier/demande` : la base
-// (`creer_demande_panier`, `p_ancre`) attend une ancre résolue, jamais une date
-// en milieu de cycle (la garde OMQ04 lit les jours du cycle depuis l'ancre).
+// Résolution du CYCLE VISÉ (#320, #360, RG-85) : la seule décision « quel
+// cycle ? » côté serveur, partagée par les outils MCP (`cycleVise`,
+// lib/mcp/cycle.ts), `POST /api/panier/demande`, l'exécuteur de panier et le
+// lien profond de la vue Cycle. La base (`creer_demande_panier`, `p_ancre`)
+// attend une ancre résolue, jamais une date en milieu de cycle (la garde OMQ04
+// lit les jours du cycle depuis l'ancre).
 
 import { chargerLongueurCycle } from "@/lib/persistance"
 import { chargerJourCoursesStrict } from "@/lib/foyer"
 import { semaineDansPlage } from "@/lib/generation"
-import { ancreCourante, cycleDecale, dateVersSemaineJour, depuisISO, estDateISO, joursDuCycle } from "@/lib/cycles"
+import {
+  ancreCourante,
+  ancreParDefaut,
+  cycleDecale,
+  dateVersSemaineJour,
+  depuisISO,
+  estDateISO,
+  joursDuCycle,
+  semainesDuCycle,
+} from "@/lib/cycles"
 import { semaineISO } from "@/lib/semaines"
 import type { ClientSupabase } from "@/lib/supabase/types"
 
-export type ResolutionAncre =
-  | { ok: true; ancre: string }
+export type CycleResolu = {
+  ancre: string
+  longueur: number
+  jours: string[]
+  semaines: string[]
+  du: string
+  au: string
+}
+
+export type ResolutionCycle =
+  | { ok: true; cycle: CycleResolu }
   | { ok: false; motif: "invalide" | "hors_plage" }
 
 /**
- * Ancre du cycle qui contient `date` (AAAA-MM-JJ). Une date entre deux cycles
+ * Cycle visé : sans `date`, le cycle COURANT (`ancreParDefaut`, comme /courses) ;
+ * avec, le cycle qui contient `date` (AAAA-MM-JJ). Une date entre deux cycles
  * (cycle raccourci) désigne le cycle suivant. `invalide` si la date est mal
- * formée, `hors_plage` si le cycle sort de −12 / +6 semaines. Lit le jour de
- * courses en lecture stricte : lève si la lecture échoue (jamais de repli sur
- * lundi, qui viserait un autre cycle).
+ * formée, `hors_plage` si le cycle sort de −12 / +6 semaines.
+ *
+ * Lit TOUJOURS le jour de courses en lecture stricte : lève si la lecture échoue
+ * ou si le foyer est absent. Pourquoi : un repli sur lundi viserait un autre
+ * cycle, et `generer_cycle(remplacer)`, une coche ou une demande de panier
+ * agiraient dessus (#360).
  */
-export async function resoudreAncreCycle(
+export async function resoudreCycle(
   supabase: ClientSupabase,
-  date: string,
+  demande: { date?: string },
   aujourdhui: Date
-): Promise<ResolutionAncre> {
-  if (!estDateISO(date)) return { ok: false, motif: "invalide" }
-  let resolue = ancreCourante(depuisISO(date), await chargerJourCoursesStrict(supabase))
+): Promise<ResolutionCycle> {
+  const { date } = demande
+  if (date !== undefined && !estDateISO(date)) return { ok: false, motif: "invalide" }
+  const jourCourses = await chargerJourCoursesStrict(supabase)
+
+  let ancre = date === undefined ? ancreParDefaut(aujourdhui, jourCourses) : ancreCourante(depuisISO(date), jourCourses)
+  let longueur = await chargerLongueurCycle(ancre, supabase)
   // Cycle raccourci (longueur < 7) : la date peut tomber dans le trou avant le
   // prochain jour de courses ; ancreCourante la ramènerait au cycle courant.
   // Une date après le dernier jour du cycle désigne le cycle suivant.
-  const jours = joursDuCycle(resolue, await chargerLongueurCycle(resolue, supabase))
-  if (date > jours[jours.length - 1]) resolue = cycleDecale(resolue, 1)
-  if (!semaineDansPlage(semaineISO(aujourdhui), dateVersSemaineJour(resolue).semaine)) {
+  if (date !== undefined) {
+    const derniers = joursDuCycle(ancre, longueur)
+    if (date > derniers[derniers.length - 1]) {
+      ancre = cycleDecale(ancre, 1)
+      longueur = await chargerLongueurCycle(ancre, supabase)
+    }
+  }
+  if (!semaineDansPlage(semaineISO(aujourdhui), dateVersSemaineJour(ancre).semaine)) {
     return { ok: false, motif: "hors_plage" }
   }
-  return { ok: true, ancre: resolue }
+  const jours = joursDuCycle(ancre, longueur)
+  return {
+    ok: true,
+    cycle: {
+      ancre,
+      longueur,
+      jours,
+      semaines: semainesDuCycle(ancre, longueur),
+      du: jours[0],
+      au: jours[jours.length - 1],
+    },
+  }
 }

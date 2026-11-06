@@ -49,7 +49,7 @@ export function datesDeSemaine(semaine: string): string[] {
 export const HORS_PLAGE =
   "Cette date est hors de la plage autorisée (12 semaines en arrière, 6 en avant). Choisis une date plus proche."
 
-const MESSAGE_DATE_INVALIDE = "Date invalide : utilise le format AAAA-MM-JJ (ex. 2026-10-29)."
+export const MESSAGE_DATE_INVALIDE = "Date invalide : utilise le format AAAA-MM-JJ (ex. 2026-10-29)."
 
 /** `null` si `date` est au format AAAA-MM-JJ et existe au calendrier, sinon le message d'erreur. */
 export function validerDate(date: string): string | null {
