@@ -38,6 +38,7 @@ import {
 import { parserCoches, type Coches } from "@/lib/coches";
 import {
   appliquerEvent,
+  appliquerOp,
   deriverOps,
   type EventCoche,
 } from "@/lib/coches-sync";
@@ -816,6 +817,10 @@ let minuteurCoches: ReturnType<typeof setTimeout> | null = null;
 let applicationDistanteEnCours = false;
 // Dernier état réconcilié avec la base — référence du diff.
 let cochesConnues: Coches = {};
+// Blob en cours d'écriture par `flusherCoches` (null hors flush) : un event
+// temps réel sur une clé qu'il modifie peut être l'écho de cette écriture
+// (cf. appliquerEventLocal, #357).
+let cochesEnVol: Coches | null = null;
 
 function estDirtyCoches(): boolean {
   return localStorage.getItem(CLE_DIRTY_COCHES) === "1";
@@ -847,8 +852,10 @@ function ecrireBlob(blob: Coches): void {
 
 // Pousse en base le DIFF entre `cochesConnues` et le blob courant. Sérialisé
 // (garde `flushCochesEnCours`) ; recalcule le diff à chaque passage → converge
-// même si l'état a rebougé pendant un flush. Au succès, `cochesConnues` rattrape
-// le local et `courses_dirty` est levé ; à l'échec (hors-ligne) il est rejoué.
+// même si l'état a rebougé pendant un flush. Chaque op passée en base est
+// appliquée à `cochesConnues` (référence courante, pas l'instantané poussé,
+// #357) ; au succès `courses_dirty` est levé ; à l'échec (hors-ligne) le reste
+// est rejoué.
 async function flusherCoches(): Promise<void> {
   if (flushCochesEnCours) {
     reFlushCochesDemande = true;
@@ -867,12 +874,20 @@ async function flusherCoches(): Promise<void> {
   }
 
   flushCochesEnCours = true;
+  cochesEnVol = local;
   reFlushCochesDemande = false;
   definirEtat("sauvegarde");
   try {
+    // La référence avance op par op, sur sa valeur COURANTE (#357) : jamais
+    // l'instantané `local`, qui effacerait ce que les events reçus pendant le
+    // vol y ont mis (coche d'un autre membre oubliée, sa décoche ignorée, puis
+    // annulée en base par notre geste suivant). Op par op aussi pour qu'un
+    // échec à mi-parcours garde en référence les ops déjà passées en base.
     if (Object.keys(local).length === 0) {
       // Vidage complet (Tout décocher / régénération RG-13) → un seul DELETE.
+      // Les ops sont alors les `decocher` de toutes les clés connues au départ.
       await viderCochesDistantes(ancre);
+      cochesConnues = ops.reduce(appliquerOp, cochesConnues);
     } else {
       for (const op of ops) {
         if (op.type === "cocher") {
@@ -880,9 +895,9 @@ async function flusherCoches(): Promise<void> {
         } else {
           await decocherArticleDistant(ancre, op.cle);
         }
+        cochesConnues = appliquerOp(cochesConnues, op);
       }
     }
-    cochesConnues = local;
     if (!reFlushCochesDemande) localStorage.removeItem(CLE_DIRTY_COCHES);
     definirEtat("synchronise");
   } catch (erreur) {
@@ -890,6 +905,7 @@ async function flusherCoches(): Promise<void> {
     console.error("Synchronisation des coches échouée (sera rejouée).", erreur);
   } finally {
     flushCochesEnCours = false;
+    cochesEnVol = null;
     if (reFlushCochesDemande) {
       reFlushCochesDemande = false;
       void flusherCoches();
@@ -997,10 +1013,22 @@ async function assurerFoyerId(): Promise<string | null> {
 
 // Applique un event Realtime au blob local (sans redériver d'opérations) et
 // réconcilie la référence `cochesConnues` (l'état distant fait foi pour la clé).
+//
+// Sauf si la clé porte un geste local pas encore confirmé (#357) : écart entre
+// le local et la référence (ops en attente du débounce), ou écriture en vol qui
+// la modifie. L'event ne met alors à jour QUE la référence ; le local fait foi
+// et le flush suivant le pousse (le dernier geste gagne en base, RG-32).
+// Pourquoi : le temps réel livre l'écho d'une écriture avec un retard
+// variable ; l'écho de la coche arrivé après la décoche recochait l'article à
+// l'écran et, local et référence redevenus égaux, la décoche ne partait jamais.
 function appliquerEventLocal(event: EventCoche): void {
   const avant = cochesLocales();
-  const apres = appliquerEvent(avant, event);
+  const gesteEnAttente =
+    cochesConnues[event.cle] !== avant[event.cle] ||
+    (cochesEnVol !== null && cochesEnVol[event.cle] !== cochesConnues[event.cle]);
   cochesConnues = appliquerEvent(cochesConnues, event);
+  if (gesteEnAttente) return;
+  const apres = appliquerEvent(avant, event);
   if (apres === avant) return; // idempotent (écho de notre propre écriture)
   applicationDistanteEnCours = true;
   ecrireBlob(apres);

@@ -58,3 +58,17 @@ export function appliquerEvent(blob: Coches, event: EventCoche): Coches {
   if (blob[event.cle] === event.quantite) return blob
   return { ...blob, [event.cle]: event.quantite }
 }
+
+/**
+ * Applique à un blob (immuable) une opération POUSSÉE en base : `cocher` pose
+ * la quantité, `decocher` retire la clé. Sert à faire avancer la référence
+ * `cochesConnues` op par op au fil d'un flush (#357) : les clés que le flush
+ * n'a pas touchées gardent ce que les events temps réel reçus pendant le vol y
+ * ont mis (reprendre l'instantané du blob poussé les effacerait).
+ */
+export function appliquerOp(blob: Coches, op: OpCoche): Coches {
+  if (op.type === "cocher") {
+    return appliquerEvent(blob, { type: "upsert", cle: op.cle, quantite: op.quantite })
+  }
+  return appliquerEvent(blob, { type: "supprime", cle: op.cle })
+}
