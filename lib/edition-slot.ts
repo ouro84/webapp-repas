@@ -66,7 +66,9 @@ export const MESSAGES_EDITION = {
     valeur ? "Repas marqué « Restes »" : "Repas à cuisiner",
   avertissements: {
     vege: "Pas de recette végétarienne disponible pour ce repas.",
-    legume: "Ce jour n’a pas de repas « légumes » (pas assez de recettes légumes).",
+    legume:
+      "Ce jour n’a pas de repas « légumes » " +
+      "(pas assez de recettes légumes).",
     saison: "Ce repas est hors saison (pas assez de recettes de saison).",
   } satisfies Record<Avertissement, string>,
 }
@@ -74,7 +76,8 @@ export const MESSAGES_EDITION = {
 // Avertissements d'un remplacement aléatoire, dans l'ordre d'affichage :
 // végé (RG-26), légume (RG-27), saison (RG-28). Calculés depuis le planning
 // final, sans bloquer le remplacement.
-function avertissementsRemplacement(
+// Exporté : l'outil MCP `remplacer_repas` réutilise la même règle.
+export function avertissementsRemplacement(
   nouveau: Planning,
   jour: Jour,
   typeRepas: TypeRepas,

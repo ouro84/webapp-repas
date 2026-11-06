@@ -9,6 +9,7 @@ paths:
   - "lib/edition-slot*.ts"
   - "app/planning/**"
   - "components/ui/alerte-modif-planning.tsx"
+  - "components/planning/vue-cycle.tsx"
 ---
 
 # Synchronisation multi-appareil et temps réel
@@ -31,7 +32,7 @@ La base est la source de vérité ; localStorage est le cache de la semaine affi
 
 ## Édition d'un slot
 
-- Le calcul d'une édition de slot (changer, sélectionner, personnes, restes) passe par `editerSlot` (`lib/edition-slot.ts`, pur) dans les deux vues, textes des toasts compris (`MESSAGES_EDITION`) ; chaque vue garde sa persistance, son undo et sa garde RG-24, et seule la vue Semaine toaste les avertissements RG-26/27/28. Pourquoi : les deux vues recopiaient fonction métier, recherche des jours et avertissements ; un hook commun casserait le snapshot mono-niveau de la Semaine ou la file d'écriture par jour du Cycle.
+- Le calcul d'une édition de slot (changer, sélectionner, personnes, restes) passe par `editerSlot` (`lib/edition-slot.ts`, pur) dans les deux vues, textes des toasts compris (`MESSAGES_EDITION`) ; chaque vue garde sa persistance, son undo et sa garde RG-24, et seule la vue Semaine toaste les avertissements RG-26/27/28 (la vue Cycle ne les affiche pas). L'outil MCP `remplacer_repas` réutilise la même règle (`avertissementsRemplacement`) et les mêmes textes (`MESSAGES_EDITION.avertissements`) : un nouvel avertissement se déclare une seule fois, dans `lib/edition-slot.ts`. Pourquoi : les deux vues recopiaient fonction métier, recherche des jours et avertissements ; un hook commun casserait le snapshot mono-niveau de la Semaine ou la file d'écriture par jour du Cycle.
 
 ## Navigation entre semaines
 

@@ -16,6 +16,7 @@ import { REGLAGES_DEFAUT } from "@/lib/reglages";
 import { ORDRE_JOURS } from "@/lib/generateur";
 import { estRestes } from "@/lib/restes";
 import { personnesDuSlot } from "@/lib/personnes";
+import { rngSeed } from "@/tests/fixtures/rng";
 import type {
   Jour,
   JourPlanning,
@@ -23,17 +24,6 @@ import type {
   Recette,
   ReglagesGeneration,
 } from "@/types";
-
-// PRNG déterministe (mulberry32), comme `rngSeed` de lib/generateur.test.ts.
-function rngSeed(seed: number): () => number {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
 
 function recette(id: string, extra: Partial<Recette> = {}): Recette {
   return {
@@ -106,6 +96,20 @@ describe("editerSlot — changer (US-04, RG-04)", () => {
     const avant = JSON.stringify(planning);
     editerSlot(planning, "lundi", "diner", changer([recette("cand-1")]));
     expect(JSON.stringify(planning)).toBe(avant);
+  });
+
+  test("vivier restant 100 % « long » sur un dîner de semaine : indisponible (RG-01)", () => {
+    const planning = planningBase();
+    // Recettes libres (hors planning) mais au-dessus du plafond « rapide » du
+    // dîner de semaine : aucune n'est éligible.
+    const longues = [
+      recette("long-1", { tempsPreparation: "long" }),
+      recette("long-2", { tempsPreparation: "long" }),
+    ];
+    expect(editerSlot(planning, "lundi", "diner", changer(longues))).toEqual({
+      ok: false,
+      motif: "indisponible",
+    });
   });
 
   test("sans recette éligible : indisponible", () => {

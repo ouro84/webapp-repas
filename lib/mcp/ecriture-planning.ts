@@ -20,13 +20,11 @@ import { estRestes, marquerRestes } from "@/lib/restes"
 import { ErreurGeneration, genererPourUtilisateur } from "@/lib/generation"
 import {
   creneauActif,
-  joursSansLegume,
-  prefereVegeSlot,
   remplacerSlot,
   remplacerSlotManuel,
-  reposNonSaison,
   retirerCreneauxDesactives,
 } from "@/lib/generateur"
+import { avertissementsRemplacement, MESSAGES_EDITION } from "@/lib/edition-slot"
 import { ErreurOutil } from "@/lib/mcp/erreurs"
 import { idsRecettesDuFoyer } from "@/lib/mcp/recherche-recettes"
 import { localiserRepas, repasAuxDates, TYPE_REPAS, type Creneau } from "@/lib/mcp/repas"
@@ -173,20 +171,12 @@ const CANDIDATS_MAX = 10
 
 // Préférences souples non honorées par un tirage, pour ce seul repas : les
 // mêmes messages que les toasts du site après « ↺ changer » (RG-26/27/28).
+// Règle et textes partagés avec la vue Semaine (`lib/edition-slot.ts`).
 function avertissementsTirage(planning: Planning, cible: RepasCible): string[] {
   const { jour, type, reglages } = cible
-  const remplacante = planning.jours.find((jp) => jp.jour === jour)?.[type]
-  const messages: string[] = []
-  if (prefereVegeSlot(jour, type, reglages) && remplacante?.vegetarien !== true) {
-    messages.push("Pas de recette végétarienne disponible pour ce repas.")
-  }
-  if (joursSansLegume(planning, reglages).includes(jour)) {
-    messages.push("Ce jour n’a pas de repas « légumes » (pas assez de recettes légumes).")
-  }
-  if (reposNonSaison(planning, reglages).some((s) => s.jour === jour && s.typeRepas === type)) {
-    messages.push("Ce repas est hors saison (pas assez de recettes de saison).")
-  }
-  return messages
+  return avertissementsRemplacement(planning, jour, type, reglages).map(
+    (avertissement) => MESSAGES_EDITION.avertissements[avertissement]
+  )
 }
 
 /**
