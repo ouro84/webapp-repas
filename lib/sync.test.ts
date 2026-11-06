@@ -2719,7 +2719,7 @@ describe("basculerCocheArticle / toutDecocher — une interface (#362)", () => {
     nom: "lait",
     quantite: 1,
     unite: "l" as const,
-    categorie: "cremerie" as const,
+    categorie: "produits-frais" as const,
     fondDePlacard: false,
   };
 

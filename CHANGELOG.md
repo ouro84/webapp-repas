@@ -22,6 +22,7 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ### Corrigé
 
+- Liste de courses : deux touches très rapides sur le même article ne s'annulent plus en une seule (#362).
 - Liste de courses : un article décoché juste après l’avoir coché ne se recoche plus tout seul quelques instants plus tard, et la décoche est bien enregistrée pour tout le foyer. Un article décoché après un envoi de coches interrompu (connexion coupée) est lui aussi bien décoché pour tout le foyer (#357).
 - Planning : une modification faite pendant qu’un autre membre du foyer modifie un autre repas n’est plus perdue, y compris sur une semaine dont certains jours ou repas sont désactivés, et même si elle est faite pendant la relecture du changement de l’autre membre (#355).
 - Vue Cycle : un repas ajouté sur un jour qui n’en avait aucun n’est plus effacé par la modification suivante faite en vue Semaine (#355).
