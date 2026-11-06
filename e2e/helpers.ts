@@ -7,7 +7,7 @@
 // casserait l'état vide attendu.
 
 import { readFileSync } from "node:fs";
-import type { APIRequestContext, Page } from "@playwright/test";
+import type { APIRequestContext, Page, WebSocket } from "@playwright/test";
 
 export const E2E_EMAIL = process.env.E2E_EMAIL ?? "claude-e2e-test@example.com";
 export const E2E_PASSWORD =
@@ -20,6 +20,97 @@ export function lireEnvLocal(cle: string): string {
     .find((l) => l.startsWith(`${cle}=`));
   if (!ligne) throw new Error(`${cle} introuvable dans .env.local`);
   return ligne.slice(cle.length + 1).trim().replace(/^"|"$/g, "");
+}
+
+/** Préfixes des topics temps réel de l'app (`realtime:<prefixe>…`). */
+export type PrefixeRealtime =
+  | "planning:" // planning de la semaine (`/planning`, `planning:<foyer>:<semaine>`)
+  | "planning-cycle:" // planning du cycle (`/courses`, #259)
+  | "coches:" // coches d'ingrédients (`/courses`, `coches:<foyer>:<ancre>`)
+  | "articles-manuels:"; // articles manuels (`/courses`, #216)
+
+/**
+ * Résout quand Supabase Realtime confirme un abonnement `postgres_changes`
+ * (message `system` « ok ») sur un topic `realtime:<prefixe>…`. À appeler AVANT
+ * `goto` : le WebSocket s'ouvre au chargement, et `page.on("websocket")` ne
+ * rejoue pas une connexion déjà ouverte. Signal réel plutôt qu'une attente
+ * fixe (trop courte : event manqué ; trop longue : temps perdu).
+ *
+ * Rejette après `delaiMs` avec un message qui nomme le protocole attendu, ou
+ * dès que la page se ferme avant le signal (#357 : sinon la promesse restait en
+ * suspens et l'appelant n'échouait qu'au timeout du test), et retire ses
+ * écouteurs (WebSocket et page) dès que le signal est reçu, le délai écoulé ou
+ * la page fermée. Partagé par `alerte-planning.spec` et `coches-concurrence.spec`.
+ */
+export function abonnementRealtimePret(
+  page: Page,
+  prefixe: PrefixeRealtime,
+  delaiMs = 30_000
+): Promise<void> {
+  const promesse = new Promise<void>((resoudre, rejeter) => {
+    const ecouteurs: Array<() => void> = [];
+    const nettoyer = () => {
+      clearTimeout(minuteur);
+      page.off("websocket", surWebSocket);
+      page.off("close", surFermeture);
+      for (const retirer of ecouteurs) retirer();
+    };
+    const surFermeture = () => {
+      nettoyer();
+      rejeter(
+        new Error(
+          `Page fermée avant la confirmation de l'abonnement temps réel « realtime:${prefixe} ».`
+        )
+      );
+    };
+    const minuteur = setTimeout(() => {
+      nettoyer();
+      rejeter(
+        new Error(
+          `Abonnement temps réel « realtime:${prefixe} » non confirmé après ${delaiMs} ms : ` +
+            "trame attendue = message `system` avec `extension: postgres_changes` et " +
+            "`status: ok` (serialiseur 2.0.0 de realtime-js : [join_ref, ref, topic, event, payload])."
+        )
+      );
+    }, delaiMs);
+    const surWebSocket = (ws: WebSocket) => {
+      const surTrame = ({ payload }: { payload: string | Buffer }) => {
+        if (typeof payload !== "string") return;
+        try {
+          type Charge = { extension?: string; status?: string };
+          const brut: unknown = JSON.parse(payload);
+          // Sérialiseur 2.0.0 de realtime-js : [join_ref, ref, topic, event, payload] ;
+          // 1.0.0 : objet { topic, event, payload }.
+          const [topic, event, charge] = Array.isArray(brut)
+            ? [brut[2] as string, brut[3] as string, brut[4] as Charge]
+            : [
+                (brut as { topic?: string }).topic,
+                (brut as { event?: string }).event,
+                (brut as { payload?: Charge }).payload,
+              ];
+          if (
+            topic?.startsWith(`realtime:${prefixe}`) &&
+            event === "system" &&
+            charge?.extension === "postgres_changes" &&
+            charge.status === "ok"
+          ) {
+            nettoyer();
+            resoudre();
+          }
+        } catch {
+          // Trame non JSON (heartbeat binaire, etc.) : ignorée.
+        }
+      };
+      ws.on("framereceived", surTrame);
+      ecouteurs.push(() => ws.off("framereceived", surTrame));
+    };
+    page.on("websocket", surWebSocket);
+    page.on("close", surFermeture);
+  });
+  // Un rejet après la fin d'un test qui a échoué plus tôt ne doit pas planter le
+  // worker ; l'appelant qui attend la promesse reçoit bien l'erreur.
+  promesse.catch(() => {});
+  return promesse;
 }
 
 /**
@@ -97,8 +188,10 @@ export async function nettoyerReglagesDistants(
   });
 }
 
-// Jeton d'accès du compte de test (auth REST par mot de passe).
-async function jetonTest(request: APIRequestContext): Promise<{
+// Jeton d'accès du compte de test (auth REST par mot de passe). Exporté pour
+// les specs qui relisent la base en boucle (`coches-concurrence.spec`) : une
+// connexion par test, pas une par lecture (l'Auth de staging limite le débit).
+export async function jetonTest(request: APIRequestContext): Promise<{
   url: string;
   headers: Record<string, string>;
 }> {
