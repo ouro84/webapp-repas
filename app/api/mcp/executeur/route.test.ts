@@ -136,7 +136,22 @@ describe("POST /api/mcp/executeur — outils (#330)", () => {
     const outil = (
       result?.tools as Array<{ name: string; inputSchema: { properties: Record<string, unknown> } }>
     ).find((t) => t.name === "cocher_article_demande")!
-    expect(Object.keys(outil.inputSchema.properties).sort()).toEqual(["libelle", "quantite"])
+    expect(Object.keys(outil.inputSchema.properties).sort()).toEqual(["libelle", "quantite", "ref"])
+  })
+
+  it("cocher_article_demande transmet la ref (#372)", async () => {
+    m.cocherArticleDemande.mockResolvedValue({ modifie: true, article: {} })
+    const { result } = await lire(
+      await appeler("tools/call", { name: "cocher_article_demande", arguments: { ref: "ing:lait|l" } })
+    )
+    expect(result?.isError).toBeFalsy()
+    expect(m.cocherArticleDemande).toHaveBeenCalledWith({ jeton: "jwt-oauth" }, { ref: "ing:lait|l" })
+  })
+
+  it("cocher_article_demande sans ref ni libellé : refusé par le schéma, outil non appelé (#372)", async () => {
+    const { result } = await lire(await appeler("tools/call", { name: "cocher_article_demande", arguments: {} }))
+    expect(result?.isError).toBe(true)
+    expect(m.cocherArticleDemande).not.toHaveBeenCalled()
   })
 
   it("rapporter_panier : arguments transmis tels quels", async () => {
@@ -158,10 +173,10 @@ describe("POST /api/mcp/executeur — outils (#330)", () => {
     const description = (nom: string) =>
       (result?.tools as Array<{ name: string; description: string }>).find((t) => t.name === nom)!.description
     expect(description("prendre_demande_panier")).toBe(
-      "À appeler en premier, avant toute autre action. Renvoie la demande et la liste à mettre au panier. Chaque article porte un `jeton` à recopier tel quel dans `jetons` de ajouter_au_panier. `demande: null` → arrête-toi."
+      "À appeler en premier, avant toute autre action. Renvoie la demande et la liste à mettre au panier. Chaque article porte un `jeton` à recopier tel quel dans `jetons` de ajouter_au_panier, et une `ref` à recopier telle quelle dans cocher_article_demande (ne la reconstruis jamais). `demande: null` → arrête-toi."
     )
     expect(description("cocher_article_demande")).toBe(
-      "Coche l'article juste après son ajout confirmé au panier. Le cycle vient de la demande prise : il n'y a pas d'`ancre`."
+      "Coche l'article juste après son ajout confirmé au panier. Désigne-le de préférence par sa `ref`, recopiée telle quelle depuis prendre_demande_panier : elle prime sur le libellé. Si la `ref` n'est plus dans la liste, rien n'est coché. Le cycle vient de la demande prise : il n'y a pas d'`ancre`."
     )
     expect(description("rapporter_panier")).toContain("cocher_article_demande")
     expect(description("rapporter_panier")).not.toMatch(/cocher_article(?!_demande)/)

@@ -65,7 +65,7 @@ describe("ajouterArticleCourses (RG-77, #216)", () => {
       { ancre: "2026-10-29", libelle: "Bougies", quantite: null, unite: null, categorie: "autre", fond_de_placard: false },
     ])
     expect(resultat).toEqual({
-      article: { nom: "Bougies", quantite: "", manuel: true },
+      article: { nom: "Bougies", quantite: "", manuel: true, ref: "man:a1" },
       periode: { du: "2026-10-29", au: "2026-11-04", libelle: "du 29 octobre au 4 novembre" },
     })
   })
@@ -95,7 +95,10 @@ describe("cocherArticle (RG-77, RG-10, RG-12)", () => {
       { ancre: "2026-10-29", cle: "carottes|g", quantite: 400, coche: true },
       { onConflict: "foyer_id,ancre,cle" },
     ])
-    expect(resultat).toEqual({ modifie: true, article: { nom: "carottes", quantite: "400 g", manuel: false, coche: true } })
+    expect(resultat).toEqual({
+      modifie: true,
+      article: { nom: "carottes", quantite: "400 g", manuel: false, ref: "ing:carottes|g", coche: true },
+    })
   })
 
   it("coche un article manuel : update de sa colonne coche", async () => {
@@ -213,6 +216,111 @@ describe("cocherArticle (RG-77, RG-10, RG-12)", () => {
     liste([ing("carottes", 400, "g")])
     const { client } = mock()
     await expect(cocherArticle(client, { libelle: "chocolat" }, JEUDI)).rejects.toThrow("lire_liste_courses")
+  })
+})
+
+describe("cocherArticle par ref (#372)", () => {
+  it("deux « lait » (l et g) : la ref de l'un coche celui-là seul, sans candidats", async () => {
+    liste([ing("lait", 1, "l"), ing("lait", 200, "g")])
+    const { client, appels } = mock()
+    const resultat = await cocherArticle(client, { ref: "ing:lait|g" }, JEUDI)
+    const ecritures = appels.filter((a) => a.table === "etat_courses_article")
+    expect(ecritures).toHaveLength(1)
+    // RG-12 : quantité courante de la liste, comme le chemin par libellé.
+    expect(ecritures[0].ops[0][1]).toEqual({ ancre: "2026-10-29", cle: "lait|g", quantite: 200, coche: true })
+    expect(resultat).toEqual({
+      modifie: true,
+      article: { nom: "lait", quantite: "200 g", manuel: false, ref: "ing:lait|g", coche: true },
+    })
+  })
+
+  it("ref et libellé contradictoires : la ref l'emporte", async () => {
+    liste([ing("carottes", 400, "g"), ing("lait", 1, "l")])
+    const { client, appels } = mock()
+    await cocherArticle(client, { ref: "ing:lait|l", libelle: "carottes" }, JEUDI)
+    const ecritures = appels.filter((a) => a.table === "etat_courses_article")
+    expect(ecritures).toHaveLength(1)
+    expect(ecritures[0].ops[0][1]).toMatchObject({ cle: "lait|l", quantite: 1 })
+  })
+
+  it("ref avec une quantité qui a changé depuis la lecture : ErreurOutil, aucune écriture (RG-12)", async () => {
+    // L'exécuteur a mis 1 l au panier ; la liste est passée à 2 l pendant le run.
+    liste([ing("lait", 2, "l")])
+    const { client, appels } = mock()
+    const appel = cocherArticle(client, { ref: "ing:lait|l", quantite: "1 l" }, JEUDI)
+    await expect(appel).rejects.toBeInstanceOf(ErreurOutil)
+    await expect(appel).rejects.toThrow("La quantité de cet article a changé depuis la lecture : relis la liste.")
+    expect(appels.filter((a) => a.table === "etat_courses_article")).toEqual([])
+  })
+
+  it("ref avec la quantité courante (espaces autour) : cochée", async () => {
+    liste([ing("lait", 1, "l")])
+    const { client, appels } = mock()
+    await cocherArticle(client, { ref: "  ing:lait|l ", quantite: " 1 l " }, JEUDI)
+    const ecritures = appels.filter((a) => a.table === "etat_courses_article")
+    expect(ecritures).toHaveLength(1)
+    expect(ecritures[0].ops[0][1]).toMatchObject({ cle: "lait|l", quantite: 1 })
+  })
+
+  it("ref mal formée : le message ne renvoie pas à un outil précis", async () => {
+    liste([ing("lait", 1, "l")])
+    const { client } = mock()
+    await expect(cocherArticle(client, { ref: "lait|l" }, JEUDI)).rejects.toThrow(
+      "Référence d'article invalide : recopie telle quelle la `ref` reçue avec la liste."
+    )
+  })
+
+  it("ref absente de la liste (cycle régénéré) : ErreurOutil, aucune écriture, pas de repli sur le libellé", async () => {
+    liste([ing("lait", 1, "l")])
+    const { client, appels } = mock()
+    const appel = cocherArticle(client, { ref: "ing:lait|g", libelle: "lait" }, JEUDI)
+    await expect(appel).rejects.toBeInstanceOf(ErreurOutil)
+    await expect(appel).rejects.toThrow("Cet article n'est plus dans la liste.")
+    expect(appels.filter((a) => a.table === "etat_courses_article" || a.table === "article_manuel")).toEqual([])
+  })
+
+  it("ref mal formée : ErreurOutil, aucune écriture", async () => {
+    liste([ing("lait", 1, "l")])
+    const { client, appels } = mock()
+    await expect(cocherArticle(client, { ref: "lait|l" }, JEUDI)).rejects.toBeInstanceOf(ErreurOutil)
+    expect(appels.filter((a) => a.table === "etat_courses_article")).toEqual([])
+  })
+
+  it("article manuel et ingrédient de même libellé : la ref vise le bon", async () => {
+    const manuel = ing("Lait", 1, "l", { categorie: "autre", source: "manuel", id: "a1", coche: false })
+    liste([ing("lait", 1, "l"), manuel])
+
+    const viaManuel = mock()
+    await cocherArticle(viaManuel.client, { ref: "man:a1" }, JEUDI)
+    expect(viaManuel.appels.find((a) => a.table === "article_manuel")!.ops).toEqual([
+      ["update", { coche: true }],
+      ["eq", "id", "a1"],
+      ["select", "updated_at"],
+    ])
+    expect(viaManuel.appels.filter((a) => a.table === "etat_courses_article")).toEqual([])
+
+    const viaIngredient = mock()
+    await cocherArticle(viaIngredient.client, { ref: "ing:lait|l" }, JEUDI)
+    expect(viaIngredient.appels.find((a) => a.table === "etat_courses_article")!.ops[0][1]).toMatchObject({
+      cle: "lait|l",
+    })
+    expect(viaIngredient.appels.filter((a) => a.table === "article_manuel")).toEqual([])
+  })
+
+  it("ref déjà cochée : modifie false, aucune écriture", async () => {
+    liste([ing("lait", 1, "l")], { "lait|l": 1 })
+    const { client, appels } = mock()
+    const resultat = await cocherArticle(client, { ref: "ing:lait|l" }, JEUDI)
+    expect(resultat).toMatchObject({ modifie: false, article: { ref: "ing:lait|l", coche: true } })
+    expect(appels.filter((a) => a.table === "etat_courses_article")).toEqual([])
+  })
+
+  it("ni ref ni libellé : ErreurOutil, rien lu ni écrit", async () => {
+    const espion = vi.spyOn(listeCoursesCycle, "chargerListeCoursesCycle")
+    const { client, appels } = mock()
+    await expect(cocherArticle(client, {}, JEUDI)).rejects.toBeInstanceOf(ErreurOutil)
+    expect(espion).not.toHaveBeenCalled()
+    expect(appels.filter((a) => a.table === "etat_courses_article" || a.table === "article_manuel")).toEqual([])
   })
 })
 

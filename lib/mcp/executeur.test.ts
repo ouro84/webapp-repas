@@ -91,7 +91,7 @@ describe("prendreDemandeExecuteur (#330, RG-83)", () => {
     await expect(promesse).rejects.not.toBeInstanceOf(ErreurOutil)
   })
 
-  it("prendre → articles non cochés du cycle demande.ancre, chacun avec le jeton renvoyé par signer_jetons_panier, clés passées = cleJeton(libellé)", async () => {
+  it("prendre → articles non cochés du cycle demande.ancre, chacun avec le jeton renvoyé par signer_jetons_panier, clés passées = cleJeton(libellé), et sa ref stable (#372)", async () => {
     const tomates = ing("Tomates  Cerises", 200, "g")
     const lait = ing("lait", 500, "ml", { categorie: "produits-frais" })
     const deja = ing("Carottes", 3, "piece")
@@ -133,10 +133,10 @@ describe("prendreDemandeExecuteur (#330, RG-83)", () => {
         cycle: { du: "2026-11-12", au: "2026-11-18", libelle: "Courses du 12 au 18 novembre" },
         expire_le: new Date(EXPIRE_LE * 1000).toISOString(),
         articles: [
-          { libelle: "Tomates  Cerises", quantite: "200 g", rayon: "Légumes & Fruits", placard: false, manuel: false, jeton: "j-tomates" },
-          { libelle: "lait", quantite: "500 ml", rayon: "Produits frais", placard: false, manuel: false, jeton: "j-lait" },
-          { libelle: "Piles", quantite: "4", rayon: "Autre", placard: false, manuel: true, jeton: "j-piles" },
-          { libelle: "Sel", quantite: "5 g", rayon: "Épicerie", placard: true, manuel: false, jeton: "j-sel" },
+          { libelle: "Tomates  Cerises", quantite: "200 g", rayon: "Légumes & Fruits", placard: false, manuel: false, ref: "ing:tomates  cerises|g", jeton: "j-tomates" },
+          { libelle: "lait", quantite: "500 ml", rayon: "Produits frais", placard: false, manuel: false, ref: "ing:lait|ml", jeton: "j-lait" },
+          { libelle: "Piles", quantite: "4", rayon: "Autre", placard: false, manuel: true, ref: "man:a1", jeton: "j-piles" },
+          { libelle: "Sel", quantite: "5 g", rayon: "Épicerie", placard: true, manuel: false, ref: "ing:sel|g", jeton: "j-sel" },
         ],
       },
     })
@@ -362,6 +362,34 @@ describe("cocherArticleDemande (#330, RG-83)", () => {
     )
     expect(m.resoudreCycle).not.toHaveBeenCalled()
     expect(resultat).toEqual({ modifie: true, article: { nom: "lait", quantite: "1 L", manuel: false, coche: true } })
+  })
+
+  it("cocher_article_demande par ref → la ref est transmise à cocherArticleDansCycle, sur le cycle de la demande (#372)", async () => {
+    m.cocherArticleDansCycle.mockResolvedValue({
+      modifie: true,
+      article: { nom: "lait", quantite: "200 g", manuel: false, ref: "ing:lait|g", coche: true },
+    })
+    const { client } = creerSupabaseMock({
+      rpc: { demande_panier_en_cours: { data: { id: DEMANDE, ancre: ANCRE, pris_le: "2026-11-03T11:00:00Z" }, error: null } },
+    })
+
+    await cocherArticleDemande(client, { ref: "ing:lait|g", libelle: "lait" })
+
+    expect(m.cocherArticleDansCycle).toHaveBeenCalledOnce()
+    const [, args, cycle] = m.cocherArticleDansCycle.mock.calls[0]
+    expect(args).toStrictEqual({ ref: "ing:lait|g", libelle: "lait" })
+    expect(cycle).toEqual({ ancre: ANCRE, longueur: 7 })
+  })
+
+  it("cocher_article_demande sans ref : arguments transmis à l'identique, sans clé ref (#372)", async () => {
+    m.cocherArticleDansCycle.mockResolvedValue({ modifie: true, article: {} })
+    const { client } = creerSupabaseMock({
+      rpc: { demande_panier_en_cours: { data: { id: DEMANDE, ancre: ANCRE, pris_le: "2026-11-03T11:00:00Z" }, error: null } },
+    })
+
+    await cocherArticleDemande(client, { libelle: "lait", quantite: "1 L" })
+
+    expect(m.cocherArticleDansCycle.mock.calls[0][1]).toStrictEqual({ libelle: "lait", quantite: "1 L" })
   })
 
   it("cocher_article_demande, homonymes → candidats, rien coché", async () => {

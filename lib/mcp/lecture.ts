@@ -20,6 +20,7 @@ import { LIBELLES_CATEGORIES } from "@/lib/courses"
 import { estCoche, type Coches } from "@/lib/coches"
 import { aQuantiteRenseignee } from "@/lib/articles-manuels"
 import { accorderNom } from "@/lib/pluriels"
+import { refArticle } from "@/lib/ref-article"
 import { formaterQuantite } from "@/lib/unites"
 import { ingredientsAEchelle, personnesDuSlot } from "@/lib/personnes"
 import { estRestes } from "@/lib/restes"
@@ -78,7 +79,9 @@ export function versRepasMcp({ date, creneau, jour, jp }: RepasDate): RepasMcp {
   }
 }
 
-export type ArticleMcp = { nom: string; quantite: string; manuel: boolean; coche?: boolean }
+// `ref` : référence stable et opaque de l'article (#372, `lib/ref-article.ts`),
+// à recopier telle quelle dans cocher_article.
+export type ArticleMcp = { nom: string; quantite: string; manuel: boolean; ref: string; coche?: boolean }
 
 export type ListeMcp = {
   cycle: { du: string; au: string; libelle: string }
@@ -185,6 +188,7 @@ export function versArticle(i: Ingredient, coches: Coches | null): ArticleMcp {
     nom: accorderNom(i),
     quantite: aQuantiteRenseignee(i) ? formaterQuantite(i) : "",
     manuel: i.source === "manuel",
+    ref: refArticle(i),
     ...(coches ? { coche: estCoche(coches, i) } : {}),
   }
 }

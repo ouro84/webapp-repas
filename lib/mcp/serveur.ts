@@ -79,7 +79,7 @@ export function enregistrerOutilsLecture(server: McpServer): void {
     {
       title: "Lire la liste de courses",
       description:
-        "Liste de courses du cycle en cours, ou de celui qui contient `ancre` (AAAA-MM-JJ), groupée par rayon, articles ajoutés à la main compris. Par défaut, seulement ce qu'il reste à acheter (articles non cochés) ; `inclure_coches: true` renvoie aussi les articles cochés. `a_verifier_au_placard` liste les produits à vérifier avant d'acheter.",
+        "Liste de courses du cycle en cours, ou de celui qui contient `ancre` (AAAA-MM-JJ), groupée par rayon, articles ajoutés à la main compris. Par défaut, seulement ce qu'il reste à acheter (articles non cochés) ; `inclure_coches: true` renvoie aussi les articles cochés. `a_verifier_au_placard` liste les produits à vérifier avant d'acheter. Chaque article porte une `ref` : pour le cocher, passe-la à cocher_article en la recopiant telle quelle, ne la reconstruis jamais.",
       inputSchema: z.object({
         inclure_coches: z.boolean().optional().describe("Inclure les articles déjà cochés (défaut : non)."),
         ancre: z
@@ -130,6 +130,11 @@ const DATE = z.string().describe("Date du repas, AAAA-MM-JJ.")
 const CRENEAU = z.enum(["midi", "soir"]).describe("Créneau du repas.")
 const UNITES = Object.keys(LIBELLES_UNITES) as [Unite, ...Unite[]]
 const CATEGORIES = ORDRE_CATEGORIES as [CategorieIngredient, ...CategorieIngredient[]]
+
+// cocher_article et cocher_article_demande (#372) : `ref` et `libelle` sont
+// facultatifs, mais l'un des deux est requis ; la `ref` prime.
+const AU_MOINS_REF_OU_LIBELLE = "Désigne l'article par `ref` ou par `libelle`."
+const auMoinsRefOuLibelle = (a: { ref?: string; libelle?: string }) => a.ref !== undefined || a.libelle !== undefined
 
 export function enregistrerOutilsEcriture(server: McpServer): void {
   server.registerTool(
@@ -260,16 +265,25 @@ export function enregistrerOutilsEcriture(server: McpServer): void {
     {
       title: "Cocher un article de la liste de courses",
       description:
-        "Coche (ou décoche avec `coche: false`) un article de la liste de courses du cycle en cours, ou de celui qui contient `ancre` (AAAA-MM-JJ), désigné par son libellé tel que renvoyé par lire_liste_courses. Si plusieurs articles correspondent (même nom en deux unités, par exemple), rien n'est coché : `modifie: false` et `candidats` ; rappelle avec `quantite` (texte exact du candidat) pour départager.",
-      inputSchema: z.object({
-        libelle: z.string().describe("Libellé de l'article."),
-        coche: z.boolean().optional().describe("false pour décocher. Par défaut : cocher."),
-        quantite: z.string().optional().describe("Quantité exacte du candidat voulu, ex. « 200 g »."),
-        ancre: z
-          .string()
-          .optional()
-          .describe("Une date quelconque (AAAA-MM-JJ) du cycle visé. Par défaut : le cycle en cours."),
-      }),
+        "Coche (ou décoche avec `coche: false`) un article de la liste de courses du cycle en cours, ou de celui qui contient `ancre` (AAAA-MM-JJ). Désigne-le de préférence par sa `ref`, recopiée telle quelle depuis lire_liste_courses : elle prime sur le libellé. Si la `ref` n'est plus dans la liste (liste régénérée), rien n'est coché : relis la liste. À défaut, désigne-le par son libellé tel que renvoyé par lire_liste_courses ; si plusieurs articles correspondent (même nom en deux unités, par exemple), rien n'est coché : `modifie: false` et `candidats` ; rappelle avec la `ref` du candidat voulu, ou avec `quantite` (texte exact du candidat).",
+      inputSchema: z
+        .object({
+          ref: z
+            .string()
+            .optional()
+            .describe("Référence de l'article (`ref` de lire_liste_courses), recopiée telle quelle. Prioritaire sur le libellé."),
+          libelle: z.string().optional().describe("Libellé de l'article, si tu n'as pas sa `ref`."),
+          coche: z.boolean().optional().describe("false pour décocher. Par défaut : cocher."),
+          quantite: z
+            .string()
+            .optional()
+            .describe("Quantité exacte du candidat voulu, ex. « 200 g ». Avec une `ref`, si la quantité a changé, rien n'est coché : relis la liste."),
+          ancre: z
+            .string()
+            .optional()
+            .describe("Une date quelconque (AAAA-MM-JJ) du cycle visé. Par défaut : le cycle en cours."),
+        })
+        .refine(auMoinsRefOuLibelle, { message: AU_MOINS_REF_OU_LIBELLE }),
     },
     async (args, ctx) => executer(ctx, (supabase) => cocherArticle(supabase, args, aujourdhuiParis()))
   )
@@ -303,7 +317,7 @@ export function enregistrerOutilsExecuteur(server: McpServer): void {
     {
       title: "Prendre la demande de panier",
       description:
-        "À appeler en premier, avant toute autre action. Renvoie la demande et la liste à mettre au panier. Chaque article porte un `jeton` à recopier tel quel dans `jetons` de ajouter_au_panier. `demande: null` → arrête-toi.",
+        "À appeler en premier, avant toute autre action. Renvoie la demande et la liste à mettre au panier. Chaque article porte un `jeton` à recopier tel quel dans `jetons` de ajouter_au_panier, et une `ref` à recopier telle quelle dans cocher_article_demande (ne la reconstruis jamais). `demande: null` → arrête-toi.",
       inputSchema: z.object({}),
     },
     async (_args, ctx) => executer(ctx, (supabase) => prendreDemandeExecuteur(supabase, aujourdhuiParis()))
@@ -314,11 +328,20 @@ export function enregistrerOutilsExecuteur(server: McpServer): void {
     {
       title: "Cocher un article de la demande",
       description:
-        "Coche l'article juste après son ajout confirmé au panier. Le cycle vient de la demande prise : il n'y a pas d'`ancre`.",
-      inputSchema: z.object({
-        libelle: z.string().describe("Libellé de l'article, tel que renvoyé par prendre_demande_panier."),
-        quantite: z.string().optional().describe("Quantité exacte de l'article, ex. « 200 g », pour départager des homonymes."),
-      }),
+        "Coche l'article juste après son ajout confirmé au panier. Désigne-le de préférence par sa `ref`, recopiée telle quelle depuis prendre_demande_panier : elle prime sur le libellé. Si la `ref` n'est plus dans la liste, rien n'est coché. Le cycle vient de la demande prise : il n'y a pas d'`ancre`.",
+      inputSchema: z
+        .object({
+          ref: z
+            .string()
+            .optional()
+            .describe("Référence de l'article (`ref` de prendre_demande_panier), recopiée telle quelle. Prioritaire sur le libellé."),
+          libelle: z.string().optional().describe("Libellé de l'article, tel que renvoyé par prendre_demande_panier."),
+          quantite: z
+            .string()
+            .optional()
+            .describe("Quantité exacte de l'article, ex. « 200 g ». Avec une `ref`, si la quantité a changé depuis la prise, rien n'est coché."),
+        })
+        .refine(auMoinsRefOuLibelle, { message: AU_MOINS_REF_OU_LIBELLE }),
     },
     async (args, ctx) => executer(ctx, (supabase) => cocherArticleDemande(supabase, args))
   )

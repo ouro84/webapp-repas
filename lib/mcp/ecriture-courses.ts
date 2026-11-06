@@ -2,7 +2,7 @@
 //
 // Mêmes écritures que /courses, sous RLS mon_foyer() (RG-71) : un article
 // manuel du cycle courant (#216, RG-40→43) et la coche d'un article (RG-10),
-// désigné par son libellé. Les tables étant publiées en temps réel, un
+// désigné par sa `ref` stable (#372) ou son libellé. Les tables étant publiées en temps réel, un
 // navigateur ouvert sur /courses voit le changement sans code dédié (RG-79).
 
 import {
@@ -14,9 +14,10 @@ import {
 import { chargerListeCoursesCycle } from "@/lib/liste-courses-cycle"
 import { articleManuelVersIngredient } from "@/lib/articles-manuels"
 import { cleAgregation } from "@/lib/courses"
-import { estCoche } from "@/lib/coches"
+import { estCoche, type Coches } from "@/lib/coches"
 import { accorderNom } from "@/lib/pluriels"
 import { normaliser } from "@/lib/recherche"
+import { lireRef, refArticle } from "@/lib/ref-article"
 import { ErreurOutil } from "@/lib/mcp/erreurs"
 import { cycleVise } from "@/lib/mcp/cycle"
 import { libellePeriode, versArticle, type ArticleMcp } from "@/lib/mcp/lecture"
@@ -81,44 +82,54 @@ function trouverArticles(articles: Ingredient[], libelle: string): Ingredient[] 
   return exacts.length > 0 ? exacts : articles.filter((i) => noms(i).some((n) => n.includes(aiguille)))
 }
 
-/**
- * `cocher_article` (RG-77) : met l'article désigné par son libellé dans l'état
- * `coche` (défaut : coché ; idempotent). Ambiguïté → candidats, rien coché ;
- * `quantite` (texte exact de lire_liste_courses) départage des homonymes. Sans
- * `ancre`, le cycle courant ; avec, le cycle qui la contient (#320, RG-85) :
- * la liste lue et la coche écrite sont celles de CE cycle, jamais du courant.
- */
-export async function cocherArticle(
-  supabase: ClientSupabase,
-  args: { libelle: string; coche?: boolean; quantite?: string; ancre?: string },
-  aujourdhui: Date = new Date()
-): Promise<CochageMcp> {
-  return cocherArticleDansCycle(supabase, args, await cycleVise(supabase, args.ancre, aujourdhui))
+/** Désignation d'un article à cocher : `ref` (prioritaire, #372) ou libellé. */
+export type DesignationArticle = { ref?: string; libelle?: string; quantite?: string }
+
+const SANS_DESIGNATION =
+  "Désigne l'article par sa `ref` ou par son `libelle`, tels que reçus avec la liste."
+const REF_INCONNUE = "Cet article n'est plus dans la liste."
+const REF_INVALIDE =
+  "Référence d'article invalide : recopie telle quelle la `ref` reçue avec la liste."
+const QUANTITE_CHANGEE = "La quantité de cet article a changé depuis la lecture : relis la liste."
+
+// Refus avant toute lecture : ni `ref` ni libellé, rien à désigner.
+function exigerDesignation(args: DesignationArticle): void {
+  if (args.ref === undefined && args.libelle === undefined) throw new ErreurOutil(SANS_DESIGNATION)
 }
 
-/**
- * Cœur de `cocher_article` sur un cycle DÉJÀ résolu. Ne résout jamais le
- * cycle : l'exécuteur de panier (#330, RG-83) coche exactement le cycle de sa
- * demande, même si le jour de courses change pendant le run (une re-résolution
- * viserait un autre cycle).
- */
-export async function cocherArticleDansCycle(
-  supabase: ClientSupabase,
-  args: { libelle: string; coche?: boolean; quantite?: string },
-  cycle: { ancre: string; longueur: number }
-): Promise<CochageMcp> {
-  const coche = args.coche !== false
-  const { ancre, liste, coches } = await chargerListeCoursesCycle(supabase, cycle)
-  let articles = [...liste.normal.flatMap((l) => l.ingredients), ...liste.fondDePlacard]
-  if (args.quantite !== undefined) {
-    const voulue = args.quantite.trim()
+// Égalité exacte de `ref` (espaces autour retirés), jamais de repli sur le
+// libellé (#372) : la quantité cochée reste celle de la liste courante (RG-12).
+// Une `quantite` fournie avec la `ref` doit être la quantité courante, sinon
+// refus : la coche couvrirait plus que ce qui a été acheté (liste modifiée
+// pendant le run de l'exécuteur, RG-12).
+function articleParRef(articles: Ingredient[], ref: string, quantite: string | undefined): Ingredient {
+  const article = articles.find((i) => refArticle(i) === ref)
+  if (!article) throw new ErreurOutil(REF_INCONNUE)
+  if (quantite !== undefined && versArticle(article, null).quantite !== quantite.trim()) {
+    throw new ErreurOutil(QUANTITE_CHANGEE)
+  }
+  return article
+}
+
+// Chemin par libellé (inchangé par #372) : exact > inclusion, `quantite` pour
+// départager, homonymes indiscernables traités l'un après l'autre.
+function choisirParLibelle(
+  tous: Ingredient[],
+  libelle: string,
+  quantite: string | undefined,
+  coche: boolean,
+  coches: Coches
+): { article: Ingredient } | { candidats: ArticleMcp[] } {
+  let articles = tous
+  if (quantite !== undefined) {
+    const voulue = quantite.trim()
     articles = articles.filter((i) => versArticle(i, null).quantite === voulue)
   }
 
-  let trouves = trouverArticles(articles, args.libelle)
+  let trouves = trouverArticles(articles, libelle)
   if (trouves.length === 0) {
     throw new ErreurOutil(
-      `Aucun article « ${args.libelle} » dans la liste de courses du cycle. Appelle lire_liste_courses pour voir les libellés exacts.`
+      `Aucun article « ${libelle} » dans la liste de courses du cycle. Appelle lire_liste_courses pour voir les libellés exacts.`
     )
   }
   // Homonymes indiscernables (même libellé affiché, même quantité, ex. deux
@@ -131,11 +142,57 @@ export async function cocherArticleDansCycle(
   if (trouves.length > 1 && trouves.every((i) => signature(i) === signature(trouves[0]))) {
     trouves = [trouves.find((i) => estCoche(coches, i) !== coche) ?? trouves[0]]
   }
-  if (trouves.length > 1) {
-    return { modifie: false, candidats: trouves.map((i) => versArticle(i, coches)) }
-  }
+  if (trouves.length > 1) return { candidats: trouves.map((i) => versArticle(i, coches)) }
+  return { article: trouves[0] }
+}
 
-  const [article] = trouves
+/**
+ * `cocher_article` (RG-77) : met l'article désigné par sa `ref` (#372) ou son
+ * libellé dans l'état `coche` (défaut : coché ; idempotent). Ambiguïté de
+ * libellé → candidats, rien coché ; `quantite` (texte exact de
+ * lire_liste_courses) départage des homonymes. Sans `ancre`, le cycle courant ;
+ * avec, le cycle qui la contient (#320, RG-85) : la liste lue et la coche
+ * écrite sont celles de CE cycle, jamais du courant.
+ */
+export async function cocherArticle(
+  supabase: ClientSupabase,
+  args: DesignationArticle & { coche?: boolean; ancre?: string },
+  aujourdhui: Date = new Date()
+): Promise<CochageMcp> {
+  exigerDesignation(args)
+  return cocherArticleDansCycle(supabase, args, await cycleVise(supabase, args.ancre, aujourdhui))
+}
+
+/**
+ * Cœur de `cocher_article` sur un cycle DÉJÀ résolu. Ne résout jamais le
+ * cycle : l'exécuteur de panier (#330, RG-83) coche exactement le cycle de sa
+ * demande, même si le jour de courses change pendant le run (une re-résolution
+ * viserait un autre cycle).
+ *
+ * Une `ref` (#372) prime sur le libellé : absente de la liste (cycle régénéré
+ * entre la lecture et la coche), `ErreurOutil` sans repli sur le libellé, qui
+ * pourrait viser un autre article. Une `quantite` fournie avec elle doit être la
+ * quantité courante, sinon `ErreurOutil` (RG-12).
+ */
+export async function cocherArticleDansCycle(
+  supabase: ClientSupabase,
+  args: DesignationArticle & { coche?: boolean },
+  cycle: { ancre: string; longueur: number }
+): Promise<CochageMcp> {
+  exigerDesignation(args)
+  const ref = args.ref?.trim()
+  if (ref !== undefined && lireRef(ref) === null) throw new ErreurOutil(REF_INVALIDE)
+  const coche = args.coche !== false
+  const { ancre, liste, coches } = await chargerListeCoursesCycle(supabase, cycle)
+  const articles = [...liste.normal.flatMap((l) => l.ingredients), ...liste.fondDePlacard]
+
+  const choix =
+    ref !== undefined
+      ? { article: articleParRef(articles, ref, args.quantite) }
+      : choisirParLibelle(articles, args.libelle!, args.quantite, coche, coches)
+  if ("candidats" in choix) return { modifie: false, candidats: choix.candidats }
+
+  const { article } = choix
   if (estCoche(coches, article) === coche) {
     return { modifie: false, article: versArticle(article, coches) }
   }
