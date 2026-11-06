@@ -22,6 +22,7 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ### Corrigé
 
+- Liste de courses : quand deux personnes du foyer cochent ou décochent le même article au même moment, toutes voient le même résultat, et une coche faite sans réseau (articles ajoutés à la main compris) est enregistrée au retour du réseau au lieu d’afficher une erreur (#362).
 - Liste de courses : deux touches très rapides sur le même article ne s'annulent plus en une seule (#362).
 - Assistant connecté (MCP) : si le jour de courses du foyer ne peut pas être lu, générer un cycle, lire le planning ou la liste de courses, cocher ou ajouter un article échoue avec un message, au lieu de viser par erreur le cycle qui commence le lundi (une génération avec remplacement pouvait écraser ce cycle) (#360).
 - Liste de courses : un article décoché juste après l’avoir coché ne se recoche plus tout seul quelques instants plus tard, et la décoche est bien enregistrée pour tout le foyer. Un article décoché après un envoi de coches interrompu (connexion coupée) est lui aussi bien décoché pour tout le foyer (#357).

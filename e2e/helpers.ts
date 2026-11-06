@@ -97,8 +97,10 @@ export async function nettoyerReglagesDistants(
   });
 }
 
-// Jeton d'accès du compte de test (auth REST par mot de passe).
-async function jetonTest(request: APIRequestContext): Promise<{
+// Jeton d'accès du compte de test (auth REST par mot de passe). Exporté pour
+// les specs qui relisent la base en boucle (`coches-concurrence.spec`) : une
+// connexion par test, pas une par lecture (l'Auth de staging limite le débit).
+export async function jetonTest(request: APIRequestContext): Promise<{
   url: string;
   headers: Record<string, string>;
 }> {
