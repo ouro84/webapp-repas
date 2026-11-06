@@ -6,12 +6,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 
 const m = vi.hoisted(() => ({
   limitePanier: vi.fn(),
-  ancreDemandee: vi.fn(),
+  cycleVise: vi.fn(),
   envoyerWebhook: vi.fn(),
 }))
 
 vi.mock("@/lib/rate-limit", () => ({ limitePanier: m.limitePanier }))
-vi.mock("@/lib/mcp/lecture", () => ({ ancreDemandee: m.ancreDemandee }))
+vi.mock("@/lib/mcp/cycle", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/mcp/cycle")>()),
+  cycleVise: m.cycleVise,
+}))
 vi.mock("@/lib/panier", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/panier")>()),
   envoyerWebhook: m.envoyerWebhook,
@@ -115,24 +118,30 @@ describe("lancerDemandePanierMcp (#320, RG-85)", () => {
     vi.clearAllMocks()
     m.limitePanier.mockResolvedValue({ autorise: true })
     m.envoyerWebhook.mockResolvedValue({ ok: true })
-    m.ancreDemandee.mockResolvedValue("2026-11-05")
+    // Avec ancre : résolution simulée (cycle du 05/11). Sans : vraie résolution
+    // (lecture stricte du foyer mocké), pour tester le cycle courant et le refus.
+    m.cycleVise.mockImplementation(async (client, ancre: string | undefined, aujourdhui: Date) => {
+      if (ancre !== undefined) return { ancre: "2026-11-05" }
+      const reel = await vi.importActual<typeof import("@/lib/mcp/cycle")>("@/lib/mcp/cycle")
+      return reel.cycleVise(client, undefined, aujourdhui)
+    })
   })
 
-  it("lancer : ancre résolue par ancreDemandee puis creer_demande_panier et webhook", async () => {
+  it("lancer : ancre résolue par cycleVise puis creer_demande_panier et webhook", async () => {
     const { client, rpcs } = mock()
     const resultat = await lancerDemandePanierMcp(client, "user-1", { ancre: "2026-11-07" }, JEUDI)
     expect(m.limitePanier).toHaveBeenCalledWith("user-1")
-    expect(m.ancreDemandee).toHaveBeenCalledWith(client, "2026-11-07", JEUDI)
+    expect(m.cycleVise).toHaveBeenCalledWith(client, "2026-11-07", JEUDI)
     expect(rpcs).toEqual([{ nom: "creer_demande_panier", args: { p_ancre: "2026-11-05" } }])
     expect(m.envoyerWebhook).toHaveBeenCalledTimes(1)
     expect(m.envoyerWebhook.mock.calls[0][0]).toEqual(ENVOI)
     expect(resultat).toEqual({ demande_id: DEMANDE, ancre: "2026-11-05" })
   })
 
-  it("lancer sans ancre : cycle courant, ancreDemandee non appelée", async () => {
+  it("lancer sans ancre : cycle courant (cycleVise sans ancre)", async () => {
     const { client, rpcs } = mock()
     const resultat = await lancerDemandePanierMcp(client, "user-1", {}, JEUDI)
-    expect(m.ancreDemandee).not.toHaveBeenCalled()
+    expect(m.cycleVise).toHaveBeenCalledWith(client, undefined, JEUDI)
     expect(rpcs).toEqual([{ nom: "creer_demande_panier", args: { p_ancre: "2026-10-29" } }])
     expect(resultat).toEqual({ demande_id: DEMANDE, ancre: "2026-10-29" })
   })
@@ -161,11 +170,11 @@ describe("lancerDemandePanierMcp (#320, RG-85)", () => {
     const { client, rpcs } = mock()
     await expect(lancerDemandePanierMcp(client, "user-1", {}, JEUDI)).rejects.toBeInstanceOf(ErreurOutil)
     expect(rpcs).toEqual([])
-    expect(m.ancreDemandee).not.toHaveBeenCalled()
+    expect(m.cycleVise).not.toHaveBeenCalled()
   })
 
-  it("lancer : ancre invalide (ErreurOutil d'ancreDemandee) → propagée, aucune RPC", async () => {
-    m.ancreDemandee.mockRejectedValue(new ErreurOutil("Date invalide"))
+  it("lancer : ancre invalide (ErreurOutil de cycleVise) → propagée, aucune RPC", async () => {
+    m.cycleVise.mockRejectedValue(new ErreurOutil("Date invalide"))
     const { client, rpcs } = mock()
     await expect(lancerDemandePanierMcp(client, "user-1", { ancre: "x" }, JEUDI)).rejects.toThrow("Date invalide")
     expect(rpcs).toEqual([])

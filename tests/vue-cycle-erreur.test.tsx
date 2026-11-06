@@ -25,7 +25,7 @@ vi.mock("@/lib/persistance", () => ({
   chargerPlanningDistant: m.chargerPlanningDistant,
 }));
 vi.mock("@/lib/foyer", () => ({ chargerJourCoursesFoyer: () => Promise.resolve(1) }));
-vi.mock("@/lib/ancre-cycle", () => ({ resoudreAncreCycle: vi.fn() }));
+vi.mock("@/lib/ancre-cycle", () => ({ resoudreCycle: vi.fn() }));
 vi.mock("@/lib/supabase/par-defaut", () => ({ clientParDefaut: vi.fn() }));
 vi.mock("@/lib/reglages-data", () => ({ chargerReglages: () => new Promise(() => {}) }));
 vi.mock("@/lib/recettes", () => ({ chargerRecettesGerees: () => new Promise(() => {}) }));

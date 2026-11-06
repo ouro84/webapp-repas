@@ -8,7 +8,6 @@
 // dédié (RG-79).
 
 import {
-  chargerLongueurCycle,
   chargerPlanningDistant,
   sauvegarderCycleDistant,
   sauvegarderSlotsDistant,
@@ -18,8 +17,7 @@ import { chargerPreferences } from "@/lib/preferences"
 import { normaliser, rechercherRecettes } from "@/lib/recherche"
 import { modifierPersonnes, personnesDuSlot, PERSONNES_MAX, PERSONNES_MIN } from "@/lib/personnes"
 import { estRestes, marquerRestes } from "@/lib/restes"
-import { chargerJourCoursesFoyer } from "@/lib/foyer"
-import { ErreurGeneration, genererPourUtilisateur, semaineDansPlage } from "@/lib/generation"
+import { ErreurGeneration, genererPourUtilisateur } from "@/lib/generation"
 import {
   creneauActif,
   joursSansLegume,
@@ -29,19 +27,11 @@ import {
   reposNonSaison,
   retirerCreneauxDesactives,
 } from "@/lib/generateur"
-import {
-  ancreParDefaut,
-  dateVersSemaineJour,
-  joursDuCycle,
-  semainesDuCycle,
-} from "@/lib/cycles"
-import { semaineISO } from "@/lib/semaines"
 import { ErreurOutil } from "@/lib/mcp/erreurs"
 import { idsRecettesDuFoyer } from "@/lib/mcp/recherche-recettes"
 import { localiserRepas, repasAuxDates, TYPE_REPAS, type Creneau } from "@/lib/mcp/repas"
+import { CYCLE_HORS_PLAGE, cycleVise } from "@/lib/mcp/cycle"
 import {
-  ancreDemandee,
-  CYCLE_HORS_PLAGE,
   libellePeriode,
   libelleRepas,
   planningsAffiches,
@@ -74,26 +64,13 @@ export async function genererCycle(
   aujourdhui: Date = new Date(),
   verifierQuota: () => Promise<void> = async () => {}
 ): Promise<CycleGenereMcp> {
-  let ancre: string
-  if (args.ancre !== undefined) {
-    ancre = await ancreDemandee(supabase, args.ancre, aujourdhui)
-  } else {
-    ancre = ancreParDefaut(aujourdhui, await chargerJourCoursesFoyer(supabase))
-    if (!semaineDansPlage(semaineISO(aujourdhui), dateVersSemaineJour(ancre).semaine)) {
-      throw new ErreurOutil(CYCLE_HORS_PLAGE)
-    }
-  }
-
-  const longueur = await chargerLongueurCycle(ancre, supabase)
-  const dates = joursDuCycle(ancre, longueur)
-  const du = dates[0]
-  const au = dates[dates.length - 1]
+  const { ancre, longueur, jours: dates, semaines, du, au } = await cycleVise(supabase, args.ancre, aujourdhui)
   const reglages = await reglagesOuDefaut(supabase)
 
   if (args.remplacer !== true) {
     // Repas AFFICHÉS seulement (créneaux désactivés retirés, comme /planning).
     const existants = repasAuxDates(
-      await planningsAffiches(supabase, semainesDuCycle(ancre, longueur), reglages),
+      await planningsAffiches(supabase, semaines, reglages),
       dates
     )
     if (existants.length > 0) {

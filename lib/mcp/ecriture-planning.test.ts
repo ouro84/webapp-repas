@@ -232,6 +232,22 @@ describe("genererCycle (RG-74)", () => {
     expect(rpcs).toEqual([])
   })
 
+  it("sans ancre, jour de courses illisible : rejet (pas une ErreurOutil), rien généré ni écrit (#360)", async () => {
+    for (const foyers of [
+      { data: null, error: { message: "réseau coupé" } },
+      { data: null, error: null },
+    ]) {
+      const quota = vi.fn(async () => {})
+      const { client, rpcs } = mock({ foyers })
+      const appel = genererCycle(client, { remplacer: true }, JEUDI, quota)
+      await expect(appel).rejects.toThrow()
+      await expect(appel).rejects.not.toBeInstanceOf(ErreurOutil)
+      expect(quota).not.toHaveBeenCalled()
+      expect(genererPourUtilisateur).not.toHaveBeenCalled()
+      expect(rpcs).toEqual([])
+    }
+  })
+
   it("vivier insuffisant (422) : ErreurOutil avec le message de la génération", async () => {
     vi.mocked(genererPourUtilisateur).mockRejectedValue(new ErreurGeneration("Pas assez de recettes.", 422))
     const { client, rpcs } = mock()
