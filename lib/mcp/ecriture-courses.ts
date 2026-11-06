@@ -86,21 +86,28 @@ function trouverArticles(articles: Ingredient[], libelle: string): Ingredient[] 
 export type DesignationArticle = { ref?: string; libelle?: string; quantite?: string }
 
 const SANS_DESIGNATION =
-  "Désigne l'article par sa `ref` ou par son `libelle`, tels que renvoyés par lire_liste_courses."
+  "Désigne l'article par sa `ref` ou par son `libelle`, tels que reçus avec la liste."
 const REF_INCONNUE = "Cet article n'est plus dans la liste."
 const REF_INVALIDE =
-  "Référence d'article invalide : recopie telle quelle la `ref` renvoyée par lire_liste_courses."
+  "Référence d'article invalide : recopie telle quelle la `ref` reçue avec la liste."
+const QUANTITE_CHANGEE = "La quantité de cet article a changé depuis la lecture : relis la liste."
 
 // Refus avant toute lecture : ni `ref` ni libellé, rien à désigner.
 function exigerDesignation(args: DesignationArticle): void {
   if (args.ref === undefined && args.libelle === undefined) throw new ErreurOutil(SANS_DESIGNATION)
 }
 
-// Égalité exacte de `ref`, jamais de repli sur le libellé (#372) : la quantité
-// cochée reste celle de la liste courante (RG-12), comme par libellé.
-function articleParRef(articles: Ingredient[], ref: string): Ingredient {
+// Égalité exacte de `ref` (espaces autour retirés), jamais de repli sur le
+// libellé (#372) : la quantité cochée reste celle de la liste courante (RG-12).
+// Une `quantite` fournie avec la `ref` doit être la quantité courante, sinon
+// refus : la coche couvrirait plus que ce qui a été acheté (liste modifiée
+// pendant le run de l'exécuteur, RG-12).
+function articleParRef(articles: Ingredient[], ref: string, quantite: string | undefined): Ingredient {
   const article = articles.find((i) => refArticle(i) === ref)
   if (!article) throw new ErreurOutil(REF_INCONNUE)
+  if (quantite !== undefined && versArticle(article, null).quantite !== quantite.trim()) {
+    throw new ErreurOutil(QUANTITE_CHANGEE)
+  }
   return article
 }
 
@@ -162,9 +169,10 @@ export async function cocherArticle(
  * demande, même si le jour de courses change pendant le run (une re-résolution
  * viserait un autre cycle).
  *
- * Une `ref` (#372) prime sur le libellé et la quantité : absente de la liste
- * (cycle régénéré entre la lecture et la coche), `ErreurOutil` sans repli sur
- * le libellé, qui pourrait viser un autre article.
+ * Une `ref` (#372) prime sur le libellé : absente de la liste (cycle régénéré
+ * entre la lecture et la coche), `ErreurOutil` sans repli sur le libellé, qui
+ * pourrait viser un autre article. Une `quantite` fournie avec elle doit être la
+ * quantité courante, sinon `ErreurOutil` (RG-12).
  */
 export async function cocherArticleDansCycle(
   supabase: ClientSupabase,
@@ -172,14 +180,15 @@ export async function cocherArticleDansCycle(
   cycle: { ancre: string; longueur: number }
 ): Promise<CochageMcp> {
   exigerDesignation(args)
-  if (args.ref !== undefined && lireRef(args.ref) === null) throw new ErreurOutil(REF_INVALIDE)
+  const ref = args.ref?.trim()
+  if (ref !== undefined && lireRef(ref) === null) throw new ErreurOutil(REF_INVALIDE)
   const coche = args.coche !== false
   const { ancre, liste, coches } = await chargerListeCoursesCycle(supabase, cycle)
   const articles = [...liste.normal.flatMap((l) => l.ingredients), ...liste.fondDePlacard]
 
   const choix =
-    args.ref !== undefined
-      ? { article: articleParRef(articles, args.ref) }
+    ref !== undefined
+      ? { article: articleParRef(articles, ref, args.quantite) }
       : choisirParLibelle(articles, args.libelle!, args.quantite, coche, coches)
   if ("candidats" in choix) return { modifie: false, candidats: choix.candidats }
 

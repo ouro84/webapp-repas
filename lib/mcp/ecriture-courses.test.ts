@@ -237,10 +237,37 @@ describe("cocherArticle par ref (#372)", () => {
   it("ref et libellé contradictoires : la ref l'emporte", async () => {
     liste([ing("carottes", 400, "g"), ing("lait", 1, "l")])
     const { client, appels } = mock()
-    await cocherArticle(client, { ref: "ing:lait|l", libelle: "carottes", quantite: "400 g" }, JEUDI)
+    await cocherArticle(client, { ref: "ing:lait|l", libelle: "carottes" }, JEUDI)
     const ecritures = appels.filter((a) => a.table === "etat_courses_article")
     expect(ecritures).toHaveLength(1)
     expect(ecritures[0].ops[0][1]).toMatchObject({ cle: "lait|l", quantite: 1 })
+  })
+
+  it("ref avec une quantité qui a changé depuis la lecture : ErreurOutil, aucune écriture (RG-12)", async () => {
+    // L'exécuteur a mis 1 l au panier ; la liste est passée à 2 l pendant le run.
+    liste([ing("lait", 2, "l")])
+    const { client, appels } = mock()
+    const appel = cocherArticle(client, { ref: "ing:lait|l", quantite: "1 l" }, JEUDI)
+    await expect(appel).rejects.toBeInstanceOf(ErreurOutil)
+    await expect(appel).rejects.toThrow("La quantité de cet article a changé depuis la lecture : relis la liste.")
+    expect(appels.filter((a) => a.table === "etat_courses_article")).toEqual([])
+  })
+
+  it("ref avec la quantité courante (espaces autour) : cochée", async () => {
+    liste([ing("lait", 1, "l")])
+    const { client, appels } = mock()
+    await cocherArticle(client, { ref: "  ing:lait|l ", quantite: " 1 l " }, JEUDI)
+    const ecritures = appels.filter((a) => a.table === "etat_courses_article")
+    expect(ecritures).toHaveLength(1)
+    expect(ecritures[0].ops[0][1]).toMatchObject({ cle: "lait|l", quantite: 1 })
+  })
+
+  it("ref mal formée : le message ne renvoie pas à un outil précis", async () => {
+    liste([ing("lait", 1, "l")])
+    const { client } = mock()
+    await expect(cocherArticle(client, { ref: "lait|l" }, JEUDI)).rejects.toThrow(
+      "Référence d'article invalide : recopie telle quelle la `ref` reçue avec la liste."
+    )
   })
 
   it("ref absente de la liste (cycle régénéré) : ErreurOutil, aucune écriture, pas de repli sur le libellé", async () => {

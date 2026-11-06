@@ -274,7 +274,10 @@ export function enregistrerOutilsEcriture(server: McpServer): void {
             .describe("Référence de l'article (`ref` de lire_liste_courses), recopiée telle quelle. Prioritaire sur le libellé."),
           libelle: z.string().optional().describe("Libellé de l'article, si tu n'as pas sa `ref`."),
           coche: z.boolean().optional().describe("false pour décocher. Par défaut : cocher."),
-          quantite: z.string().optional().describe("Quantité exacte du candidat voulu, ex. « 200 g »."),
+          quantite: z
+            .string()
+            .optional()
+            .describe("Quantité exacte du candidat voulu, ex. « 200 g ». Avec une `ref`, si la quantité a changé, rien n'est coché : relis la liste."),
           ancre: z
             .string()
             .optional()
@@ -333,7 +336,10 @@ export function enregistrerOutilsExecuteur(server: McpServer): void {
             .optional()
             .describe("Référence de l'article (`ref` de prendre_demande_panier), recopiée telle quelle. Prioritaire sur le libellé."),
           libelle: z.string().optional().describe("Libellé de l'article, tel que renvoyé par prendre_demande_panier."),
-          quantite: z.string().optional().describe("Quantité exacte de l'article, ex. « 200 g », pour départager des homonymes."),
+          quantite: z
+            .string()
+            .optional()
+            .describe("Quantité exacte de l'article, ex. « 200 g ». Avec une `ref`, si la quantité a changé depuis la prise, rien n'est coché."),
         })
         .refine(auMoinsRefOuLibelle, { message: AU_MOINS_REF_OU_LIBELLE }),
     },
