@@ -46,7 +46,10 @@ test.beforeEach(async ({ page, request }) => {
       "planning_confirme",
       "planning_a_relire",
       "courses_cochees_maj",
-      "courses_dirty",
+      "coches_en_attente",
+      "coches_maj",
+      "coches_manuels_en_attente",
+      "coches_manuels_maj",
       "semaine_affichee",
     ]) {
       localStorage.removeItem(c);
@@ -337,9 +340,9 @@ test("l'état coché est resynchronisé depuis la base sur un device au cache vi
   await page.getByRole("checkbox", { name: /lardons/ }).click();
   await expect(page.getByRole("checkbox", { name: /lardons/ })).toBeChecked();
 
-  // Attendre la persistance des coches en base (drapeau dirty effacé).
+  // Attendre la persistance des coches en base (file du moteur vide, #362).
   await expect
-    .poll(async () => page.evaluate(() => localStorage.getItem("courses_dirty")))
+    .poll(async () => page.evaluate(() => localStorage.getItem("coches_en_attente")))
     .toBeNull();
 
   // Simuler un autre device : vider le cache local des coches puis recharger
@@ -347,7 +350,10 @@ test("l'état coché est resynchronisé depuis la base sur un device au cache vi
   await page.evaluate(() => {
     localStorage.removeItem("courses_cochees");
     localStorage.removeItem("courses_cochees_maj");
-    localStorage.removeItem("courses_dirty");
+    localStorage.removeItem("coches_en_attente");
+    localStorage.removeItem("coches_maj");
+    localStorage.removeItem("coches_manuels_en_attente");
+    localStorage.removeItem("coches_manuels_maj");
   });
   await page.reload();
 
@@ -584,11 +590,11 @@ test("le réordonnancement fonctionne sous mouvement réduit (RG-11 / RG-39)", a
 test("cocher puis tout décocher un article manuel ne lève aucune erreur non gérée", async ({
   page,
 }) => {
-  // `basculerCocheArticleManuel` et `viderCochesArticlesManuels` RETHROW après
-  // revert : sans `.catch` côté page, un échec produit un rejet non géré
-  // (bruit Sentry, coche qui revient sans explication). La fixture anti-crash
-  // de e2e/fixtures.ts ne filtre QUE les signatures React — d'où cette écoute
-  // dédiée.
+  // Coches des articles manuels sur le moteur horodaté (#362) : un échec
+  // réseau met en file, sans rejet ; la page garde un `.catch` qui journalise
+  // une erreur inattendue. Un rejet non géré serait du bruit Sentry. La
+  // fixture anti-crash de e2e/fixtures.ts ne filtre QUE les signatures React
+  // — d'où cette écoute dédiée.
   const erreurs: string[] = [];
   page.on("pageerror", (e) => erreurs.push(e.message));
 

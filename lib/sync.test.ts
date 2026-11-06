@@ -15,6 +15,7 @@ import type { JourPlanning, Planning } from "@/types";
 const persistance = vi.hoisted(() => ({
   chargerPlanningDistant: vi.fn(),
   chargerCochesDistantes: vi.fn(),
+  chargerEtatCochesDistant: vi.fn(),
   sauvegarderPlanningDistant: vi.fn(),
   purgerSemainesAvant: vi.fn(),
   chargerFoyerId: vi.fn(),
@@ -67,6 +68,37 @@ function planning(semaine: string): Planning {
   return { semaine, jours: [{ jour: "lundi", diner: recette("r1") }] };
 }
 
+// Horloge serveur simulée (`updated_at` posé par trigger, #362) : chaque appel
+// renvoie un instant strictement plus récent que le précédent.
+let tic = 0;
+function horloge(): string {
+  tic += 1;
+  return new Date(Date.UTC(2026, 6, 13, 10, 0, 0) + tic * 1000).toISOString();
+}
+
+// `updated_at` renvoyé par la première écriture mockée de `cle` (2ᵉ argument).
+async function majRenvoyee(mock: ReturnType<typeof vi.fn>, cle: string): Promise<string> {
+  const appel = mock.mock.calls.findIndex((c) => c[1] === cle);
+  return (await mock.mock.results[appel].value) as string;
+}
+
+// Capture l'écouteur `online` posé par le module chargé dans CE test (à appeler
+// avant le montage). Pourquoi : un `window.dispatchEvent` réveille aussi ceux
+// des modules d'autres tests restés montés, qui relisent avec les mocks du test
+// courant et réécrivent le localStorage partagé (lectures comptées en double,
+// blob écrasé après coup).
+function capturerRetourEnLigne() {
+  const espion = vi.spyOn(window, "addEventListener");
+  return {
+    declencher() {
+      for (const [type, ecouteur] of espion.mock.calls) {
+        if (type === "online") (ecouteur as EventListener)(new Event("online"));
+      }
+    },
+    restaurer: () => espion.mockRestore(),
+  };
+}
+
 // Recharge un module sync VIERGE (état singleton réinitialisé).
 async function chargerSync() {
   vi.resetModules();
@@ -76,15 +108,18 @@ async function chargerSync() {
 beforeEach(() => {
   localStorage.clear();
   realtime.rappels.length = 0;
+  tic = 0;
   for (const fn of Object.values(persistance)) fn.mockReset();
   persistance.chargerFoyerId.mockResolvedValue("foyer-1");
   persistance.chargerCochesDistantes.mockResolvedValue({});
+  persistance.chargerEtatCochesDistant.mockResolvedValue({});
   persistance.purgerSemainesAvant.mockResolvedValue(undefined);
   persistance.chargerPlanningDistant.mockResolvedValue(null);
   persistance.sauvegarderPlanningDistant.mockResolvedValue("2026-06-15T10:00:00.000Z");
-  persistance.viderCochesDistantes.mockResolvedValue(undefined);
-  persistance.cocherArticleDistant.mockResolvedValue(undefined);
-  persistance.decocherArticleDistant.mockResolvedValue(undefined);
+  // Écritures de coche horodatées (#362) : `updated_at` renvoyé, vidage = lignes.
+  persistance.viderCochesDistantes.mockResolvedValue([]);
+  persistance.cocherArticleDistant.mockImplementation(async () => horloge());
+  persistance.decocherArticleDistant.mockImplementation(async () => horloge());
   persistance.chargerLongueurCycle.mockResolvedValue(7);
   persistance.chargerArticlesManuelsDistants.mockResolvedValue([]);
   persistance.purgerCyclesAvant.mockResolvedValue(undefined);
@@ -480,13 +515,14 @@ describe("appliquerGenerationCycle — écriture atomique sauvegarder_cycle (#30
 
   it("vide les coches locales du cycle après succès (RG-13)", async () => {
     localStorage.setItem("courses_cochees", JSON.stringify({ "tomate|piece": 2 }));
-    localStorage.setItem("courses_dirty", "1");
     const { appliquerGenerationCycle } = await chargerSync();
 
     await appliquerGenerationCycle("2026-10-29", semaines);
 
     expect(localStorage.getItem("courses_cochees")).toBeNull();
-    expect(localStorage.getItem("courses_dirty")).toBeNull();
+    // Purge locale, pas un geste : rien n'est mis en file ni poussé.
+    expect(localStorage.getItem("coches_en_attente")).toBeNull();
+    expect(persistance.viderCochesDistantes).not.toHaveBeenCalled();
   });
 
   it("échec RPC : rejette et laisse les coches locales intactes", async () => {
@@ -511,7 +547,7 @@ describe("coche posée pendant l'hydratation d'un cycle (/courses)", () => {
   // Une coche faite pendant ce temps (ex. pendant la lecture des articles
   // manuels) restait locale, jamais marquée dirty ni poussée — puis l'hydratation
   // suivante l'écrasait par la base vide : coche perdue.
-  it("marque la coche dirty et la pousse sous l'ancre du cycle", async () => {
+  it("met la coche en file et la pousse sous l'ancre du cycle", async () => {
     let libererArticles!: (v: unknown[]) => void;
     persistance.chargerArticlesManuelsDistants.mockReturnValue(
       new Promise((r) => {
@@ -528,7 +564,7 @@ describe("coche posée pendant l'hydratation d'un cycle (/courses)", () => {
 
     // L'utilisateur coche un article PENDANT la lecture des articles manuels.
     storeCoches.ecrire(JSON.stringify({ "agneau|g": 300 }));
-    expect(localStorage.getItem("courses_dirty")).toBe("1");
+    expect(localStorage.getItem("coches_en_attente")).not.toBeNull();
 
     libererArticles([]);
     await waitFor(
@@ -548,8 +584,8 @@ describe("changement de cycle : les coches de l'ancien cycle ne fuient pas", () 
     // Cycle précédent affiché, avec une coche déjà synchronisée.
     localStorage.setItem("cycle_affiche", JSON.stringify({ ancre: "2026-07-06", longueur: 7 }));
     localStorage.setItem("courses_cochees", JSON.stringify({ "lait|l": 1 }));
-    let libererCoches!: (v: Record<string, number>) => void;
-    persistance.chargerCochesDistantes.mockReturnValue(
+    let libererCoches!: (v: Record<string, never>) => void;
+    persistance.chargerEtatCochesDistant.mockReturnValue(
       new Promise((r) => {
         libererCoches = r;
       })
@@ -559,7 +595,7 @@ describe("changement de cycle : les coches de l'ancien cycle ne fuient pas", () 
     const { renderHook, waitFor } = await import("@testing-library/react");
 
     renderHook(() => useSyncCourses("2026-07-13"));
-    await waitFor(() => expect(persistance.chargerCochesDistantes).toHaveBeenCalledWith("2026-07-13"));
+    await waitFor(() => expect(persistance.chargerEtatCochesDistant).toHaveBeenCalledWith("2026-07-13"));
 
     // L'ancien blob a été retiré dès le changement d'ancre.
     expect(localStorage.getItem("courses_cochees")).toBeNull();
@@ -607,14 +643,16 @@ describe("coche d'un article manuel : clics rapides et échos Realtime", () => {
     ]);
     const sync = await chargerSync();
     const { renderHook, waitFor, act } = await import("@testing-library/react");
-    renderHook(() => sync.useSyncCourses(ANCRE));
+    const vue = renderHook(() => sync.useSyncCourses(ANCRE));
     const { result } = renderHook(() => sync.useArticlesManuels());
     await waitFor(() => expect(result.current).toHaveLength(1));
     await waitFor(() =>
       expect(realtime.rappels.some((r) => r.filtre.table === "article_manuel")).toBe(true)
     );
     const coche = () => result.current[0].coche;
-    const echo = (valeur: boolean) =>
+    // Écho horodaté (#362) : sans `updated_at`, le moteur l'ignorerait
+    // d'office et le test ne prouverait plus l'arbitrage.
+    const echo = (valeur: boolean, updated_at: string) =>
       act(() => {
         const abonnement = realtime.rappels.find((r) => r.filtre.table === "article_manuel")!;
         abonnement.rappel({
@@ -627,25 +665,38 @@ describe("coche d'un article manuel : clics rapides et échos Realtime", () => {
             categorie: "autre",
             fond_de_placard: false,
             coche: valeur,
+            updated_at,
           },
           old: {},
         });
       });
-    return { sync, waitFor, act, coche, echo };
+    // `demonter` : retire l'écouteur `online` d'un test qui laisse une coche
+    // en file, sinon un `online` d'un test suivant la rejouerait.
+    return { sync, waitFor, act, coche, echo, demonter: () => vue.unmount() };
   }
 
   it("l'écho Realtime d'une écriture dépassée ne redécoche pas l'article", async () => {
-    persistance.basculerCocheArticleManuelDistant.mockReturnValue(new Promise(() => {}));
-    const { sync, act, coche, echo } = await preparer();
+    // Écritures horodatées croissantes : T1 (coché), T2 (décoché), T3 (coché).
+    persistance.basculerCocheArticleManuelDistant.mockImplementation(async () => horloge());
+    const { sync, waitFor, act, coche, echo } = await preparer();
+    for (let clic = 1; clic <= 3; clic++) {
+      act(() => {
+        void sync.basculerCocheArticleManuel("a1");
+      });
+      await waitFor(() =>
+        expect(persistance.basculerCocheArticleManuelDistant).toHaveBeenCalledTimes(clic)
+      );
+      await waitFor(() => expect(localStorage.getItem("coches_manuels_en_attente")).toBeNull());
+    }
+    const majDecoche = (await persistance.basculerCocheArticleManuelDistant.mock.results[1]
+      .value) as string;
 
-    act(() => {
-      void sync.basculerCocheArticleManuel("a1"); // coché
-      void sync.basculerCocheArticleManuel("a1"); // décoché
-      void sync.basculerCocheArticleManuel("a1"); // coché
-    });
-    echo(false); // écho du 2e clic, arrivé après le 3e
-
+    echo(false, majDecoche); // écho du 2e clic (T2), arrivé après le 3e (T3)
     expect(coche()).toBe(true);
+
+    // Contrôle : une décoche plus récente que T3 s'applique (l'écho est bien jugé).
+    echo(false, horloge());
+    expect(coche()).toBe(false);
   });
 
   it("des clics rapides n'envoient qu'une écriture à la fois, et la dernière valeur gagne", async () => {
@@ -676,6 +727,8 @@ describe("coche d'un article manuel : clics rapides et échos Realtime", () => {
   });
 
   it("« Tout décocher » pendant une coche en vol finit décoché en base", async () => {
+    // Moteur horodaté (#362) : le décochage global part APRÈS l'écriture de
+    // coche en vol (flush séquentiel), il n'y a plus de réécriture « false ».
     const premiere = differe();
     persistance.basculerCocheArticleManuelDistant
       .mockReturnValueOnce(premiere.promesse)
@@ -686,14 +739,16 @@ describe("coche d'un article manuel : clics rapides et échos Realtime", () => {
     act(() => {
       void sync.basculerCocheArticleManuel("a1"); // coché, écriture en vol
     });
-    await act(async () => {
-      await sync.viderCochesArticlesManuels();
+    act(() => {
+      sync.viderCochesArticlesManuels();
     });
-    premiere.resoudre(); // l'UPDATE « coché » est validé APRÈS le décochage global
+    expect(persistance.viderCochesArticlesManuelsDistantes).not.toHaveBeenCalled();
+    premiere.resoudre(); // l'UPDATE « coché » est validé, puis le décochage part
 
     await waitFor(() =>
-      expect(persistance.basculerCocheArticleManuelDistant).toHaveBeenLastCalledWith("a1", false)
+      expect(persistance.viderCochesArticlesManuelsDistantes).toHaveBeenCalledWith(ANCRE)
     );
+    expect(persistance.basculerCocheArticleManuelDistant).toHaveBeenCalledTimes(1);
     expect(coche()).toBe(false);
   });
 
@@ -715,19 +770,28 @@ describe("coche d'un article manuel : clics rapides et échos Realtime", () => {
     );
   });
 
-  it("échec d'écriture : la coche revient au dernier état confirmé et l'erreur remonte", async () => {
+  it("échec d'écriture : la coche reste affichée et part en file hors ligne, sans erreur remontée", async () => {
+    // Moteur horodaté (#362) : plus de revert ni de rejet, l'opération est
+    // gardée pour le rejeu (indicateur « hors ligne », pas de toast).
     persistance.basculerCocheArticleManuelDistant.mockRejectedValue(new Error("réseau"));
-    const { sync, act, coche } = await preparer();
+    const journal = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const { sync, waitFor, act, coche, demonter } = await preparer();
 
-    let erreur: unknown;
-    await act(async () => {
-      await sync.basculerCocheArticleManuel("a1").catch((e: unknown) => {
-        erreur = e;
-      });
-    });
+      expect(() => act(() => sync.basculerCocheArticleManuel("a1"))).not.toThrow();
 
-    expect(erreur).toBeInstanceOf(Error);
-    expect(coche()).toBe(false);
+      await waitFor(() =>
+        expect(journal).toHaveBeenCalledWith(
+          "Synchronisation des coches échouée (sera rejouée).",
+          expect.any(Error)
+        )
+      );
+      expect(coche()).toBe(true);
+      expect(localStorage.getItem("coches_manuels_en_attente")).not.toBeNull();
+      demonter();
+    } finally {
+      journal.mockRestore();
+    }
   });
 });
 
@@ -932,6 +996,205 @@ describe("articles manuels : ordre des échos Realtime (horloge serveur updated_
     echo("UPDATE", true, T_AUTRE_MEMBRE);
 
     expect(result.current[0].coche).toBe(true);
+  });
+});
+
+describe("articles manuels : coche sur le moteur horodaté (#362)", () => {
+  // Deuxième instance du moteur (`coches_manuels`, clé = id de l'article) :
+  // file hors ligne persistée, dernier commit gagnant sur `updated_at`.
+  const ANCRE = "2026-07-13";
+  const T_CREATION = "2026-07-13T10:00:00.000+00:00";
+  const PILES = {
+    nom: "Piles",
+    quantite: 0,
+    unite: "piece" as const,
+    categorie: "autre" as const,
+    fondDePlacard: false,
+    source: "manuel" as const,
+    id: "a1",
+  };
+
+  async function preparer() {
+    persistance.chargerArticlesManuelsDistants.mockResolvedValue([
+      {
+        id: "a1",
+        libelle: "Piles",
+        quantite: null,
+        unite: null,
+        categorie: "autre",
+        fondDePlacard: false,
+        coche: false,
+        majLe: T_CREATION,
+      },
+    ]);
+    const sync = await chargerSync();
+    const { renderHook, waitFor, act } = await import("@testing-library/react");
+    const { result: etat, unmount: demonter } = renderHook(() => sync.useSyncCourses(ANCRE));
+    const { result } = renderHook(() => sync.useArticlesManuels());
+    await waitFor(() => expect(result.current).toHaveLength(1));
+    await waitFor(() =>
+      expect(realtime.rappels.some((r) => r.filtre.table === "article_manuel")).toBe(true)
+    );
+    const rappel = (payload: unknown) =>
+      act(() => {
+        realtime.rappels.find((r) => r.filtre.table === "article_manuel")!.rappel(payload);
+      });
+    const echo = (coche: boolean, updated_at: string) =>
+      rappel({
+        eventType: "UPDATE",
+        new: {
+          id: "a1",
+          foyer_id: "foyer-1",
+          ancre: ANCRE,
+          libelle: "Piles",
+          categorie: "autre",
+          fond_de_placard: false,
+          coche,
+          updated_at,
+        },
+        old: {},
+      });
+    return {
+      sync,
+      waitFor,
+      act,
+      demonter,
+      etat: () => etat.current,
+      articles: () => result.current,
+      echo,
+      rappel,
+    };
+  }
+
+  it("hors ligne : la coche ne rejette pas, reste affichée, passe « hors ligne » et part au retour en ligne", async () => {
+    const erreur = vi.spyOn(console, "error").mockImplementation(() => {});
+    const enLigne = capturerRetourEnLigne();
+    try {
+      const { sync, waitFor, act, etat, articles, demonter } = await preparer();
+      // Base simulée : le retour en ligne relit aussi les articles du cycle, et
+      // la coche rejouée se termine pendant cette relecture.
+      const enBase = { coche: false, majLe: T_CREATION };
+      let relectureLivree = false;
+      let lecturesEnVol = 0;
+      persistance.chargerArticlesManuelsDistants.mockImplementation(async () => {
+        const instantane = { ...enBase }; // lu à l'appel, livré plus tard
+        lecturesEnVol++;
+        await new Promise((r) => setTimeout(r, 20));
+        lecturesEnVol--;
+        relectureLivree = true;
+        return [
+          { id: "a1", libelle: "Piles", quantite: null, unite: null, categorie: "autre", fondDePlacard: false, ...instantane },
+        ];
+      });
+      persistance.basculerCocheArticleManuelDistant
+        .mockRejectedValueOnce(new Error("réseau coupé"))
+        .mockImplementation(async (_id: string, coche: boolean) => {
+          await new Promise((r) => setTimeout(r, 5)); // commit pendant la relecture
+          Object.assign(enBase, { coche, majLe: horloge() });
+          return enBase.majLe;
+        });
+
+      let promesse!: Promise<void>;
+      act(() => {
+        promesse = sync.basculerCocheArticle(PILES);
+      });
+      await expect(promesse).resolves.toBeUndefined();
+      await waitFor(() => expect(etat()).toBe("hors-ligne"));
+      expect(articles()[0].coche).toBe(true);
+      expect(localStorage.getItem("coches_manuels_en_attente")).not.toBeNull();
+
+      act(() => enLigne.declencher());
+
+      await waitFor(() => expect(localStorage.getItem("coches_manuels_en_attente")).toBeNull());
+      expect(persistance.basculerCocheArticleManuelDistant).toHaveBeenCalledTimes(2);
+      expect(persistance.basculerCocheArticleManuelDistant).toHaveBeenLastCalledWith("a1", true);
+      // La relecture (partie avant le commit) doit être livrée avant de juger
+      // l'écran : sans ce drapeau, le test dépendait des délais réels.
+      await waitFor(() => expect(relectureLivree).toBe(true));
+      await waitFor(() => expect(lecturesEnVol).toBe(0));
+      await act(async () => {});
+      expect(articles()[0].coche).toBe(true);
+      await waitFor(() => expect(etat()).toBe("synchronise"));
+      demonter();
+    } finally {
+      enLigne.restaurer();
+      erreur.mockRestore();
+    }
+  });
+
+  it("article supprimé pendant l'écriture : opération abandonnée, file vide, article pas ressuscité", async () => {
+    let repondre!: (maj: string | null) => void;
+    persistance.basculerCocheArticleManuelDistant.mockImplementation(
+      () => new Promise<string | null>((r) => (repondre = r))
+    );
+    const erreur = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const { sync, waitFor, act, articles, rappel } = await preparer();
+
+      act(() => {
+        void sync.basculerCocheArticle(PILES);
+      });
+      rappel({
+        eventType: "DELETE",
+        new: {},
+        old: { id: "a1", foyer_id: "foyer-1", ancre: ANCRE },
+      });
+      await act(async () => {
+        repondre(null); // 0 ligne mise à jour : l'article n'existe plus
+      });
+
+      await waitFor(() =>
+        expect(erreur).toHaveBeenCalledWith(expect.stringContaining("cible disparue"), undefined)
+      );
+      expect(localStorage.getItem("coches_manuels_en_attente")).toBeNull();
+      expect(articles()).toEqual([]);
+    } finally {
+      erreur.mockRestore();
+    }
+  });
+
+  it("(a) l'écho tardif d'une coche, livré après la décoche, ne recoche pas", async () => {
+    persistance.basculerCocheArticleManuelDistant.mockImplementation(async () => horloge());
+    const { sync, waitFor, act, articles, echo } = await preparer();
+
+    act(() => {
+      void sync.basculerCocheArticle(PILES); // coché
+    });
+    await waitFor(() => expect(localStorage.getItem("coches_manuels_en_attente")).toBeNull());
+    const majCoche = (await persistance.basculerCocheArticleManuelDistant.mock.results[0]
+      .value) as string;
+    act(() => {
+      void sync.basculerCocheArticle(PILES); // décoché
+    });
+    await waitFor(() =>
+      expect(persistance.basculerCocheArticleManuelDistant).toHaveBeenCalledTimes(2)
+    );
+    await waitFor(() => expect(localStorage.getItem("coches_manuels_en_attente")).toBeNull());
+
+    echo(true, majCoche); // écho de la coche, livré après la réponse de la décoche
+
+    expect(articles()[0].coche).toBe(false);
+  });
+
+  it("(b) la décoche d'un autre membre, commitée après notre coche en vol, gagne", async () => {
+    let repondre!: (maj: string) => void;
+    persistance.basculerCocheArticleManuelDistant.mockImplementation(
+      () => new Promise<string>((r) => (repondre = r))
+    );
+    const { sync, waitFor, act, articles, echo } = await preparer();
+
+    act(() => {
+      void sync.basculerCocheArticle(PILES);
+    });
+    // Notre commit (T1) précède celui de l'autre membre (T2), reçu pendant le vol.
+    echo(false, "2026-07-13T12:00:00.000002+00:00");
+    expect(articles()[0].coche).toBe(true); // différé : notre geste fait foi pendant le vol
+    await act(async () => {
+      repondre("2026-07-13T12:00:00.000001+00:00");
+    });
+
+    await waitFor(() => expect(articles()[0].coche).toBe(false));
+    expect(persistance.basculerCocheArticleManuelDistant).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -2421,18 +2684,21 @@ describe("vague finale de la synchro temps réel (#355)", () => {
 describe("coches d'ingrédients : écho Realtime d'une écriture dépassée (RG-32, #357)", () => {
   // Régression (e2e « une catégorie entièrement cochée glisse en bas de liste »,
   // flaky) : l'écho INSERT de la coche arrivait APRÈS la décoche de
-  // l'utilisateur. `appliquerEventLocal` le réappliquait au blob local : la
-  // case se recochait à l'écran et, la référence `cochesConnues` rattrapant le
-  // local, la décoche n'était jamais poussée (base restée cochée).
+  // l'utilisateur et recochait la case à l'écran, et la décoche n'était jamais
+  // poussée (base restée cochée). Depuis #362, l'écho porte l'`updated_at` de
+  // notre écriture : le moteur le reconnaît comme écho (ou périmé).
   const ANCRE = "2026-07-13";
 
-  function differe() {
-    let resoudre!: () => void;
-    const promesse = new Promise<void>((r) => {
+  function differe<T = string>() {
+    let resoudre!: (valeur: T) => void;
+    const promesse = new Promise<T>((r) => {
       resoudre = r;
     });
     return { promesse, resoudre };
   }
+
+  // Plus de file du moteur : toutes les écritures des gestes sont parties.
+  const fileVide = () => expect(localStorage.getItem("coches_en_attente")).toBeNull();
 
   async function preparer() {
     const sync = await chargerSync();
@@ -2442,14 +2708,19 @@ describe("coches d'ingrédients : écho Realtime d'une écriture dépassée (RG-
     await waitFor(() =>
       expect(realtime.rappels.some((r) => r.filtre.table === "etat_courses_article")).toBe(true)
     );
+    // Hydratation des coches faite (le moteur ignore les événements avant).
+    await waitFor(() => expect(persistance.chargerArticlesManuelsDistants).toHaveBeenCalled());
     const coches = () => JSON.parse(localStorage.getItem("courses_cochees") ?? "{}");
+    // Par défaut, un événement est un commit d'un autre membre (horodatage
+    // plus récent que tout) ; un écho passe l'`updated_at` de notre écriture.
     const evenement = (
       eventType: "INSERT" | "UPDATE" | "DELETE",
       cle: string,
-      quantite = 1
+      quantite = 1,
+      updated_at: string = horloge()
     ) =>
       act(() => {
-        const ligne = { foyer_id: "foyer-1", ancre: ANCRE, cle, quantite };
+        const ligne = { foyer_id: "foyer-1", ancre: ANCRE, cle, quantite, updated_at };
         const abonnement = realtime.rappels.find(
           (r) => r.filtre.table === "etat_courses_article"
         )!;
@@ -2459,15 +2730,24 @@ describe("coches d'ingrédients : écho Realtime d'une écriture dépassée (RG-
             : { eventType, new: ligne, old: {} }
         );
       });
-    return { storeCoches, waitFor, act, coches, evenement };
+    // `updated_at` renvoyé par l'écriture de coche de `cle`.
+    const majEcrite = (cle: string) => majRenvoyee(persistance.cocherArticleDistant, cle);
+    return { storeCoches, waitFor, act, coches, evenement, majEcrite };
   }
 
   it("un UPDATE coche = false (décoche à ligne conservée, #362) décoche l'article", async () => {
     const { storeCoches, waitFor, act, coches } = await preparer();
     act(() => storeCoches.ecrire(JSON.stringify({ "pain|piece": 1 })));
-    await waitFor(() => expect(localStorage.getItem("courses_dirty")).toBeNull(), { timeout: 3000 });
+    await waitFor(fileVide, { timeout: 3000 });
     const abonnement = realtime.rappels.find((r) => r.filtre.table === "etat_courses_article")!;
-    const ligne = (coche: boolean) => ({ foyer_id: "foyer-1", ancre: ANCRE, cle: "pain|piece", quantite: 1, coche });
+    const ligne = (coche: boolean) => ({
+      foyer_id: "foyer-1",
+      ancre: ANCRE,
+      cle: "pain|piece",
+      quantite: 1,
+      coche,
+      updated_at: horloge(),
+    });
 
     act(() => abonnement.rappel({ eventType: "UPDATE", new: ligne(false), old: {} }));
     expect(coches()).toEqual({});
@@ -2477,18 +2757,19 @@ describe("coches d'ingrédients : écho Realtime d'une écriture dépassée (RG-
   });
 
   it("l'écho de la coche reçu après la décoche ne recoche pas et la décoche part", async () => {
-    const { storeCoches, waitFor, act, coches, evenement } = await preparer();
+    const { storeCoches, waitFor, act, coches, evenement, majEcrite } = await preparer();
 
     act(() => storeCoches.ecrire(JSON.stringify({ "pain|piece": 1, "lardons|g": 200 })));
     await waitFor(
       () => expect(persistance.cocherArticleDistant).toHaveBeenCalledWith(ANCRE, "lardons|g", 200),
       { timeout: 3000 }
     );
-    await waitFor(() => expect(localStorage.getItem("courses_dirty")).toBeNull());
+    await waitFor(fileVide);
+    const majCoche = await majEcrite("lardons|g");
 
     // Décoche, puis l'écho INSERT de la coche arrive (livraison Realtime tardive).
     act(() => storeCoches.ecrire(JSON.stringify({ "pain|piece": 1 })));
-    evenement("INSERT", "lardons|g", 200);
+    evenement("INSERT", "lardons|g", 200, majCoche);
 
     expect(coches()).toEqual({ "pain|piece": 1 });
     await waitFor(
@@ -2501,8 +2782,9 @@ describe("coches d'ingrédients : écho Realtime d'une écriture dépassée (RG-
   it("l'écho reçu pendant l'écriture en vol, décoche faite entre-temps, ne recoche pas", async () => {
     const insert = differe();
     persistance.cocherArticleDistant.mockImplementation((_ancre: string, cle: string) =>
-      cle === "lardons|g" ? insert.promesse : Promise.resolve()
+      cle === "lardons|g" ? insert.promesse : Promise.resolve(horloge())
     );
+    const majInsert = horloge();
     try {
       const { storeCoches, waitFor, act, coches, evenement } = await preparer();
 
@@ -2513,10 +2795,10 @@ describe("coches d'ingrédients : écho Realtime d'une écriture dépassée (RG-
       );
       // L'INSERT de lardons est en vol (premier appel bloqué) : décoche, puis écho.
       act(() => storeCoches.ecrire(JSON.stringify({ "pain|piece": 1 })));
-      evenement("INSERT", "lardons|g", 200);
+      evenement("INSERT", "lardons|g", 200, majInsert);
       expect(coches()).toEqual({ "pain|piece": 1 });
 
-      insert.resoudre();
+      insert.resoudre(majInsert);
       await waitFor(
         () => expect(persistance.decocherArticleDistant).toHaveBeenCalledWith(ANCRE, "lardons|g"),
         { timeout: 3000 }
@@ -2524,9 +2806,9 @@ describe("coches d'ingrédients : écho Realtime d'une écriture dépassée (RG-
       expect(coches()).toEqual({ "pain|piece": 1 });
     } finally {
       // Test autonome : l'implémentation bloquante ne fuit pas vers les suivants.
-      insert.resoudre();
+      insert.resoudre(majInsert);
       persistance.cocherArticleDistant.mockReset();
-      persistance.cocherArticleDistant.mockResolvedValue(undefined);
+      persistance.cocherArticleDistant.mockImplementation(async () => horloge());
     }
   });
 
@@ -2536,7 +2818,7 @@ describe("coches d'ingrédients : écho Realtime d'une écriture dépassée (RG-
     // pour un « geste en attente » (ignorée) et notre geste suivant la recochait.
     const vol = differe();
     persistance.cocherArticleDistant.mockImplementation((_ancre: string, cle: string) =>
-      cle === "k|g" ? vol.promesse : Promise.resolve()
+      cle === "k|g" ? vol.promesse : Promise.resolve(horloge())
     );
     try {
       const { storeCoches, waitFor, act, coches, evenement } = await preparer();
@@ -2550,8 +2832,8 @@ describe("coches d'ingrédients : écho Realtime d'une écriture dépassée (RG-
       evenement("INSERT", "j|g", 2);
       expect(coches()).toEqual({ "k|g": 1, "j|g": 2 });
 
-      vol.resoudre();
-      await waitFor(() => expect(localStorage.getItem("courses_dirty")).toBeNull());
+      vol.resoudre(horloge());
+      await waitFor(fileVide);
 
       // B décoche j : l'écran de A suit.
       evenement("DELETE", "j|g");
@@ -2563,13 +2845,13 @@ describe("coches d'ingrédients : écho Realtime d'une écriture dépassée (RG-
         () => expect(persistance.cocherArticleDistant).toHaveBeenCalledWith(ANCRE, "m|g", 3),
         { timeout: 3000 }
       );
-      await waitFor(() => expect(localStorage.getItem("courses_dirty")).toBeNull());
+      await waitFor(fileVide);
       expect(persistance.cocherArticleDistant).not.toHaveBeenCalledWith(ANCRE, "j|g", 2);
       expect(coches()).toEqual({ "k|g": 1, "m|g": 3 });
     } finally {
-      vol.resoudre();
+      vol.resoudre(horloge());
       persistance.cocherArticleDistant.mockReset();
-      persistance.cocherArticleDistant.mockResolvedValue(undefined);
+      persistance.cocherArticleDistant.mockImplementation(async () => horloge());
     }
   });
 
@@ -2579,7 +2861,7 @@ describe("coches d'ingrédients : écho Realtime d'une écriture dépassée (RG-
     // passer j pour « en vol » et sa décoche, dans le même vol, était ignorée.
     const vol = differe();
     persistance.cocherArticleDistant.mockImplementation((_ancre: string, cle: string) =>
-      cle === "k|g" ? vol.promesse : Promise.resolve()
+      cle === "k|g" ? vol.promesse : Promise.resolve(horloge())
     );
     try {
       const { storeCoches, waitFor, act, coches, evenement } = await preparer();
@@ -2594,8 +2876,8 @@ describe("coches d'ingrédients : écho Realtime d'une écriture dépassée (RG-
       evenement("DELETE", "j|g");
       expect(coches()).toEqual({ "k|g": 1 });
 
-      vol.resoudre();
-      await waitFor(() => expect(localStorage.getItem("courses_dirty")).toBeNull());
+      vol.resoudre(horloge());
+      await waitFor(fileVide);
       expect(coches()).toEqual({ "k|g": 1 });
 
       act(() => storeCoches.ecrire(JSON.stringify({ "k|g": 1, "m|g": 3 })));
@@ -2603,17 +2885,20 @@ describe("coches d'ingrédients : écho Realtime d'une écriture dépassée (RG-
         () => expect(persistance.cocherArticleDistant).toHaveBeenCalledWith(ANCRE, "m|g", 3),
         { timeout: 3000 }
       );
-      await waitFor(() => expect(localStorage.getItem("courses_dirty")).toBeNull());
+      await waitFor(fileVide);
       expect(persistance.cocherArticleDistant).not.toHaveBeenCalledWith(ANCRE, "j|g", 2);
     } finally {
-      vol.resoudre();
+      vol.resoudre(horloge());
       persistance.cocherArticleDistant.mockReset();
-      persistance.cocherArticleDistant.mockResolvedValue(undefined);
+      persistance.cocherArticleDistant.mockImplementation(async () => horloge());
     }
   });
 
   it("« Tout décocher » en vol : coche puis décoche d'un autre membre reçues pendant le vidage, suivies, jamais repoussées", async () => {
-    const vidage = differe();
+    // Pendant le vidage, toutes les clés de l'ancre sont occupées : les
+    // événements de B sont différés puis jugés à sa fin (le plus récent gagne).
+    // Sa décoche est une ligne conservée `coche = false` (#362), pas un DELETE.
+    const vidage = differe<Array<{ cle: string; maj: string }>>();
     persistance.viderCochesDistantes.mockImplementation(() => vidage.promesse);
     try {
       const { storeCoches, waitFor, act, coches, evenement } = await preparer();
@@ -2623,19 +2908,27 @@ describe("coches d'ingrédients : écho Realtime d'une écriture dépassée (RG-
         () => expect(persistance.cocherArticleDistant).toHaveBeenCalledWith(ANCRE, "k|g", 1),
         { timeout: 3000 }
       );
-      await waitFor(() => expect(localStorage.getItem("courses_dirty")).toBeNull());
+      await waitFor(fileVide);
 
       act(() => storeCoches.effacer());
       await waitFor(() => expect(persistance.viderCochesDistantes).toHaveBeenCalledWith(ANCRE), {
         timeout: 3000,
       });
       evenement("INSERT", "j|g", 2);
-      expect(coches()).toEqual({ "j|g": 2 });
-      evenement("DELETE", "j|g");
-      expect(coches()).toEqual({});
+      act(() => {
+        realtime.rappels
+          .find((r) => r.filtre.table === "etat_courses_article")!
+          .rappel({
+            eventType: "UPDATE",
+            new: { foyer_id: "foyer-1", ancre: ANCRE, cle: "j|g", quantite: 2, coche: false, updated_at: horloge() },
+            old: {},
+          });
+      });
 
-      vidage.resoudre();
-      await waitFor(() => expect(localStorage.getItem("courses_dirty")).toBeNull());
+      await act(async () => {
+        vidage.resoudre([{ cle: "k|g", maj: horloge() }]);
+      });
+      await waitFor(fileVide);
       expect(coches()).toEqual({});
       act(() => storeCoches.ecrire(JSON.stringify({ "m|g": 2 })));
       await waitFor(
@@ -2643,10 +2936,11 @@ describe("coches d'ingrédients : écho Realtime d'une écriture dépassée (RG-
         { timeout: 3000 }
       );
       expect(persistance.cocherArticleDistant).not.toHaveBeenCalledWith(ANCRE, "j|g", 2);
+      expect(coches()).toEqual({ "m|g": 2 });
     } finally {
-      vidage.resoudre();
+      vidage.resoudre([]);
       persistance.viderCochesDistantes.mockReset();
-      persistance.viderCochesDistantes.mockResolvedValue(undefined);
+      persistance.viderCochesDistantes.mockResolvedValue([]);
     }
   });
 
@@ -2654,7 +2948,7 @@ describe("coches d'ingrédients : écho Realtime d'une écriture dépassée (RG-
     // L'op « a » est en base, « b » échoue. Si la référence ignorait « a »,
     // décocher « a » ensuite ne dériverait aucune op : la base le garderait coché.
     persistance.cocherArticleDistant.mockImplementation((_ancre: string, cle: string) =>
-      cle === "b|g" ? Promise.reject(new Error("réseau coupé")) : Promise.resolve()
+      cle === "b|g" ? Promise.reject(new Error("réseau coupé")) : Promise.resolve(horloge())
     );
     const erreur = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
@@ -2672,7 +2966,7 @@ describe("coches d'ingrédients : écho Realtime d'une écriture dépassée (RG-
         )
       );
       persistance.cocherArticleDistant.mockReset();
-      persistance.cocherArticleDistant.mockResolvedValue(undefined);
+      persistance.cocherArticleDistant.mockImplementation(async () => horloge());
 
       // A décoche « a » (en base : coché) : la décoche part, « b » est rejoué.
       act(() => storeCoches.ecrire(JSON.stringify({ "b|g": 1 })));
@@ -2685,35 +2979,38 @@ describe("coches d'ingrédients : écho Realtime d'une écriture dépassée (RG-
     } finally {
       erreur.mockRestore();
       persistance.cocherArticleDistant.mockReset();
-      persistance.cocherArticleDistant.mockResolvedValue(undefined);
+      persistance.cocherArticleDistant.mockImplementation(async () => horloge());
     }
   });
 
   it("« Tout décocher » en vol : l'écho tardif d'une coche ne recoche pas, le vidage part", async () => {
-    const vidage = differe();
+    const vidage = differe<Array<{ cle: string; maj: string }>>();
     persistance.viderCochesDistantes.mockImplementation(() => vidage.promesse);
     try {
-      const { storeCoches, waitFor, act, coches, evenement } = await preparer();
+      const { storeCoches, waitFor, act, coches, evenement, majEcrite } = await preparer();
 
       act(() => storeCoches.ecrire(JSON.stringify({ "k|g": 1 })));
       await waitFor(
         () => expect(persistance.cocherArticleDistant).toHaveBeenCalledWith(ANCRE, "k|g", 1),
         { timeout: 3000 }
       );
-      await waitFor(() => expect(localStorage.getItem("courses_dirty")).toBeNull());
+      await waitFor(fileVide);
+      const majCoche = await majEcrite("k|g");
 
       // « Tout décocher », vidage en vol, puis l'écho INSERT de la coche arrive.
       act(() => storeCoches.effacer());
       await waitFor(() => expect(persistance.viderCochesDistantes).toHaveBeenCalledWith(ANCRE), {
         timeout: 3000,
       });
-      evenement("INSERT", "k|g", 1);
+      evenement("INSERT", "k|g", 1, majCoche);
       expect(coches()).toEqual({});
 
-      vidage.resoudre();
-      await waitFor(() => expect(localStorage.getItem("courses_dirty")).toBeNull());
+      await act(async () => {
+        vidage.resoudre([{ cle: "k|g", maj: horloge() }]);
+      });
+      await waitFor(fileVide);
       expect(coches()).toEqual({});
-      // Référence vidée : le geste suivant ne repousse ni coche ni décoche de « k ».
+      // Le geste suivant ne repousse ni coche ni décoche de « k ».
       act(() => storeCoches.ecrire(JSON.stringify({ "m|g": 2 })));
       await waitFor(
         () => expect(persistance.cocherArticleDistant).toHaveBeenCalledWith(ANCRE, "m|g", 2),
@@ -2722,9 +3019,9 @@ describe("coches d'ingrédients : écho Realtime d'une écriture dépassée (RG-
       expect(persistance.decocherArticleDistant).not.toHaveBeenCalled();
       expect(persistance.cocherArticleDistant).toHaveBeenCalledTimes(2);
     } finally {
-      vidage.resoudre();
+      vidage.resoudre([]);
       persistance.viderCochesDistantes.mockReset();
-      persistance.viderCochesDistantes.mockResolvedValue(undefined);
+      persistance.viderCochesDistantes.mockResolvedValue([]);
     }
   });
 
@@ -2738,6 +3035,320 @@ describe("coches d'ingrédients : écho Realtime d'une écriture dépassée (RG-
     expect(coches()).toEqual({});
     expect(persistance.cocherArticleDistant).not.toHaveBeenCalled();
     expect(persistance.decocherArticleDistant).not.toHaveBeenCalled();
+  });
+});
+
+describe("coches d'ingrédients : moteur horodaté, dernier commit gagnant (#362)", () => {
+  // Bout en bout : geste sur le blob, écriture mockée qui renvoie `updated_at`,
+  // événement Realtime rejoué par le rappel `postgres_changes` enregistré.
+  const ANCRE = "2026-07-13";
+
+  async function preparer() {
+    const sync = await chargerSync();
+    const stockage = await import("@/lib/stockage");
+    const { renderHook, waitFor, act } = await import("@testing-library/react");
+    renderHook(() => sync.useSyncCourses(ANCRE));
+    await waitFor(() =>
+      expect(realtime.rappels.some((r) => r.filtre.table === "etat_courses_article")).toBe(true)
+    );
+    await waitFor(() => expect(persistance.chargerArticlesManuelsDistants).toHaveBeenCalled());
+    const coches = () => JSON.parse(localStorage.getItem("courses_cochees") ?? "{}");
+    const evenement = (cle: string, coche: boolean, updated_at: string, quantite = 1) =>
+      act(() => {
+        realtime.rappels
+          .find((r) => r.filtre.table === "etat_courses_article")!
+          .rappel({
+            eventType: "UPDATE",
+            new: { foyer_id: "foyer-1", ancre: ANCRE, cle, quantite, coche, updated_at },
+            old: {},
+          });
+      });
+    return { stockage, waitFor, act, coches, evenement };
+  }
+
+  it("(a) l'écho tardif d'une coche, livré après la décoche, ne recoche pas", async () => {
+    const { stockage, waitFor, act, coches, evenement } = await preparer();
+
+    act(() => stockage.storeCoches.ecrire(JSON.stringify({ "pain|piece": 1, "lardons|g": 200 })));
+    await waitFor(() =>
+      expect(persistance.cocherArticleDistant).toHaveBeenCalledWith(ANCRE, "lardons|g", 200)
+    , { timeout: 3000 });
+    const majCoche = await majRenvoyee(persistance.cocherArticleDistant, "lardons|g");
+
+    act(() => stockage.storeCoches.ecrire(JSON.stringify({ "pain|piece": 1 })));
+    await waitFor(
+      () => expect(persistance.decocherArticleDistant).toHaveBeenCalledWith(ANCRE, "lardons|g"),
+      { timeout: 3000 }
+    );
+    await waitFor(() => expect(localStorage.getItem("coches_en_attente")).toBeNull());
+    await act(async () => {
+      await persistance.decocherArticleDistant.mock.results[0].value;
+    });
+
+    // Écho de la coche, livré après la réponse de la décoche.
+    evenement("lardons|g", true, majCoche, 200);
+
+    expect(coches()).toEqual({ "pain|piece": 1 });
+  });
+
+  it("(b) la décoche d'un autre membre, commitée après notre coche en vol, gagne", async () => {
+    let repondre!: (maj: string) => void;
+    persistance.cocherArticleDistant.mockImplementation(
+      () => new Promise<string>((r) => (repondre = r))
+    );
+    const { stockage, waitFor, act, coches, evenement } = await preparer();
+
+    act(() => stockage.storeCoches.ecrire(JSON.stringify({ "lardons|g": 200 })));
+    await waitFor(
+      () => expect(persistance.cocherArticleDistant).toHaveBeenCalledWith(ANCRE, "lardons|g", 200),
+      { timeout: 3000 }
+    );
+    // Notre commit (T1) précède celui de l'autre membre (T2), reçu pendant le vol.
+    evenement("lardons|g", false, "2026-07-13T12:00:00.000002+00:00", 200);
+    await act(async () => {
+      repondre("2026-07-13T12:00:00.000001+00:00");
+    });
+
+    await waitFor(() => expect(coches()).toEqual({}));
+    expect(persistance.cocherArticleDistant).toHaveBeenCalledTimes(1);
+    expect(persistance.decocherArticleDistant).not.toHaveBeenCalled();
+  });
+
+  it("régénération d'un autre membre (UPDATE coche = false sur toutes les clés) → liste décochée", async () => {
+    const { stockage, waitFor, act, coches, evenement } = await preparer();
+
+    act(() => stockage.storeCoches.ecrire(JSON.stringify({ "pain|piece": 1, "lait|l": 2 })));
+    await waitFor(() => expect(persistance.cocherArticleDistant).toHaveBeenCalledTimes(2), {
+      timeout: 3000,
+    });
+    await waitFor(() => expect(localStorage.getItem("coches_en_attente")).toBeNull());
+
+    evenement("pain|piece", false, horloge());
+    evenement("lait|l", false, horloge(), 2);
+
+    expect(coches()).toEqual({});
+    expect(persistance.decocherArticleDistant).not.toHaveBeenCalled();
+    expect(persistance.viderCochesDistantes).not.toHaveBeenCalled();
+  });
+
+  it("annulation US-09 d'une régénération : les coches restaurées repartent en base", async () => {
+    localStorage.setItem("planning_courant", JSON.stringify(planning("2026-W29")));
+    const { stockage, waitFor, act } = await preparer();
+
+    act(() => stockage.storeCoches.ecrire(JSON.stringify({ "pain|piece": 1, "lait|l": 2 })));
+    await waitFor(() => expect(persistance.cocherArticleDistant).toHaveBeenCalledTimes(2), {
+      timeout: 3000,
+    });
+    act(() => {
+      stockage.capturerSnapshotAnnulation();
+      stockage.sauvegarderPlanningComplet(planning("2026-W29")); // RG-13 : coches effacées
+    });
+    await waitFor(() => expect(persistance.viderCochesDistantes).toHaveBeenCalledWith(ANCRE), {
+      timeout: 3000,
+    });
+    persistance.cocherArticleDistant.mockClear();
+
+    act(() => {
+      stockage.restaurerSnapshotAnnulation();
+    });
+
+    await waitFor(
+      () => {
+        expect(persistance.cocherArticleDistant).toHaveBeenCalledWith(ANCRE, "pain|piece", 1);
+        expect(persistance.cocherArticleDistant).toHaveBeenCalledWith(ANCRE, "lait|l", 2);
+      },
+      { timeout: 3000 }
+    );
+  });
+});
+
+describe("coches d'ingrédients : génération et hydratation en échec (#362)", () => {
+  const ANCRE = "2026-07-13";
+  const ligneCoche = (cle: string, updated_at: string) => ({
+    eventType: "UPDATE",
+    new: { foyer_id: "foyer-1", ancre: ANCRE, cle, quantite: 1, coche: true, updated_at },
+    old: {},
+  });
+  const rappelCoches = () =>
+    realtime.rappels.find((r) => r.filtre.table === "etat_courses_article");
+
+  it("génération (RG-13) : une coche en file n'est pas rejouée par-dessus la remise à zéro", async () => {
+    // Coche faite pendant la RPC, écriture en échec : en file, à rejouer.
+    // La génération décoche le cycle ; la rejouer recocherait en base.
+    let repondreRpc!: (majs: Record<string, string>) => void;
+    persistance.sauvegarderCycleDistant.mockImplementation(
+      () => new Promise((r) => (repondreRpc = r))
+    );
+    persistance.cocherArticleDistant.mockRejectedValueOnce(new Error("réseau coupé"));
+    const erreur = vi.spyOn(console, "error").mockImplementation(() => {});
+    const enLigne = capturerRetourEnLigne();
+    try {
+      const sync = await chargerSync();
+      const { storeCoches } = await import("@/lib/stockage");
+      const { renderHook, waitFor, act } = await import("@testing-library/react");
+      const vue = renderHook(() => sync.useSyncCourses(ANCRE));
+      await waitFor(() => expect(persistance.chargerArticlesManuelsDistants).toHaveBeenCalled());
+
+      let generation!: Promise<void>;
+      act(() => {
+        generation = sync.appliquerGenerationCycle(ANCRE, [
+          { semaine: "2026-W29", jours: [jourPlanningSimple("lundi", { id: "r1", nom: "R1" })] },
+        ]);
+      });
+      await waitFor(() => expect(persistance.sauvegarderCycleDistant).toHaveBeenCalled());
+      act(() => storeCoches.ecrire(JSON.stringify({ "pain|piece": 1 })));
+      await waitFor(() => expect(persistance.cocherArticleDistant).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(localStorage.getItem("coches_en_attente")).not.toBeNull());
+
+      await act(async () => {
+        repondreRpc({ "2026-W29": horloge() });
+        await generation;
+      });
+      act(() => enLigne.declencher()); // rejeu de la file
+      await waitFor(() => expect(localStorage.getItem("coches_en_attente")).toBeNull());
+
+      expect(persistance.cocherArticleDistant).toHaveBeenCalledTimes(1);
+      expect(localStorage.getItem("courses_cochees")).toBeNull();
+      vue.unmount();
+    } finally {
+      enLigne.restaurer();
+      erreur.mockRestore();
+    }
+  });
+
+  it("retour en ligne : la coche rejouée, commitée pendant la relecture (écho reçu avant elle), reste cochée", async () => {
+    // Jumeau ingrédients de la coche manuelle hors ligne : la relecture du
+    // cycle part avant le commit de la coche rejouée et revient après son
+    // écho ; son instantané (ligne absente) ne doit pas la décocher.
+    const erreur = vi.spyOn(console, "error").mockImplementation(() => {});
+    const enLigne = capturerRetourEnLigne();
+    try {
+      const sync = await chargerSync();
+      const { storeCoches } = await import("@/lib/stockage");
+      const { renderHook, waitFor, act } = await import("@testing-library/react");
+      const vue = renderHook(() => sync.useSyncCourses(ANCRE));
+      await waitFor(() => expect(persistance.chargerArticlesManuelsDistants).toHaveBeenCalled());
+      await waitFor(() => expect(rappelCoches()).toBeDefined());
+
+      const enBase: Record<string, { coche: boolean; valeur: number; maj: string }> = {};
+      let relectureLivree = false;
+      // Lectures en vol : le commit de la coche rejouée fait relire (#362), le
+      // jugement attend la dernière.
+      let lecturesEnVol = 0;
+      persistance.chargerEtatCochesDistant.mockImplementation(async () => {
+        const instantane = { ...enBase }; // lu à l'appel, livré plus tard
+        lecturesEnVol++;
+        await new Promise((r) => setTimeout(r, 200));
+        lecturesEnVol--;
+        relectureLivree = true;
+        return instantane;
+      });
+      let majCommit = "";
+      persistance.cocherArticleDistant
+        .mockRejectedValueOnce(new Error("réseau coupé"))
+        .mockImplementation(async (_ancre: string, cle: string, quantite: number) => {
+          await new Promise((r) => setTimeout(r, 5)); // commit pendant la relecture
+          majCommit = horloge();
+          enBase[cle] = { coche: true, valeur: quantite, maj: majCommit };
+          return majCommit;
+        });
+
+      act(() => storeCoches.ecrire(JSON.stringify({ "pain|piece": 1 })));
+      await waitFor(() => expect(localStorage.getItem("coches_en_attente")).not.toBeNull());
+      await waitFor(() => expect(persistance.cocherArticleDistant).toHaveBeenCalledTimes(1));
+
+      act(() => enLigne.declencher());
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 40)); // commit fait, relecture en vol
+      });
+      expect(localStorage.getItem("coches_en_attente")).toBeNull();
+      expect(relectureLivree).toBe(false);
+      act(() => rappelCoches()!.rappel(ligneCoche("pain|piece", majCommit))); // notre écho
+      await waitFor(() => expect(relectureLivree).toBe(true), { timeout: 2000 });
+      await waitFor(() => expect(lecturesEnVol).toBe(0), { timeout: 2000 });
+      await act(async () => {});
+
+      expect(JSON.parse(localStorage.getItem("courses_cochees") ?? "{}")).toEqual({ "pain|piece": 1 });
+      vue.unmount();
+    } finally {
+      enLigne.restaurer();
+      erreur.mockRestore();
+    }
+  });
+
+  it("lecture des coches en échec (en ligne) : nouvelle tentative, puis le temps réel s'applique", async () => {
+    persistance.chargerEtatCochesDistant.mockRejectedValueOnce(new Error("503"));
+    const erreur = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const { renderHook, act } = await import("@testing-library/react");
+    const sync = await chargerSync();
+    const vue = renderHook(() => sync.useSyncCourses(ANCRE));
+    try {
+      await vi.advanceTimersByTimeAsync(0);
+      expect(persistance.chargerEtatCochesDistant).toHaveBeenCalledTimes(1);
+      expect(rappelCoches()).toBeDefined();
+
+      await vi.advanceTimersByTimeAsync(1999);
+      expect(persistance.chargerEtatCochesDistant).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(persistance.chargerEtatCochesDistant).toHaveBeenCalledTimes(2);
+
+      act(() => rappelCoches()!.rappel(ligneCoche("lait|l", horloge())));
+      expect(JSON.parse(localStorage.getItem("courses_cochees") ?? "{}")).toEqual({ "lait|l": 1 });
+      // Lecture réussie : plus de nouvelle tentative.
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(persistance.chargerEtatCochesDistant).toHaveBeenCalledTimes(2);
+    } finally {
+      vue.unmount();
+      vi.useRealTimers();
+      erreur.mockRestore();
+    }
+  });
+
+  it("lecture des coches en échec en boucle : tentatives à 2, 4, 8, 16 puis 30 s, puis plus rien", async () => {
+    persistance.chargerEtatCochesDistant.mockRejectedValue(new Error("503"));
+    const erreur = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const { renderHook } = await import("@testing-library/react");
+    const sync = await chargerSync();
+    const vue = renderHook(() => sync.useSyncCourses(ANCRE));
+    try {
+      await vi.advanceTimersByTimeAsync(0);
+      let lectures = persistance.chargerEtatCochesDistant.mock.calls.length;
+      expect(lectures).toBe(1);
+      for (const delai of [2000, 4000, 8000, 16_000, 30_000]) {
+        await vi.advanceTimersByTimeAsync(delai - 1);
+        expect(persistance.chargerEtatCochesDistant).toHaveBeenCalledTimes(lectures);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(persistance.chargerEtatCochesDistant).toHaveBeenCalledTimes(lectures + 1);
+        lectures++;
+      }
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(persistance.chargerEtatCochesDistant).toHaveBeenCalledTimes(lectures);
+    } finally {
+      vue.unmount();
+      vi.useRealTimers();
+      erreur.mockRestore();
+    }
+  });
+
+  it("lecture des coches en échec puis démontage : la nouvelle tentative est annulée", async () => {
+    persistance.chargerEtatCochesDistant.mockRejectedValue(new Error("503"));
+    const erreur = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const { renderHook } = await import("@testing-library/react");
+    const sync = await chargerSync();
+    const vue = renderHook(() => sync.useSyncCourses(ANCRE));
+    try {
+      await vi.advanceTimersByTimeAsync(0);
+      expect(persistance.chargerEtatCochesDistant).toHaveBeenCalledTimes(1);
+      vue.unmount();
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(persistance.chargerEtatCochesDistant).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+      erreur.mockRestore();
+    }
   });
 });
 
@@ -2759,10 +3370,10 @@ describe("basculerCocheArticle / toutDecocher — une interface (#362)", () => {
     ]);
     const sync = await chargerSync();
     const { renderHook, waitFor, act } = await import("@testing-library/react");
-    renderHook(() => sync.useSyncCourses(ANCRE));
+    const vue = renderHook(() => sync.useSyncCourses(ANCRE));
     const { result } = renderHook(() => sync.useArticlesManuels());
     await waitFor(() => expect(result.current).toHaveLength(1));
-    return { sync, act, articles: () => result.current };
+    return { sync, act, articles: () => result.current, demonter: () => vue.unmount() };
   }
 
   it("ingrédient : chaque appel lit le blob courant, deux bascules sans re-rendu s'annulent (#362)", async () => {
@@ -2774,69 +3385,110 @@ describe("basculerCocheArticle / toutDecocher — une interface (#362)", () => {
   });
 
   it("article manuel : passe par le moteur des articles manuels, coche locale immédiate", async () => {
+    // Transport `null` (aucune ligne) : le moteur abandonne et journalise.
     persistance.basculerCocheArticleManuelDistant.mockResolvedValue(null);
-    const { sync, act, articles } = await avecArticleManuel();
-    let promesse!: Promise<void>;
-    act(() => {
-      promesse = sync.basculerCocheArticle({
-        nom: "Piles",
-        quantite: 0,
-        unite: "piece",
-        categorie: "autre",
-        fondDePlacard: false,
-        source: "manuel",
-        id: "a1",
+    const journal = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const { sync, act, articles } = await avecArticleManuel();
+      let promesse!: Promise<void>;
+      act(() => {
+        promesse = sync.basculerCocheArticle({
+          nom: "Piles",
+          quantite: 0,
+          unite: "piece",
+          categorie: "autre",
+          fondDePlacard: false,
+          source: "manuel",
+          id: "a1",
+        });
       });
-    });
-    expect(articles()[0].coche).toBe(true);
-    await promesse;
-    expect(persistance.basculerCocheArticleManuelDistant).toHaveBeenCalledWith("a1", true);
-    expect(localStorage.getItem("courses_cochees")).toBeNull();
+      expect(articles()[0].coche).toBe(true);
+      await promesse;
+      expect(persistance.basculerCocheArticleManuelDistant).toHaveBeenCalledWith("a1", true);
+      expect(localStorage.getItem("courses_cochees")).toBeNull();
+      await vi.waitFor(() =>
+        expect(journal).toHaveBeenCalledWith(
+          expect.stringContaining("Coche abandonnée"),
+          undefined
+        )
+      );
+    } finally {
+      journal.mockRestore();
+    }
   });
 
-  it("ingrédient, stockage plein : l'erreur arrive en rejet (le .catch de la page l'affiche), pas en exception synchrone", async () => {
-    // Synchro démarrée : c'est son abonné (marquage `courses_dirty`) qui lève,
-    // storeCoches.ecrire avalant sa propre erreur d'écriture (cache best-effort).
+  it("ingrédient, stockage plein : ni exception synchrone ni rejet, l'échec d'écriture est journalisé", async () => {
+    // Depuis #362, la synchro n'écrit plus de drapeau à chaque geste : le
+    // stockage plein n'est plus une erreur remontée à la page. storeCoches
+    // journalise l'échec de son écriture (cache best-effort, #170).
     const { sync } = await avecArticleManuel();
     const espion = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
       throw new Error("quota dépassé");
     });
+    const erreur = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
       let promesse: Promise<void> | undefined;
       expect(() => {
         promesse = sync.basculerCocheArticle(lait);
       }).not.toThrow();
-      await expect(promesse).rejects.toThrow("quota dépassé");
+      await expect(promesse).resolves.toBeUndefined();
+      expect(erreur).toHaveBeenCalledWith(
+        'localStorage indisponible (écriture "courses_cochees").',
+        expect.any(Error)
+      );
     } finally {
       espion.mockRestore();
+      erreur.mockRestore();
     }
   });
 
-  it("article manuel en échec réseau : la promesse rejette (la page affiche son toast)", async () => {
+  it("article manuel en échec réseau : la promesse résout, la coche reste en file (pas de toast)", async () => {
+    // Moteur horodaté (#362) : un échec réseau met en file et passe
+    // l'indicateur à « hors ligne » ; la page n'a plus rien à afficher.
     persistance.basculerCocheArticleManuelDistant.mockRejectedValue(new Error("hors ligne"));
-    const { sync } = await avecArticleManuel();
-    await expect(
-      sync.basculerCocheArticle({ nom: "Piles", quantite: 0, unite: "piece", categorie: "autre", fondDePlacard: false, source: "manuel", id: "a1" })
-    ).rejects.toThrow("hors ligne");
+    const journal = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const { sync, articles, demonter } = await avecArticleManuel();
+      await expect(
+        sync.basculerCocheArticle({ nom: "Piles", quantite: 0, unite: "piece", categorie: "autre", fondDePlacard: false, source: "manuel", id: "a1" })
+      ).resolves.toBeUndefined();
+      expect(articles()[0].coche).toBe(true);
+      expect(localStorage.getItem("coches_manuels_en_attente")).not.toBeNull();
+      demonter();
+    } finally {
+      journal.mockRestore();
+    }
   });
 
   it("toutDecocher : blob et articles manuels décochés AVANT le premier await (avecTransition)", async () => {
+    // Transport `null` (aucune ligne) : le moteur abandonne et journalise.
     persistance.basculerCocheArticleManuelDistant.mockResolvedValue(null);
     persistance.viderCochesArticlesManuelsDistantes.mockReturnValue(new Promise(() => {}));
-    const { sync, act, articles } = await avecArticleManuel();
-    localStorage.setItem("cycle_affiche", JSON.stringify({ ancre: ANCRE, longueur: 7 }));
-    await act(async () => {
-      await sync.basculerCocheArticle({ nom: "Piles", quantite: 0, unite: "piece", categorie: "autre", fondDePlacard: false, source: "manuel", id: "a1" });
-    });
-    void sync.basculerCocheArticle(lait);
-    // Préconditions : sans elles, un basculerCocheArticle muet passerait le test.
-    expect(JSON.parse(localStorage.getItem("courses_cochees") ?? "{}")).toEqual({ "lait|l": 1 });
-    expect(articles()[0].coche).toBe(true);
-    act(() => {
-      void sync.toutDecocher();
-    });
-    expect(localStorage.getItem("courses_cochees")).toBeNull();
-    expect(articles()[0].coche).toBe(false);
+    const journal = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const { sync, act, articles } = await avecArticleManuel();
+      localStorage.setItem("cycle_affiche", JSON.stringify({ ancre: ANCRE, longueur: 7 }));
+      await act(async () => {
+        await sync.basculerCocheArticle({ nom: "Piles", quantite: 0, unite: "piece", categorie: "autre", fondDePlacard: false, source: "manuel", id: "a1" });
+      });
+      void sync.basculerCocheArticle(lait);
+      // Préconditions : sans elles, un basculerCocheArticle muet passerait le test.
+      expect(JSON.parse(localStorage.getItem("courses_cochees") ?? "{}")).toEqual({ "lait|l": 1 });
+      expect(articles()[0].coche).toBe(true);
+      act(() => {
+        void sync.toutDecocher();
+      });
+      expect(localStorage.getItem("courses_cochees")).toBeNull();
+      expect(articles()[0].coche).toBe(false);
+      await vi.waitFor(() =>
+        expect(journal).toHaveBeenCalledWith(
+          expect.stringContaining("Coche abandonnée"),
+          undefined
+        )
+      );
+    } finally {
+      journal.mockRestore();
+    }
   });
 });
 
@@ -2870,6 +3522,457 @@ describe("seul un geste de l'utilisateur pousse le planning (#363)", () => {
     await vi.waitFor(() => expect(persistance.sauvegarderPlanningDistant).toHaveBeenCalledTimes(1), {
       timeout: 2000,
     });
+  });
+});
+
+describe("vague finale du moteur de coches (#362)", () => {
+  const ANCRE = "2026-07-13";
+  const lait = {
+    nom: "lait",
+    quantite: 1,
+    unite: "l" as const,
+    categorie: "produits-frais" as const,
+    fondDePlacard: false,
+  };
+  const rappel = (table: string) => realtime.rappels.find((r) => r.filtre.table === table);
+
+  async function surCourses() {
+    const sync = await chargerSync();
+    const stockage = await import("@/lib/stockage");
+    const { renderHook, waitFor, act } = await import("@testing-library/react");
+    const vue = renderHook(() => sync.useSyncCourses(ANCRE));
+    await waitFor(() => expect(persistance.chargerArticlesManuelsDistants).toHaveBeenCalled());
+    await waitFor(() => expect(rappel("etat_courses_article")).toBeDefined());
+    const coches = () => JSON.parse(localStorage.getItem("courses_cochees") ?? "{}");
+    return { sync, stockage, waitFor, act, vue, coches };
+  }
+
+  it("rechargement avec une coche en file : rejouée pendant la première lecture, elle reste cochée", async () => {
+    // Moteur neuf (pas encore d'ancre affichée) : la règle 6 ne protège pas
+    // la coche rejouée ; c'est la relecture forcée par son commit qui le fait.
+    vi.doMock("@/lib/foyer", () => ({ chargerJourCoursesFoyer: () => Promise.resolve(1) }));
+    const erreur = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const { ancreParDefaut } = await import("@/lib/cycles");
+      const ancre = ancreParDefaut(new Date(), 1);
+      localStorage.setItem("cycle_affiche", JSON.stringify({ ancre, longueur: 7 }));
+      localStorage.setItem("courses_cochees", JSON.stringify({ "pain|piece": 1 }));
+      localStorage.setItem(
+        "coches_en_attente",
+        JSON.stringify([{ id: 1, type: "cle", ancre, cle: "pain|piece", etat: { coche: true, valeur: 1 } }])
+      );
+      const enBase: Record<string, { coche: boolean; valeur: number; maj: string }> = {};
+      persistance.chargerEtatCochesDistant.mockImplementation(async () => {
+        const instantane = { ...enBase }; // lu à l'appel, livré plus tard
+        await new Promise((r) => setTimeout(r, 50));
+        return instantane;
+      });
+      persistance.cocherArticleDistant.mockImplementation(
+        async (_ancre: string, cle: string, quantite: number) => {
+          await new Promise((r) => setTimeout(r, 5)); // commit pendant la lecture
+          const maj = horloge();
+          enBase[cle] = { coche: true, valeur: quantite, maj };
+          return maj;
+        }
+      );
+      const sync = await chargerSync();
+      const { renderHook, waitFor, act } = await import("@testing-library/react");
+      const vue = renderHook(() => sync.useSyncCourses());
+      await waitFor(() => expect(persistance.cocherArticleDistant).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(persistance.chargerArticlesManuelsDistants).toHaveBeenCalled(), {
+        timeout: 2000,
+      });
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 150)); // toutes les lectures livrées
+      });
+
+      expect(localStorage.getItem("coches_en_attente")).toBeNull();
+      expect(JSON.parse(localStorage.getItem("courses_cochees") ?? "{}")).toEqual({ "pain|piece": 1 });
+      vue.unmount();
+    } finally {
+      vi.doUnmock("@/lib/foyer");
+      erreur.mockRestore();
+    }
+  });
+
+  it("rechargement avec 3 coches en file, chacune commitée pendant une lecture : toutes cochées, comme en base", async () => {
+    // I-1 résiduel : la relecture est plafonnée (3 lectures) ; la 3ᵉ s'applique
+    // alors que la 3ᵉ coche a été commitée pendant son vol. Moteur neuf : la
+    // règle 6 doit s'appliquer dès la première hydratation de l'ancre.
+    vi.doMock("@/lib/foyer", () => ({ chargerJourCoursesFoyer: () => Promise.resolve(1) }));
+    const erreur = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const { ancreParDefaut } = await import("@/lib/cycles");
+      const ancre = ancreParDefaut(new Date(), 1);
+      const cles = ["pain|piece", "lait|l", "oeuf|piece"];
+      localStorage.setItem("cycle_affiche", JSON.stringify({ ancre, longueur: 7 }));
+      localStorage.setItem(
+        "courses_cochees",
+        JSON.stringify(Object.fromEntries(cles.map((c) => [c, 1])))
+      );
+      localStorage.setItem(
+        "coches_en_attente",
+        JSON.stringify(
+          cles.map((cle, i) => ({ id: i + 1, type: "cle", ancre, cle, etat: { coche: true, valeur: 1 } }))
+        )
+      );
+      const enBase: Record<string, { coche: boolean; valeur: number; maj: string }> = {};
+      let lectures = 0;
+      persistance.chargerEtatCochesDistant.mockImplementation(async () => {
+        lectures += 1;
+        const instantane = { ...enBase }; // lu à l'appel, livré plus tard
+        await new Promise((r) => setTimeout(r, 50));
+        return instantane;
+      });
+      let ecritures = 0;
+      persistance.cocherArticleDistant.mockImplementation(
+        async (_ancre: string, cle: string, quantite: number) => {
+          const rang = ++ecritures;
+          // La k-ième coche est commitée pendant la k-ième lecture.
+          while (lectures < rang) await new Promise((r) => setTimeout(r, 2));
+          await new Promise((r) => setTimeout(r, 5));
+          const maj = horloge();
+          enBase[cle] = { coche: true, valeur: quantite, maj };
+          return maj;
+        }
+      );
+      const sync = await chargerSync();
+      const { renderHook, waitFor, act } = await import("@testing-library/react");
+      const vue = renderHook(() => sync.useSyncCourses());
+      await waitFor(() => expect(persistance.cocherArticleDistant).toHaveBeenCalledTimes(3), {
+        timeout: 2000,
+      });
+      await waitFor(() => expect(lectures).toBeGreaterThanOrEqual(3), { timeout: 2000 });
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 200)); // toutes les lectures livrées
+      });
+
+      expect(localStorage.getItem("coches_en_attente")).toBeNull();
+      const attendu = Object.fromEntries(Object.entries(enBase).map(([c, e]) => [c, e.valeur]));
+      expect(Object.keys(attendu).sort()).toEqual([...cles].sort());
+      expect(JSON.parse(localStorage.getItem("courses_cochees") ?? "{}")).toEqual(attendu);
+      vue.unmount();
+    } finally {
+      vi.doUnmock("@/lib/foyer");
+      erreur.mockRestore();
+    }
+  });
+
+  it("rechargement avec 3 coches d'articles manuels en file, chacune commitée pendant une lecture : toutes cochées", async () => {
+    // Jumeau des articles manuels (plafond LECTURES_ARTICLES_MAX).
+    vi.doMock("@/lib/foyer", () => ({ chargerJourCoursesFoyer: () => Promise.resolve(1) }));
+    const erreur = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const { ancreParDefaut } = await import("@/lib/cycles");
+      const ancre = ancreParDefaut(new Date(), 1);
+      const ids = ["a1", "a2", "a3"];
+      localStorage.setItem("cycle_affiche", JSON.stringify({ ancre, longueur: 7 }));
+      localStorage.setItem(
+        "coches_manuels_en_attente",
+        JSON.stringify(
+          ids.map((id, i) => ({ id: i + 1, type: "cle", ancre, cle: id, etat: { coche: true, valeur: null } }))
+        )
+      );
+      const creation = horloge();
+      const enBase = ids.map((id) => ({
+        id,
+        libelle: `Article ${id}`,
+        quantite: null,
+        unite: null,
+        categorie: "autre",
+        fondDePlacard: false,
+        coche: false,
+        majLe: creation,
+      }));
+      let lectures = 0;
+      persistance.chargerArticlesManuelsDistants.mockImplementation(async () => {
+        lectures += 1;
+        const instantane = enBase.map((a) => ({ ...a })); // lu à l'appel, livré plus tard
+        await new Promise((r) => setTimeout(r, 50));
+        return instantane;
+      });
+      let ecritures = 0;
+      persistance.basculerCocheArticleManuelDistant.mockImplementation(
+        async (id: string, coche: boolean) => {
+          const rang = ++ecritures;
+          while (lectures < rang) await new Promise((r) => setTimeout(r, 2));
+          await new Promise((r) => setTimeout(r, 5));
+          const maj = horloge();
+          const article = enBase.find((a) => a.id === id)!;
+          article.coche = coche;
+          article.majLe = maj;
+          return maj;
+        }
+      );
+      const sync = await chargerSync();
+      const { renderHook, waitFor, act } = await import("@testing-library/react");
+      const vue = renderHook(() => sync.useSyncCourses());
+      const { result } = renderHook(() => sync.useArticlesManuels());
+      await waitFor(
+        () => expect(persistance.basculerCocheArticleManuelDistant).toHaveBeenCalledTimes(3),
+        { timeout: 2000 }
+      );
+      await waitFor(() => expect(lectures).toBeGreaterThanOrEqual(3), { timeout: 2000 });
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 200)); // toutes les lectures livrées
+      });
+
+      expect(localStorage.getItem("coches_manuels_en_attente")).toBeNull();
+      expect(enBase.every((a) => a.coche)).toBe(true);
+      expect(result.current.map((a) => [a.id, a.coche])).toEqual(ids.map((id) => [id, true]));
+      vue.unmount();
+    } finally {
+      vi.doUnmock("@/lib/foyer");
+      erreur.mockRestore();
+    }
+  });
+
+  it("retour en ligne : le quota de relecture des coches est réarmé", async () => {
+    persistance.chargerEtatCochesDistant.mockRejectedValue(new Error("503"));
+    const erreur = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const { renderHook, act } = await import("@testing-library/react");
+    const sync = await chargerSync();
+    const enLigne = capturerRetourEnLigne();
+    const vue = renderHook(() => sync.useSyncCourses(ANCRE));
+    try {
+      await vi.advanceTimersByTimeAsync(0);
+      for (const delai of [2000, 4000, 8000, 16_000, 30_000]) {
+        await vi.advanceTimersByTimeAsync(delai);
+      }
+      await vi.advanceTimersByTimeAsync(120_000);
+      const lectures = persistance.chargerEtatCochesDistant.mock.calls.length;
+      expect(lectures).toBe(6); // quota épuisé
+
+      act(() => enLigne.declencher());
+      await vi.advanceTimersByTimeAsync(0);
+      expect(persistance.chargerEtatCochesDistant).toHaveBeenCalledTimes(lectures + 1);
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(persistance.chargerEtatCochesDistant).toHaveBeenCalledTimes(lectures + 2);
+    } finally {
+      vue.unmount();
+      enLigne.restaurer();
+      vi.useRealTimers();
+      erreur.mockRestore();
+    }
+  });
+
+  it("retour en ligne : les canaux temps réel ratés hors ligne sont rouverts", async () => {
+    persistance.chargerFoyerId.mockRejectedValue(new Error("hors ligne"));
+    const erreur = vi.spyOn(console, "error").mockImplementation(() => {});
+    const enLigne = capturerRetourEnLigne();
+    try {
+      const sync = await chargerSync();
+      const { renderHook, waitFor, act } = await import("@testing-library/react");
+      const vue = renderHook(() => sync.useSyncCourses(ANCRE));
+      await waitFor(() => expect(persistance.chargerArticlesManuelsDistants).toHaveBeenCalled());
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 30));
+      });
+      expect(rappel("etat_courses_article")).toBeUndefined();
+      expect(rappel("article_manuel")).toBeUndefined();
+
+      persistance.chargerFoyerId.mockResolvedValue("foyer-1");
+      act(() => enLigne.declencher());
+
+      await waitFor(() => expect(rappel("etat_courses_article")).toBeDefined());
+      await waitFor(() => expect(rappel("article_manuel")).toBeDefined());
+      vue.unmount();
+    } finally {
+      enLigne.restaurer();
+      erreur.mockRestore();
+    }
+  });
+
+  it("composerEtatSync : le pire état l'emporte, pour chaque combinaison", async () => {
+    const { composerEtatSync } = await chargerSync();
+    const etats = ["synchronise", "sauvegarde", "hors-ligne"] as const;
+    for (const planningEtat of etats) {
+      for (const coches of etats) {
+        for (const manuels of etats) {
+          const tous = [planningEtat, coches, manuels];
+          const attendu = tous.includes("hors-ligne")
+            ? "hors-ligne"
+            : tous.includes("sauvegarde")
+              ? "sauvegarde"
+              : "synchronise";
+          expect(composerEtatSync(tous)).toBe(attendu);
+        }
+      }
+    }
+  });
+
+  async function surPlanning() {
+    const sync = await chargerSync();
+    const stockage = await import("@/lib/stockage");
+    const { renderHook, waitFor, act } = await import("@testing-library/react");
+    const { semaineParDefaut } = await import("@/lib/semaines");
+    const semaine = semaineParDefaut();
+    localStorage.setItem("cycle_affiche", JSON.stringify({ ancre: ANCRE, longueur: 7 }));
+    persistance.chargerPlanningDistant.mockResolvedValue({
+      planning: planning(semaine),
+      updatedAt: "2026-06-15T10:00:00.000000+00:00",
+    });
+    const vue = renderHook(() => sync.useSync());
+    await waitFor(() => expect(localStorage.getItem("semaine_affichee")).toBe(semaine));
+    return { sync, stockage, waitFor, act, vue, semaine, etat: () => vue.result.current };
+  }
+
+  it("indicateur : un push planning en échec n'est pas masqué par la fin d'un envoi de coche", async () => {
+    const erreur = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const { stockage, waitFor, act, vue, semaine, etat } = await surPlanning();
+      persistance.sauvegarderPlanningDistant.mockRejectedValue(new Error("réseau"));
+      act(() => stockage.sauvegarderRemplacementSlot(planning(semaine)));
+      await waitFor(() => expect(etat()).toBe("hors-ligne"), { timeout: 2000 });
+
+      act(() => stockage.storeCoches.ecrire(JSON.stringify({ "pain|piece": 1 })));
+      await waitFor(() => expect(persistance.cocherArticleDistant).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(localStorage.getItem("coches_en_attente")).toBeNull());
+      await act(async () => {});
+
+      expect(etat()).toBe("hors-ligne");
+      vue.unmount();
+    } finally {
+      erreur.mockRestore();
+    }
+  });
+
+  it("indicateur : un push planning réussi ne masque pas des coches en échec", async () => {
+    const erreur = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const { stockage, waitFor, act, vue, semaine, etat } = await surPlanning();
+      persistance.cocherArticleDistant.mockRejectedValue(new Error("réseau"));
+      act(() => stockage.storeCoches.ecrire(JSON.stringify({ "pain|piece": 1 })));
+      await waitFor(() => expect(etat()).toBe("hors-ligne"));
+
+      act(() => stockage.sauvegarderRemplacementSlot(planning(semaine)));
+      await waitFor(() => expect(persistance.sauvegarderPlanningDistant).toHaveBeenCalledTimes(1), {
+        timeout: 2000,
+      });
+      await act(async () => {});
+
+      expect(etat()).toBe("hors-ligne");
+      vue.unmount();
+    } finally {
+      erreur.mockRestore();
+    }
+  });
+
+  it("estEchecDefinitif : 4xx hors 401/408/429 = définitif ; réseau, 5xx, 401, 408, 429 = transitoire", async () => {
+    const { estEchecDefinitif } = await chargerSync();
+    const avecStatut = (status: number) => new Error("x", { cause: { status, code: "" } });
+    for (const status of [400, 403, 404, 409, 422]) {
+      expect(estEchecDefinitif(avecStatut(status))).toBe(true);
+    }
+    // 401 : jeton expiré dont le rafraîchissement a échoué au retour du réseau.
+    for (const status of [0, 401, 408, 429, 500, 503]) {
+      expect(estEchecDefinitif(avecStatut(status))).toBe(false);
+    }
+    expect(estEchecDefinitif(new Error("Failed to fetch"))).toBe(false);
+    expect(estEchecDefinitif(new TypeError("Failed to fetch"))).toBe(false);
+    expect(estEchecDefinitif("chaîne")).toBe(false);
+  });
+
+  it("écriture refusée (403) : abandonnée et journalisée, la file continue", async () => {
+    const refus = new Error("Cochage impossible : RLS", { cause: { status: 403, code: "42501" } });
+    persistance.cocherArticleDistant
+      .mockRejectedValueOnce(refus)
+      .mockImplementation(async () => horloge());
+    const erreur = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const { stockage, waitFor, act, vue } = await surCourses();
+      act(() => stockage.storeCoches.ecrire(JSON.stringify({ "pain|piece": 1 })));
+      await waitFor(() => expect(localStorage.getItem("coches_en_attente")).toBeNull());
+      expect(erreur).toHaveBeenCalledWith(expect.stringContaining("Coche refusée"), refus);
+
+      act(() => stockage.storeCoches.ecrire(JSON.stringify({ "pain|piece": 1, "lait|l": 1 })));
+      await waitFor(() =>
+        expect(persistance.cocherArticleDistant).toHaveBeenCalledWith(ANCRE, "lait|l", 1)
+      );
+      vue.unmount();
+    } finally {
+      erreur.mockRestore();
+    }
+  });
+
+  it("reinitialiserCacheFoyer : l'ancien moteur finit son vol sans réécrire sa file ni continuer", async () => {
+    let repondre!: (maj: string) => void;
+    persistance.cocherArticleDistant
+      .mockImplementationOnce(() => new Promise<string>((r) => (repondre = r)))
+      .mockImplementation(async () => horloge());
+    const { sync, stockage, waitFor, act, vue } = await surCourses();
+    act(() => stockage.storeCoches.ecrire(JSON.stringify({ "pain|piece": 1 })));
+    await waitFor(() => expect(persistance.cocherArticleDistant).toHaveBeenCalledTimes(1));
+    act(() => stockage.storeCoches.ecrire(JSON.stringify({ "pain|piece": 1, "lait|l": 1 })));
+    expect(localStorage.getItem("coches_en_attente")).not.toBeNull();
+
+    act(() => sync.reinitialiserCacheFoyer());
+    await act(async () => {
+      repondre(horloge());
+      await new Promise((r) => setTimeout(r, 20));
+    });
+
+    expect(localStorage.getItem("coches_en_attente")).toBeNull();
+    expect(localStorage.getItem("coches_maj")).toBeNull();
+    expect(persistance.cocherArticleDistant).toHaveBeenCalledTimes(1);
+    expect(persistance.viderCochesDistantes).not.toHaveBeenCalled();
+    vue.unmount();
+  });
+
+  it("reinitialiserCacheFoyer : l'indicateur est republié (plus de « hors ligne » de l'ancien foyer)", async () => {
+    persistance.cocherArticleDistant.mockRejectedValue(new Error("Failed to fetch"));
+    const erreur = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const { sync, stockage, waitFor, act, vue } = await surCourses();
+      act(() => stockage.storeCoches.ecrire(JSON.stringify({ "pain|piece": 1 })));
+      await waitFor(() => expect(vue.result.current).toBe("hors-ligne"));
+
+      act(() => sync.reinitialiserCacheFoyer());
+
+      expect(vue.result.current).toBe("synchronise");
+      vue.unmount();
+    } finally {
+      erreur.mockRestore();
+    }
+  });
+
+  it("décocher le dernier article coché = décoche unitaire, pas un vidage de l'ancre", async () => {
+    const { sync, waitFor, act, vue, coches } = await surCourses();
+    act(() => {
+      void sync.basculerCocheArticle(lait);
+    });
+    await waitFor(() => expect(localStorage.getItem("coches_en_attente")).toBeNull());
+    act(() => {
+      void sync.basculerCocheArticle(lait);
+    });
+    expect(coches()).toEqual({});
+
+    await waitFor(() =>
+      expect(persistance.decocherArticleDistant).toHaveBeenCalledWith(ANCRE, "lait|l")
+    );
+    expect(persistance.viderCochesDistantes).not.toHaveBeenCalled();
+    vue.unmount();
+  });
+
+  it("lecture des coches en échec : les articles manuels du cycle sont chargés quand même", async () => {
+    persistance.chargerEtatCochesDistant.mockRejectedValueOnce(new Error("503"));
+    persistance.chargerArticlesManuelsDistants.mockResolvedValue([
+      { id: "a1", libelle: "Piles", quantite: null, unite: null, categorie: "autre", fondDePlacard: false, coche: false },
+    ]);
+    const erreur = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const sync = await chargerSync();
+      const { renderHook, waitFor } = await import("@testing-library/react");
+      const vue = renderHook(() => sync.useSyncCourses(ANCRE));
+      const { result } = renderHook(() => sync.useArticlesManuels());
+      // Avant la nouvelle tentative (2 s) : la lecture des articles n'attend pas.
+      await waitFor(() => expect(result.current).toHaveLength(1), { timeout: 1000 });
+      expect(persistance.chargerEtatCochesDistant).toHaveBeenCalledTimes(1);
+      vue.unmount();
+    } finally {
+      erreur.mockRestore();
+    }
   });
 });
 

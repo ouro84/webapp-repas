@@ -403,12 +403,12 @@ function ContenuCourses() {
     // Une seule interface pour les deux moteurs (#362) : ingrédient dérivé
     // (blob, RG-12) ou article manuel (colonne dédiée, RG-41). La mise à jour
     // locale est synchrone (avant tout await) : bien captée par le flushSync
-    // d'avecTransition. Seul l'aller-retour réseau d'un article manuel est
-    // différé, et il RETHROW après revert, d'où le catch.
+    // d'avecTransition. L'écriture suit par le moteur horodaté : un échec
+    // réseau la met en file (indicateur « hors ligne »), sans rejet ni toast.
+    // Le catch ne journalise qu'une erreur inattendue.
     const transition = avecTransition(() => {
       void basculerCocheArticle(ingredient).catch((erreur) => {
         console.error("Bascule de coche échouée.", erreur);
-        toast.error("Impossible d'enregistrer cette coche. Réessaie.");
       });
     });
     signalerAtterrissage(transition, cible);
@@ -417,10 +417,10 @@ function ContenuCourses() {
   function toutDecocher(): void {
     // Pas de pulsation ici : tout remonte d'un coup, il n'y a pas UN élément
     // à retrouver.
+    // Échec réseau : en file, indicateur « hors ligne » (pas de toast).
     avecTransition(() => {
       void toutDecocherCoches().catch((erreur) => {
-        console.error("Décochage des articles manuels échoué.", erreur);
-        toast.error("Impossible de tout décocher. Réessaie.");
+        console.error("« Tout décocher » échoué.", erreur);
       });
     });
   }

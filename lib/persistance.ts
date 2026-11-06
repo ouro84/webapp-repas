@@ -2,11 +2,16 @@
 // historique multi-semaines (#5). La base Supabase est la source de vérité ;
 // localStorage sert de cache.
 //
-// Lecture/écriture sous RLS propriétaire. Depuis #5 : un planning ET un état de
-// coches PAR (user, semaine) — la sauvegarde remplace seulement la semaine
-// concernée (upsert par semaine), de sorte que les semaines s'accumulent en
-// historique (borné par purge, cf. purgerSemainesAvant). La navigation entre
-// semaines est câblée en PR2.
+// Lecture/écriture sous RLS `mon_foyer()` (#56). Le planning est stocké par
+// (foyer, semaine ISO) : la sauvegarde remplace seulement la semaine concernée,
+// de sorte que les semaines s'accumulent en historique (borné par
+// `purgerSemainesAvant`). Les coches sont stockées par (foyer, ancre de cycle,
+// article) dans `etat_courses_article` (#257, #362), bornées par
+// `purgerCyclesAvant`.
+//
+// Écritures de coche (moteur horodaté, #362) : une erreur PostgREST garde son
+// statut HTTP et son code dans `cause` (`{ status, code }`), pour que la
+// synchro distingue un refus définitif (4xx) d'un échec réseau à rejouer.
 //
 // Lectures à client injecté (#304, RG-71) : le dernier paramètre optionnel
 // permet de les appeler côté serveur EN TANT QUE l'utilisateur (client « par
@@ -309,51 +314,118 @@ export async function chargerCochesDistantes(
 // fournit jamais. L'anti-clobber (RG-32) vient de la granularité par-article.
 // ---------------------------------------------------------------------------
 
-/** Coche un article (upsert d'une ligne ; mémorise la quantité pour RG-12). */
+/** État distant d'une coche : ligne cochée OU décochée (tombstone horodatée, #362). */
+export type EtatCocheDistant = { coche: boolean; valeur: number; maj: string }
+
+/**
+ * État complet des coches d'une ancre : lignes cochées ET décochées, avec leur
+ * `updated_at` serveur. Sert au moteur d'ordonnancement des échos temps réel
+ * (#362) ; `chargerCochesDistantes` reste la lecture « coches actives ».
+ */
+export async function chargerEtatCochesDistant(
+  ancre: string,
+  supabase: ClientSupabase = clientParDefaut()
+): Promise<Record<string, EtatCocheDistant>> {
+  const { data, error } = await supabase
+    .from("etat_courses_article")
+    .select("cle, quantite, coche, updated_at")
+    .eq("ancre", ancre)
+  if (error) {
+    throw new Error(`Chargement de l'état des coches distantes impossible : ${error.message}`)
+  }
+  const etat: Record<string, EtatCocheDistant> = {}
+  for (const ligne of (data ?? []) as Array<{
+    cle: string
+    quantite: number
+    coche: boolean
+    updated_at: string
+  }>) {
+    etat[ligne.cle] = { coche: ligne.coche, valeur: ligne.quantite, maj: ligne.updated_at }
+  }
+  return etat
+}
+
+/** Erreur d'une écriture de coche : statut HTTP (0 = réseau) et code PostgREST
+ *  dans `cause`, lus par `estEchecDefinitif` (`lib/sync.ts`). */
+function erreurEcriture(
+  message: string,
+  error: { message: string; code?: string },
+  status: number | undefined
+): Error {
+  return new Error(`${message} : ${error.message}`, {
+    cause: { status: status ?? 0, code: error.code ?? "" },
+  })
+}
+
+/** `updated_at` de la première ligne renvoyée par un `.select("updated_at")`. */
+function majEcrite(data: unknown, message: string): string {
+  const maj = (data as { updated_at: string }[] | null)?.[0]?.updated_at
+  if (!maj) throw new Error(`${message} : réponse vide`)
+  return maj
+}
+
+/** Coche un article (upsert d'une ligne `coche = true` ; mémorise la quantité
+ *  pour RG-12). Renvoie l'`updated_at` serveur de l'écriture (#362). */
 export async function cocherArticleDistant(
   ancre: string,
   cle: string,
   quantite: number,
   supabase: ClientSupabase = clientParDefaut()
-): Promise<void> {
-  const { error } = await supabase
+): Promise<string> {
+  const { data, error, status } = await supabase
     .from("etat_courses_article")
     .upsert(
-      { ancre, cle, quantite },
+      { ancre, cle, quantite, coche: true },
       { onConflict: "foyer_id,ancre,cle" }
     )
+    .select("updated_at")
   if (error) {
-    throw new Error(`Cochage impossible : ${error.message}`)
+    throw erreurEcriture("Cochage impossible", error, status)
   }
+  return majEcrite(data, "Cochage impossible")
 }
 
-/** Décoche un article (delete de sa ligne ; le foyer est filtré par la RLS). */
+/** Décoche un article en CONSERVANT sa ligne (`coche = false`, `quantite = 0`) :
+ *  la décoche porte un `updated_at` serveur, que le client compare à celui d'un
+ *  écho tardif (#362). Le `DELETE` est réservé aux purges. Renvoie l'`updated_at`. */
 export async function decocherArticleDistant(
   ancre: string,
   cle: string,
   supabase: ClientSupabase = clientParDefaut()
-): Promise<void> {
-  const { error } = await supabase
+): Promise<string> {
+  const { data, error, status } = await supabase
     .from("etat_courses_article")
-    .delete()
-    .eq("ancre", ancre)
-    .eq("cle", cle)
+    .upsert(
+      { ancre, cle, quantite: 0, coche: false },
+      { onConflict: "foyer_id,ancre,cle" }
+    )
+    .select("updated_at")
   if (error) {
-    throw new Error(`Décochage impossible : ${error.message}`)
+    throw erreurEcriture("Décochage impossible", error, status)
   }
+  return majEcrite(data, "Décochage impossible")
 }
 
-/** Vide toutes les coches d'une ancre de cycle (« Tout décocher » /
- *  régénération RG-13). Un seul DELETE par ancre plutôt que N décochages. */
-export async function viderCochesDistantes(ancre: string): Promise<void> {
-  const supabase = createClient()
-  const { error } = await supabase
+/** Décoche toutes les coches actives d'une ancre de cycle (« Tout décocher » /
+ *  régénération RG-13). Un seul UPDATE par ancre plutôt que N décochages ; les
+ *  lignes sont conservées (`coche = false`). Renvoie `{ cle, maj }` par ligne. */
+export async function viderCochesDistantes(
+  ancre: string,
+  supabase: ClientSupabase = clientParDefaut()
+): Promise<Array<{ cle: string; maj: string }>> {
+  const { data, error, status } = await supabase
     .from("etat_courses_article")
-    .delete()
+    .update({ coche: false })
     .eq("ancre", ancre)
+    .eq("coche", true)
+    .select("cle, updated_at")
   if (error) {
-    throw new Error(`Vidage des coches impossible : ${error.message}`)
+    throw erreurEcriture("Vidage des coches impossible", error, status)
   }
+  return ((data ?? []) as Array<{ cle: string; updated_at: string }>).map((l) => ({
+    cle: l.cle,
+    maj: l.updated_at,
+  }))
 }
 
 /** Longueur persistée d'un cycle (défaut LONGUEUR_DEFAUT si aucune ligne,
@@ -473,13 +545,13 @@ export async function basculerCocheArticleManuelDistant(
   coche: boolean,
   supabase: ClientSupabase = clientParDefaut()
 ): Promise<string | null> {
-  const { data, error } = await supabase
+  const { data, error, status } = await supabase
     .from("article_manuel")
     .update({ coche })
     .eq("id", id)
     .select("updated_at")
   if (error) {
-    throw new Error(`Cochage de l'article manuel impossible : ${error.message}`)
+    throw erreurEcriture("Cochage de l'article manuel impossible", error, status)
   }
   return (data as { updated_at: string }[] | null)?.[0]?.updated_at ?? null
 }
@@ -497,16 +569,16 @@ export async function supprimerArticleManuelDistant(id: string): Promise<void> {
  *  décoche SANS supprimer, contrairement aux ingrédients dérivés).
  *  Renvoie l'`updated_at` serveur de chaque ligne décochée. */
 export async function viderCochesArticlesManuelsDistantes(
-  ancre: string
+  ancre: string,
+  supabase: ClientSupabase = clientParDefaut()
 ): Promise<{ id: string; majLe: string }[]> {
-  const supabase = createClient()
-  const { data, error } = await supabase
+  const { data, error, status } = await supabase
     .from("article_manuel")
     .update({ coche: false })
     .eq("ancre", ancre)
     .select("id, updated_at")
   if (error) {
-    throw new Error(`Décochage des articles manuels impossible : ${error.message}`)
+    throw erreurEcriture("Décochage des articles manuels impossible", error, status)
   }
   return ((data ?? []) as { id: string; updated_at: string }[]).map((l) => ({
     id: l.id,

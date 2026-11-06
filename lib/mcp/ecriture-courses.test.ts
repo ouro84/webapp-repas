@@ -23,6 +23,8 @@ function mock(foyers: { data: unknown; error: { message: string } | null } = { d
     tables: {
       foyers,
       cycle_courses: { data: null, error: null },
+      // Écritures de coche : l'`updated_at` relu par `.select("updated_at")` (#362).
+      etat_courses_article: { data: [{ updated_at: "2026-10-29T10:00:00Z" }], error: null },
       article_manuel: {
         data: { id: "a1", libelle: "Bougies", quantite: null, unite: null, categorie: "autre", fond_de_placard: false, coche: false },
         error: null,
@@ -90,7 +92,7 @@ describe("cocherArticle (RG-77, RG-10, RG-12)", () => {
     const resultat = await cocherArticle(client, { libelle: "Carottes" }, JEUDI)
     expect(appels.find((a) => a.table === "etat_courses_article")!.ops[0]).toEqual([
       "upsert",
-      { ancre: "2026-10-29", cle: "carottes|g", quantite: 400 },
+      { ancre: "2026-10-29", cle: "carottes|g", quantite: 400, coche: true },
       { onConflict: "foyer_id,ancre,cle" },
     ])
     expect(resultat).toEqual({ modifie: true, article: { nom: "carottes", quantite: "400 g", manuel: false, coche: true } })
@@ -107,14 +109,17 @@ describe("cocherArticle (RG-77, RG-10, RG-12)", () => {
     ])
   })
 
-  it("coche: false décoche (delete de la ligne)", async () => {
+  it("coche: false décoche en conservant la ligne (upsert coche = false, #362)", async () => {
     liste([ing("carottes", 400, "g")], { "carottes|g": 400 })
     const { client, appels } = mock()
     await cocherArticle(client, { libelle: "carottes", coche: false }, JEUDI)
     expect(appels.find((a) => a.table === "etat_courses_article")!.ops).toEqual([
-      ["delete"],
-      ["eq", "ancre", "2026-10-29"],
-      ["eq", "cle", "carottes|g"],
+      [
+        "upsert",
+        { ancre: "2026-10-29", cle: "carottes|g", quantite: 0, coche: false },
+        { onConflict: "foyer_id,ancre,cle" },
+      ],
+      ["select", "updated_at"],
     ])
   })
 
@@ -143,6 +148,7 @@ describe("cocherArticle (RG-77, RG-10, RG-12)", () => {
       ancre: "2026-10-29",
       cle: "oignon|g",
       quantite: 200,
+      coche: true,
     })
   })
 
@@ -197,7 +203,7 @@ describe("cocherArticle (RG-77, RG-10, RG-12)", () => {
     expect(ecritures).toHaveLength(1)
     expect(ecritures[0].ops[0]).toEqual([
       "upsert",
-      { ancre: "2026-11-05", cle: "carottes|g", quantite: 600 },
+      { ancre: "2026-11-05", cle: "carottes|g", quantite: 600, coche: true },
       { onConflict: "foyer_id,ancre,cle" },
     ])
     expect(resultat).toMatchObject({ modifie: true, article: { quantite: "600 g", coche: true } })
