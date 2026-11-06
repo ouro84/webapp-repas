@@ -35,7 +35,7 @@ import {
   viderCochesDistantes,
   type SaisieArticleManuel,
 } from "@/lib/persistance";
-import { parserCoches, type Coches } from "@/lib/coches";
+import { basculerCoche, parserCoches, type Coches } from "@/lib/coches";
 import {
   appliquerEvent,
   appliquerOp,
@@ -57,7 +57,7 @@ import {
 import { chargerJourCoursesFoyer } from "@/lib/foyer";
 import { jourCoursesOuLundi } from "@/lib/ancre-initiale-cycle";
 import { parseApiError } from "@/lib/errors";
-import type { ArticleManuel, JourPlanning, Planning, SemaineGeneree } from "@/types";
+import type { ArticleManuel, Ingredient, JourPlanning, Planning, SemaineGeneree } from "@/types";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 
 // Horodatage de la dernière écriture locale (last-write-wins) et drapeau
@@ -455,6 +455,37 @@ export async function viderCochesArticlesManuels(): Promise<void> {
   } finally {
     if (vidageCochesEnVol === vidage) vidageCochesEnVol = null;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Interface de coche de /courses (#362, RG-10, RG-12, RG-41) : un seul point
+// d'entrée pour les deux moteurs (blob des ingrédients dérivés, synchronisé par
+// diff ; colonne `coche` des articles manuels, une écriture en vol par article).
+// La page ne connaît ni l'un ni l'autre et n'écrit jamais storeCoches.
+// ---------------------------------------------------------------------------
+
+/** Bascule la coche d'un article de la liste. Ingrédient dérivé : le blob est
+ *  lu AU MOMENT de l'appel (pas l'instantané du dernier rendu, qui ferait
+ *  s'annuler deux touches rapides en une seule), la promesse résout tout de
+ *  suite (le flush suit, débouncé). Article manuel : son moteur, qui rejette
+ *  après revert en cas d'échec réseau. Partie locale synchrone dans les deux
+ *  cas, avant tout `await` (contrainte `avecTransition`). */
+export async function basculerCocheArticle(ingredient: Ingredient): Promise<void> {
+  // `async` : une exception synchrone (stockage plein) devient un rejet, que le
+  // `.catch` de la page affiche ; le corps reste synchrone jusqu'au premier await.
+  if (ingredient.source === "manuel") {
+    if (ingredient.id) await basculerCocheArticleManuel(ingredient.id);
+    return;
+  }
+  ecrireBlob(basculerCoche(cochesLocales(), ingredient));
+}
+
+/** « Tout décocher » (RG-13, RG-41) : blob vidé et articles manuels décochés
+ *  localement, de façon synchrone ; la promesse suit le décochage distant des
+ *  articles manuels (rejet après revert). */
+export async function toutDecocher(): Promise<void> {
+  storeCoches.effacer();
+  await viderCochesArticlesManuels();
 }
 
 // Applique un event Realtime article_manuel au store (INSERT/UPDATE = upsert

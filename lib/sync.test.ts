@@ -2710,3 +2710,102 @@ describe("coches d'ingrédients : écho Realtime d'une écriture dépassée (RG-
     expect(persistance.decocherArticleDistant).not.toHaveBeenCalled();
   });
 });
+
+describe("basculerCocheArticle / toutDecocher — une interface (#362)", () => {
+  // /courses coche ingrédients et articles manuels par la même interface,
+  // sans écrire storeCoches ni connaître les deux moteurs.
+  const ANCRE = "2026-07-13";
+  const lait = {
+    nom: "lait",
+    quantite: 1,
+    unite: "l" as const,
+    categorie: "produits-frais" as const,
+    fondDePlacard: false,
+  };
+
+  async function avecArticleManuel() {
+    persistance.chargerArticlesManuelsDistants.mockResolvedValue([
+      { id: "a1", libelle: "Piles", quantite: null, unite: null, categorie: "autre", fondDePlacard: false, coche: false },
+    ]);
+    const sync = await chargerSync();
+    const { renderHook, waitFor, act } = await import("@testing-library/react");
+    renderHook(() => sync.useSyncCourses(ANCRE));
+    const { result } = renderHook(() => sync.useArticlesManuels());
+    await waitFor(() => expect(result.current).toHaveLength(1));
+    return { sync, act, articles: () => result.current };
+  }
+
+  it("ingrédient : chaque appel lit le blob courant, deux bascules sans re-rendu s'annulent (#362)", async () => {
+    const sync = await chargerSync();
+    void sync.basculerCocheArticle(lait);
+    expect(JSON.parse(localStorage.getItem("courses_cochees") ?? "{}")).toEqual({ "lait|l": 1 });
+    void sync.basculerCocheArticle(lait);
+    expect(JSON.parse(localStorage.getItem("courses_cochees") ?? "{}")).toEqual({});
+  });
+
+  it("article manuel : passe par le moteur des articles manuels, coche locale immédiate", async () => {
+    persistance.basculerCocheArticleManuelDistant.mockResolvedValue(null);
+    const { sync, act, articles } = await avecArticleManuel();
+    let promesse!: Promise<void>;
+    act(() => {
+      promesse = sync.basculerCocheArticle({
+        nom: "Piles",
+        quantite: 0,
+        unite: "piece",
+        categorie: "autre",
+        fondDePlacard: false,
+        source: "manuel",
+        id: "a1",
+      });
+    });
+    expect(articles()[0].coche).toBe(true);
+    await promesse;
+    expect(persistance.basculerCocheArticleManuelDistant).toHaveBeenCalledWith("a1", true);
+    expect(localStorage.getItem("courses_cochees")).toBeNull();
+  });
+
+  it("ingrédient, stockage plein : l'erreur arrive en rejet (le .catch de la page l'affiche), pas en exception synchrone", async () => {
+    // Synchro démarrée : c'est son abonné (marquage `courses_dirty`) qui lève,
+    // storeCoches.ecrire avalant sa propre erreur d'écriture (cache best-effort).
+    const { sync } = await avecArticleManuel();
+    const espion = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("quota dépassé");
+    });
+    try {
+      let promesse: Promise<void> | undefined;
+      expect(() => {
+        promesse = sync.basculerCocheArticle(lait);
+      }).not.toThrow();
+      await expect(promesse).rejects.toThrow("quota dépassé");
+    } finally {
+      espion.mockRestore();
+    }
+  });
+
+  it("article manuel en échec réseau : la promesse rejette (la page affiche son toast)", async () => {
+    persistance.basculerCocheArticleManuelDistant.mockRejectedValue(new Error("hors ligne"));
+    const { sync } = await avecArticleManuel();
+    await expect(
+      sync.basculerCocheArticle({ nom: "Piles", quantite: 0, unite: "piece", categorie: "autre", fondDePlacard: false, source: "manuel", id: "a1" })
+    ).rejects.toThrow("hors ligne");
+  });
+
+  it("toutDecocher : blob et articles manuels décochés AVANT le premier await (avecTransition)", async () => {
+    persistance.basculerCocheArticleManuelDistant.mockResolvedValue(null);
+    persistance.viderCochesArticlesManuelsDistantes.mockReturnValue(new Promise(() => {}));
+    const { sync, act, articles } = await avecArticleManuel();
+    localStorage.setItem("cycle_affiche", JSON.stringify({ ancre: ANCRE, longueur: 7 }));
+    await act(async () => {
+      await sync.basculerCocheArticle({ nom: "Piles", quantite: 0, unite: "piece", categorie: "autre", fondDePlacard: false, source: "manuel", id: "a1" });
+    });
+    void sync.basculerCocheArticle(lait);
+    // Préconditions : sans elles, un basculerCocheArticle muet passerait le test.
+    expect(JSON.parse(localStorage.getItem("courses_cochees") ?? "{}")).toEqual({ "lait|l": 1 });
+    expect(articles()[0].coche).toBe(true);
+    act(() => {
+      void sync.toutDecocher();
+    });
+    expect(localStorage.getItem("courses_cochees")).toBeNull();
+    expect(articles()[0].coche).toBe(false);
+  });
+});

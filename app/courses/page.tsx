@@ -47,7 +47,6 @@ import { REGLAGES_DEFAUT } from "@/lib/reglages";
 import { messagesAvertissementGeneration } from "@/lib/avertissements-generation";
 import {
   aDesCoches,
-  basculerCoche,
   categorieTerminee,
   cibleAtterrissage,
   compterCategoriesTerminees,
@@ -75,8 +74,8 @@ import {
   ajouterArticleManuel,
   modifierArticleManuel,
   supprimerArticleManuel,
-  basculerCocheArticleManuel,
-  viderCochesArticlesManuels,
+  basculerCocheArticle,
+  toutDecocher as toutDecocherCoches,
   naviguerCycle,
   etirerCycle,
   type CycleAffiche,
@@ -140,7 +139,7 @@ function useHydratation(): boolean {
 // ⚠️ CONTRAT `flushSync` : le callback ne capture que sa portion SYNCHRONE.
 // Toute mutation appelée ici doit appliquer sa partie locale AVANT son
 // premier `await`, sinon elle saute hors transition (cf. lib/sync.ts,
-// viderCochesArticlesManuels).
+// viderCochesArticlesManuels, via toutDecocher).
 function avecTransition(majEtat: () => void): ViewTransition | null {
   const reduireAnimations = window.matchMedia(
     "(prefers-reduced-motion: reduce)"
@@ -397,27 +396,20 @@ function ContenuCourses() {
     // Calculée AVANT la mutation : cibleAtterrissage lit l'état d'AVANT pour
     // savoir si cette coche termine la catégorie (RG-39) — auquel cas c'est
     // la section, qui part le plus loin, qu'il faut savoir retrouver.
-    const cible = liste ? cibleAtterrissage(liste, coches, ingredient) : null;
+    // Blob relu à l'appel (#362), comme la bascule : deux touches dans la même
+    // frame visent la bonne position d'atterrissage.
+    const cible = liste ? cibleAtterrissage(liste, parserCoches(storeCoches.lire()), ingredient) : null;
 
-    // Un article manuel porte son état coché en base (colonne dédiée, RG-41) —
-    // pas dans le blob localStorage des ingrédients dérivés (RG-12).
-    if (ingredient.source === "manuel") {
-      const transition = avecTransition(() => {
-        // La mise à jour optimiste du store est synchrone (avant le premier
-        // await de basculerCocheArticleManuel) : elle est bien captée par le
-        // flushSync. Seul l'aller-retour réseau est différé — et il RETHROW
-        // après revert, d'où le catch (motif de supprimer(), plus bas).
-        void basculerCocheArticleManuel(ingredient.id!).catch((erreur) => {
-          console.error("Bascule de coche (article manuel) échouée.", erreur);
-          toast.error("Impossible d'enregistrer cette coche. Réessaie.");
-        });
-      });
-      signalerAtterrissage(transition, cible);
-      return;
-    }
-
+    // Une seule interface pour les deux moteurs (#362) : ingrédient dérivé
+    // (blob, RG-12) ou article manuel (colonne dédiée, RG-41). La mise à jour
+    // locale est synchrone (avant tout await) : bien captée par le flushSync
+    // d'avecTransition. Seul l'aller-retour réseau d'un article manuel est
+    // différé, et il RETHROW après revert, d'où le catch.
     const transition = avecTransition(() => {
-      storeCoches.ecrire(JSON.stringify(basculerCoche(coches, ingredient)));
+      void basculerCocheArticle(ingredient).catch((erreur) => {
+        console.error("Bascule de coche échouée.", erreur);
+        toast.error("Impossible d'enregistrer cette coche. Réessaie.");
+      });
     });
     signalerAtterrissage(transition, cible);
   }
@@ -426,8 +418,7 @@ function ContenuCourses() {
     // Pas de pulsation ici : tout remonte d'un coup, il n'y a pas UN élément
     // à retrouver.
     avecTransition(() => {
-      storeCoches.effacer();
-      void viderCochesArticlesManuels().catch((erreur) => {
+      void toutDecocherCoches().catch((erreur) => {
         console.error("Décochage des articles manuels échoué.", erreur);
         toast.error("Impossible de tout décocher. Réessaie.");
       });
