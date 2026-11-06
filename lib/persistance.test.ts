@@ -13,9 +13,11 @@ vi.mock("@/lib/supabase/client", () => ({
   }),
 }))
 
+import { createClient } from "@/lib/supabase/client"
 import {
   chargerArticlesManuelsDistants,
   chargerCochesDistantes,
+  chargerEtatCochesDistant,
   chargerLongueurCycle,
   chargerPlanningDistant,
   basculerCocheArticleManuelDistant,
@@ -24,6 +26,7 @@ import {
   decocherArticleDistant,
   sauvegarderCycleDistant,
   sauvegarderSlotsDistant,
+  viderCochesDistantes,
 } from "@/lib/persistance"
 import { chargerJourCoursesFoyer } from "@/lib/foyer"
 import { chargerReglages } from "@/lib/reglages-data"
@@ -217,22 +220,131 @@ describe("écritures — client injecté (#306)", () => {
     ])
   })
 
-  it("cocherArticleDistant upserte la clé nom|unité et sa quantité", async () => {
-    const { client, appels } = creerSupabaseMock()
-    await cocherArticleDistant("2026-10-29", "oignon|g", 200, client)
+  it("cocherArticleDistant upserte coche = true et renvoie l'updated_at lu", async () => {
+    const { client, appels } = creerSupabaseMock({
+      tables: {
+        etat_courses_article: { data: [{ updated_at: "2026-11-06T10:00:00.123456Z" }], error: null },
+      },
+    })
+    const maj = await cocherArticleDistant("2026-10-29", "oignon|g", 200, client)
+    expect(maj).toBe("2026-11-06T10:00:00.123456Z")
     expect(appels).toEqual([
       {
         table: "etat_courses_article",
-        ops: [["upsert", { ancre: "2026-10-29", cle: "oignon|g", quantite: 200 }, { onConflict: "foyer_id,ancre,cle" }]],
+        ops: [
+          [
+            "upsert",
+            { ancre: "2026-10-29", cle: "oignon|g", quantite: 200, coche: true },
+            { onConflict: "foyer_id,ancre,cle" },
+          ],
+          ["select", "updated_at"],
+        ],
       },
     ])
   })
 
-  it("decocherArticleDistant supprime la ligne de l'ancre et de la clé", async () => {
-    const { client, appels } = creerSupabaseMock()
-    await decocherArticleDistant("2026-10-29", "oignon|g", client)
-    expect(appels[0].table).toBe("etat_courses_article")
-    expect(appels[0].ops).toEqual([["delete"], ["eq", "ancre", "2026-10-29"], ["eq", "cle", "oignon|g"]])
+  it("decocherArticleDistant conserve la ligne : upsert coche = false, quantite 0, sans delete (#362)", async () => {
+    const { client, appels } = creerSupabaseMock({
+      tables: {
+        etat_courses_article: { data: [{ updated_at: "2026-11-06T10:00:01Z" }], error: null },
+      },
+    })
+    const maj = await decocherArticleDistant("2026-10-29", "oignon|g", client)
+    expect(maj).toBe("2026-11-06T10:00:01Z")
+    expect(appels).toEqual([
+      {
+        table: "etat_courses_article",
+        ops: [
+          [
+            "upsert",
+            { ancre: "2026-10-29", cle: "oignon|g", quantite: 0, coche: false },
+            { onConflict: "foyer_id,ancre,cle" },
+          ],
+          ["select", "updated_at"],
+        ],
+      },
+    ])
+    expect(appels[0].ops.some(([o]) => o === "delete")).toBe(false)
+  })
+
+  it("cocher / décocher remontent l'erreur et refusent une réponse sans updated_at", async () => {
+    const enErreur = creerSupabaseMock({
+      tables: { etat_courses_article: { data: null, error: { message: "RLS" } } },
+    })
+    await expect(cocherArticleDistant("a", "k", 1, enErreur.client)).rejects.toThrow("Cochage impossible : RLS")
+    await expect(decocherArticleDistant("a", "k", enErreur.client)).rejects.toThrow("Décochage impossible : RLS")
+
+    const vide = creerSupabaseMock({ tables: { etat_courses_article: { data: [], error: null } } })
+    await expect(cocherArticleDistant("a", "k", 1, vide.client)).rejects.toThrow("Cochage impossible")
+    await expect(decocherArticleDistant("a", "k", vide.client)).rejects.toThrow("Décochage impossible")
+  })
+
+  it("viderCochesDistantes décoche en conservant les lignes et renvoie les horodatages", async () => {
+    const { client, appels } = creerSupabaseMock({
+      tables: {
+        etat_courses_article: {
+          data: [
+            { cle: "a|g", updated_at: "2026-11-06T10:00:00Z" },
+            { cle: "b|piece", updated_at: "2026-11-06T10:00:01Z" },
+          ],
+          error: null,
+        },
+      },
+    })
+    vi.mocked(createClient).mockReturnValueOnce(client as unknown as ReturnType<typeof createClient>)
+    const maj = await viderCochesDistantes("2026-10-29")
+    expect(maj).toEqual([
+      { cle: "a|g", maj: "2026-11-06T10:00:00Z" },
+      { cle: "b|piece", maj: "2026-11-06T10:00:01Z" },
+    ])
+    expect(appels[0].ops).toEqual([
+      ["update", { coche: false }],
+      ["eq", "ancre", "2026-10-29"],
+      ["eq", "coche", true],
+      ["select", "cle, updated_at"],
+    ])
+  })
+
+  it("viderCochesDistantes remonte l'erreur", async () => {
+    const { client } = creerSupabaseMock({
+      tables: { etat_courses_article: { data: null, error: { message: "boom" } } },
+    })
+    vi.mocked(createClient).mockReturnValueOnce(client as unknown as ReturnType<typeof createClient>)
+    await expect(viderCochesDistantes("2026-10-29")).rejects.toThrow(
+      "Vidage des coches impossible : boom"
+    )
+  })
+
+  it("chargerEtatCochesDistant lit lignes cochées ET décochées, sans filtre coche", async () => {
+    const { client, appels } = creerSupabaseMock({
+      tables: {
+        etat_courses_article: {
+          data: [
+            { cle: "a|g", quantite: 200, coche: true, updated_at: "2026-11-06T10:00:00Z" },
+            { cle: "b|piece", quantite: 0, coche: false, updated_at: "2026-11-06T10:00:05Z" },
+          ],
+          error: null,
+        },
+      },
+    })
+    const etat = await chargerEtatCochesDistant("2026-10-29", client)
+    expect(etat).toEqual({
+      "a|g": { coche: true, valeur: 200, maj: "2026-11-06T10:00:00Z" },
+      "b|piece": { coche: false, valeur: 0, maj: "2026-11-06T10:00:05Z" },
+    })
+    expect(appels[0].ops).toEqual([
+      ["select", "cle, quantite, coche, updated_at"],
+      ["eq", "ancre", "2026-10-29"],
+    ])
+  })
+
+  it("chargerEtatCochesDistant remonte l'erreur", async () => {
+    const { client } = creerSupabaseMock({
+      tables: { etat_courses_article: { data: null, error: { message: "x" } } },
+    })
+    await expect(chargerEtatCochesDistant("a", client)).rejects.toThrow(
+      "Chargement de l'état des coches distantes impossible : x"
+    )
   })
 
   it("creerArticleManuelDistant insère l'article sur l'ancre", async () => {

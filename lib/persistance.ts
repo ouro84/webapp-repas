@@ -309,51 +309,106 @@ export async function chargerCochesDistantes(
 // fournit jamais. L'anti-clobber (RG-32) vient de la granularité par-article.
 // ---------------------------------------------------------------------------
 
-/** Coche un article (upsert d'une ligne ; mémorise la quantité pour RG-12). */
+/** État distant d'une coche : ligne cochée OU décochée (tombstone horodatée, #362). */
+export type EtatCocheDistant = { coche: boolean; valeur: number; maj: string }
+
+/**
+ * État complet des coches d'une ancre : lignes cochées ET décochées, avec leur
+ * `updated_at` serveur. Sert au moteur d'ordonnancement des échos temps réel
+ * (#362) ; `chargerCochesDistantes` reste la lecture « coches actives ».
+ */
+export async function chargerEtatCochesDistant(
+  ancre: string,
+  supabase: ClientSupabase = clientParDefaut()
+): Promise<Record<string, EtatCocheDistant>> {
+  const { data, error } = await supabase
+    .from("etat_courses_article")
+    .select("cle, quantite, coche, updated_at")
+    .eq("ancre", ancre)
+  if (error) {
+    throw new Error(`Chargement de l'état des coches distantes impossible : ${error.message}`)
+  }
+  const etat: Record<string, EtatCocheDistant> = {}
+  for (const ligne of (data ?? []) as Array<{
+    cle: string
+    quantite: number
+    coche: boolean
+    updated_at: string
+  }>) {
+    etat[ligne.cle] = { coche: ligne.coche, valeur: ligne.quantite, maj: ligne.updated_at }
+  }
+  return etat
+}
+
+/** `updated_at` de la première ligne renvoyée par un `.select("updated_at")`. */
+function majEcrite(data: unknown, message: string): string {
+  const maj = (data as { updated_at: string }[] | null)?.[0]?.updated_at
+  if (!maj) throw new Error(`${message} : réponse vide`)
+  return maj
+}
+
+/** Coche un article (upsert d'une ligne `coche = true` ; mémorise la quantité
+ *  pour RG-12). Renvoie l'`updated_at` serveur de l'écriture (#362). */
 export async function cocherArticleDistant(
   ancre: string,
   cle: string,
   quantite: number,
   supabase: ClientSupabase = clientParDefaut()
-): Promise<void> {
-  const { error } = await supabase
+): Promise<string> {
+  const { data, error } = await supabase
     .from("etat_courses_article")
     .upsert(
-      { ancre, cle, quantite },
+      { ancre, cle, quantite, coche: true },
       { onConflict: "foyer_id,ancre,cle" }
     )
+    .select("updated_at")
   if (error) {
     throw new Error(`Cochage impossible : ${error.message}`)
   }
+  return majEcrite(data, "Cochage impossible")
 }
 
-/** Décoche un article (delete de sa ligne ; le foyer est filtré par la RLS). */
+/** Décoche un article en CONSERVANT sa ligne (`coche = false`, `quantite = 0`) :
+ *  la décoche porte un `updated_at` serveur, que le client compare à celui d'un
+ *  écho tardif (#362). Le `DELETE` est réservé aux purges. Renvoie l'`updated_at`. */
 export async function decocherArticleDistant(
   ancre: string,
   cle: string,
   supabase: ClientSupabase = clientParDefaut()
-): Promise<void> {
-  const { error } = await supabase
+): Promise<string> {
+  const { data, error } = await supabase
     .from("etat_courses_article")
-    .delete()
-    .eq("ancre", ancre)
-    .eq("cle", cle)
+    .upsert(
+      { ancre, cle, quantite: 0, coche: false },
+      { onConflict: "foyer_id,ancre,cle" }
+    )
+    .select("updated_at")
   if (error) {
     throw new Error(`Décochage impossible : ${error.message}`)
   }
+  return majEcrite(data, "Décochage impossible")
 }
 
-/** Vide toutes les coches d'une ancre de cycle (« Tout décocher » /
- *  régénération RG-13). Un seul DELETE par ancre plutôt que N décochages. */
-export async function viderCochesDistantes(ancre: string): Promise<void> {
+/** Décoche toutes les coches actives d'une ancre de cycle (« Tout décocher » /
+ *  régénération RG-13). Un seul UPDATE par ancre plutôt que N décochages ; les
+ *  lignes sont conservées (`coche = false`). Renvoie `{ cle, maj }` par ligne. */
+export async function viderCochesDistantes(
+  ancre: string
+): Promise<Array<{ cle: string; maj: string }>> {
   const supabase = createClient()
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("etat_courses_article")
-    .delete()
+    .update({ coche: false })
     .eq("ancre", ancre)
+    .eq("coche", true)
+    .select("cle, updated_at")
   if (error) {
     throw new Error(`Vidage des coches impossible : ${error.message}`)
   }
+  return ((data ?? []) as Array<{ cle: string; updated_at: string }>).map((l) => ({
+    cle: l.cle,
+    maj: l.updated_at,
+  }))
 }
 
 /** Longueur persistée d'un cycle (défaut LONGUEUR_DEFAUT si aucune ligne,
