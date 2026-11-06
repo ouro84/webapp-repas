@@ -1009,7 +1009,60 @@ async function lireEtHydraterCoches(ancre: string): Promise<void> {
       etats[cle] = { coche, valeur, maj };
     }
     moteurCoches().hydrater(ancre, etats);
+    annulerRelectureCoches();
     return;
+  }
+}
+
+// Lecture des coches ratée en ligne (5xx, délai dépassé) : sans hydratation,
+// le moteur ignore tous les événements Realtime du cycle. Nouvelle tentative
+// différée (2 s puis ×2, plafond 30 s, 5 tentatives, comme la relecture US-21
+// du planning), seulement `useSyncCourses` monté, en ligne et pour le cycle
+// encore affiché ; annulée au démontage, levée par toute lecture réussie.
+// Hors ligne, c'est le retour en ligne qui relit.
+const RELECTURE_COCHES_DELAI_INITIAL_MS = 2000;
+const RELECTURE_COCHES_DELAI_MAX_MS = 30_000;
+const RELECTURE_COCHES_TENTATIVES_MAX = 5;
+let relectureCochesAutorisee = false;
+let minuteurRelectureCoches: ReturnType<typeof setTimeout> | null = null;
+let tentativesRelectureCoches = 0;
+let ancreRelectureCoches: string | null = null;
+
+function planifierRelectureCoches(ancre: string): void {
+  if (!relectureCochesAutorisee) return;
+  if (typeof navigator !== "undefined" && navigator.onLine === false) return;
+  if (ancre !== ancreRelectureCoches) {
+    ancreRelectureCoches = ancre;
+    tentativesRelectureCoches = 0;
+  }
+  if (tentativesRelectureCoches >= RELECTURE_COCHES_TENTATIVES_MAX) return;
+  const delai = Math.min(
+    RELECTURE_COCHES_DELAI_INITIAL_MS * 2 ** tentativesRelectureCoches,
+    RELECTURE_COCHES_DELAI_MAX_MS
+  );
+  tentativesRelectureCoches++;
+  if (minuteurRelectureCoches) clearTimeout(minuteurRelectureCoches);
+  minuteurRelectureCoches = setTimeout(() => {
+    minuteurRelectureCoches = null;
+    if (ancreActive() !== ancre) return;
+    void relireCoches(ancre);
+  }, delai);
+}
+
+function annulerRelectureCoches(): void {
+  if (minuteurRelectureCoches) clearTimeout(minuteurRelectureCoches);
+  minuteurRelectureCoches = null;
+  tentativesRelectureCoches = 0;
+  ancreRelectureCoches = null;
+}
+
+// Relit les coches du cycle ; un échec est journalisé et retenté plus tard.
+async function relireCoches(ancre: string): Promise<void> {
+  try {
+    await lireEtHydraterCoches(ancre);
+  } catch (erreur) {
+    console.error("Relecture des coches distantes échouée.", erreur);
+    planifierRelectureCoches(ancre);
   }
 }
 
@@ -1192,6 +1245,8 @@ function couperTempsReel(): Promise<void> {
   // de sa fusion (elle ne rouvre aucun canal).
   abonnementPlanningAutorise = false;
   annulerNouvelleRelecture();
+  relectureCochesAutorisee = false;
+  annulerRelectureCoches();
   return Promise.all([
     chaineCoches,
     chainePlanning,
@@ -1900,6 +1955,12 @@ export function useGenerationCycle(cycle: CycleAffiche | null): {
 async function rafraichirCycleGenere(): Promise<void> {
   const courant = lireCycleAffiche();
   if (!courant) return;
+  // Des coches en file (geste fait pendant la RPC, écriture en échec) seraient
+  // rejouées par-dessus la remise à zéro, et leur `updated_at`, postérieur à
+  // celui de la RPC, gagnerait : « Tout décocher » les retire de la file et
+  // part après une écriture déjà en vol (la vue est vidée au passage).
+  const moteur = moteurCoches();
+  if (moteur.enAttente()) moteur.toutDecocher(courant.ancre);
   viderBlobLocal();
   await rechargerProjectionCycle(courant.ancre, courant.longueur);
 }
@@ -2135,7 +2196,12 @@ async function chargerCycleDansCache(
     // relire (cf. lireEtHydraterCoches).
     const moteur = moteurCoches();
     if (moteur.enAttente()) void moteur.rejouer();
-    await lireEtHydraterCoches(ancre);
+    try {
+      await lireEtHydraterCoches(ancre);
+    } catch (erreur) {
+      planifierRelectureCoches(ancre); // sinon le temps réel resterait muet
+      throw erreur;
+    }
     // Articles manuels (#216) : scopés par la même ancre, pas de dirty-first
     // (aucune file offline — chaque mutation écrit en base immédiatement).
     // Une saisie faite pendant la lecture n'est pas écrasée par son résultat
@@ -2406,6 +2472,7 @@ export function useSync(semaineVoulue: string | null = null): EtatSync {
 // de la semaine, PAS de temps réel planning : /courses affiche un CYCLE (planning
 // projeté en mémoire), pas la semaine du planning courant. Retourne l'arrêt.
 function demarrerSyncCoches(): () => void {
+  relectureCochesAutorisee = true; // jusqu'à couperTempsReel
   // Référence du diff = blob affiché au montage : il n'est pas un geste (sinon
   // la première coche repousserait toutes les coches d'une session passée).
   blobConnu = cochesLocales();
@@ -2418,9 +2485,7 @@ function demarrerSyncCoches(): () => void {
     void moteurCoches().rejouer();
     const ancre = ancreActive();
     if (ancre === null) return;
-    lireEtHydraterCoches(ancre).catch((erreur) =>
-      console.error("Relecture des coches au retour en ligne échouée.", erreur)
-    );
+    void relireCoches(ancre);
   };
   window.addEventListener("online", surRetourEnLigne);
   // Réabonnement « à chaud » (nav SPA) : coches (par ancre) + planning du cycle
