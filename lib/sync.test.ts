@@ -2764,6 +2764,24 @@ describe("basculerCocheArticle / toutDecocher — une interface (#362)", () => {
     expect(localStorage.getItem("courses_cochees")).toBeNull();
   });
 
+  it("ingrédient, stockage plein : l'erreur arrive en rejet (le .catch de la page l'affiche), pas en exception synchrone", async () => {
+    // Synchro démarrée : c'est son abonné (marquage `courses_dirty`) qui lève,
+    // storeCoches.ecrire avalant sa propre erreur d'écriture (cache best-effort).
+    const { sync } = await avecArticleManuel();
+    const espion = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("quota dépassé");
+    });
+    try {
+      let promesse: Promise<void> | undefined;
+      expect(() => {
+        promesse = sync.basculerCocheArticle(lait);
+      }).not.toThrow();
+      await expect(promesse).rejects.toThrow("quota dépassé");
+    } finally {
+      espion.mockRestore();
+    }
+  });
+
   it("article manuel en échec réseau : la promesse rejette (la page affiche son toast)", async () => {
     persistance.basculerCocheArticleManuelDistant.mockRejectedValue(new Error("hors ligne"));
     const { sync } = await avecArticleManuel();
@@ -2781,6 +2799,9 @@ describe("basculerCocheArticle / toutDecocher — une interface (#362)", () => {
       await sync.basculerCocheArticle({ nom: "Piles", quantite: 0, unite: "piece", categorie: "autre", fondDePlacard: false, source: "manuel", id: "a1" });
     });
     void sync.basculerCocheArticle(lait);
+    // Préconditions : sans elles, un basculerCocheArticle muet passerait le test.
+    expect(JSON.parse(localStorage.getItem("courses_cochees") ?? "{}")).toEqual({ "lait|l": 1 });
+    expect(articles()[0].coche).toBe(true);
     act(() => {
       void sync.toutDecocher();
     });

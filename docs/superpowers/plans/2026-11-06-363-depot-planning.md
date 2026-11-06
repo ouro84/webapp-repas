@@ -19,6 +19,14 @@
 7. **Tests.** Un `describe` « contrat d'écriture » par sorte d'écrivain, avec les cas « écho avant réponse » (#352), « édition pendant l'écriture » et « semaine partielle » (#355). Les `describe` nommés par bug restent tant qu'ils passent (filet).
 8. **E2E staging obligatoire :** `planning*.spec.ts`, `edition-vue-cycle.spec.ts`, `synchro*.spec.ts`, avec `--retries=2`.
 
+## Question ouverte à trancher avant la phase A (relevée en étudiant le code)
+
+Les deux patchs « jumeaux » du cache ne sont **pas** symétriques :
+- `reporterGenerationSurSemaineAffichee` (≈ l. 1790) sort tôt si le cache vise une autre semaine, **avant** de poser `CLE_MAJ` et l'instantané confirmé, et écrit le store même sans cache local (jours générés seuls).
+- `modifierSlotDistant` (≈ l. 2260) pose `CLE_MAJ` et `patcherConfirme` dès que `semaine` est la semaine affichée, et n'écrit le store que si le cache local porte cette semaine.
+
+Une fonction commune `patcherSemaineAffichee(semaine, maj, transformer)` impose de choisir une des deux sémantiques. Pour que la phase A reste iso, il faut soit garder deux variantes, soit prouver (test + e2e) que l'écart est inobservable. À décider avec Arnaud.
+
 ## Phase A : comptabilité commune (iso-comportement)
 
 ### Task A1 : `avecEcriturePlanning`

@@ -61,7 +61,7 @@ Unifier les moteurs eux-mêmes : horodatage serveur des coches d'ingrédients (`
 - Modify: `app/courses/page.tsx:396-436` (`basculer`, `toutDecocher`) ; imports (`storeCoches` reste importé pour la LECTURE `useSyncExternalStore`, `basculerCoche` et `basculerCocheArticleManuel` retirés s'ils ne servent plus)
 - Doc: `.claude/rules/courses-cycle.md` (une entrée : « `/courses` coche par `basculerCocheArticle` / `toutDecocher` (`lib/sync.ts`), jamais en écrivant `storeCoches` ; pourquoi : deux moteurs derrière une interface, lecture du blob à l'appel »), `CHANGELOG.md` `Corrigé` : « Liste de courses : deux touches très rapides sur le même article ne s'annulent plus en une seule (#362). »
 
-- [ ] **Step 1:** Remplacer les deux branches de `basculer` par `void basculerCocheArticle(ingredient).catch(...)` (toast « Impossible d'enregistrer cette coche. Réessaie. »), dans `avecTransition` ; `toutDecocher` appelle `toutDecocher()` de sync (renommer la fonction locale `toutDecocherListe` pour éviter l'homonymie).
+- [ ] **Step 1:** Remplacer les deux branches de `basculer` par `void basculerCocheArticle(ingredient).catch(...)` (toast « Impossible d'enregistrer cette coche. Réessaie. »), dans `avecTransition` ; `toutDecocher` appelle `toutDecocher()` de sync (importé sous l'alias `toutDecocherCoches` pour éviter l'homonymie avec la fonction locale).
 - [ ] **Step 2:** `npx tsc --noEmit`, `npx eslint app/courses/page.tsx lib/sync.ts`, `npx vitest run lib/sync.test.ts tests` verts.
 - [ ] **Step 3:** E2E staging : `npm run test:e2e:staging -- e2e/courses.spec.ts e2e/articles-manuels.spec.ts --retries=2` (adapter aux noms réels des specs `courses*`).
 - [ ] **Step 4:** Commit `refactor: /courses coche par l'interface de sync (#362)` ; `graphify update .`.

@@ -470,20 +470,22 @@ export async function viderCochesArticlesManuels(): Promise<void> {
  *  suite (le flush suit, débouncé). Article manuel : son moteur, qui rejette
  *  après revert en cas d'échec réseau. Partie locale synchrone dans les deux
  *  cas, avant tout `await` (contrainte `avecTransition`). */
-export function basculerCocheArticle(ingredient: Ingredient): Promise<void> {
+export async function basculerCocheArticle(ingredient: Ingredient): Promise<void> {
+  // `async` : une exception synchrone (stockage plein) devient un rejet, que le
+  // `.catch` de la page affiche ; le corps reste synchrone jusqu'au premier await.
   if (ingredient.source === "manuel") {
-    return ingredient.id ? basculerCocheArticleManuel(ingredient.id) : Promise.resolve();
+    if (ingredient.id) await basculerCocheArticleManuel(ingredient.id);
+    return;
   }
   ecrireBlob(basculerCoche(cochesLocales(), ingredient));
-  return Promise.resolve();
 }
 
 /** « Tout décocher » (RG-13, RG-41) : blob vidé et articles manuels décochés
  *  localement, de façon synchrone ; la promesse suit le décochage distant des
  *  articles manuels (rejet après revert). */
-export function toutDecocher(): Promise<void> {
+export async function toutDecocher(): Promise<void> {
   storeCoches.effacer();
-  return viderCochesArticlesManuels();
+  await viderCochesArticlesManuels();
 }
 
 // Applique un event Realtime article_manuel au store (INSERT/UPDATE = upsert

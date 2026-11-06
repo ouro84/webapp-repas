@@ -396,7 +396,9 @@ function ContenuCourses() {
     // Calculée AVANT la mutation : cibleAtterrissage lit l'état d'AVANT pour
     // savoir si cette coche termine la catégorie (RG-39) — auquel cas c'est
     // la section, qui part le plus loin, qu'il faut savoir retrouver.
-    const cible = liste ? cibleAtterrissage(liste, coches, ingredient) : null;
+    // Blob relu à l'appel (#362), comme la bascule : deux touches dans la même
+    // frame visent la bonne position d'atterrissage.
+    const cible = liste ? cibleAtterrissage(liste, parserCoches(storeCoches.lire()), ingredient) : null;
 
     // Une seule interface pour les deux moteurs (#362) : ingrédient dérivé
     // (blob, RG-12) ou article manuel (colonne dédiée, RG-41). La mise à jour
