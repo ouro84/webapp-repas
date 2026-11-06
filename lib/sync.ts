@@ -78,11 +78,18 @@ const CLE_CONFIRME = "planning_confirme";
 // un rechargement : sinon `hydrater` (« local fait foi ») pousserait le local
 // sans relire et effacerait le changement distant que la lecture devait intégrer.
 const CLE_A_RELIRE = "planning_a_relire";
-// Coches (#362) : file et horodatages du moteur, `coches_en_attente` et
-// `coches_maj` (préfixe `nom: "coches"` du moteur). `courses_cochees_maj` et
-// `courses_dirty` sont legacy : plus écrits, mais purgés au changement de foyer
-// pour ne pas laisser de valeur orpheline d'un ancien client.
-const CLES_MOTEUR_COCHES = ["coches_en_attente", "coches_maj"];
+// Coches (#362) : file et horodatages des deux moteurs, `coches_en_attente` /
+// `coches_maj` (ingrédients, `nom: "coches"`) et `coches_manuels_en_attente` /
+// `coches_manuels_maj` (articles manuels, `nom: "coches_manuels"`).
+// `courses_cochees_maj` et `courses_dirty` sont legacy : plus écrits, mais
+// purgés au changement de foyer pour ne pas laisser de valeur orpheline d'un
+// ancien client.
+const CLES_MOTEUR_COCHES = [
+  "coches_en_attente",
+  "coches_maj",
+  "coches_manuels_en_attente",
+  "coches_manuels_maj",
+];
 const CLE_MAJ_COCHES = "courses_cochees_maj";
 const CLE_DIRTY_COCHES = "courses_dirty";
 // Semaine actuellement affichée (navigation historique #5) — partagée
@@ -118,9 +125,12 @@ export function reinitialiserCacheFoyer(): void {
   localStorage.removeItem(CLE_MAJ_COCHES);
   localStorage.removeItem(CLE_DIRTY_COCHES);
   for (const cle of CLES_MOTEUR_COCHES) localStorage.removeItem(cle);
-  // Le moteur sera recréé depuis le stockage purgé (file de l'ancien foyer
-  // abandonnée) ; la page est rechargée ensuite par l'appelant.
+  // Les moteurs seront recréés depuis le stockage purgé (files de l'ancien
+  // foyer abandonnées) ; la page est rechargée ensuite par l'appelant.
   moteurIngredients = null;
+  moteurArticlesManuels = null;
+  etatsMoteurs.coches = "synchronise";
+  etatsMoteurs.coches_manuels = "synchronise";
   blobConnu = {};
   localStorage.removeItem("planning_snapshot"); // CLE_SNAPSHOT de lib/stockage
   // Le foyer a changé → le cycle affiché et son planning projeté (#257) sont
@@ -141,6 +151,30 @@ function definirEtat(nouvel: EtatSync): void {
   if (etat === nouvel) return;
   etat = nouvel;
   for (const rappel of abonnesEtat) rappel();
+}
+
+// Indicateur commun aux deux moteurs de coche (#362) : chacun annonce son
+// propre état, l'indicateur prend le pire (« hors-ligne » > « sauvegarde » >
+// « synchronise »). Pourquoi : un moteur qui finit son envoi ne doit pas
+// annoncer « synchronise » pendant que l'autre garde des coches en file.
+type NomMoteur = "coches" | "coches_manuels";
+const etatsMoteurs: Record<NomMoteur, EtatSync> = {
+  coches: "synchronise",
+  coches_manuels: "synchronise",
+};
+
+function surEtatMoteur(nom: NomMoteur): (nouvel: EtatSync) => void {
+  return (nouvel) => {
+    etatsMoteurs[nom] = nouvel;
+    const etats = Object.values(etatsMoteurs);
+    definirEtat(
+      etats.includes("hors-ligne")
+        ? "hors-ligne"
+        : etats.includes("sauvegarde")
+          ? "sauvegarde"
+          : "synchronise"
+    );
+  };
 }
 
 const storeEtatSync = {
@@ -279,47 +313,92 @@ export function useArticlesManuels(): ArticleManuel[] {
 // résolu pour une ancre quittée entre-temps (navigation rapide) est ignoré.
 let ancreArticlesManuelsChargee: string | null = null;
 
-// Écriture de coche en vol, par article : une seule à la fois. `voulu` suit le
-// dernier geste, `confirme` la dernière valeur validée en base.
-type EcritureCoche = { voulu: boolean; confirme: boolean };
-const ecrituresCoche = new Map<string, EcritureCoche>();
-// « Tout décocher » en vol : une écriture de coche attend sa fin.
-let vidageCochesEnVol: Promise<unknown> | null = null;
-
 // Incrémenté à chaque saisie locale (ajout, modification, coche, suppression,
-// « Tout décocher ») : une lecture distante qui chevauche une saisie est périmée.
+// « Tout décocher ») et à chaque écriture de coche commitée : une lecture
+// distante qui chevauche l'une ou l'autre est périmée. Pourquoi le commit : une
+// coche rejouée (retour en ligne) se termine pendant la relecture du cycle, sort
+// de la file, et l'instantané lu avant elle la décochait à l'écran.
 let saisiesArticlesManuels = 0;
 
 // Lectures au plus : la première, plus deux relectures si l'utilisateur saisit
-// pendant la lecture. Au-delà, on applique quand même (coches en vol protégées).
+// pendant la lecture. Au-delà, on applique quand même (coches en file protégées).
 const LECTURES_ARTICLES_MAX = 3;
 
-/** Charge les articles manuels de l'ancre dans le store.
+// Coche des articles manuels sur le moteur horodaté (#362, RG-41) : deuxième
+// instance de `lib/moteur-coches.ts` (`nom: "coches_manuels"`, clés de stockage
+// `coches_manuels_maj` / `coches_manuels_en_attente`), clé = id de l'article,
+// valeur inutilisée. File hors ligne persistée, une écriture à la fois, dernier
+// commit gagnant sur `updated_at` ; un échec met en file (« hors ligne »), sans
+// rejet. Le moteur ne porte que la coche : libellé, quantité… restent arbitrés
+// par `majLe` dans `surEventArticleManuel`. Créé au premier usage (il relit sa
+// file à ce moment-là).
+let moteurArticlesManuels: MoteurCoches<null> | null = null;
+
+function moteurArticles(): MoteurCoches<null> {
+  return (moteurArticlesManuels ??= creerMoteurCoches<null>({
+    nom: "coches_manuels",
+    transport: {
+      // `null` = aucune ligne mise à jour : article supprimé entre-temps,
+      // opération abandonnée (journalisée) par le moteur, jamais ressuscitée.
+      async ecrire(_ancre, id, etat) {
+        const maj = await basculerCocheArticleManuelDistant(id, etat.coche);
+        saisiesArticlesManuels++;
+        retenirMajArticle(id, maj);
+        return maj;
+      },
+      async vider(ancre) {
+        const lignes = await viderCochesArticlesManuelsDistantes(ancre);
+        saisiesArticlesManuels++;
+        for (const { id, majLe } of lignes) retenirMajArticle(id, majLe);
+        return lignes.map(({ id, majLe }) => ({ cle: id, maj: majLe }));
+      },
+    },
+    vue: {
+      // Article absent du store (supprimé) : rien à écrire, pas de résurrection.
+      appliquer(id, etat) {
+        const local = articlesManuels.find((a) => a.id === id);
+        if (!local || local.coche === etat.coche) return;
+        definirArticlesManuels(
+          articlesManuels.map((a) => (a.id === id ? { ...a, coche: etat.coche } : a))
+        );
+      },
+      vider() {
+        if (!articlesManuels.some((a) => a.coche)) return;
+        definirArticlesManuels(articlesManuels.map((a) => ({ ...a, coche: false })));
+      },
+    },
+    stockage: stockageMoteurCoches,
+    surEtat: surEtatMoteur("coches_manuels"),
+    journal: (message, erreur) => console.error(message, erreur),
+  }));
+}
+
+/** Charge les articles manuels de l'ancre dans le store, puis hydrate le moteur
+ *  de leurs coches. Rejette si la lecture échoue (l'appelant planifie une
+ *  nouvelle tentative : sans hydratation, le moteur ignore les événements).
  *
  *  La lecture peut revenir APRÈS un ajout ou une coche de l'utilisateur (elle
  *  part pendant le chargement de /courses, liste déjà utilisable). Pourquoi
  *  ne pas l'appliquer telle quelle : son instantané périmé effaçait la coche
  *  ou l'article ajouté (même schéma que la coche perdue de #339). Donc :
  *  relecture si une saisie a eu lieu pendant la lecture, et coche locale
- *  conservée pour un article dont l'écriture de coche est encore en vol. */
+ *  conservée pour un article dont la coche est encore en file (dirty-first
+ *  par clé du moteur). */
 async function chargerArticlesManuelsDansCache(ancre: string): Promise<void> {
   ancreArticlesManuelsChargee = ancre;
-  try {
-    for (let lecture = 1; ; lecture++) {
-      const saisiesAvant = saisiesArticlesManuels;
-      const liste = await chargerArticlesManuelsDistants(ancre);
-      if (ancreArticlesManuelsChargee !== ancre) return;
-      if (saisiesAvant !== saisiesArticlesManuels && lecture < LECTURES_ARTICLES_MAX) continue;
-      definirArticlesManuels(
-        liste.map((article) => {
-          const local = articlesManuels.find((a) => a.id === article.id);
-          return local && ecrituresCoche.has(article.id) ? { ...article, coche: local.coche } : article;
-        })
-      );
-      return;
+  for (let lecture = 1; ; lecture++) {
+    const saisiesAvant = saisiesArticlesManuels;
+    const liste = await chargerArticlesManuelsDistants(ancre);
+    if (ancreArticlesManuelsChargee !== ancre) return;
+    if (saisiesAvant !== saisiesArticlesManuels && lecture < LECTURES_ARTICLES_MAX) continue;
+    definirArticlesManuels(liste);
+    // `majLe` absent = horodatage inconnu : tout événement s'appliquera.
+    const distant: Record<string, Etat<null> & { maj: string }> = {};
+    for (const article of liste) {
+      distant[article.id] = { coche: article.coche, valeur: null, maj: article.majLe ?? "" };
     }
-  } catch (erreur) {
-    console.error("Chargement des articles manuels échoué.", erreur);
+    moteurArticles().hydrater(ancre, distant);
+    return;
   }
 }
 
@@ -331,12 +410,18 @@ export async function ajouterArticleManuel(saisie: SaisieArticleManuel): Promise
   saisiesArticlesManuels++;
   // Upsert par id, comme `surEventArticleManuel` : la lecture du cycle (ou
   // l'écho INSERT) a pu rapporter l'article avant le retour de l'insertion.
-  // Un doublon partageait la clé React et la case ne suivait plus l'état.
+  // Un doublon partageait la clé React et la case ne suivait plus l'état. La
+  // coche reste celle du store (un geste a pu suivre l'écho INSERT) : c'est
+  // le moteur qui l'arbitre, sur l'`updated_at` de la création.
+  const connu = articlesManuels.find((a) => a.id === cree.id);
   definirArticlesManuels(
-    articlesManuels.some((a) => a.id === cree.id)
-      ? articlesManuels.map((a) => (a.id === cree.id ? cree : a))
+    connu
+      ? articlesManuels.map((a) => (a.id === cree.id ? { ...cree, coche: connu.coche } : a))
       : [...articlesManuels, cree]
   );
+  if (cree.majLe) {
+    moteurArticles().surEvent(ancre, cree.id, { coche: cree.coche, valeur: null }, cree.majLe);
+  }
 }
 
 /** Modifie un article manuel EN PLACE (RG-43 bis) : conserve id et coché. */
@@ -369,7 +454,8 @@ function majArticle(article: ArticleManuel | undefined): number {
 }
 
 // Retient l'`updated_at` renvoyé par une de nos écritures : tout écho qui
-// n'est pas plus récent sera ignoré. Ce n'est pas une saisie : pas de
+// n'est pas plus récent sera ignoré pour les champs hors coche (la coche est
+// arbitrée par le moteur). Ce n'est pas une saisie : pas de
 // `saisiesArticlesManuels++`, la coche et les champs ne changent pas.
 function retenirMajArticle(id: string, majLe: string | null | undefined): void {
   if (!majLe) return;
@@ -378,53 +464,18 @@ function retenirMajArticle(id: string, majLe: string | null | undefined): void {
   definirArticlesManuels(articlesManuels.map((a) => (a.id === id ? { ...a, majLe } : a)));
 }
 
-function definirCocheLocale(id: string, coche: boolean): void {
-  saisiesArticlesManuels++;
-  definirArticlesManuels(articlesManuels.map((a) => (a.id === id ? { ...a, coche } : a)));
-}
-
 /** Bascule l'état coché d'un article manuel (colonne dédiée, indépendante du
- *  blob de coches RG-12). Optimiste : la coche locale change tout de suite.
- *
- *  Une seule écriture en vol par article : des clics rapides sont regroupés
- *  et seule la dernière valeur voulue part ensuite, dans l'ordre. Pourquoi :
- *  des UPDATE concurrents peuvent être validés dans le désordre, et la base
- *  gardait alors l'inverse du dernier geste. Pendant l'écriture, les échos
- *  Realtime ne touchent pas la coche (`surEventArticleManuel`).
- *
- *  Échec : revert au dernier état confirmé, puis rethrow. Seul l'appel qui a
- *  ouvert l'écriture le reçoit (un clic regroupé résout tout de suite), pour
- *  un seul toast par échec. */
-export function basculerCocheArticleManuel(id: string): Promise<void> {
+ *  blob de coches RG-12), par le moteur horodaté (#362). La coche locale
+ *  change tout de suite, de façon synchrone (contrat `avecTransition`) ;
+ *  l'écriture suit, une à la fois, le dernier geste gagnant. Un échec réseau
+ *  met en file et passe l'indicateur à « hors ligne », sans rejet ni revert.
+ *  No-op hors cycle affiché. */
+export function basculerCocheArticleManuel(id: string): void {
   const article = articlesManuels.find((a) => a.id === id);
-  if (!article) return Promise.resolve();
-  const coche = !article.coche;
-  definirCocheLocale(id, coche);
-  const enVol = ecrituresCoche.get(id);
-  if (enVol) {
-    enVol.voulu = coche;
-    return Promise.resolve();
-  }
-  const ecriture: EcritureCoche = { voulu: coche, confirme: article.coche };
-  ecrituresCoche.set(id, ecriture);
-  return ecrireCocheEnSerie(id, ecriture);
-}
-
-async function ecrireCocheEnSerie(id: string, ecriture: EcritureCoche): Promise<void> {
-  try {
-    while (ecriture.voulu !== ecriture.confirme) {
-      if (vidageCochesEnVol) await vidageCochesEnVol.catch(() => {});
-      const valeur = ecriture.voulu;
-      const majLe = await basculerCocheArticleManuelDistant(id, valeur);
-      ecriture.confirme = valeur;
-      retenirMajArticle(id, majLe);
-    }
-  } catch (erreur) {
-    definirCocheLocale(id, ecriture.confirme);
-    throw erreur;
-  } finally {
-    ecrituresCoche.delete(id);
-  }
+  const ancre = ancreActive();
+  if (!article || ancre === null) return;
+  saisiesArticlesManuels++;
+  moteurArticles().poser(ancre, id, { coche: !article.coche, valeur: null });
 }
 
 /** Supprime un article manuel (RG-42). */
@@ -437,72 +488,56 @@ export async function supprimerArticleManuel(id: string): Promise<void> {
 /** Décoche tous les articles manuels du cycle affiché SANS les supprimer
  *  (RG-41, « Tout décocher »). No-op hors cycle.
  *
- *  OPTIMISTE, comme basculerCocheArticleManuel ci-dessus — et pour une raison
- *  qui dépasse la latence perçue : `/courses` appelle cette fonction depuis
- *  `avecTransition()`, dont le `flushSync` n'entoure QUE la portion synchrone
- *  du callback. Une mise à jour du store placée APRÈS le premier `await` est
- *  appliquée une fois l'état d'arrivée déjà capturé → les articles manuels
- *  sautaient hors transition, un aller-retour réseau après les coches
- *  localStorage. Règle générale : toute mutation appelée depuis
- *  `avecTransition` applique sa partie locale AVANT son premier `await`. */
-export async function viderCochesArticlesManuels(): Promise<void> {
+ *  Par le moteur horodaté (#362) : la vue est décochée de façon SYNCHRONE —
+ *  `/courses` appelle cette fonction depuis `avecTransition()`, dont le
+ *  `flushSync` n'entoure QUE la portion synchrone du callback (une mise à jour
+ *  après un `await` sautait hors transition). Le décochage distant suit, après
+ *  une écriture de coche déjà en vol, et efface les coches encore en file de
+ *  l'ancre ; un échec réseau met en file (« hors ligne »), sans rejet. */
+export function viderCochesArticlesManuels(): void {
   const ancre = ancreActive();
   if (ancre === null) return;
-  const avant = articlesManuels;
   saisiesArticlesManuels++;
-  definirArticlesManuels(articlesManuels.map((a) => ({ ...a, coche: false })));
-  // Une coche en vol pourrait être validée APRÈS ce décochage : on lui
-  // demande de finir sur « décoché » (elle réécrit false au besoin).
-  for (const ecriture of ecrituresCoche.values()) ecriture.voulu = false;
-  const vidage = viderCochesArticlesManuelsDistantes(ancre);
-  vidageCochesEnVol = vidage;
-  try {
-    for (const { id, majLe } of await vidage) retenirMajArticle(id, majLe);
-  } catch (erreur) {
-    definirArticlesManuels(avant);
-    throw erreur;
-  } finally {
-    if (vidageCochesEnVol === vidage) vidageCochesEnVol = null;
-  }
+  moteurArticles().toutDecocher(ancre);
 }
 
 // ---------------------------------------------------------------------------
 // Interface de coche de /courses (#362, RG-10, RG-12, RG-41) : un seul point
-// d'entrée pour les deux moteurs (blob des ingrédients dérivés, synchronisé par
-// diff ; colonne `coche` des articles manuels, une écriture en vol par article).
-// La page ne connaît ni l'un ni l'autre et n'écrit jamais storeCoches.
+// d'entrée pour les deux sortes de coches (blob des ingrédients dérivés,
+// synchronisé par diff ; colonne `coche` des articles manuels), chacune sur son
+// instance du moteur horodaté. La page ne connaît ni l'une ni l'autre et
+// n'écrit jamais storeCoches.
 // ---------------------------------------------------------------------------
 
 /** Bascule la coche d'un article de la liste. Ingrédient dérivé : le blob est
  *  lu AU MOMENT de l'appel (pas l'instantané du dernier rendu, qui ferait
- *  s'annuler deux touches rapides en une seule), la promesse résout tout de
- *  suite (l'écriture suit, par le moteur horodaté, #362). Article manuel : son
- *  moteur, qui rejette après revert en cas d'échec réseau. Partie locale synchrone dans les deux
- *  cas, avant tout `await` (contrainte `avecTransition`). */
+ *  s'annuler deux touches rapides en une seule). Dans les deux cas, partie
+ *  locale synchrone (contrainte `avecTransition`) et promesse résolue tout de
+ *  suite : l'écriture suit par le moteur, un échec réseau la met en file
+ *  (« hors ligne ») sans rejet. */
 export async function basculerCocheArticle(ingredient: Ingredient): Promise<void> {
-  // `async` : une exception synchrone (stockage plein) devient un rejet, que le
-  // `.catch` de la page affiche ; le corps reste synchrone jusqu'au premier await.
+  // `async` : une exception synchrone inattendue devient un rejet, que le
+  // `.catch` de la page journalise.
   if (ingredient.source === "manuel") {
-    if (ingredient.id) await basculerCocheArticleManuel(ingredient.id);
+    if (ingredient.id) basculerCocheArticleManuel(ingredient.id);
     return;
   }
   ecrireBlob(basculerCoche(cochesLocales(), ingredient));
 }
 
 /** « Tout décocher » (RG-13, RG-41) : blob vidé et articles manuels décochés
- *  localement, de façon synchrone ; la promesse suit le décochage distant des
- *  articles manuels (rejet après revert). */
+ *  localement, de façon synchrone ; les écritures suivent par les moteurs. */
 export async function toutDecocher(): Promise<void> {
   storeCoches.effacer();
-  await viderCochesArticlesManuels();
+  viderCochesArticlesManuels();
 }
 
 // Applique un event Realtime article_manuel au store (INSERT/UPDATE = upsert
 // par id, DELETE = retrait). Idempotent vis-à-vis de nos propres écritures
 // (déjà appliquées localement par les fonctions ci-dessus) : ré-appliquer le
-// même contenu ne change rien d'observable. Exception : pendant une écriture
-// de coche en vol, l'écho peut venir d'une écriture dépassée, donc la coche
-// locale est conservée (cf. basculerCocheArticleManuel).
+// même contenu ne change rien d'observable. La COCHE n'est jamais prise de
+// l'event pour un article connu : elle est confiée au moteur, qui l'arbitre sur
+// `updated_at` (écho ou périmé ignoré, différé pendant une écriture sur l'article).
 function surEventArticleManuel(
   foyer: string,
   ancre: string,
@@ -534,20 +569,26 @@ function surEventArticleManuel(
     coche: Boolean(ligne.coche),
     majLe: typeof ligne.updated_at === "string" ? ligne.updated_at : undefined,
   };
-  // Le temps réel ne garantit pas l'ordre de livraison : un écho qui n'est pas
-  // strictement plus récent que l'état connu (ex. INSERT de la création livré
-  // après la coche) est périmé, on l'ignore. Horloge serveur, cf. migration
-  // 20261104120000_article_manuel_updated_at.
+  // Le temps réel ne garantit pas l'ordre de livraison : pour les champs hors
+  // coche, un écho qui n'est pas strictement plus récent que l'état connu (ex.
+  // INSERT de la création livré après une modification) est périmé, on
+  // l'ignore. Horloge serveur, cf. migration 20261104120000_article_manuel_updated_at.
   const connu = articlesManuels.find((a) => a.id === article.id);
-  if (connu && article.majLe && Date.parse(article.majLe) <= majArticle(connu)) return;
-  // Écriture de coche en vol : l'écho peut être celui d'une écriture dépassée,
-  // la coche locale (dernier geste) fait foi jusqu'à la fin de l'écriture.
-  if (connu && ecrituresCoche.has(article.id)) article.coche = connu.coche;
-  const existe = connu !== undefined;
-  definirArticlesManuels(
-    existe
-      ? articlesManuels.map((a) => (a.id === article.id ? article : a))
-      : [...articlesManuels, article]
+  const perime = connu && article.majLe && Date.parse(article.majLe) <= majArticle(connu);
+  if (!perime) {
+    definirArticlesManuels(
+      connu
+        ? articlesManuels.map((a) => (a.id === article.id ? { ...article, coche: connu.coche } : a))
+        : [...articlesManuels, article]
+    );
+  }
+  // Coche : le moteur tranche, même si les autres champs sont périmés (il
+  // connaît l'horodatage de nos écritures de coche, pas celui des modifications).
+  moteurArticles().surEvent(
+    ancre,
+    article.id,
+    { coche: article.coche, valeur: null },
+    article.majLe ?? null
   );
 }
 
@@ -956,9 +997,21 @@ function moteurCoches(): MoteurCoches<number> {
       },
     },
     stockage: stockageMoteurCoches,
-    surEtat: definirEtat,
+    surEtat: surEtatMoteur("coches"),
     journal: (message, erreur) => console.error(message, erreur),
   }));
+}
+
+// Coches encore en file dans l'un des deux moteurs (ingrédients, articles manuels).
+function cochesEnAttente(): boolean {
+  return moteurCoches().enAttente() || moteurArticles().enAttente();
+}
+
+// Rejoue les files des deux moteurs (retour réseau, montage, attente d'envoi).
+// Sans effet sur une file vide ou déjà en cours d'envoi ; ne rejette jamais.
+function rejouerCoches(): void {
+  void moteurCoches().rejouer();
+  void moteurArticles().rejouer();
 }
 
 // Écriture du blob hors synchro = geste de l'utilisateur (coche, décoche,
@@ -1009,13 +1062,13 @@ async function lireEtHydraterCoches(ancre: string): Promise<void> {
       etats[cle] = { coche, valeur, maj };
     }
     moteurCoches().hydrater(ancre, etats);
-    annulerRelectureCoches();
     return;
   }
 }
 
-// Lecture des coches ratée en ligne (5xx, délai dépassé) : sans hydratation,
-// le moteur ignore tous les événements Realtime du cycle. Nouvelle tentative
+// Lecture des coches ratée en ligne (5xx, délai dépassé), celles des
+// ingrédients ou celles des articles manuels : sans hydratation, le moteur
+// ignore tous les événements Realtime du cycle. Nouvelle tentative
 // différée (2 s puis ×2, plafond 30 s, 5 tentatives, comme la relecture US-21
 // du planning), seulement `useSyncCourses` monté, en ligne et pour le cycle
 // encore affiché ; annulée au démontage, levée par toute lecture réussie.
@@ -1056,10 +1109,14 @@ function annulerRelectureCoches(): void {
   ancreRelectureCoches = null;
 }
 
-// Relit les coches du cycle ; un échec est journalisé et retenté plus tard.
+// Relit les coches du cycle (ingrédients puis articles manuels) ; un échec est
+// journalisé et retenté plus tard.
 async function relireCoches(ancre: string): Promise<void> {
   try {
     await lireEtHydraterCoches(ancre);
+    if (ancreActive() !== ancre) return;
+    await chargerArticlesManuelsDansCache(ancre);
+    annulerRelectureCoches();
   } catch (erreur) {
     console.error("Relecture des coches distantes échouée.", erreur);
     planifierRelectureCoches(ancre);
@@ -1067,14 +1124,15 @@ async function relireCoches(ancre: string): Promise<void> {
 }
 
 // Hydratation des coches hors /courses (`hydrater` de /planning, quand le
-// cache local fait foi) : rejoue la file hors ligne puis lit l'ancre affichée.
+// cache local fait foi) : rejoue les files hors ligne (ingrédients et articles
+// manuels) puis lit les coches d'ingrédients de l'ancre affichée.
 async function hydraterCoches(): Promise<void> {
-  const moteur = moteurCoches();
-  if (moteur.enAttente()) void moteur.rejouer();
+  rejouerCoches();
   const ancre = ancreActive();
   if (ancre === null) return;
   try {
     await lireEtHydraterCoches(ancre);
+    annulerRelectureCoches();
   } catch (erreur) {
     console.error("Chargement des coches distantes échoué.", erreur);
   }
@@ -1374,7 +1432,7 @@ function relectureReussie(semaine: string): void {
     localStorage.removeItem(CLE_A_RELIRE);
     annulerNouvelleRelecture();
   }
-  if (!pushEnCours && !moteurCoches().enAttente()) definirEtat("synchronise");
+  if (!pushEnCours && !cochesEnAttente()) definirEtat("synchronise");
 }
 
 // Re-pull forcé du planning de la semaine puis, si le contenu a changé, alerte.
@@ -1959,6 +2017,8 @@ async function rafraichirCycleGenere(): Promise<void> {
   // rejouées par-dessus la remise à zéro, et leur `updated_at`, postérieur à
   // celui de la RPC, gagnerait : « Tout décocher » les retire de la file et
   // part après une écriture déjà en vol (la vue est vidée au passage).
+  // Articles manuels : `sauvegarder_cycle` ne touche pas `article_manuel`
+  // (RG-41, seule une purge de cycle les touche), leur file reste intacte.
   const moteur = moteurCoches();
   if (moteur.enAttente()) moteur.toutDecocher(courant.ancre);
   viderBlobLocal();
@@ -2058,14 +2118,13 @@ async function attendreSync(): Promise<boolean> {
     }
     void pousser();
   }
-  // Coches : la file du moteur est rejouée (sans effet si un envoi est déjà
-  // en cours, ni si elle est vide). Un échec la laisse en file : on n'insiste
-  // pas pendant l'attente (pas de rafale hors ligne).
-  const moteur = moteurCoches();
-  if (moteur.enAttente()) void moteur.rejouer();
+  // Coches : les files des deux moteurs sont rejouées (sans effet si un envoi
+  // est déjà en cours, ni si elles sont vides). Un échec laisse en file : on
+  // n'insiste pas pendant l'attente (pas de rafale hors ligne).
+  rejouerCoches();
   for (
     let i = 0;
-    i < 100 && (pushEnCours || estDirty() || moteur.enAttente());
+    i < 100 && (pushEnCours || estDirty() || cochesEnAttente());
     i++
   ) {
     // Push bloqué par une relecture US-21 (#355) puis replanifié à sa fin : on
@@ -2077,7 +2136,7 @@ async function attendreSync(): Promise<boolean> {
     }
     await new Promise((r) => setTimeout(r, 30));
   }
-  return !(estDirty() || moteur.enAttente());
+  return !(estDirty() || cochesEnAttente());
 }
 
 // Charge une semaine dans le cache PLANNING SANS flush ni garde, et sans
@@ -2194,22 +2253,22 @@ async function chargerCycleDansCache(
     // l'état distant est hydraté ; une clé encore en file garde le local
     // (dirty-first par clé), et un geste fait pendant la lecture la fait
     // relire (cf. lireEtHydraterCoches).
-    const moteur = moteurCoches();
-    if (moteur.enAttente()) void moteur.rejouer();
+    rejouerCoches();
     try {
       await lireEtHydraterCoches(ancre);
+      // Articles manuels (#216) : scopés par la même ancre ; leur coche est
+      // hydratée dans son moteur (#362), qui garde le local d'un article dont
+      // la coche est en file. Une saisie faite pendant la lecture n'est pas
+      // écrasée par son résultat (cf. chargerArticlesManuelsDansCache).
+      await chargerArticlesManuelsDansCache(ancre);
+      annulerRelectureCoches();
     } catch (erreur) {
       planifierRelectureCoches(ancre); // sinon le temps réel resterait muet
       throw erreur;
     }
-    // Articles manuels (#216) : scopés par la même ancre, pas de dirty-first
-    // (aucune file offline — chaque mutation écrit en base immédiatement).
-    // Une saisie faite pendant la lecture n'est pas écrasée par son résultat
-    // (relecture + coche en vol conservée, cf. chargerArticlesManuelsDansCache).
-    await chargerArticlesManuelsDansCache(ancre);
-    // Des coches encore en file gardent l'indicateur du moteur (« sauvegarde »
-    // ou « hors-ligne ») : il repasse lui-même à « synchronise » à la fin.
-    if (!moteur.enAttente()) definirEtat("synchronise");
+    // Des coches encore en file gardent l'indicateur des moteurs (« sauvegarde »
+    // ou « hors-ligne ») : ils repassent eux-mêmes à « synchronise » à la fin.
+    if (!cochesEnAttente()) definirEtat("synchronise");
   } catch (erreur) {
     console.error("Chargement du cycle échoué.", erreur);
   }
@@ -2384,7 +2443,7 @@ function purgerHistorique(): void {
 export async function hydrater(semaineVoulue: string | null = null): Promise<void> {
   if (dejaHydrate) {
     if (estDirty()) void pousser();
-    void moteurCoches().rejouer();
+    rejouerCoches();
     if (semaineVoulue) void naviguerVers(semaineVoulue);
     return;
   }
@@ -2427,7 +2486,7 @@ function demarrerSync(): () => void {
   const desabonnerCoches = storeCoches.sAbonner(surChangementCoches);
   const surRetourEnLigne = () => {
     if (estDirty()) void pousser();
-    void moteurCoches().rejouer();
+    rejouerCoches();
   };
   window.addEventListener("online", surRetourEnLigne);
   // Temps réel (#56 PR4/PR5) : abonnement aux coches (par ANCRE de cycle, #257 —
@@ -2482,7 +2541,7 @@ function demarrerSyncCoches(): () => void {
   // faite si la page a été chargée hors ligne, sans quoi le moteur ignore
   // les événements Realtime).
   const surRetourEnLigne = () => {
-    void moteurCoches().rejouer();
+    rejouerCoches();
     const ancre = ancreActive();
     if (ancre === null) return;
     void relireCoches(ancre);

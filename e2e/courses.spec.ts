@@ -586,11 +586,11 @@ test("le réordonnancement fonctionne sous mouvement réduit (RG-11 / RG-39)", a
 test("cocher puis tout décocher un article manuel ne lève aucune erreur non gérée", async ({
   page,
 }) => {
-  // `basculerCocheArticleManuel` et `viderCochesArticlesManuels` RETHROW après
-  // revert : sans `.catch` côté page, un échec produit un rejet non géré
-  // (bruit Sentry, coche qui revient sans explication). La fixture anti-crash
-  // de e2e/fixtures.ts ne filtre QUE les signatures React — d'où cette écoute
-  // dédiée.
+  // Coches des articles manuels sur le moteur horodaté (#362) : un échec
+  // réseau met en file, sans rejet ; la page garde un `.catch` qui journalise
+  // une erreur inattendue. Un rejet non géré serait du bruit Sentry. La
+  // fixture anti-crash de e2e/fixtures.ts ne filtre QUE les signatures React
+  // — d'où cette écoute dédiée.
   const erreurs: string[] = [];
   page.on("pageerror", (e) => erreurs.push(e.message));
 

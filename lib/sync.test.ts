@@ -620,7 +620,7 @@ describe("coche d'un article manuel : clics rapides et échos Realtime", () => {
     ]);
     const sync = await chargerSync();
     const { renderHook, waitFor, act } = await import("@testing-library/react");
-    renderHook(() => sync.useSyncCourses(ANCRE));
+    const vue = renderHook(() => sync.useSyncCourses(ANCRE));
     const { result } = renderHook(() => sync.useArticlesManuels());
     await waitFor(() => expect(result.current).toHaveLength(1));
     await waitFor(() =>
@@ -644,7 +644,9 @@ describe("coche d'un article manuel : clics rapides et échos Realtime", () => {
           old: {},
         });
       });
-    return { sync, waitFor, act, coche, echo };
+    // `demonter` : retire l'écouteur `online` d'un test qui laisse une coche
+    // en file, sinon un `online` d'un test suivant la rejouerait.
+    return { sync, waitFor, act, coche, echo, demonter: () => vue.unmount() };
   }
 
   it("l'écho Realtime d'une écriture dépassée ne redécoche pas l'article", async () => {
@@ -689,6 +691,8 @@ describe("coche d'un article manuel : clics rapides et échos Realtime", () => {
   });
 
   it("« Tout décocher » pendant une coche en vol finit décoché en base", async () => {
+    // Moteur horodaté (#362) : le décochage global part APRÈS l'écriture de
+    // coche en vol (flush séquentiel), il n'y a plus de réécriture « false ».
     const premiere = differe();
     persistance.basculerCocheArticleManuelDistant
       .mockReturnValueOnce(premiere.promesse)
@@ -699,14 +703,16 @@ describe("coche d'un article manuel : clics rapides et échos Realtime", () => {
     act(() => {
       void sync.basculerCocheArticleManuel("a1"); // coché, écriture en vol
     });
-    await act(async () => {
-      await sync.viderCochesArticlesManuels();
+    act(() => {
+      sync.viderCochesArticlesManuels();
     });
-    premiere.resoudre(); // l'UPDATE « coché » est validé APRÈS le décochage global
+    expect(persistance.viderCochesArticlesManuelsDistantes).not.toHaveBeenCalled();
+    premiere.resoudre(); // l'UPDATE « coché » est validé, puis le décochage part
 
     await waitFor(() =>
-      expect(persistance.basculerCocheArticleManuelDistant).toHaveBeenLastCalledWith("a1", false)
+      expect(persistance.viderCochesArticlesManuelsDistantes).toHaveBeenCalledWith(ANCRE)
     );
+    expect(persistance.basculerCocheArticleManuelDistant).toHaveBeenCalledTimes(1);
     expect(coche()).toBe(false);
   });
 
@@ -728,19 +734,28 @@ describe("coche d'un article manuel : clics rapides et échos Realtime", () => {
     );
   });
 
-  it("échec d'écriture : la coche revient au dernier état confirmé et l'erreur remonte", async () => {
+  it("échec d'écriture : la coche reste affichée et part en file hors ligne, sans erreur remontée", async () => {
+    // Moteur horodaté (#362) : plus de revert ni de rejet, l'opération est
+    // gardée pour le rejeu (indicateur « hors ligne », pas de toast).
     persistance.basculerCocheArticleManuelDistant.mockRejectedValue(new Error("réseau"));
-    const { sync, act, coche } = await preparer();
+    const journal = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const { sync, waitFor, act, coche, demonter } = await preparer();
 
-    let erreur: unknown;
-    await act(async () => {
-      await sync.basculerCocheArticleManuel("a1").catch((e: unknown) => {
-        erreur = e;
-      });
-    });
+      expect(() => act(() => sync.basculerCocheArticleManuel("a1"))).not.toThrow();
 
-    expect(erreur).toBeInstanceOf(Error);
-    expect(coche()).toBe(false);
+      await waitFor(() =>
+        expect(journal).toHaveBeenCalledWith(
+          "Synchronisation des coches échouée (sera rejouée).",
+          expect.any(Error)
+        )
+      );
+      expect(coche()).toBe(true);
+      expect(localStorage.getItem("coches_manuels_en_attente")).not.toBeNull();
+      demonter();
+    } finally {
+      journal.mockRestore();
+    }
   });
 });
 
@@ -945,6 +960,195 @@ describe("articles manuels : ordre des échos Realtime (horloge serveur updated_
     echo("UPDATE", true, T_AUTRE_MEMBRE);
 
     expect(result.current[0].coche).toBe(true);
+  });
+});
+
+describe("articles manuels : coche sur le moteur horodaté (#362)", () => {
+  // Deuxième instance du moteur (`coches_manuels`, clé = id de l'article) :
+  // file hors ligne persistée, dernier commit gagnant sur `updated_at`.
+  const ANCRE = "2026-07-13";
+  const T_CREATION = "2026-07-13T10:00:00.000+00:00";
+  const PILES = {
+    nom: "Piles",
+    quantite: 0,
+    unite: "piece" as const,
+    categorie: "autre" as const,
+    fondDePlacard: false,
+    source: "manuel" as const,
+    id: "a1",
+  };
+
+  async function preparer() {
+    persistance.chargerArticlesManuelsDistants.mockResolvedValue([
+      {
+        id: "a1",
+        libelle: "Piles",
+        quantite: null,
+        unite: null,
+        categorie: "autre",
+        fondDePlacard: false,
+        coche: false,
+        majLe: T_CREATION,
+      },
+    ]);
+    const sync = await chargerSync();
+    const { renderHook, waitFor, act } = await import("@testing-library/react");
+    const { result: etat, unmount: demonter } = renderHook(() => sync.useSyncCourses(ANCRE));
+    const { result } = renderHook(() => sync.useArticlesManuels());
+    await waitFor(() => expect(result.current).toHaveLength(1));
+    await waitFor(() =>
+      expect(realtime.rappels.some((r) => r.filtre.table === "article_manuel")).toBe(true)
+    );
+    const rappel = (payload: unknown) =>
+      act(() => {
+        realtime.rappels.find((r) => r.filtre.table === "article_manuel")!.rappel(payload);
+      });
+    const echo = (coche: boolean, updated_at: string) =>
+      rappel({
+        eventType: "UPDATE",
+        new: {
+          id: "a1",
+          foyer_id: "foyer-1",
+          ancre: ANCRE,
+          libelle: "Piles",
+          categorie: "autre",
+          fond_de_placard: false,
+          coche,
+          updated_at,
+        },
+        old: {},
+      });
+    return {
+      sync,
+      waitFor,
+      act,
+      demonter,
+      etat: () => etat.current,
+      articles: () => result.current,
+      echo,
+      rappel,
+    };
+  }
+
+  it("hors ligne : la coche ne rejette pas, reste affichée, passe « hors ligne » et part au retour en ligne", async () => {
+    const erreur = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const { sync, waitFor, act, etat, articles, demonter } = await preparer();
+      // Base simulée : le retour en ligne relit aussi les articles du cycle, et
+      // la coche rejouée se termine pendant cette relecture.
+      const enBase = { coche: false, majLe: T_CREATION };
+      persistance.chargerArticlesManuelsDistants.mockImplementation(async () => {
+        const instantane = { ...enBase }; // lu à l'appel, livré plus tard
+        await new Promise((r) => setTimeout(r, 20));
+        return [
+          { id: "a1", libelle: "Piles", quantite: null, unite: null, categorie: "autre", fondDePlacard: false, ...instantane },
+        ];
+      });
+      persistance.basculerCocheArticleManuelDistant
+        .mockRejectedValueOnce(new Error("réseau coupé"))
+        .mockImplementation(async (_id: string, coche: boolean) => {
+          await new Promise((r) => setTimeout(r, 5)); // commit pendant la relecture
+          Object.assign(enBase, { coche, majLe: horloge() });
+          return enBase.majLe;
+        });
+
+      let promesse!: Promise<void>;
+      act(() => {
+        promesse = sync.basculerCocheArticle(PILES);
+      });
+      await expect(promesse).resolves.toBeUndefined();
+      await waitFor(() => expect(etat()).toBe("hors-ligne"));
+      expect(articles()[0].coche).toBe(true);
+      expect(localStorage.getItem("coches_manuels_en_attente")).not.toBeNull();
+
+      act(() => {
+        window.dispatchEvent(new Event("online"));
+      });
+
+      await waitFor(() => expect(localStorage.getItem("coches_manuels_en_attente")).toBeNull());
+      expect(persistance.basculerCocheArticleManuelDistant).toHaveBeenCalledTimes(2);
+      expect(persistance.basculerCocheArticleManuelDistant).toHaveBeenLastCalledWith("a1", true);
+      expect(articles()[0].coche).toBe(true);
+      await waitFor(() => expect(etat()).toBe("synchronise"));
+      demonter();
+    } finally {
+      erreur.mockRestore();
+    }
+  });
+
+  it("article supprimé pendant l'écriture : opération abandonnée, file vide, article pas ressuscité", async () => {
+    let repondre!: (maj: string | null) => void;
+    persistance.basculerCocheArticleManuelDistant.mockImplementation(
+      () => new Promise<string | null>((r) => (repondre = r))
+    );
+    const erreur = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const { sync, waitFor, act, articles, rappel } = await preparer();
+
+      act(() => {
+        void sync.basculerCocheArticle(PILES);
+      });
+      rappel({
+        eventType: "DELETE",
+        new: {},
+        old: { id: "a1", foyer_id: "foyer-1", ancre: ANCRE },
+      });
+      await act(async () => {
+        repondre(null); // 0 ligne mise à jour : l'article n'existe plus
+      });
+
+      await waitFor(() =>
+        expect(erreur).toHaveBeenCalledWith(expect.stringContaining("cible disparue"), undefined)
+      );
+      expect(localStorage.getItem("coches_manuels_en_attente")).toBeNull();
+      expect(articles()).toEqual([]);
+    } finally {
+      erreur.mockRestore();
+    }
+  });
+
+  it("(a) l'écho tardif d'une coche, livré après la décoche, ne recoche pas", async () => {
+    persistance.basculerCocheArticleManuelDistant.mockImplementation(async () => horloge());
+    const { sync, waitFor, act, articles, echo } = await preparer();
+
+    act(() => {
+      void sync.basculerCocheArticle(PILES); // coché
+    });
+    await waitFor(() => expect(localStorage.getItem("coches_manuels_en_attente")).toBeNull());
+    const majCoche = (await persistance.basculerCocheArticleManuelDistant.mock.results[0]
+      .value) as string;
+    act(() => {
+      void sync.basculerCocheArticle(PILES); // décoché
+    });
+    await waitFor(() =>
+      expect(persistance.basculerCocheArticleManuelDistant).toHaveBeenCalledTimes(2)
+    );
+    await waitFor(() => expect(localStorage.getItem("coches_manuels_en_attente")).toBeNull());
+
+    echo(true, majCoche); // écho de la coche, livré après la réponse de la décoche
+
+    expect(articles()[0].coche).toBe(false);
+  });
+
+  it("(b) la décoche d'un autre membre, commitée après notre coche en vol, gagne", async () => {
+    let repondre!: (maj: string) => void;
+    persistance.basculerCocheArticleManuelDistant.mockImplementation(
+      () => new Promise<string>((r) => (repondre = r))
+    );
+    const { sync, waitFor, act, articles, echo } = await preparer();
+
+    act(() => {
+      void sync.basculerCocheArticle(PILES);
+    });
+    // Notre commit (T1) précède celui de l'autre membre (T2), reçu pendant le vol.
+    echo(false, "2026-07-13T12:00:00.000002+00:00");
+    expect(articles()[0].coche).toBe(true); // différé : notre geste fait foi pendant le vol
+    await act(async () => {
+      repondre("2026-07-13T12:00:00.000001+00:00");
+    });
+
+    await waitFor(() => expect(articles()[0].coche).toBe(false));
+    expect(persistance.basculerCocheArticleManuelDistant).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -3063,10 +3267,10 @@ describe("basculerCocheArticle / toutDecocher — une interface (#362)", () => {
     ]);
     const sync = await chargerSync();
     const { renderHook, waitFor, act } = await import("@testing-library/react");
-    renderHook(() => sync.useSyncCourses(ANCRE));
+    const vue = renderHook(() => sync.useSyncCourses(ANCRE));
     const { result } = renderHook(() => sync.useArticlesManuels());
     await waitFor(() => expect(result.current).toHaveLength(1));
-    return { sync, act, articles: () => result.current };
+    return { sync, act, articles: () => result.current, demonter: () => vue.unmount() };
   }
 
   it("ingrédient : chaque appel lit le blob courant, deux bascules sans re-rendu s'annulent (#362)", async () => {
@@ -3123,12 +3327,22 @@ describe("basculerCocheArticle / toutDecocher — une interface (#362)", () => {
     }
   });
 
-  it("article manuel en échec réseau : la promesse rejette (la page affiche son toast)", async () => {
+  it("article manuel en échec réseau : la promesse résout, la coche reste en file (pas de toast)", async () => {
+    // Moteur horodaté (#362) : un échec réseau met en file et passe
+    // l'indicateur à « hors ligne » ; la page n'a plus rien à afficher.
     persistance.basculerCocheArticleManuelDistant.mockRejectedValue(new Error("hors ligne"));
-    const { sync } = await avecArticleManuel();
-    await expect(
-      sync.basculerCocheArticle({ nom: "Piles", quantite: 0, unite: "piece", categorie: "autre", fondDePlacard: false, source: "manuel", id: "a1" })
-    ).rejects.toThrow("hors ligne");
+    const journal = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const { sync, articles, demonter } = await avecArticleManuel();
+      await expect(
+        sync.basculerCocheArticle({ nom: "Piles", quantite: 0, unite: "piece", categorie: "autre", fondDePlacard: false, source: "manuel", id: "a1" })
+      ).resolves.toBeUndefined();
+      expect(articles()[0].coche).toBe(true);
+      expect(localStorage.getItem("coches_manuels_en_attente")).not.toBeNull();
+      demonter();
+    } finally {
+      journal.mockRestore();
+    }
   });
 
   it("toutDecocher : blob et articles manuels décochés AVANT le premier await (avecTransition)", async () => {
