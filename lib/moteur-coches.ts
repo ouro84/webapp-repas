@@ -27,7 +27,10 @@
 //    nouveau geste est en file sur la clé (il sera commité après lui).
 // 5. Échec d'écriture : l'opération reste en file, « hors-ligne », arrêt du
 //    flush, aucun rejet vers l'appelant ; un geste ou `rejouer()` le relance.
-//    `null` du transport (cible disparue) : opération retirée et journalisée.
+//    `null` du transport (cible disparue) ou échec jugé définitif par
+//    `estDefinitive` (refus RLS, requête invalide) : opération retirée et
+//    journalisée, la file continue. Pourquoi : rejouée, une opération
+//    refusée bloquerait toute la file à vie.
 // 6. Relecture périmée (`hydrater`) : une lecture partie avant un commit peut
 //    revenir après lui (et après son écho, déjà ignoré). Pour une clé hors
 //    file de l'ancre affichée, l'état affiché et son horodatage connu sont
@@ -43,9 +46,16 @@
 //    Sans hydratation préalable de cette ancre (premier chargement, autre
 //    ancre), le distant fait foi. Une clé de l'ancre affichée qui a un
 //    horodatage connu mais plus d'état affiché sort d'un « Tout décocher »
-//    (rejoué ou non) : son état gardé est « décoché ». Pourquoi : sans cette règle, une coche rejouée au retour en ligne,
-//    commitée pendant la relecture du cycle, restait décochée à l'écran (base
-//    cochée, indicateur « synchronise ») jusqu'à la lecture suivante.
+//    (rejoué ou non) : son état gardé est « décoché ». Pourquoi : sans cette
+//    règle, une coche rejouée au retour en ligne, commitée pendant la
+//    relecture du cycle, restait décochée à l'écran (base cochée, indicateur
+//    « synchronise ») jusqu'à la lecture suivante.
+//
+// Vue : les événements ne touchent que l'ancre affichée (posée par
+// `hydrater`). `poser` et `toutDecocher` écrivent la vue sans regarder
+// l'ancre : l'appelant ne pose que sur l'ancre affichée.
+// `arreter()` neutralise une instance abandonnée (changement de foyer) : plus
+// de stockage, de vue ni d'état ; un flush en vol finit sans rien écrire.
 
 import { cleHorodatage } from "@/lib/horodatage"
 
@@ -68,7 +78,8 @@ export type StockageCoches = {
 }
 
 export type MoteurCoches<V> = {
-  /** Geste local : vue (sauf `vueDejaAJour`), file, flush. */
+  /** Geste local : vue (sauf `vueDejaAJour`), file, flush. La vue écrite est
+   *  celle de l'ancre affichée : l'appelant ne pose que sur elle. */
   poser(ancre: string, cle: string, etat: Etat<V>, options?: { vueDejaAJour?: boolean }): void
   /** « Tout décocher » (RG-13, RG-41) : vue vidée, file, flush. */
   toutDecocher(ancre: string): void
@@ -86,7 +97,10 @@ export type MoteurCoches<V> = {
   marquerLecture(): number
   /** Rejoue la file hors ligne (retour réseau, montage). Ne rejette jamais. */
   rejouer(): Promise<void>
-  enAttente(): boolean
+  /** Opérations en file (en vol comprise), toutes ancres ou pour `ancre`. */
+  enAttente(ancre?: string): boolean
+  /** Neutralise l'instance (changement de foyer) : plus rien n'est écrit. */
+  arreter(): void
 }
 
 type Operation<V> =
@@ -103,9 +117,25 @@ export function creerMoteurCoches<V>(deps: {
   stockage: StockageCoches
   surEtat: (etat: "sauvegarde" | "synchronise" | "hors-ligne") => void
   journal?: (message: string, erreur?: unknown) => void
+  /** Échec d'écriture définitif (refus, pas réseau) : l'opération est retirée
+   *  au lieu de rester en file (règle 5). Absent = tout échec est transitoire. */
+  estDefinitive?: (erreur: unknown) => boolean
 }): MoteurCoches<V> {
-  const { nom, transport, vue, stockage, surEtat } = deps
+  const { nom, transport, stockage } = deps
   const journal = deps.journal ?? ((message, erreur) => console.error(message, erreur))
+  // Instance arrêtée (`arreter`) : vue, stockage et état neutralisés.
+  let arrete = false
+  const vue: VueCoches<V> = {
+    appliquer(cle, etat) {
+      if (!arrete) deps.vue.appliquer(cle, etat)
+    },
+    vider() {
+      if (!arrete) deps.vue.vider()
+    },
+  }
+  function surEtat(etat: "sauvegarde" | "synchronise" | "hors-ligne"): void {
+    if (!arrete) deps.surEtat(etat)
+  }
   const CLE_MAJ = `${nom}_maj`
   const CLE_FILE = `${nom}_en_attente`
 
@@ -124,6 +154,8 @@ export function creerMoteurCoches<V>(deps: {
   const differes = new Map<string, EventDiffere<V>>()
   let flushActif = false
   let flushEnCours: Promise<void> | null = null
+  // Jeton du flush courant (cf. `terminerFlush`).
+  let flushCourant: object | null = null
   // Confirmations (réponse d'écriture, événement appliqué) numérotées, par
   // ancre puis par clé : une clé confirmée après `marquerLecture()` n'est pas
   // purgée par une lecture qui ne la contient pas (règle 6). En mémoire seule :
@@ -146,7 +178,18 @@ export function creerMoteurCoches<V>(deps: {
       return JSON.parse(brut)
     } catch (erreur) {
       journal(`Stockage des coches corrompu ("${cle}"), repart vide.`, erreur)
+      effacerIllisible(cle)
       return null
+    }
+  }
+
+  // Une valeur illisible est effacée après le journal : sinon elle serait
+  // relue (et journalisée) à chaque création du moteur.
+  function effacerIllisible(cle: string): void {
+    try {
+      stockage.effacer(cle)
+    } catch (erreur) {
+      journal(`Effacement du stockage des coches échoué ("${cle}").`, erreur)
     }
   }
 
@@ -155,6 +198,7 @@ export function creerMoteurCoches<V>(deps: {
     if (brut === null) return []
     if (!Array.isArray(brut) || !brut.every(estOperation)) {
       journal(`Stockage des coches invalide ("${CLE_FILE}"), repart vide.`)
+      effacerIllisible(CLE_FILE)
       return []
     }
     return brut as Operation<V>[]
@@ -166,6 +210,7 @@ export function creerMoteurCoches<V>(deps: {
     if (brut === null) return resultat
     if (typeof brut !== "object" || Array.isArray(brut)) {
       journal(`Stockage des coches invalide ("${CLE_MAJ}"), repart vide.`)
+      effacerIllisible(CLE_MAJ)
       return resultat
     }
     for (const [ancre, parCle] of Object.entries(brut as Record<string, unknown>)) {
@@ -180,6 +225,7 @@ export function creerMoteurCoches<V>(deps: {
   }
 
   function ecrireJSON(cle: string, valeur: unknown, vide: boolean): void {
+    if (arrete) return
     try {
       if (vide) stockage.effacer(cle)
       else stockage.ecrire(cle, JSON.stringify(valeur))
@@ -267,18 +313,27 @@ export function creerMoteurCoches<V>(deps: {
   // `finally` d'une fonction appelante, il ne l'était qu'une microtâche plus
   // tard ; un geste posé entre-temps rejoignait le flush fini et restait en
   // file, sans envoi, sous l'indicateur « synchronise ».
-  function terminerFlush(): void {
+  //
+  // Jeton par flush : un `surEtat` (ou une vue) qui pose un geste lance un
+  // nouveau flush pendant que l'ancien finit. Seul le flush courant lève
+  // `flushActif` : sinon un troisième geste partait en parallèle du second.
+  function terminerFlush(jeton: object): void {
+    if (flushCourant !== jeton) return
+    flushCourant = null
     flushActif = false
     flushEnCours = null
   }
 
   async function flusher(): Promise<void> {
+    const jeton = {}
+    flushCourant = jeton
     flushActif = true
     try {
       surEtat("sauvegarde")
       while (file.length > 0) {
         const op = file[0]
         let lignes: Array<{ cle: string; maj: string }> | null
+        let refus: { erreur: unknown } | null = null
         try {
           if (op.type === "cle") {
             const maj = await transport.ecrire(op.ancre, op.cle, op.etat)
@@ -287,33 +342,44 @@ export function creerMoteurCoches<V>(deps: {
             lignes = await transport.vider(op.ancre)
           }
         } catch (erreur) {
-          terminerFlush()
-          surEtat("hors-ligne")
-          journal("Synchronisation des coches échouée (sera rejouée).", erreur)
-          return
+          if (arrete) return
+          if (!deps.estDefinitive?.(erreur)) {
+            terminerFlush(jeton)
+            surEtat("hors-ligne")
+            journal("Synchronisation des coches échouée (sera rejouée).", erreur)
+            return
+          }
+          lignes = null
+          refus = { erreur }
         }
+        // Instance arrêtée pendant le vol : rien n'est écrit, rien ne suit.
+        if (arrete) return
         // Retrait par identité : un geste arrivé pendant le vol a pu remplacer
         // cette opération (il reste en file) ou un vidage l'effacer.
         file = file.filter((o) => o.id !== op.id)
         persisterFile()
-        if (lignes === null) {
-          journal(
-            `Coche abandonnée : cible disparue (ancre ${op.ancre}, clé ${op.type === "cle" ? op.cle : "*"}).`
-          )
+        const cible = `ancre ${op.ancre}, clé ${op.type === "cle" ? op.cle : "*"}`
+        if (refus) {
+          journal(`Coche refusée, abandonnée (${cible}).`, refus.erreur)
+        } else if (lignes === null) {
+          journal(`Coche abandonnée : cible disparue (${cible}).`)
         } else {
           for (const { cle, maj } of lignes) {
             retenirMaj(op.ancre, cle, maj)
             confirmer(op.ancre, cle)
           }
+          // Aussi pour une ancre non affichée : l'horodatage retenu survit à
+          // un rechargement (`jugerDifferes` ne persiste que l'ancre affichée).
+          persisterMaj()
         }
         jugerDifferes(op)
       }
-      terminerFlush()
+      terminerFlush(jeton)
       surEtat("synchronise")
     } finally {
-      // Filet pour une exception inattendue (vue, `surEtat`) : sans lui, le
-      // moteur se croirait en flush pour toujours. Synchrone lui aussi.
-      if (flushActif) terminerFlush()
+      // Filet pour une exception inattendue (vue, `surEtat`) et pour l'arrêt :
+      // sans lui, le moteur se croirait en flush pour toujours. Synchrone.
+      terminerFlush(jeton)
     }
   }
 
@@ -321,6 +387,7 @@ export function creerMoteurCoches<V>(deps: {
     // Pendant la partie synchrone du premier tour (avant le premier `await`),
     // `flushEnCours` n'est pas encore posé : l'op ajoutée est prise par la
     // boucle en cours.
+    if (arrete) return Promise.resolve()
     if (flushActif) return flushEnCours ?? Promise.resolve()
     if (file.length === 0) return Promise.resolve()
     const flush = flusher()
@@ -334,6 +401,7 @@ export function creerMoteurCoches<V>(deps: {
 
   return {
     poser(ancre, cle, etat, options) {
+      if (arrete) return
       if (options?.vueDejaAJour) affichees.set(cle, etat)
       else afficher(cle, etat)
       file = file.filter((op) => !(op.type === "cle" && op.ancre === ancre && op.cle === cle))
@@ -343,6 +411,7 @@ export function creerMoteurCoches<V>(deps: {
     },
 
     toutDecocher(ancre) {
+      if (arrete) return
       affichees.clear()
       vue.vider()
       // Un vidage efface les opérations antérieures de son ancre (règle 1).
@@ -354,6 +423,7 @@ export function creerMoteurCoches<V>(deps: {
     },
 
     surEvent(ancre, cle, etat, maj) {
+      if (arrete) return
       if (ancreAffichee === null || ancre !== ancreAffichee) return
       if (etat === null) {
         // DELETE : purge (vieux cycle, compte, foyer), sans horodatage.
@@ -384,6 +454,7 @@ export function creerMoteurCoches<V>(deps: {
     },
 
     hydrater(ancre, distant, depuis) {
+      if (arrete) return
       // État affiché avant la lecture (règle 6) : seulement s'il est celui de
       // cette ancre.
       const memeAncre = ancreAffichee === ancre
@@ -454,8 +525,13 @@ export function creerMoteurCoches<V>(deps: {
       return sequenceConfirmations
     },
 
-    enAttente() {
-      return file.length > 0
+    enAttente(ancre) {
+      if (ancre === undefined) return file.length > 0
+      return file.some((op) => op.ancre === ancre)
+    },
+
+    arreter() {
+      arrete = true
     },
   }
 }

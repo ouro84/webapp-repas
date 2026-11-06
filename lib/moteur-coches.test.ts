@@ -64,7 +64,13 @@ function fauxStockage(): StockageCoches & { donnees: Map<string, string> } {
   }
 }
 
-function monter(stockage: StockageCoches = fauxStockage()) {
+function monter(
+  stockage: StockageCoches = fauxStockage(),
+  options: {
+    estDefinitive?: (erreur: unknown) => boolean
+    surEtat?: (etat: "sauvegarde" | "synchronise" | "hors-ligne") => void
+  } = {}
+) {
   const { transport, appels } = fauxTransport()
   const vue = new Map<string, Etat<number>>()
   const etats: string[] = []
@@ -77,8 +83,12 @@ function monter(stockage: StockageCoches = fauxStockage()) {
       vider: () => vue.clear(),
     },
     stockage,
-    surEtat: (etat) => void etats.push(etat),
+    surEtat: (etat) => {
+      etats.push(etat)
+      options.surEtat?.(etat)
+    },
     journal,
+    estDefinitive: options.estDefinitive,
   })
   const cochee = (cle: string) => vue.get(cle)?.coche === true
   return { moteur, appels, vue, etats, journal, stockage, cochee }
@@ -423,7 +433,7 @@ describe("moteur de coche horodaté (#362)", () => {
     expect(moteur.enAttente()).toBe(false)
   })
 
-  it("stockage corrompu : journalisé, le moteur démarre vide", () => {
+  it("stockage corrompu : journalisé, effacé, le moteur démarre vide", () => {
     const stockage = fauxStockage()
     stockage.ecrire("coches_test_en_attente", "{pas du json")
     stockage.ecrire("coches_test_maj", "[")
@@ -431,5 +441,173 @@ describe("moteur de coche horodaté (#362)", () => {
 
     expect(moteur.enAttente()).toBe(false)
     expect(journal).toHaveBeenCalledTimes(2)
+    expect(stockage.donnees.has("coches_test_en_attente")).toBe(false)
+    expect(stockage.donnees.has("coches_test_maj")).toBe(false)
+  })
+
+  it("stockage de forme invalide : journalisé, effacé", () => {
+    const stockage = fauxStockage()
+    stockage.ecrire("coches_test_en_attente", JSON.stringify([{ id: "x" }]))
+    stockage.ecrire("coches_test_maj", JSON.stringify([1, 2]))
+    const { moteur, journal } = monter(stockage)
+
+    expect(moteur.enAttente()).toBe(false)
+    expect(journal).toHaveBeenCalledTimes(2)
+    expect(stockage.donnees.has("coches_test_en_attente")).toBe(false)
+    expect(stockage.donnees.has("coches_test_maj")).toBe(false)
+  })
+
+  it("règle 4 : un différé est jeté si un nouveau geste est en file sur sa clé", async () => {
+    const { moteur, appels, cochee } = monter()
+    moteur.hydrater(A, {})
+    moteur.poser(A, TOMATES, coche())
+    moteur.surEvent(A, TOMATES, coche(), T5) // différé (écriture en vol)
+    moteur.poser(A, TOMATES, decoche()) // nouveau geste en file
+    ecriture(appels[0]).resoudre(T1)
+    await attendre()
+    // Réponse volontairement plus ancienne que le différé : s'il était
+    // gardé, il serait appliqué ici et recocherait.
+    ecriture(appels[1]).resoudre(T2)
+    await attendre()
+
+    expect(cochee(TOMATES)).toBe(false)
+    expect(appels).toHaveLength(2)
+  })
+
+  it("file [k1, k2] puis « Tout décocher » : seul le vidage part après l'écriture en vol", async () => {
+    const { moteur, appels } = monter()
+    moteur.hydrater(A, {})
+    moteur.poser(A, TOMATES, coche())
+    moteur.poser(A, RIZ, coche(200))
+    moteur.toutDecocher(A)
+    expect(appels).toHaveLength(1)
+
+    ecriture(appels[0]).resoudre(T1)
+    await attendre()
+    vidage(appels[1]).resoudre([{ cle: TOMATES, maj: T2 }])
+    await attendre()
+
+    expect(appels).toHaveLength(2)
+    expect(moteur.enAttente()).toBe(false)
+  })
+
+  it("DELETE sur une clé en file : vue inchangée", () => {
+    const { moteur, cochee } = monter()
+    moteur.hydrater(A, {})
+    moteur.poser(A, RIZ, coche(200)) // en vol
+
+    moteur.surEvent(A, RIZ, null, null)
+
+    expect(cochee(RIZ)).toBe(true)
+  })
+
+  it("hydrater(B) pendant l'écriture de A : vue de B intacte, horodatage de A retenu et persisté", async () => {
+    const { moteur, appels, vue, stockage } = monter()
+    moteur.hydrater(A, {})
+    moteur.poser(A, TOMATES, coche())
+    moteur.hydrater(B, { [RIZ]: { ...coche(200), maj: T0 } })
+
+    ecriture(appels[0]).resoudre(T1)
+    await attendre()
+
+    expect(vue.get(RIZ)).toEqual(coche(200))
+    expect(vue.has(TOMATES)).toBe(false)
+    const majs = JSON.parse(stockage.lire("coches_test_maj") ?? "{}")
+    expect(majs[A]?.[TOMATES]).toBe(T1)
+  })
+
+  it("échec définitif (estDefinitive) : opération retirée et journalisée, la file continue", async () => {
+    const definitive = Object.assign(new Error("RLS"), { definitive: true })
+    const { moteur, appels, journal, etats } = monter(fauxStockage(), {
+      estDefinitive: (e) => (e as { definitive?: boolean }).definitive === true,
+    })
+    moteur.hydrater(A, {})
+    moteur.poser(A, TOMATES, coche())
+    moteur.poser(A, RIZ, coche(200))
+
+    ecriture(appels[0]).rejeter(definitive)
+    await attendre()
+
+    expect(journal).toHaveBeenCalledWith(expect.stringContaining("refusée"), definitive)
+    expect(ecriture(appels[1]).cle).toBe(RIZ)
+    ecriture(appels[1]).resoudre(T1)
+    await attendre()
+    expect(moteur.enAttente()).toBe(false)
+    expect(etats).not.toContain("hors-ligne")
+  })
+
+  it("échec transitoire avec estDefinitive faux : reste en file, hors ligne", async () => {
+    const { moteur, appels, etats } = monter(fauxStockage(), { estDefinitive: () => false })
+    moteur.hydrater(A, {})
+    moteur.poser(A, TOMATES, coche())
+    ecriture(appels[0]).rejeter(new Error("Failed to fetch"))
+    await attendre()
+
+    expect(moteur.enAttente()).toBe(true)
+    expect(etats.at(-1)).toBe("hors-ligne")
+  })
+
+  it("ré-entrance : un geste posé depuis surEtat ne lance jamais deux écritures en vol", async () => {
+    let moteurRef: MoteurCoches<number> | null = null
+    let fait = false
+    const { moteur, appels } = monter(fauxStockage(), {
+      surEtat: (etat) => {
+        if (etat === "synchronise" && !fait) {
+          fait = true
+          moteurRef?.poser(A, RIZ, coche(200))
+        }
+      },
+    })
+    moteurRef = moteur
+    moteur.hydrater(A, {})
+    moteur.poser(A, TOMATES, coche())
+    ecriture(appels[0]).resoudre(T1)
+    await attendre()
+    expect(ecriture(appels[1]).cle).toBe(RIZ) // en vol
+
+    moteur.poser(A, "sel|g", coche(5))
+
+    expect(appels).toHaveLength(2) // « sel » attend la fin de RIZ
+    ecriture(appels[1]).resoudre(T2)
+    await attendre()
+    expect(ecriture(appels[2]).cle).toBe("sel|g")
+  })
+
+  it("enAttente(ancre) : ne compte que les opérations de cette ancre", async () => {
+    const { moteur, appels } = monter()
+    moteur.hydrater(A, {})
+    moteur.poser(A, TOMATES, coche())
+    ecriture(appels[0]).rejeter(new Error("Failed to fetch"))
+    await attendre()
+
+    expect(moteur.enAttente()).toBe(true)
+    expect(moteur.enAttente(A)).toBe(true)
+    expect(moteur.enAttente(B)).toBe(false)
+  })
+
+  it("arreter : un flush en vol termine sans rien écrire (stockage, vue, état) ni continuer", async () => {
+    const stockage = fauxStockage()
+    const { moteur, appels, vue, etats } = monter(stockage)
+    moteur.hydrater(A, {})
+    moteur.poser(A, TOMATES, coche())
+    moteur.poser(A, RIZ, coche(200))
+    moteur.surEvent(A, TOMATES, decoche(), T5) // différé
+    moteur.arreter()
+    stockage.donnees.clear() // purge de l'appelant (changement de foyer)
+    vue.clear()
+    const etatsAvant = etats.length
+
+    ecriture(appels[0]).resoudre(T1)
+    await attendre()
+
+    expect(appels).toHaveLength(1)
+    expect(stockage.donnees.size).toBe(0)
+    expect(vue.size).toBe(0)
+    expect(etats).toHaveLength(etatsAvant)
+    moteur.poser(A, "sel|g", coche(5))
+    moteur.surEvent(A, RIZ, decoche(), T6)
+    expect(appels).toHaveLength(1)
+    expect(stockage.donnees.size).toBe(0)
+    expect(vue.size).toBe(0)
   })
 })
