@@ -320,7 +320,7 @@ export function enregistrerOutilsExecuteur(server: McpServer): void {
         quantite: z.string().optional().describe("Quantité exacte de l'article, ex. « 200 g », pour départager des homonymes."),
       }),
     },
-    async (args, ctx) => executer(ctx, (supabase) => cocherArticleDemande(supabase, args, aujourdhuiParis()))
+    async (args, ctx) => executer(ctx, (supabase) => cocherArticleDemande(supabase, args))
   )
 
   server.registerTool(

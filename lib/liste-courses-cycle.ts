@@ -7,13 +7,11 @@
 import {
   chargerArticlesManuelsDistants,
   chargerCochesDistantes,
-  chargerLongueurCycle,
   chargerPlanningDistant,
 } from "@/lib/persistance"
-import { chargerJourCoursesFoyer } from "@/lib/foyer"
 import { chargerReglages } from "@/lib/reglages-data"
 import { REGLAGES_DEFAUT } from "@/lib/reglages"
-import { ancreParDefaut, planningDuCycle, semainesDuCycle } from "@/lib/cycles"
+import { planningDuCycle, semainesDuCycle } from "@/lib/cycles"
 import { assemblerListeCourses } from "@/lib/liste-courses"
 import type { Coches } from "@/lib/coches"
 import type { ClientSupabase } from "@/lib/supabase/types"
@@ -29,19 +27,16 @@ export type ListeCoursesCycle = {
 }
 
 /**
- * Liste de courses d'un cycle : le cycle COURANT par défaut (ancre du jour de
- * courses du foyer, `ancreParDefaut` comme /courses), ou celui de `ancre`.
- * Les erreurs de lecture du planning, des articles manuels et des coches se
- * propagent ; les réglages illisibles retombent sur les défauts (comme /courses).
+ * Liste de courses d'un cycle DÉJÀ résolu (`resoudreCycle` / `cycleVise`, ou
+ * l'ancre d'une demande de panier et sa longueur) : ce service ne choisit jamais
+ * le cycle (#360). Les erreurs de lecture du planning, des articles manuels et
+ * des coches se propagent ; les réglages illisibles retombent sur les défauts
+ * (comme /courses).
  */
 export async function chargerListeCoursesCycle(
   supabase: ClientSupabase,
-  options: { ancre?: string; aujourdhui?: Date } = {}
+  { ancre, longueur }: { ancre: string; longueur: number }
 ): Promise<ListeCoursesCycle> {
-  const ancre =
-    options.ancre ??
-    ancreParDefaut(options.aujourdhui ?? new Date(), await chargerJourCoursesFoyer(supabase))
-  const longueur = await chargerLongueurCycle(ancre, supabase)
 
   const resultats = await Promise.all(
     semainesDuCycle(ancre, longueur).map((s) => chargerPlanningDistant(s, supabase))

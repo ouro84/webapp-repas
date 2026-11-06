@@ -6,21 +6,15 @@
 // chargerPlanningDistant, chargerListeCoursesCycle, retirerArticlesCoches,
 // retirerCreneauxDesactives, ingredientsAEchelle, formaterQuantite.
 
-import { chargerLongueurCycle, chargerPlanningDistant } from "@/lib/persistance"
-import { chargerJourCoursesFoyer } from "@/lib/foyer"
-import { resoudreAncreCycle } from "@/lib/ancre-cycle"
+import { chargerPlanningDistant } from "@/lib/persistance"
+import { cycleVise } from "@/lib/mcp/cycle"
 import { chargerReglages } from "@/lib/reglages-data"
 import { REGLAGES_DEFAUT } from "@/lib/reglages"
 import { chargerListeCoursesCycle } from "@/lib/liste-courses-cycle"
 import { retirerArticlesCoches } from "@/lib/liste-courses"
 import { retirerCreneauxDesactives } from "@/lib/generateur"
 import { semaineDansPlage } from "@/lib/generation"
-import {
-  ancreParDefaut,
-  joursDuCycle,
-  libelleCycle,
-  semainesDuCycle,
-} from "@/lib/cycles"
+import { depuisISO, libelleCycle } from "@/lib/cycles"
 import { lundiDeSemaine, semaineISO } from "@/lib/semaines"
 import { LIBELLES_CATEGORIES } from "@/lib/courses"
 import { estCoche, type Coches } from "@/lib/coches"
@@ -36,7 +30,6 @@ import {
   localiserRepas,
   repasAuxDates,
   TYPE_REPAS,
-  validerDate,
   type Creneau,
   type RepasDate,
 } from "@/lib/mcp/repas"
@@ -107,11 +100,6 @@ export type RecetteMcp = {
   etapes: string[]
 }
 
-export function depuisISO(date: string): Date {
-  const [a, m, j] = date.split("-").map(Number)
-  return new Date(a, m - 1, j)
-}
-
 function moisLong(d: Date): string {
   return d.toLocaleDateString("fr-FR", { month: "long" })
 }
@@ -146,27 +134,6 @@ export async function planningsAffiches(
   return resultats.flatMap((r) => (r ? [retirerCreneauxDesactives(r.planning, reglages)] : []))
 }
 
-export const CYCLE_HORS_PLAGE =
-  "Ce cycle est hors de la plage autorisée (12 semaines en arrière, 6 en avant). Choisis une date plus proche."
-
-/**
- * Ancre du cycle qui contient `ancre` (une date quelconque, AAAA-MM-JJ) : même
- * résolution pour `generer_cycle` et les lectures (#320, RG-85), via
- * `resoudreAncreCycle` (`lib/ancre-cycle.ts`, partagé avec la route du panier).
- * Lève `ErreurOutil` si la date est invalide ou le cycle hors plage −12/+6 semaines.
- */
-export async function ancreDemandee(
-  supabase: ClientSupabase,
-  ancre: string,
-  aujourdhui: Date
-): Promise<string> {
-  const invalide = validerDate(ancre)
-  if (invalide) throw new ErreurOutil(invalide)
-  const resolution = await resoudreAncreCycle(supabase, ancre, aujourdhui)
-  if (!resolution.ok) throw new ErreurOutil(CYCLE_HORS_PLAGE)
-  return resolution.ancre
-}
-
 /**
  * `lire_planning` : repas du cycle COURANT (ancre du jour de courses, comme
  * /courses), du cycle qui contient `ancre`, ou de la semaine ISO `semaine`,
@@ -197,13 +164,9 @@ export async function lirePlanning(
     dates = datesDeSemaine(args.semaine)
     semaines = [args.semaine]
   } else {
-    const ancre =
-      args.ancre !== undefined
-        ? await ancreDemandee(supabase, args.ancre, aujourdhui)
-        : ancreParDefaut(aujourdhui, await chargerJourCoursesFoyer(supabase))
-    const longueur = await chargerLongueurCycle(ancre, supabase)
-    dates = joursDuCycle(ancre, longueur)
-    semaines = semainesDuCycle(ancre, longueur)
+    const cycle = await cycleVise(supabase, args.ancre, aujourdhui)
+    dates = cycle.jours
+    semaines = cycle.semaines
   }
 
   const reglages = await reglagesOuDefaut(supabase)
@@ -236,12 +199,8 @@ export async function lireListeCourses(
   args: { inclure_coches?: boolean; ancre?: string },
   aujourdhui: Date = new Date()
 ): Promise<ListeMcp> {
-  const ancreCycle =
-    args.ancre !== undefined ? await ancreDemandee(supabase, args.ancre, aujourdhui) : undefined
-  const { ancre, longueur, liste, coches } = await chargerListeCoursesCycle(supabase, {
-    ...(ancreCycle !== undefined ? { ancre: ancreCycle } : {}),
-    aujourdhui,
-  })
+  const cycle = await cycleVise(supabase, args.ancre, aujourdhui)
+  const { liste, coches } = await chargerListeCoursesCycle(supabase, cycle)
   const inclure = args.inclure_coches === true
   const affichee = inclure ? liste : retirerArticlesCoches(liste, coches)
   const cochesAffichees = inclure ? coches : null
@@ -251,10 +210,8 @@ export async function lireListeCourses(
     articles: ligne.ingredients.map((i) => versArticle(i, cochesAffichees)),
   }))
   const placard = affichee.fondDePlacard.map((i) => versArticle(i, cochesAffichees))
-  const jours = joursDuCycle(ancre, longueur)
-
   return {
-    cycle: { du: jours[0], au: jours[jours.length - 1], libelle: libelleCycle(ancre, longueur) },
+    cycle: { du: cycle.du, au: cycle.au, libelle: libelleCycle(cycle.ancre, cycle.longueur) },
     categories,
     a_verifier_au_placard: placard,
     nombre_articles: categories.reduce((n, c) => n + c.articles.length, 0) + placard.length,

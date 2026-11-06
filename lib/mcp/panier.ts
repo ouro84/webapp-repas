@@ -10,9 +10,7 @@
 // leurs codes d'erreur pour l'assistant.
 
 import { ErreurOutil } from "@/lib/mcp/erreurs"
-import { ancreDemandee } from "@/lib/mcp/lecture"
-import { chargerJourCoursesStrict } from "@/lib/foyer"
-import { ancreParDefaut } from "@/lib/cycles"
+import { cycleVise } from "@/lib/mcp/cycle"
 import { MESSAGES_PANIER, type RapportPanier } from "@/lib/panier"
 import { creerEtEnvoyerDemande, MESSAGE_TROP_DE_DEMANDES } from "@/lib/panier-demande"
 import { limitePanier } from "@/lib/rate-limit"
@@ -80,10 +78,7 @@ export async function lancerDemandePanierMcp(
 ): Promise<{ demande_id: string; ancre: string }> {
   if (!(await limitePanier(userId)).autorise) throw new ErreurOutil(MESSAGE_TROP_DE_DEMANDES)
 
-  const ancre =
-    args.ancre !== undefined
-      ? await ancreDemandee(supabase, args.ancre, aujourdhui)
-      : ancreParDefaut(aujourdhui, await chargerJourCoursesStrict(supabase))
+  const { ancre } = await cycleVise(supabase, args.ancre, aujourdhui)
 
   const resultat = await creerEtEnvoyerDemande(supabase, ancre, { contexte: "mcp lancer_demande_panier" })
   if (resultat.ok) return { demande_id: resultat.demandeId, ancre }

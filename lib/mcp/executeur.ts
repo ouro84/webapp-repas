@@ -10,9 +10,10 @@
 // `lire_liste_courses` (règle du jumeau) ; les jetons sont signés dans Postgres
 // par `signer_jetons_panier` (le secret ne quitte jamais la base).
 
-import { resoudreAncreCycle } from "@/lib/ancre-cycle"
+import { resoudreCycle } from "@/lib/ancre-cycle"
+import { chargerLongueurCycle } from "@/lib/persistance"
 import { LIBELLES_CATEGORIES } from "@/lib/courses"
-import { joursDuCycle, libelleCycle } from "@/lib/cycles"
+import { libelleCycle } from "@/lib/cycles"
 import { cleJeton } from "@/lib/jeton-panier"
 import { retirerArticlesCoches } from "@/lib/liste-courses"
 import { chargerListeCoursesCycle } from "@/lib/liste-courses-cycle"
@@ -108,8 +109,8 @@ async function preparerPrise(
 ): Promise<PriseDemande> {
   // Jour de courses changé entre la demande et la prise : l'ancre ne désigne
   // plus un cycle de la grille, remplir ce panier serait faux (RG-83).
-  const resolution = await resoudreAncreCycle(supabase, demande.ancre, aujourdhui)
-  if (!resolution.ok || resolution.ancre !== demande.ancre) {
+  const resolution = await resoudreCycle(supabase, { date: demande.ancre }, aujourdhui)
+  if (!resolution.ok || resolution.cycle.ancre !== demande.ancre) {
     await rapporterPanier(supabase, {
       demande_id: demande.id,
       statut: "echec",
@@ -119,10 +120,8 @@ async function preparerPrise(
     return { demande: null, raison: MOTIF_CYCLE_CHANGE }
   }
 
-  const { longueur, liste, coches } = await chargerListeCoursesCycle(supabase, {
-    ancre: demande.ancre,
-    aujourdhui,
-  })
+  const { cycle } = resolution
+  const { liste, coches } = await chargerListeCoursesCycle(supabase, cycle)
   const restante = retirerArticlesCoches(liste, coches)
   const lignes: Array<{ i: Ingredient; placard: boolean }> = [
     ...restante.normal.flatMap((ligne) => ligne.ingredients.map((i) => ({ i, placard: false }))),
@@ -159,12 +158,11 @@ async function preparerPrise(
     )
   }
 
-  const jours = joursDuCycle(demande.ancre, longueur)
   return {
     demande: {
       id: demande.id,
       ancre: demande.ancre,
-      cycle: { du: jours[0], au: jours[jours.length - 1], libelle: libelleCycle(demande.ancre, longueur) },
+      cycle: { du: cycle.du, au: cycle.au, libelle: libelleCycle(cycle.ancre, cycle.longueur) },
       expire_le: new Date(expire_le * 1000).toISOString(),
       articles: articles.map((a, n) => ({
         libelle: a.nom,
@@ -188,12 +186,12 @@ async function preparerPrise(
  */
 export async function cocherArticleDemande(
   supabase: ClientSupabase,
-  args: { libelle: string; quantite?: string },
-  aujourdhui: Date
+  args: { libelle: string; quantite?: string }
 ): Promise<CochageMcp> {
   const { data, error } = await supabase.rpc("demande_panier_en_cours")
   if (error) throw new Error(`Lecture de la demande de panier en cours impossible : ${error.message}`)
   if (!data) throw new ErreurOutil(MESSAGES_PANIER.OMQ05)
   const { ancre } = data as DemandeEnCours
-  return cocherArticleDansCycle(supabase, { libelle: args.libelle, quantite: args.quantite }, ancre, aujourdhui)
+  const longueur = await chargerLongueurCycle(ancre, supabase)
+  return cocherArticleDansCycle(supabase, { libelle: args.libelle, quantite: args.quantite }, { ancre, longueur })
 }

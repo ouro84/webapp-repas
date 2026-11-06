@@ -12,7 +12,8 @@ vi.mock("@/lib/supabase/client", () => ({
 
 import * as listeCoursesCycle from "@/lib/liste-courses-cycle"
 import { ErreurOutil } from "@/lib/mcp/erreurs"
-import { ancreDemandee, CYCLE_HORS_PLAGE, lireListeCourses, lirePlanning, lireRecette } from "@/lib/mcp/lecture"
+import { CYCLE_HORS_PLAGE } from "@/lib/mcp/cycle"
+import { lireListeCourses, lirePlanning, lireRecette } from "@/lib/mcp/lecture"
 import {
   creerSupabaseMock,
   filtre,
@@ -224,17 +225,21 @@ describe("lirePlanning — ancre (#320, RG-85)", () => {
     await expect(lirePlanning(client, { ancre: "29/10/2026" }, JEUDI)).rejects.toThrow(new ErreurOutil(message))
   })
 
-  it("lecture du foyer en erreur ou foyer absent → rejet, jamais de repli sur lundi (#320)", async () => {
+  it("lecture du foyer en erreur ou foyer absent → rejet, jamais de repli sur lundi, avec ou sans ancre (#320, #360)", async () => {
     for (const foyers of [
       { data: null, error: { message: "réseau coupé" } },
       { data: null, error: null },
     ]) {
-      const { client, appels, rpcs } = mock({ foyers })
-      const appel = ancreDemandee(client, "2026-11-04", JEUDI)
-      await expect(appel).rejects.toThrow()
-      await expect(appel).rejects.not.toBeInstanceOf(ErreurOutil)
-      expect(appels.map((a) => a.table).filter((t) => t !== "foyers")).toEqual([])
-      expect(rpcs).toEqual([])
+      for (const args of [{ ancre: "2026-11-04" }, {}]) {
+        for (const outil of [lirePlanning, lireListeCourses]) {
+          const { client, appels, rpcs } = mock({ foyers })
+          const appel = outil(client, args, JEUDI)
+          await expect(appel).rejects.toThrow()
+          await expect(appel).rejects.not.toBeInstanceOf(ErreurOutil)
+          expect(appels.map((a) => a.table).filter((t) => t !== "foyers")).toEqual([])
+          expect(rpcs).toEqual([])
+        }
+      }
     }
   })
 
@@ -310,7 +315,7 @@ describe("lireListeCourses (RG-78)", () => {
     const espion = vi.spyOn(listeCoursesCycle, "chargerListeCoursesCycle")
     const { client } = mock()
     await lireListeCourses(client, {}, JEUDI)
-    expect(espion).toHaveBeenCalledWith(client, { aujourdhui: JEUDI })
+    expect(espion).toHaveBeenCalledWith(client, expect.objectContaining({ ancre: "2026-10-29", longueur: 7 }))
   })
 })
 
@@ -320,7 +325,7 @@ describe("lireListeCourses — ancre (#320, RG-85)", () => {
     const { client } = mock()
     // Jour de courses = jeudi : le mercredi 4 novembre appartient au cycle ancré le jeudi 29 octobre.
     const resultat = await lireListeCourses(client, { ancre: "2026-11-04" }, JEUDI)
-    expect(espion).toHaveBeenCalledWith(client, { ancre: "2026-10-29", aujourdhui: JEUDI })
+    expect(espion).toHaveBeenCalledWith(client, expect.objectContaining({ ancre: "2026-10-29", longueur: 7 }))
     expect(resultat.cycle).toMatchObject({ du: "2026-10-29", au: "2026-11-04" })
   })
 
@@ -328,7 +333,7 @@ describe("lireListeCourses — ancre (#320, RG-85)", () => {
     const espion = vi.spyOn(listeCoursesCycle, "chargerListeCoursesCycle")
     const { client } = mock({ cycle_courses: cycleCourtDu29() })
     await lireListeCourses(client, { ancre: "2026-11-03" }, JEUDI)
-    expect(espion).toHaveBeenCalledWith(client, { ancre: "2026-11-05", aujourdhui: JEUDI })
+    expect(espion).toHaveBeenCalledWith(client, expect.objectContaining({ ancre: "2026-11-05", longueur: 7 }))
   })
 
   it("ancre impossible ou hors plage → ErreurOutil, rien n'est lu", async () => {
