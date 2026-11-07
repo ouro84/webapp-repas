@@ -24,6 +24,7 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ### Corrigé
 
+- Planning : une modification faite pendant le chargement d’une semaine (changement de semaine, ouverture de la page, mise à jour venue d’un autre membre du foyer) n’est plus perdue ; elle est enregistrée avec le reste (#368).
 - Assistant connecté (MCP) et exécuteur de panier : si la durée d’un cycle de courses ne peut pas être lue, l’opération échoue au lieu de supposer un cycle de 7 jours ; avec un cycle raccourci, une date du lendemain du cycle pouvait viser le cycle en cours au lieu du suivant (et une génération avec remplacement l’écraser). L’app garde son affichage sur 7 jours, avec un avertissement dans la console (#365).
 - Liste de courses : quand deux personnes du foyer cochent ou décochent le même article au même moment, toutes voient le même résultat, et une coche faite sans réseau (articles ajoutés à la main compris) est enregistrée au retour du réseau au lieu d’afficher une erreur (#362).
 - Liste de courses : deux touches très rapides sur le même article ne s'annulent plus en une seule (#362).

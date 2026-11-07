@@ -4119,3 +4119,193 @@ describe("isolation entre tests (#371)", () => {
     expect(persistance.sauvegarderPlanningDistant).not.toHaveBeenCalled();
   });
 });
+
+// #368 : un geste fait sur le planning pendant la lecture de
+// `chargerSemaineDansCache` n'est plus perdu. Même remède que #339 (coches) :
+// le geste n'est jamais filtré (dirty posé), aucun push ne part pendant la
+// lecture, et la décision est prise APRÈS l'`await`. Semaine différente
+// (navigation, montage sur une autre semaine) : l'ancienne semaine est poussée
+// puis la cible relue. Même semaine (montage, relecture US-21 sans instantané
+// confirmé) : le geste est rejoué sur le distant par fusion.
+describe("geste pendant la lecture d'une semaine (#368)", () => {
+  const T0 = "2026-06-15T09:00:00.000Z";
+  const T_DISTANT = "2026-06-15T10:05:00.000Z";
+  const JOURS = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"] as const;
+
+  function semaineDe(semaine: string): Planning {
+    return {
+      semaine,
+      jours: JOURS.map((jour) => ({ jour, dejeuner: recette(`d-${jour}`), diner: recette(`s-${jour}`) })),
+    };
+  }
+  function avecJour(p: Planning, jour: string, f: (jp: JourPlanning) => JourPlanning): Planning {
+    return { ...p, jours: p.jours.map((jp) => (jp.jour === jour ? f(jp) : jp)) };
+  }
+  function jourDe(p: Planning, jour: string): JourPlanning | undefined {
+    return p.jours.find((jp) => jp.jour === jour);
+  }
+  function cache(): Planning {
+    return JSON.parse(localStorage.getItem("planning_courant")!) as Planning;
+  }
+  function differe<T>(): { promesse: Promise<T>; resoudre: (v: T) => void } {
+    let resoudre!: (v: T) => void;
+    const promesse = new Promise<T>((r) => (resoudre = r));
+    return { promesse, resoudre };
+  }
+  function rappelPlanning(): RappelRealtime | undefined {
+    return realtime.rappels.find((r) => r.filtre.table === "planning");
+  }
+  const attendre = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  const autreMembre = (p: Planning) =>
+    avecJour(p, "mardi", (jp) => ({ ...jp, dejeuner: recette("autre-membre") }));
+
+  // Geste de l'utilisateur (#363) : écriture d'intention, seule à pousser.
+  async function geste() {
+    const stockage = await import("@/lib/stockage");
+    return (personnes: number) =>
+      stockage.sauvegarderRemplacementSlot(
+        avecJour(cache(), "lundi", (jp) => ({ ...jp, personnes: { diner: personnes } }))
+      );
+  }
+
+  // Monte /planning hydraté depuis la base sur la semaine par défaut.
+  async function monterPlanning() {
+    const sync = await chargerSync();
+    const { semaineParDefaut, semaineDecalee } = await import("@/lib/semaines");
+    const stepper = await geste();
+    const { renderHook } = await import("@testing-library/react");
+    const semaine = semaineParDefaut();
+    persistance.chargerPlanningDistant.mockResolvedValue({ planning: semaineDe(semaine), updatedAt: T0 });
+    const alerte = renderHook(() => sync.useAlertePlanning());
+    renderHook(() => sync.useSync());
+    await vi.waitFor(() => expect(localStorage.getItem("semaine_affichee")).toBe(semaine));
+    await vi.waitFor(() => expect(rappelPlanning()).toBeDefined());
+    return { sync, semaine, suivante: semaineDecalee(semaine, 1), stepper, alerte };
+  }
+
+  it("navigation : un geste sur la semaine quittée pendant la lecture est poussé, puis la cible est relue", async () => {
+    const { sync, semaine, suivante, stepper } = await monterPlanning();
+    const lecture = differe<{ planning: Planning; updatedAt: string }>();
+    persistance.chargerPlanningDistant.mockImplementationOnce(() => lecture.promesse);
+    persistance.chargerPlanningDistant.mockResolvedValue({ planning: semaineDe(suivante), updatedAt: T_DISTANT });
+
+    const navigation = sync.naviguerVers(suivante);
+    await vi.waitFor(() => expect(persistance.chargerPlanningDistant).toHaveBeenCalledWith(suivante));
+    stepper(5); // clic sur la semaine encore affichée, pendant la lecture
+    expect(localStorage.getItem("planning_dirty")).toBe("1");
+    await attendre(900); // > débounce : aucun push pendant la lecture
+    expect(persistance.sauvegarderPlanningDistant).not.toHaveBeenCalled();
+    lecture.resoudre({ planning: semaineDe(suivante), updatedAt: T_DISTANT });
+    await navigation;
+
+    expect(persistance.sauvegarderPlanningDistant).toHaveBeenCalledTimes(1);
+    const pousse = persistance.sauvegarderPlanningDistant.mock.calls[0][0] as Planning;
+    expect(pousse.semaine).toBe(semaine);
+    expect(jourDe(pousse, "lundi")?.personnes?.diner).toBe(5);
+    // Cible relue après le flush : affichée, propre.
+    expect(persistance.chargerPlanningDistant.mock.calls.filter((c) => c[0] === suivante)).toHaveLength(2);
+    expect(localStorage.getItem("semaine_affichee")).toBe(suivante);
+    expect(cache()).toEqual(semaineDe(suivante));
+    expect(localStorage.getItem("planning_dirty")).toBeNull();
+  });
+
+  it("navigation : un geste pendant chacune des 3 lectures → navigation abandonnée, rien perdu", async () => {
+    const { sync, semaine, suivante, stepper } = await monterPlanning();
+    let n = 0;
+    persistance.chargerPlanningDistant.mockImplementation(async (s: string) => {
+      if (s === suivante) stepper(++n + 2); // geste pendant chaque lecture
+      return { planning: semaineDe(s), updatedAt: T_DISTANT };
+    });
+
+    await sync.naviguerVers(suivante);
+
+    expect(n).toBe(3);
+    expect(localStorage.getItem("semaine_affichee")).toBe(semaine);
+    expect(cache().semaine).toBe(semaine);
+    expect(jourDe(cache(), "lundi")?.personnes?.diner).toBe(5);
+    // Le dernier geste part au prochain push (débounce), sur sa semaine.
+    await vi.waitFor(
+      () => {
+        const dernier = persistance.sauvegarderPlanningDistant.mock.calls.at(-1)?.[0] as Planning | undefined;
+        expect(dernier?.semaine).toBe(semaine);
+        expect(jourDe(dernier!, "lundi")?.personnes?.diner).toBe(5);
+      },
+      { timeout: 2000 }
+    );
+  });
+
+  it("relecture US-21 sur le chemin historique : un geste pendant la lecture est rejoué sur le distant", async () => {
+    const { semaine, stepper, alerte } = await monterPlanning();
+    // Instantané d'une autre semaine : pas de rejeu #355, chemin historique.
+    localStorage.setItem("planning_confirme", JSON.stringify(semaineDe("2020-W01")));
+    const lecture = differe<{ planning: Planning; updatedAt: string }>();
+    persistance.chargerPlanningDistant.mockImplementationOnce(() => lecture.promesse);
+    const lectures = persistance.chargerPlanningDistant.mock.calls.length;
+
+    rappelPlanning()!.rappel({
+      eventType: "UPDATE",
+      new: { foyer_id: "foyer-1", semaine, updated_at: T_DISTANT },
+      old: {},
+    });
+    await vi.waitFor(() => expect(persistance.chargerPlanningDistant).toHaveBeenCalledTimes(lectures + 1));
+    stepper(5); // clic pendant la lecture
+    lecture.resoudre({ planning: autreMembre(semaineDe(semaine)), updatedAt: T_DISTANT });
+
+    await vi.waitFor(() => expect(alerte.result.current).toBe(true));
+    expect(jourDe(cache(), "lundi")?.personnes?.diner).toBe(5);
+    expect(jourDe(cache(), "mardi")?.dejeuner?.id).toBe("autre-membre");
+    expect(JSON.parse(localStorage.getItem("planning_confirme")!)).toEqual(autreMembre(semaineDe(semaine)));
+    await vi.waitFor(() => expect(persistance.sauvegarderPlanningDistant).toHaveBeenCalled(), { timeout: 2000 });
+    const pousse = persistance.sauvegarderPlanningDistant.mock.calls.at(-1)![0] as Planning;
+    expect(jourDe(pousse, "lundi")?.personnes?.diner).toBe(5);
+    expect(jourDe(pousse, "mardi")?.dejeuner?.id).toBe("autre-membre");
+  });
+
+  it("relecture US-21 sur le chemin historique, distant inchangé : le geste rejoué ne déclenche pas d'alerte", async () => {
+    const { semaine, stepper, alerte } = await monterPlanning();
+    localStorage.setItem("planning_confirme", JSON.stringify(semaineDe("2020-W01")));
+    const lecture = differe<{ planning: Planning; updatedAt: string }>();
+    persistance.chargerPlanningDistant.mockImplementationOnce(() => lecture.promesse);
+    const lectures = persistance.chargerPlanningDistant.mock.calls.length;
+
+    rappelPlanning()!.rappel({
+      eventType: "UPDATE",
+      new: { foyer_id: "foyer-1", semaine, updated_at: T_DISTANT },
+      old: {},
+    });
+    await vi.waitFor(() => expect(persistance.chargerPlanningDistant).toHaveBeenCalledTimes(lectures + 1));
+    stepper(5);
+    lecture.resoudre({ planning: semaineDe(semaine), updatedAt: T_DISTANT });
+
+    await vi.waitFor(() => expect(persistance.sauvegarderPlanningDistant).toHaveBeenCalled(), { timeout: 2000 });
+    expect(jourDe(cache(), "lundi")?.personnes?.diner).toBe(5);
+    expect(alerte.result.current).toBe(false);
+  });
+
+  it("montage sur la semaine en cache : un geste pendant la lecture est rejoué, pas écrasé", async () => {
+    const sync = await chargerSync();
+    const { semaineParDefaut } = await import("@/lib/semaines");
+    const stepper = await geste();
+    const { renderHook } = await import("@testing-library/react");
+    const semaine = semaineParDefaut();
+    // Cache horodaté, propre : chemin nominal, lecture de la base.
+    localStorage.setItem("planning_courant", JSON.stringify(semaineDe(semaine)));
+    localStorage.setItem("planning_courant_maj", T0);
+    localStorage.setItem("semaine_affichee", semaine);
+    const lecture = differe<{ planning: Planning; updatedAt: string }>();
+    persistance.chargerPlanningDistant.mockImplementationOnce(() => lecture.promesse);
+
+    renderHook(() => sync.useSync());
+    await vi.waitFor(() => expect(persistance.chargerPlanningDistant).toHaveBeenCalledWith(semaine));
+    stepper(5); // clic sur le planning en cache pendant la lecture
+    lecture.resoudre({ planning: autreMembre(semaineDe(semaine)), updatedAt: T_DISTANT });
+
+    await vi.waitFor(() => expect(jourDe(cache(), "mardi")?.dejeuner?.id).toBe("autre-membre"));
+    expect(jourDe(cache(), "lundi")?.personnes?.diner).toBe(5);
+    expect(localStorage.getItem("planning_dirty")).toBe("1");
+    await vi.waitFor(() => expect(persistance.sauvegarderPlanningDistant).toHaveBeenCalled(), { timeout: 2000 });
+    const pousse = persistance.sauvegarderPlanningDistant.mock.calls.at(-1)![0] as Planning;
+    expect(jourDe(pousse, "lundi")?.personnes?.diner).toBe(5);
+    expect(jourDe(pousse, "mardi")?.dejeuner?.id).toBe("autre-membre");
+  });
+});
