@@ -27,6 +27,7 @@ import {
   type PreferencesRecettes,
 } from "@/lib/generateur";
 import { editerSlot, MESSAGES_EDITION } from "@/lib/edition-slot";
+import { estRaccourciAnnuler } from "@/lib/raccourci-annuler";
 import {
   storePlanning,
   storeVuePlanning,
@@ -389,34 +390,22 @@ function ContenuPlanning() {
     };
   }, []);
 
-  // Raccourci Ctrl/Cmd+Z (US-09, RG-19) : annule la dernière action. On ignore
-  // la frappe dans un champ de saisie (recherche du sélecteur de recette), où
-  // Ctrl+Z doit rester l'annulation native du texte. addEventListener, pas un
-  // setState au montage → conforme à la règle ESLint set-state-in-effect.
+  // Raccourci Ctrl/Cmd+Z (US-09, RG-19) : annule la dernière action, hors champ
+  // de saisie (`estRaccourciAnnuler`, partagé avec la vue Cycle). Actif en vue
+  // Semaine seulement : la vue Cycle a son propre undo (#373), et un Ctrl+Z en
+  // vue Cycle ne doit pas annuler une édition de semaine faite juste avant la
+  // bascule. addEventListener, pas un setState au montage → conforme à la règle
+  // ESLint set-state-in-effect.
   useEffect(() => {
+    if (vue !== "semaine") return;
     function surTouche(e: KeyboardEvent): void {
-      if (
-        (e.key === "z" || e.key === "Z") &&
-        (e.ctrlKey || e.metaKey) &&
-        !e.shiftKey
-      ) {
-        const cible = e.target as HTMLElement | null;
-        if (
-          cible &&
-          (cible.tagName === "INPUT" ||
-            cible.tagName === "TEXTAREA" ||
-            cible.isContentEditable)
-        ) {
-          return;
-        }
-        // preventDefault uniquement si une annulation a réellement eu lieu,
-        // pour ne pas confisquer Ctrl+Z quand il n'y a rien à annuler.
-        if (annulerDerniereAction()) e.preventDefault();
-      }
+      // preventDefault uniquement si une annulation a réellement eu lieu,
+      // pour ne pas confisquer Ctrl+Z quand il n'y a rien à annuler.
+      if (estRaccourciAnnuler(e) && annulerDerniereAction()) e.preventDefault();
     }
     window.addEventListener("keydown", surTouche);
     return () => window.removeEventListener("keydown", surTouche);
-  }, []);
+  }, [vue]);
 
   const planning = useMemo<Planning | null>(() => {
     if (brut === null) return null;

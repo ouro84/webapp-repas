@@ -1,12 +1,12 @@
 // lib/ancre-initiale-cycle.ts
-// Cycle affiché au montage de la vue Cycle de /planning (#352), et repli du jour
-// de courses partagé avec /courses. Dépendances injectées : testable sans réseau.
+// Cycle affiché au montage de la vue Cycle de /planning (#352), et replis du jour
+// de courses et de la longueur du cycle partagés avec /courses (#365). Dépendances injectées : testable sans réseau.
 //
 // Lien profond `/planning?cycle=` (#320, RG-87) : la résolution du lien et la
 // lecture du jour de courses partent EN PARALLÈLE (deux allers-retours réseau
 // indépendants) ; hors plage / invalide / résolution en échec → ancre par défaut.
 
-import { ancreParDefaut } from "@/lib/cycles"
+import { ancreParDefaut, LONGUEUR_DEFAUT } from "@/lib/cycles"
 import type { ResolutionCycle } from "@/lib/ancre-cycle"
 
 /**
@@ -18,6 +18,19 @@ export function jourCoursesOuLundi(lecture: Promise<number>): Promise<number> {
   return lecture.catch((erreur: unknown) => {
     console.warn("Jour de courses illisible, lundi par défaut.", erreur)
     return 1
+  })
+}
+
+/**
+ * Longueur de cycle lue, ou 7 jours si la lecture échoue — repli loggé, jumeau
+ * de `jourCoursesOuLundi`. Réservé aux pages client (vue Cycle, /courses) :
+ * `chargerLongueurCycle` est stricte, et le serveur (`resoudreCycle`, exécuteur)
+ * laisse remonter l'erreur plutôt que de viser un autre cycle (#365).
+ */
+export function longueurOuDefaut(lecture: Promise<number>): Promise<number> {
+  return lecture.catch((erreur: unknown) => {
+    console.warn("Longueur du cycle illisible, 7 jours par défaut.", erreur)
+    return LONGUEUR_DEFAUT
   })
 }
 

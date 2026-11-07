@@ -57,7 +57,7 @@ import {
 } from "@/lib/cycles";
 import { lireCycle } from "@/lib/lecture-cycle";
 import { chargerJourCoursesFoyer } from "@/lib/foyer";
-import { jourCoursesOuLundi } from "@/lib/ancre-initiale-cycle";
+import { jourCoursesOuLundi, longueurOuDefaut } from "@/lib/ancre-initiale-cycle";
 import { parseApiError } from "@/lib/errors";
 import type { ArticleManuel, Ingredient, JourPlanning, Planning, SemaineGeneree } from "@/types";
 import type { RealtimeChannel } from "@supabase/supabase-js";
@@ -713,7 +713,15 @@ function couperArticlesManuels(): Promise<void> {
 // décalage d'horloges). Un cache non horodaté (legacy/injecté) est aussi
 // considéré le plus frais ; un cache vide récupère la base.
 // ---------------------------------------------------------------------------
-let hydratationEnCours = false;
+// Vrai pendant la lecture de `chargerSemaineDansCache` (#368) : aucun push ne
+// part (un geste pose `dirty`, la fin de la lecture décide). Pourquoi : un push
+// parti pendant une navigation écrirait l'horodatage et l'instantané confirmé
+// de la semaine quittée par-dessus ceux de la semaine lue.
+let lectureSemaineEnCours = false;
+// Compte les gestes de l'utilisateur sur le planning (#368) : une lecture
+// pendant laquelle il a bougé ne remplace pas le cache à l'aveugle (jumeau de
+// `gestesCoches`, #339).
+let gestesPlanning = 0;
 let pushEnCours = false;
 let rePushDemande = false;
 let minuteur: ReturnType<typeof setTimeout> | null = null;
@@ -849,6 +857,8 @@ async function pousser(): Promise<void> {
   // `sauvegarder_planning` (toute la semaine) effacerait en base le changement
   // distant en cours de lecture.
   if (traitementPlanningEnCours) return;
+  // Lecture d'une semaine en cours (#368) : `dirty` reste posé, sa fin relance.
+  if (lectureSemaineEnCours) return;
   if (pushEnCours) {
     rePushDemande = true;
     return;
@@ -892,11 +902,11 @@ async function pousser(): Promise<void> {
 
 // À chaque édition du planning par l'utilisateur (canal `surEditionPlanning`,
 // #363) : marque `dirty` (le local diverge) et planifie un push débounce. On NE
-// touche PAS l'horodatage (réservé au serveur). Ignoré pendant la lecture de
-// `chargerSemaineDansCache` (limite connue : un geste fait pendant cette lecture
-// est remplacé par le distant).
+// touche PAS l'horodatage (réservé au serveur). Un geste n'est JAMAIS filtré
+// (#368) : pendant la lecture de `chargerSemaineDansCache`, il est compté et
+// c'est la fin de la lecture qui le pousse ou le rejoue.
 function planifierPush(): void {
-  if (hydratationEnCours) return;
+  gestesPlanning += 1;
   localStorage.setItem(CLE_DIRTY, "1");
   relancerPush();
 }
@@ -912,6 +922,8 @@ function relancerPush(): void {
   // Relecture US-21 en cours : `dirty` suffit, elle replanifie le push à sa fin
   // (pas de minuteur inutile ; `pousser` est de toute façon gardé, #355).
   if (traitementPlanningEnCours) return;
+  // Lecture d'une semaine en cours (#368) : idem, sa fin relance le push.
+  if (lectureSemaineEnCours) return;
   if (minuteur) clearTimeout(minuteur);
   minuteur = setTimeout(() => void pousser(), DELAI_DEBOUNCE_MS);
 }
@@ -1586,7 +1598,10 @@ async function traiterChangementPlanningDistant(semaine: string): Promise<void> 
       relectureRatee(semaine);
       return;
     }
-    if (semaineActive() === semaine && signaturePlanning(planningLocal()) !== sigAvant) {
+    // Comparé au distant (= instantané confirmé après la lecture), pas au
+    // cache : un geste fait pendant la lecture y est rejoué (#368) et ne doit
+    // pas passer pour un changement distant.
+    if (semaineActive() === semaine && signaturePlanning(lireConfirme()) !== sigAvant) {
       declencherAlertePlanning();
     }
   } finally {
@@ -2256,42 +2271,99 @@ async function attendreSync(): Promise<boolean> {
   return !(estDirty() || cochesEnAttente());
 }
 
-// Charge une semaine dans le cache PLANNING SANS flush ni garde, et sans
-// déclencher de push (gardes d'hydratation). Une semaine sans planning vide le
-// cache → état vide. Pose la semaine affichée. Depuis #257, cette fonction ne
-// touche PLUS aux coches : elles sont propres au CYCLE (clé = ancre, ≠ semaine)
-// et gérées par chargerCycleDansCache (/courses). La page /planning n'affiche
-// pas la liste de courses, donc aucun besoin d'y hydrater les coches.
+// Plafond des lectures d'une semaine relancées par un geste fait sur une AUTRE
+// semaine pendant la lecture (#368, même plafond que les coches, #339).
+const MAX_LECTURES_SEMAINE = 3;
+
+// Charge une semaine dans le cache PLANNING SANS flush préalable, et sans push
+// pendant la lecture. Une semaine sans planning vide le cache → état vide. Pose
+// la semaine affichée. Depuis #257, cette fonction ne touche PLUS aux coches :
+// elles sont propres au CYCLE (clé = ancre, ≠ semaine) et gérées par
+// chargerCycleDansCache (/courses).
 // Renvoie `true` si la lecture a réussi (#355) : une lecture ratée est loggée
 // et laisse le cache intact, à l'appelant de protéger le push s'il le faut
 // (relecture US-21, cf. traiterChangementPlanningDistant).
+// Geste fait pendant la lecture (#368) : sur la même semaine, il est rejoué sur
+// le distant ; sur la semaine encore affichée (navigation), elle est poussée
+// d'abord puis la cible relue, au plus `MAX_LECTURES_SEMAINE` fois ; au-delà, ou
+// si l'envoi échoue, la navigation est abandonnée (rien n'est perdu, le geste
+// part au push suivant) et la fonction renvoie `false`.
 async function chargerSemaineDansCache(semaine: string): Promise<boolean> {
-  let lu = false;
-  hydratationEnCours = true;
-  try {
-    const distant = await chargerPlanningDistant(semaine);
-    if (distant) {
-      storePlanning.ecrire(JSON.stringify(distant.planning));
-      localStorage.setItem(CLE_MAJ, distant.updatedAt);
-    } else {
-      storePlanning.effacer();
-      localStorage.removeItem(CLE_MAJ);
+  for (let lecture = 1; ; lecture++) {
+    const issue = await lireSemaineDansCache(semaine);
+    if (issue !== "geste-autre-semaine") return issue === "lu";
+    if (lecture >= MAX_LECTURES_SEMAINE || !(await attendreSync())) {
+      const local = planningLocal();
+      if (local) {
+        definirSemaineAffichee(local.semaine);
+        void synchroniserAbonnementPlanning(local.semaine);
+      }
+      if (estDirty()) relancerPush();
+      return false;
     }
-    // Cache = base : c'est le nouveau planning confirmé de la semaine (#355).
-    ecrireConfirme(distant ? distant.planning : null);
-    localStorage.removeItem(CLE_DIRTY);
-    relectureReussie(semaine); // lève aussi la relecture à refaire (#355)
-    definirEtatPlanning("synchronise");
-    lu = true;
+  }
+}
+
+// Une lecture de `chargerSemaineDansCache`. La décision suit l'`await` (#368) :
+// `geste-autre-semaine` si l'utilisateur a modifié une autre semaine pendant
+// la lecture (le cache n'est alors pas touché).
+async function lireSemaineDansCache(
+  semaine: string
+): Promise<"lu" | "echec" | "geste-autre-semaine"> {
+  const gestes = gestesPlanning;
+  // Planning figé au début de la lecture : base du rejeu d'un geste fait
+  // pendant l'`await` (#368).
+  const avant = planningLocal();
+  let distant: Awaited<ReturnType<typeof chargerPlanningDistant>>;
+  lectureSemaineEnCours = true;
+  try {
+    distant = await chargerPlanningDistant(semaine);
   } catch (erreur) {
     console.error("Chargement de la semaine échoué.", erreur);
-  } finally {
-    hydratationEnCours = false;
+    lectureSemaineEnCours = false;
+    afficherSemaineLue(semaine);
+    return "echec";
   }
+  lectureSemaineEnCours = false;
+  const local = planningLocal();
+  if (gestes === gestesPlanning) {
+    if (distant) {
+      storePlanning.ecrire(JSON.stringify(distant.planning));
+    } else {
+      storePlanning.effacer();
+    }
+    localStorage.removeItem(CLE_DIRTY);
+  } else if (local === null || local.semaine !== semaine) {
+    // Geste sur la semaine encore affichée (navigation) : la pousser d'abord.
+    return "geste-autre-semaine";
+  } else if (distant && avant?.semaine === semaine) {
+    // Même semaine : seul le geste fait pendant la lecture est rejoué sur le
+    // distant (un créneau changé des deux côtés : le distant gagne). Écriture
+    // interne, hors canal d'édition : aucun push immédiat (#363).
+    const { planning, rejoues } = fusionnerEditionsLocales(avant, local, distant.planning);
+    storePlanning.ecrire(JSON.stringify(planning));
+    if (rejoues.length > 0) localStorage.setItem(CLE_DIRTY, "1");
+    else localStorage.removeItem(CLE_DIRTY);
+  }
+  // Sinon (cache vide au départ, ou semaine absente en base) : pas de base pour
+  // rejouer, le local du geste fait foi et `dirty` reste posé.
+  if (distant) localStorage.setItem(CLE_MAJ, distant.updatedAt);
+  else localStorage.removeItem(CLE_MAJ);
+  // Le distant lu est le nouveau planning confirmé de la semaine (#355).
+  ecrireConfirme(distant ? distant.planning : null);
+  relectureReussie(semaine); // lève aussi la relecture à refaire (#355)
+  definirEtatPlanning("synchronise");
+  afficherSemaineLue(semaine);
+  return "lu";
+}
+
+// Fin d'une lecture de semaine (réussie ou non) : pose la semaine affichée,
+// (ré)abonne son temps réel, et relance le push d'un geste fait pendant la
+// lecture (gardé pendant l'`await`, #368).
+function afficherSemaineLue(semaine: string): void {
   definirSemaineAffichee(semaine);
-  // (Ré)abonne le temps réel du planning à la semaine désormais affichée.
   void synchroniserAbonnementPlanning(semaine);
-  return lu;
+  if (estDirty()) relancerPush();
 }
 
 /**
@@ -2402,9 +2474,9 @@ export async function hydraterCycle(): Promise<void> {
   // semaine prochaine (semaineParDefaut) → on décale le cycle par défaut pour la
   // couvrir, sinon /courses afficherait un cycle courant vide/écoulé (#257).
   const ancre = ancreParDefaut(new Date(), jour);
-  // Gardé (revue) : une rejection non catchée deviendrait un unhandledRejection
-  // sous `void hydraterCycle()` — repli sur LONGUEUR_DEFAUT au lieu de planter.
-  const longueur = await chargerLongueurCycle(ancre).catch(() => LONGUEUR_DEFAUT);
+  // Lecture stricte (#365) : repli client explicite et loggé sur 7 jours (une
+  // rejection non catchée deviendrait un unhandledRejection sous `void hydraterCycle()`).
+  const longueur = await longueurOuDefaut(chargerLongueurCycle(ancre));
   await chargerCycleDansCache(ancre, longueur);
   // Rétention (#257, miroir de purgerHistorique) : fire-and-forget, jamais bloquant.
   void purgerCyclesAvant(cycleDecale(ancre, -12)).catch(() => {});
@@ -2420,7 +2492,7 @@ export async function naviguerCycle(offset: number): Promise<void> {
   if (!courant) return;
   if (!(await attendreSync())) return; // hors-ligne : ne pas perdre les écritures
   const ancre = cycleDecale(courant.ancre, offset);
-  const longueur = await chargerLongueurCycle(ancre);
+  const longueur = await longueurOuDefaut(chargerLongueurCycle(ancre)); // repli client (#365)
   await chargerCycleDansCache(ancre, longueur);
 }
 
@@ -2434,7 +2506,7 @@ export async function naviguerCycle(offset: number): Promise<void> {
  */
 export async function allerAuCycle(ancre: string): Promise<void> {
   if (!(await attendreSync())) return; // hors-ligne : ne pas perdre les écritures
-  const longueur = await chargerLongueurCycle(ancre);
+  const longueur = await longueurOuDefaut(chargerLongueurCycle(ancre)); // repli client (#365)
   await chargerCycleDansCache(ancre, longueur);
 }
 

@@ -124,6 +124,15 @@ describe("lectures du cycle — client injecté", () => {
     expect(await chargerLongueurCycle("2026-10-29", dix.client)).toBe(10)
   })
 
+  it("chargerLongueurCycle : erreur de lecture → rejet, jamais le défaut (#365)", async () => {
+    const enErreur = creerSupabaseMock({
+      tables: { cycle_courses: { data: null, error: { message: "boom" } } },
+    })
+    await expect(chargerLongueurCycle("2026-10-29", enErreur.client)).rejects.toThrow(
+      "Lecture de la longueur du cycle impossible : boom"
+    )
+  })
+
   it("chargerJourCoursesFoyer : jour du foyer, 1 en cas d'erreur", async () => {
     const jeudi = creerSupabaseMock({ tables: { foyers: { data: { jour_courses: 4 }, error: null } } })
     expect(await chargerJourCoursesFoyer(jeudi.client)).toBe(4)
