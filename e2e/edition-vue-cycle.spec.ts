@@ -56,6 +56,35 @@ test("changer un repas depuis la vue Cycle persiste au reload", async ({ page })
   expect(nomApres).not.toBe(nomAvant);
 });
 
+test("Ctrl+Z en vue Cycle annule le dernier « Changer » : « Annulé », repas d'origine en base (#373)", async ({
+  page,
+}) => {
+  await page.goto("/planning");
+  await page.getByRole("button", { name: "Cycle" }).click();
+  await page.getByRole("button", { name: "Générer mon cycle" }).click();
+  await expect(page.locator("main li").first()).toBeVisible({ timeout: 20_000 });
+
+  const nom = page.locator("main button[aria-label^='Voir la recette']").first();
+  const nomAvant = await nom.textContent();
+  await page.getByRole("button", { name: /^Changer/ }).first().click();
+  await confirmerSiModaleJourPasse(page);
+  await expect(page.getByText("Recette remplacée")).toBeVisible();
+  await expect(nom).not.toHaveText(nomAvant ?? "");
+
+  await page.keyboard.press("ControlOrMeta+z");
+
+  await expect(page.getByText("Annulé", { exact: true })).toBeVisible();
+  await expect(nom).toHaveText(nomAvant ?? "");
+  // L'annulation est écrite en base : le repas d'origine survit au reload.
+  await expect(async () => {
+    await page.reload();
+    await expect(page.locator("main button[aria-label^='Voir la recette']").first()).toHaveText(
+      nomAvant ?? "",
+      { timeout: 5_000 }
+    );
+  }).toPass({ timeout: 20_000 });
+});
+
 test("modifier le nombre de personnes depuis la vue Cycle persiste au reload", async ({ page }) => {
   await page.goto("/planning");
   await page.getByRole("button", { name: "Cycle" }).click();

@@ -41,7 +41,7 @@
 // (lireCycle, base = source de vérité) et on rend chaque JOUR du
 // cycle (date concrète) via lib/cycles (fonctions pures).
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   ancreCourante,
@@ -68,6 +68,7 @@ import {
 import { PERSONNES_DEFAUT, personnesDuSlot } from "@/lib/personnes";
 import { estRestes } from "@/lib/restes";
 import { editerSlot, MESSAGES_EDITION } from "@/lib/edition-slot";
+import { estRaccourciAnnuler } from "@/lib/raccourci-annuler";
 import { chargerJourCoursesFoyer } from "@/lib/foyer";
 import { resoudreCycle } from "@/lib/ancre-cycle";
 import { ancreInitialeCycle, longueurOuDefaut } from "@/lib/ancre-initiale-cycle";
@@ -104,6 +105,21 @@ import type { JourPlanning, Planning, Recette, ReglagesGeneration } from "@/type
 type TypeRepas = "dejeuner" | "diner";
 
 const ID_TOAST_ANNULATION_CYCLE = "annulation-slot-cycle";
+// Durée du toast d'annulation, et donc de la fenêtre de l'undo (toast ou Ctrl+Z).
+const DUREE_ANNULATION_MS = 5000;
+
+// Horloge de la fenêtre d'annulation, hors du composant (fonctions impures).
+function echeanceAnnulation(): number {
+  return Date.now() + DUREE_ANNULATION_MS;
+}
+function estEchue(echeance: number): boolean {
+  return Date.now() > echeance;
+}
+
+// Créneau d'un message « Pas de recette disponible » (#373) : date + repas.
+function cleCreneau(dateISO: string, typeRepas: TypeRepas): string {
+  return `${dateISO}|${typeRepas}`;
+}
 // Toast d'échec de lecture du cycle : id fixe pour dédoublonner les échecs
 // successifs et le lever dès qu'une lecture réussit (#357).
 const ID_TOAST_ECHEC_CYCLE = "echec-chargement-cycle";
@@ -172,6 +188,17 @@ export function VuePlanningCycle({
     recette: Recette;
     personnes: number;
   } | null>(null);
+  // Dernière édition annulable (US-09, #373) : rejouée par le bouton du toast ou
+  // par Ctrl/Cmd+Z jusqu'à `expireLe` (durée du toast), un seul cran.
+  const annulationEnAttente = useRef<{ expireLe: number; annuler: () => void } | null>(null);
+  // Échecs d'écriture de la file : chacun invalide l'annulation en attente
+  // (effet ci-dessous ; l'initialiseur de la file ne touche pas au ref).
+  const [echecsEcriture, setEchecsEcriture] = useState(0);
+  useEffect(() => {
+    annulationEnAttente.current = null;
+  }, [echecsEcriture]);
+  // Créneau qui affiche « Pas de recette disponible » (`cleCreneau`, RG-04, #373).
+  const [slotIndisponible, setSlotIndisponible] = useState<string | null>(null);
   // Slot en cours de sélection manuelle (US-06) — porte tout le contexte
   // nécessaire pour appliquer/persister le choix (date pour la garde "semaine
   // passée", semaine ISO pour la persistance, jour+typeRepas pour le calcul).
@@ -199,6 +226,8 @@ export function VuePlanningCycle({
       surEchec: (semaine, jourConfirme, erreur) => {
         console.error("Édition du slot échouée.", erreur);
         setParSemaine((m) => remplacerJourDansSemaines(m, semaine, jourConfirme));
+        // L'état est revenu au confirmé : plus rien à annuler (#373).
+        setEchecsEcriture((n) => n + 1);
         toast.dismiss(ID_TOAST_ANNULATION_CYCLE);
         toast.error("Impossible d'enregistrer la modification. Réessaie.");
       },
@@ -351,26 +380,53 @@ export function VuePlanningCycle({
 
   // Annule la dernière édition (US-09) en rejouant l'ANCIEN JourPlanning par le
   // même chemin — pas de snapshot persistant (contrairement à la vue Semaine) :
-  // la fermeture du toast (~5 s) borne naturellement la fenêtre.
+  // l'annulation vit le temps du toast (`DUREE_ANNULATION_MS`), par son bouton
+  // ou par Ctrl/Cmd+Z, un seul cran (#373).
   function toastAnnulable(
     message: string,
     semaine: string,
     ancienJour: JourPlanning,
     nouveauJour: JourPlanning
   ): void {
+    annulationEnAttente.current = {
+      expireLe: echeanceAnnulation(),
+      annuler: () => {
+        appliquerLocal(semaine, ancienJour);
+        file.planifier(semaine, ancienJour, { delaiMs: 0, precedent: nouveauJour });
+      },
+    };
     toast(message, {
       id: ID_TOAST_ANNULATION_CYCLE,
-      action: {
-        label: "Annuler",
-        onClick: () => {
-          if (generationVerrouillee.current) return;
-          appliquerLocal(semaine, ancienJour);
-          file.planifier(semaine, ancienJour, { delaiMs: 0, precedent: nouveauJour });
-        },
-      },
-      duration: 5000,
+      action: { label: "Annuler", onClick: () => void annulerDerniereEdition() },
+      duration: DUREE_ANNULATION_MS,
     });
   }
+
+  // Exécute l'annulation en attente, si elle n'a pas expiré, puis « Annulé »
+  // (comme la vue Semaine). Renvoie `true` si une annulation a eu lieu.
+  function annulerDerniereEdition(): boolean {
+    const enAttente = annulationEnAttente.current;
+    if (enAttente === null || generationVerrouillee.current) return false;
+    annulationEnAttente.current = null;
+    if (estEchue(enAttente.expireLe)) return false;
+    enAttente.annuler();
+    toast.dismiss(ID_TOAST_ANNULATION_CYCLE);
+    toast.success("Annulé");
+    return true;
+  }
+
+  // Raccourci Ctrl/Cmd+Z (US-09, #373) : même règle que la vue Semaine
+  // (`estRaccourciAnnuler`), sur la dernière édition encore annulable.
+  // preventDefault seulement si une annulation a eu lieu (Ctrl+Z rendu au
+  // navigateur sinon).
+  const surToucheAnnuler = useEffectEvent((e: KeyboardEvent) => {
+    if (estRaccourciAnnuler(e) && annulerDerniereEdition()) e.preventDefault();
+  });
+  useEffect(() => {
+    const surTouche = (e: KeyboardEvent) => surToucheAnnuler(e);
+    window.addEventListener("keydown", surTouche);
+    return () => window.removeEventListener("keydown", surTouche);
+  }, []);
 
   // Action ponctuelle (changer, sélectionner, restes) : affichage immédiat,
   // écriture immédiate en arrière-plan ; l'échec passe par surEchec (revert).
@@ -381,6 +437,8 @@ export function VuePlanningCycle({
     messageToast: string | null
   ): void {
     if (generationVerrouillee.current) return;
+    // Un éventuel « Pas de recette disponible » est obsolète (comme en Semaine).
+    setSlotIndisponible(null);
     appliquerLocal(semaine, nouveauJourPlanning);
     file.planifier(semaine, nouveauJourPlanning, { delaiMs: 0, precedent: ancienJourPlanning });
     if (messageToast) toastAnnulable(messageToast, semaine, ancienJourPlanning, nouveauJourPlanning);
@@ -392,8 +450,8 @@ export function VuePlanningCycle({
 
   // Changer (aléatoire, US-04) : calcul partagé avec la vue Semaine
   // (editerSlot, pur, biaisé par préférences/réglages) — seule la persistance
-  // change (écriture directe, cf. modifierSlotDistant). Les avertissements
-  // RG-26/27/28 ne sont pas toastés dans cette vue.
+  // change (écriture directe, cf. modifierSlotDistant). Avertissements
+  // RG-26/27/28 et « Pas de recette disponible » inline comme en Semaine (#373).
   function changerSlot(
     dateISO: string,
     semaine: string,
@@ -413,10 +471,19 @@ export function VuePlanningCycle({
       preferences,
     });
     if (!edition.ok) {
-      if (edition.motif === "indisponible") toast.error(MESSAGES_EDITION.indisponible);
+      if (edition.motif === "indisponible") {
+        // Toast en complément du message inline du créneau (RG-04).
+        setSlotIndisponible(cleCreneau(dateISO, typeRepas));
+        toast.error(MESSAGES_EDITION.indisponible);
+      }
       return;
     }
     appliquerEdition(semaine, edition.precedent, edition.jour, MESSAGES_EDITION.remplacee);
+    // Préférences souples non honorées, dans l'ordre végé (RG-26), légume
+    // (RG-27), saison (RG-28), comme la vue Semaine.
+    for (const avertissement of edition.avertissements) {
+      toast.warning(MESSAGES_EDITION.avertissements[avertissement]);
+    }
   }
 
   // Sélection manuelle (US-06) : remplace le slot par la recette choisie —
@@ -649,7 +716,7 @@ export function VuePlanningCycle({
           libelle={slot.libelle}
           jourLabel={jourLabel}
           recette={slot.recette}
-          indisponible={false}
+          indisponible={slotIndisponible === cleCreneau(dateISO, slot.typeRepas)}
           personnes={jp ? personnesDuSlot(jp, slot.typeRepas) : PERSONNES_DEFAUT}
           restes={jp ? estRestes(jp, slot.typeRepas) : false}
           onChanger={() => changerSlot(dateISO, semaine, jour, slot.typeRepas)}
