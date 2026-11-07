@@ -1,7 +1,7 @@
 ---
 name: panier-chronodrive
 description: Remplit le panier Chronodrive d'Arnaud à partir de la liste de courses On Mange Quoi ? (OMQ), quand le webhook panier-omq signale une demande de panier. Prend la demande dans OMQ (serveur « OMQ exécuteur »), cherche chaque article non coché, ajoute au panier les seuls articles sûrs (chaque ajout exige le jeton de l'article renvoyé par la prise de la demande), les coche dans OMQ, rapporte le résultat à OMQ et l'envoie sur Telegram. Ne passe jamais commande. Mode mesure (« mode mesure » dans l'instruction) - même classement, sans rien ajouter ni écrire.
-version: 1.2.0
+version: 1.3.0
 metadata:
   hermes:
     tags: [omq, chronodrive]
@@ -28,7 +28,7 @@ Le serveur général « On Mange Quoi ? » (noms Hermes `mcp__On_Mange_Quoi____<
 | Serveur | Outil | Arguments | Run | Mesure |
 |---------|-------|-----------|-----|--------|
 | OMQ exécuteur | `prendre_demande_panier` | aucun | une fois, **en premier** ; sans lui, aucun autre outil du run | **interdit** |
-| OMQ exécuteur | `cocher_article_demande` | `libelle`, `quantite` (toujours passée, même vide) ; **pas d'`ancre`** | après chaque lot d'ajout | **interdit** |
+| OMQ exécuteur | `cocher_article_demande` | `ref` (recopiée telle quelle), `quantite` (toujours passée, même vide) ; **pas d'`ancre`**, pas de `libelle` | après chaque lot d'ajout | **interdit** |
 | OMQ exécuteur | `rapporter_panier` | `demande_id`, `statut`, `motif`, `ajoutes`, `a_choisir`, `introuvables` | une seule fois, à la fin (une correction permise après une erreur de validation) | **interdit** |
 | On Mange Quoi ? (serveur général) | `lire_liste_courses` | aucun | **interdit** | une fois, au début (section « Mesure ») |
 | `chronodrive` | `chercher_produits` | `termes` (liste de textes) | par lots de 10 termes | par lots de 10 termes |
@@ -48,7 +48,7 @@ Interdits dans les deux modes :
 Interdits en run, en plus (jetons, #330) :
 
 - tout autre outil que `prendre_demande_panier` **avant** que celui-ci ait renvoyé une demande non nulle. Sans demande prise dans ce run, tu ne cherches, n'ajoutes, ne coches et ne rapportes rien ;
-- inventer, deviner, compléter ou recopier de mémoire un `jeton`, un `demande_id` ou une date : ces valeurs viennent **uniquement** de la réponse de `prendre_demande_panier` de ce run. Un jeton d'un run précédent, encore visible dans ta conversation, est périmé : ne l'utilise pas ;
+- inventer, deviner, compléter ou recopier de mémoire un `jeton`, une `ref`, un `demande_id` ou une date : ces valeurs viennent **uniquement** de la réponse de `prendre_demande_panier` de ce run. Un jeton d'un run précédent, encore visible dans ta conversation, est périmé : ne l'utilise pas ;
 - réessayer un outil qui répond « Aucune demande de panier prise » ou « jeton OMQ invalide ou expiré » (voir étapes 5 et « Échec technique »).
 
 ## Run
@@ -65,7 +65,7 @@ Appelle `prendre_demande_panier` (serveur « OMQ exécuteur »), sans argument, 
 
 ### 2. Lire la liste reçue
 
-La liste est celle que `prendre_demande_panier` vient de renvoyer : aucun autre outil à appeler. Elle ne contient que les articles **non cochés** du cycle de la demande. Chaque article porte `libelle`, `quantite` (texte, vide si non renseignée), `rayon`, `placard`, `manuel` et `jeton`. Le `jeton` est la preuve, vérifiée par le serveur `chronodrive`, que l'article vient de **cette** demande : garde-le tel quel pour l'étape 5.
+La liste est celle que `prendre_demande_panier` vient de renvoyer : aucun autre outil à appeler. Elle ne contient que les articles **non cochés** du cycle de la demande. Chaque article porte `libelle`, `quantite` (texte, vide si non renseignée), `rayon`, `placard`, `manuel`, `ref` et `jeton`. Le `jeton` est la preuve, vérifiée par le serveur `chronodrive`, que l'article vient de **cette** demande : garde-le tel quel pour l'ajout de l'étape 5. La `ref` (`ing:…` ou `man:…`) désigne l'article sans ambiguïté dans OMQ, même quand deux articles ont le même libellé (même nom en deux unités, article ajouté à la main homonyme d'un ingrédient) : garde-la telle quelle pour la coche de l'étape 5. Ne la reconstruis jamais à partir du libellé.
 
 - Les articles `placard: true` (« à vérifier au placard ») s'achètent **comme les autres**. Arnaud coche avant la demande ce qu'il a déjà : ceux qui restent manquent. Ne les écarte jamais.
 - Les articles ajoutés à la main (`manuel: true`) s'achètent aussi.
@@ -98,7 +98,7 @@ Si aucun candidat ne convient pour un article (par exemple, des favoris d'une au
 
 Classe chaque article « haute », « à choisir » ou « introuvable », selon la section « Classement ». Retiens pour chaque « haute » le produit choisi (`id`) et la quantité.
 
-**Même produit pour plusieurs articles** : la liste OMQ garde séparés les articles d'un même ingrédient en unités différentes (« farine 2 c.à.s » et « farine 160 g »). Quand plusieurs articles « haute » tombent sur le **même** `id`, fusionne-les : **un seul** ajout, dont la quantité couvre le **total** des besoins (2 c.à.s + 160 g de farine tiennent dans un paquet de 1 kg : quantité 1). Pourquoi : deux ajouts du même produit doubleraient le panier sans besoin. Après l'ajout confirmé, coche **chacun** de ces articles. Dans le rapport, chaque article figure dans `ajoutes` avec le même produit ; la quantité du premier est celle ajoutée, celle des suivants vaut 1 (le schéma impose au moins 1) et le message Telegram dit « regroupé avec … ».
+**Même produit pour plusieurs articles** : la liste OMQ garde séparés les articles d'un même ingrédient en unités différentes (« farine 2 c.à.s » et « farine 160 g »). Quand plusieurs articles « haute » tombent sur le **même** `id`, fusionne-les : **un seul** ajout, dont la quantité couvre le **total** des besoins (2 c.à.s + 160 g de farine tiennent dans un paquet de 1 kg : quantité 1). Pourquoi : deux ajouts du même produit doubleraient le panier sans besoin. Après l'ajout confirmé, coche **chacun** de ces articles, chacun avec **sa propre** `ref`. Dans le rapport, chaque article figure dans `ajoutes` avec le même produit ; la quantité du premier est celle ajoutée, celle des suivants vaut 1 (le schéma impose au moins 1) et le message Telegram dit « regroupé avec … ».
 
 **Déjà au panier**, à vérifier pour chaque article **avant** de choisir un produit : si **au moins un** des produits proposés pour l'article (cache, favoris ou recherche, terme d'origine et reformulations, disponible ou non) porte `dansPanier: true`, l'article passe « à choisir », raison « déjà au panier, vérifie la quantité », avec **le ou les produits** `dansPanier: true` comme candidats (3 au plus) ; ne l'ajoute pas et ne le coche pas. N'ajoute pas non plus un autre produit à sa place. Pourquoi : après un run interrompu entre un ajout et sa coche, une relance ne doit pas l'ajouter une seconde fois (RG-83), même si le produit resté au panier est devenu indisponible et qu'un autre conviendrait (relance du 2026-11-01 : Lactel au panier passé hors stock, lait Auchan ajouté en plus) ; Arnaud vérifie la quantité lui-même.
 
@@ -118,9 +118,11 @@ La quantité **s'ajoute** à celle déjà présente dans le panier. Chaque résu
 
 **Après chaque lot**, avant le lot suivant :
 
-- Pour chaque ligne `confirme: true`, l'article (et chacun des articles fusionnés avec lui à l'étape 4, coché de la même façon) passe dans `ajoutes`, avec la quantité réellement ajoutée : `apres - avant`. Si elle est inférieure à la quantité demandée (`erreur` commence par « ajout partiel »), l'article est quand même coché, et le message Telegram le signale. Appelle `cocher_article_demande` avec `libelle` = le `libelle` OMQ de l'article, `quantite` = sa `quantite` OMQ, texte exact, **toujours**, même vide (`""`), qui départage les homonymes. **Aucune `ancre`** : l'outil coche lui-même dans le cycle de la demande que tu as prise.
+- Pour chaque ligne `confirme: true`, l'article (et chacun des articles fusionnés avec lui à l'étape 4, coché de la même façon) passe dans `ajoutes`, avec la quantité réellement ajoutée : `apres - avant`. Si elle est inférieure à la quantité demandée (`erreur` commence par « ajout partiel »), l'article est quand même coché, et le message Telegram le signale. Appelle `cocher_article_demande` avec `ref` = la `ref` de l'article, **recopiée telle quelle** depuis la réponse de `prendre_demande_panier` de ce run, et `quantite` = sa `quantite` OMQ, texte exact, **toujours**, même vide (`""`) : OMQ refuse la coche si la quantité a changé depuis la prise. Ne passe pas de `libelle` : la `ref` prime et suffit. **Aucune `ancre`** : l'outil coche lui-même dans le cycle de la demande que tu as prise.
   - Réponse `modifie: true` : coché.
-  - Réponse `modifie: false` avec `candidats` : rappelle `cocher_article_demande` avec la `quantite` exacte du bon candidat.
+  - Réponse `modifie: false` avec `candidats` : n'arrive pas avec une `ref` ; si c'est le cas, rappelle `cocher_article_demande` avec la `ref` du candidat dont le `nom` et la `quantite` sont ceux de l'article.
+  - Erreur « Référence d'article invalide » : la `ref` a été mal recopiée. Rappelle **une fois** l'outil avec la `ref` recopiée caractère pour caractère depuis la réponse de `prendre_demande_panier` ; si l'erreur revient, traite-la comme « Autre erreur ».
+  - Erreur « Cet article n'est plus dans la liste » ou « La quantité de cet article a changé depuis la lecture » : la liste OMQ a changé pendant le run (régénérée, article modifié). Ne réessaie pas, ne coche pas par le `libelle` à la place, n'ajoute plus aucun lot. Finis de cocher les autres lignes confirmées du lot, puis passe à « Échec technique » avec le motif « liste OMQ modifiée pendant le run ». L'article reste dans `ajoutes` : il est bien au panier.
   - Réponse `modifie: false` avec `article` : il était déjà coché, rien à faire.
   - Erreur « Aucune demande de panier prise » : ne la réessaie pas, ne coche plus rien et n'ajoute plus aucun lot. Ce cas ne doit pas arriver après une prise réussie : n'appelle pas `rapporter_panier` (OMQ le refuserait, aucune demande n'est en cours), envoie seulement le message Telegram « Panier Chronodrive en échec : demande OMQ non prise. » avec ce qui a déjà été ajouté, puis arrête-toi.
   - **Autre erreur** (l'outil échoue, ce n'est pas une réponse avec `candidats`) : n'ajoute plus aucun lot. Finis de cocher les autres lignes confirmées du lot, puis passe à « Échec technique » avec le motif « coche OMQ impossible ». Pourquoi : un article ajouté mais non coché reviendrait « à choisir » (déjà au panier) à la relance (RG-83).
