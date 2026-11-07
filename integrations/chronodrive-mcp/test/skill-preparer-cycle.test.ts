@@ -69,7 +69,7 @@ function verifierExemple(lignes: string[]): { creneaux: string[]; derniere: stri
 test("frontmatter : nom, version et description", () => {
   const champs = frontmatter();
   assert.equal(champs.name, "preparer-cycle");
-  assert.equal(champs.version, "1.0.0");
+  assert.equal(champs.version, "1.1.0");
   assert.ok((champs.description ?? "").length > 0, "description vide");
   assert.match(SKILL, /metadata:\n\s+hermes:\n\s+tags: \[omq/);
 });
@@ -129,6 +129,12 @@ test("outils MCP nommés comme Hermes les expose, sans outil inventé", () => {
   // Hermes n'expose pas `send_message` à l'agent : l'envoi passe par `hermes send` (outil `terminal`).
   assert.match(SKILL, /pas d'outil `send_message`/);
   assert.match(SKILL, /`terminal`/);
+});
+
+test("cocher_article désigne l'article par sa ref recopiée (#372)", () => {
+  const [, args] = ligneOutil("cocher_article");
+  assert.ok(args.includes("`ref`"), "cocher_article : ref passée");
+  assert.match(SKILL, /`ref` de cet article \*\*recopiée telle quelle\*\* depuis la dernière réponse de `lire_liste_courses`/);
 });
 
 test("interdits explicites", () => {
