@@ -153,7 +153,9 @@ export function semaineParDefaut(date: Date = new Date()): string {
  * (Vercel) tourne en UTC : sans cette conversion, entre minuit et 1-2 h à
  * Paris, le serveur (MCP #305, génération web) calculerait un autre jour que
  * le navigateur, donc une autre semaine ou un autre cycle autour du week-end
- * (`semaineParDefaut`, `ancreParDefaut`, règle du jumeau).
+ * (`semaineParDefaut`, `ancreParDefaut`). Ces deux défauts ne suivent plus la
+ * même règle (RG-91, #386 : `ancreParDefaut` bascule à ≤ 2 jours restants, pas
+ * au week-end), mais tous deux doivent partir du même « aujourd'hui » de Paris.
  */
 export function aujourdhuiParis(maintenant: Date = new Date()): Date {
   const morceaux = new Intl.DateTimeFormat("en-CA", {

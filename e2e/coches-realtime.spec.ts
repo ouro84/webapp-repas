@@ -27,8 +27,8 @@ import type { Jour, Planning } from "../types";
 // Ancre du cycle avec le jour de courses par défaut (lundi, ISO 1) — celle que
 // `hydraterCycle()` calculera au montage tant que le foyer de test reste sur
 // son réglage par défaut (remis par reinitialiserJourCoursesDistant ci-dessous).
-// `ancreParDefaut` (pas `ancreCourante`) pour inclure le décalage WEEK-END
-// appliqué par hydraterCycle (#257) : l'injection doit matcher l'ancre calculée.
+// `ancreParDefaut` (pas `ancreCourante`) pour inclure la bascule à ≤ 2 jours
+// restants (RG-91) appliquée par hydraterCycle (#257) : l'injection doit matcher l'ancre calculée.
 const ANCRE_LUNDI = ancreParDefaut(new Date(), 1);
 
 // Même planning déterministe que courses.spec (lardons + tagliatelles + …).

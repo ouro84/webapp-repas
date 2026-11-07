@@ -28,23 +28,20 @@ describe("ancreCourante", () => {
   })
 })
 
-describe("ancreParDefaut", () => {
-  it("en semaine, vaut ancreCourante (aucun décalage)", () => {
-    // mercredi 8 juillet, jour de courses lundi → lundi 6 juillet (= ancreCourante)
-    const j = new Date("2026-07-08T10:00:00")
-    expect(ancreParDefaut(j, 1)).toBe(ancreCourante(j, 1))
-    expect(ancreParDefaut(j, 1)).toBe("2026-07-06")
-  })
-  it("le SAMEDI, décale d'un cycle (la génération vise la semaine prochaine)", () => {
-    // samedi 4 juillet, jour de courses lundi : ancreCourante = lundi 29 juin ;
-    // ancreParDefaut = lundi suivant 6 juillet (couvre la semaine générée).
-    expect(ancreCourante(new Date("2026-07-04T10:00:00"), 1)).toBe("2026-06-29")
-    expect(ancreParDefaut(new Date("2026-07-04T10:00:00"), 1)).toBe("2026-07-06")
-  })
-  it("le DIMANCHE, décale aussi d'un cycle", () => {
-    // dimanche 5 juillet, jour de courses lundi → lundi 6 juillet
-    expect(ancreParDefaut(new Date("2026-07-05T10:00:00"), 1)).toBe("2026-07-06")
-  })
+describe("ancreParDefaut (RG-91 : ≤ 2 jours restants → cycle suivant)", () => {
+  const jours = ["06", "07", "08", "09", "10", "11", "12"] // lun → dim
+  const attendus: Record<number, string[]> = {
+    1: ["07-06", "07-06", "07-06", "07-06", "07-06", "07-13", "07-13"], // lundi : inchangé
+    4: ["07-02", "07-09", "07-09", "07-09", "07-09", "07-09", "07-09"], // jeudi
+    6: ["07-04", "07-04", "07-04", "07-11", "07-11", "07-11", "07-11"], // samedi
+  }
+  for (const [jourCourses, ancres] of Object.entries(attendus)) {
+    jours.forEach((j, i) => {
+      it(`jour de courses ${jourCourses}, le 2026-07-${j} → 2026-${ancres[i]}`, () => {
+        expect(ancreParDefaut(new Date(`2026-07-${j}T10:00:00`), Number(jourCourses))).toBe(`2026-${ancres[i]}`)
+      })
+    })
+  }
 })
 
 describe("cycleDecale", () => {

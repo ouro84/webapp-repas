@@ -39,31 +39,35 @@ export function ancreCourante(aujourdhui: Date, jourCourses: number): string {
   return versISO(d)
 }
 
+// Seuil de bascule de l'ancre par défaut (RG-91) : à 2 jours ou moins de la fin
+// du cycle courant (cadence de 7 jours), on affiche déjà le cycle suivant.
+export const JOURS_RESTANTS_BASCULE = 2
+
 /**
- * Ancre du cycle affiché PAR DÉFAUT au montage de /courses (#257).
+ * Ancre du cycle affiché PAR DÉFAUT au montage de /courses (#257, RG-91, #386).
  *
- * En semaine, c'est l'ancre courante (`ancreCourante` : dernier jour de courses
- * ≤ aujourd'hui). Le WEEK-END, la génération vise déjà la semaine PROCHAINE
- * (`semaineParDefaut` de lib/semaines : offset +1 le samedi/dimanche, US-11) ;
- * on décale donc le cycle par défaut d'un cran pour qu'il COUVRE cette semaine
- * générée — sinon /courses afficherait le cycle courant (souvent déjà écoulé le
- * week-end, la virée de courses de la semaine ayant eu lieu) et la liste
- * fraîchement générée n'apparaîtrait que sous « Cycle suivant ». On restaure
- * ainsi le comportement d'avant #257 (« la liste générée s'affiche sur
- * /courses »), qui tenait quand /courses lisait `planning_courant` (planning
- * actif, hors semaine) au lieu de projeter un cycle ancré sur aujourd'hui.
+ * C'est l'ancre courante (`ancreCourante` : dernier jour de courses ≤
+ * aujourd'hui), SAUF quand il reste `JOURS_RESTANTS_BASCULE` jours ou moins
+ * avant la fin du cycle : on avance alors d'un cycle, car on prépare déjà le
+ * suivant. « Restants » se compte sur la cadence de 7 jours (`7 − recul`, où
+ * `recul` = jours écoulés depuis `ancreCourante`, même formule) ; la longueur
+ * étirée d'un cycle est ignorée, comme avant.
  *
- * Règle week-end IDENTIQUE à `semaineParDefaut` (getDay 0=dimanche ou 6=samedi)
- * pour rester alignés par construction. La navigation (`cycleDecale`) et la
- * sélection restent basées sur `ancreCourante` — seul le DÉFAUT est décalé.
- * (En PR2, la génération devient fenêtrée sur le cycle : cette divergence
- * ISO-semaine ↔ cycle disparaît.)
+ * Avant #386, la bascule suivait le WEEK-END (samedi/dimanche), aligné sur
+ * `semaineParDefaut` (US-11). Pour un jour de courses lundi, les deux règles
+ * coïncident (samedi et dimanche = 2 et 1 jours restants) : rien ne change.
+ * Pour un autre jour, l'ancienne règle était fausse : un foyer qui fait ses
+ * courses le samedi basculait le jour même sur un cycle vide, et un foyer du
+ * jeudi voyait son cycle fini jusqu'au week-end. Règle partagée par /courses,
+ * la vue Cycle, le lien profond, le MCP et la demande de panier.
+ * La navigation (`cycleDecale`) et la sélection restent basées sur
+ * `ancreCourante` : seul le DÉFAUT est décalé.
  */
 export function ancreParDefaut(aujourdhui: Date, jourCourses: number): string {
   const ancre = ancreCourante(aujourdhui, jourCourses)
-  const jour = aujourdhui.getDay() // 0 = dimanche, 6 = samedi
-  const enWeekend = jour === 0 || jour === 6
-  return enWeekend ? cycleDecale(ancre, 1) : ancre
+  const recul = (jourISO(aujourdhui) - jourCourses + 7) % 7
+  const restants = LONGUEUR_DEFAUT - recul
+  return restants <= JOURS_RESTANTS_BASCULE ? cycleDecale(ancre, 1) : ancre
 }
 
 /** Ancre décalée de n cycles (n×7 jours). */
