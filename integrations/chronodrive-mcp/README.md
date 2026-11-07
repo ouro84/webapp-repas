@@ -166,8 +166,10 @@ Chemin final : `/opt/data/skills/omq/panier-chronodrive/SKILL.md`. La skill se l
 Un changement du code ou de l'`env` d'un serveur MCP (par exemple après l'étape 2) exige un redémarrage ; l'ajout ou le retrait d'un serveur sous `mcp_servers` se recharge à chaud. La gateway porte aussi Telegram, WhatsApp, Home Assistant et le cron : **prévenir Arnaud et attendre son feu vert**. Puis :
 
 ```sh
-$D exec hermes s6-svc -t /run/service/gateway-default
+$D exec hermes /package/admin/s6/command/s6-svc -t /run/hermes-service/gateway-default
 ```
+
+Depuis l'image s6-overlay de Hermes, `s6-svc` n'est plus dans le `PATH` et le service `gateway-default` vit sous `/run/hermes-service` (scruté par un second `s6-svscan`), plus sous `/run/service`. La gateway s'arrête puis est relancée par son superviseur en une trentaine de secondes : contrôler dans `gateway.log` les lignes « ✓ webhook connected », « ✓ telegram connected » et « ✓ whatsapp connected ».
 
 Préférer cette commande à `docker restart hermes`, qui relance tout le conteneur. Après le redémarrage :
 
@@ -291,7 +293,7 @@ Un run Hermes a un jour sauté `prendre_demande_panier`, inventé une `ancre`, c
    ```
 
    Attendu : `600 1000`, puis **deux empreintes identiques** (aucune « ABSENT »). Si le JSON de Hermes range le secret ailleurs, adapter l’accès à `route` sans jamais afficher le secret. C’est le secret déjà enregistré dans OMQ (Vault) et dans la route `panier-omq`, à l’identique : le MCP l’utilise maintenant pour **vérifier** les jetons qu’OMQ signe avec (tableau des variables, étape 3 d’« Installation sur le NAS »). Des guillemets ou des espaces dans `chronodrive.env` font différer ce que lit `parseEnv` de ce que `sed` a passé à la CLI : c’est ce que la comparaison détecte, et un simple `grep -c` ne le voit pas. Une rotation change les trois endroits ensemble (`hermes/route-webhook.md`), hors run : les jetons déjà pris deviennent invalides.
-3. **Redémarrer la gateway, seulement après le feu vert explicite d’Arnaud.** Elle porte aussi Telegram, WhatsApp, Home Assistant et le cron : prévenir Arnaud et attendre son accord, sans le déduire d’un accord sur une autre étape. Sans ce feu vert, le classifieur de Hermes bloque la commande et on ne le contourne pas. Puis, comme à l’étape 6 d’« Installation sur le NAS » (`$D exec hermes s6-svc -t /run/service/gateway-default`) et avec ses vérifications : Hermes liste les outils `chronodrive`, Telegram répond, WhatsApp est reconnecté. Le MCP `chronodrive` tourne alors avec le nouveau code : il refuse tout ajout sans jeton valide, y compris avec la skill 1.1.0 encore en place.
+3. **Redémarrer la gateway, seulement après le feu vert explicite d’Arnaud.** Elle porte aussi Telegram, WhatsApp, Home Assistant et le cron : prévenir Arnaud et attendre son accord, sans le déduire d’un accord sur une autre étape. Sans ce feu vert, le classifieur de Hermes bloque la commande et on ne le contourne pas. Puis, comme à l’étape 6 d’« Installation sur le NAS » (commande de l’étape 6) et avec ses vérifications : Hermes liste les outils `chronodrive`, Telegram répond, WhatsApp est reconnecté. Le MCP `chronodrive` tourne alors avec le nouveau code : il refuse tout ajout sans jeton valide, y compris avec la skill 1.1.0 encore en place.
 
 #### Merge
 
