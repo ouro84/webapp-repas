@@ -24,7 +24,7 @@ Protocole de l'API et mesures : `docs/etudes/chronodrive.md`. Pièges : `.claude
 | `src/bilan-vidage.ts` | Texte du bilan d'un vidage (`formaterBilan`), partagé par le script et l'outil `vider_panier` ; module sans effet de bord. |
 | `src/admin.ts`, `src/mcp-admin.ts` | Serveur MCP séparé `chronodrive-admin` (`node src/mcp-admin.ts`), un seul outil `vider_panier`, en deux temps (aperçu puis confirmation), pour Telegram seulement (RG-82). |
 | `test/` | Tests `node --test`, Chronodrive simulé (`test/simulation.ts`). |
-| `hermes/skills/omq/panier-chronodrive/SKILL.md` | Skill Hermes (version 1.2.0) : procédure du run (serveurs `OMQ exécuteur` et `chronodrive`) et du mode mesure (serveur général). |
+| `hermes/skills/omq/panier-chronodrive/SKILL.md` | Skill Hermes (version 1.3.0) : procédure du run (serveurs `OMQ exécuteur` et `chronodrive`) et du mode mesure (serveur général). |
 | `hermes/route-webhook.md` | Route webhook `panier-omq`, secret, Funnel. |
 | `hermes/prompt-mesure.md` | Message de mesure du classement, en lecture seule. |
 | `outils/envoyer-webhook.mjs` | Signe et envoie un webhook de test comme OMQ (Standard Webhooks), pour la route de contrôle. |

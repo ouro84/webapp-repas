@@ -1,7 +1,7 @@
 ---
 name: preparer-cycle
 description: Prépare avec Arnaud, sur Telegram, son prochain cycle de repas On Mange Quoi ? (OMQ) quand il le demande (« prépare mon cycle » ou équivalent). Découvre les tendances du foyer sur 8 semaines, les fait confirmer, génère et ajuste le cycle, attend « repas OK » puis « panier OK », lance la demande de panier Chronodrive et, sur ordre explicite seulement, envoie la liste des repas sur WhatsApp. Ne passe jamais commande.
-version: 1.0.0
+version: 1.1.0
 metadata:
   hermes:
     tags: [omq, chronodrive, planning]
@@ -49,7 +49,7 @@ Serveur OMQ « On Mange Quoi ? » : noms Hermes `mcp__On_Mange_Quoi____<outil>`.
 | OMQ `remplacer_repas` | `date` comprise entre `periode.du` et `periode.au` du cycle préparé, `creneau` (`midi` ou `soir`), `recette` (nom exact) | étape 4 (tendance confirmée), étape 5 (correction d'Arnaud) | une `date` hors du cycle préparé ; toute modification sans tendance ni demande d'Arnaud |
 | OMQ `marquer_restes` | `date` comprise entre `periode.du` et `periode.au` du cycle préparé, `creneau`, `restes` (`true` par défaut, `false` annule) | étapes 4 et 5, mêmes conditions | idem |
 | OMQ `changer_personnes` | `date` comprise entre `periode.du` et `periode.au` du cycle préparé, `creneau`, `personnes` (1 à 12) | étapes 4 et 5, mêmes conditions | idem |
-| OMQ `cocher_article` | `libelle`, `quantite` si plusieurs candidats, `ancre` toujours | étape 6, seulement si Arnaud te demande de cocher un article | sans `ancre` ; de ta propre initiative |
+| OMQ `cocher_article` | `ref` de l'article (recopiée telle quelle depuis `lire_liste_courses`), `ancre` toujours ; `libelle` seulement si tu n'as pas sa `ref` | étape 6, seulement si Arnaud te demande de cocher un article | sans `ancre` ; de ta propre initiative |
 | OMQ `lancer_demande_panier` | `ancre` toujours = la date de début annoncée dans ton premier message de ce run | étape 7, une seule fois | sans `ancre` ; avant « panier OK » ; une relance sans demande d'Arnaud |
 | OMQ `lire_recette` | `date`, `creneau` | facultatif, si Arnaud demande une recette | — |
 | OMQ `prendre_demande_panier`, `rapporter_panier` | — | réservés à l'exécuteur dans sa session webhook | **interdit** : `prendre_demande_panier` ferait passer une vraie demande en cours |
@@ -185,7 +185,7 @@ N'enchaîne jamais seul vers l'étape 6 : attends la réponse « repas OK », se
    - la liste `a_verifier_au_placard` ;
    - le lien vers la liste du cycle : `https://webapp-repas.vercel.app/courses?ancre=<ancre>` ;
    - la consigne : « Coche dans OMQ ce que tu as déjà, puis réponds « panier OK ». ».
-3. Arnaud coche lui-même dans OMQ. Appelle `cocher_article` seulement s'il te le demande pour un article précis (« j'ai déjà du riz »), toujours avec `ancre`.
+3. Arnaud coche lui-même dans OMQ. Appelle `cocher_article` seulement s'il te le demande pour un article précis (« j'ai déjà du riz »), toujours avec `ancre`, et avec la `ref` de cet article **recopiée telle quelle** depuis la dernière réponse de `lire_liste_courses` (jamais reconstruite à partir du libellé). Si deux articles portent le nom cité (deux unités, ou un article ajouté à la main), demande à Arnaud lequel avant de cocher. Si l'outil répond que l'article n'est plus dans la liste ou que sa quantité a changé, relis la liste avec `lire_liste_courses` (`ancre`) et reprends avec la nouvelle `ref`.
 4. S'il corrige encore un repas, reviens à l'étape 5 : applique, relis le planning, redemande « repas OK ». Le « repas OK » d'avant la correction ne compte plus.
 
 N'enchaîne jamais seul vers l'étape 7 : attends la réponse « panier OK », selon la règle « Réponse exacte ». Tout autre message qui n'est ni une correction de repas ni une demande de cocher un article : redemande « Réponds « panier OK » quand ton placard est vérifié. »

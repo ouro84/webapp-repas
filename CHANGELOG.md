@@ -17,6 +17,8 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 - Navigation mobile : les sections passent dans une barre d’onglets en bas d’écran, avec leur libellé (Ce soir, Planning, Courses, Recettes). Le haut d’écran affiche le nom de l’app, l’aide et le profil. Sur ordinateur, les sections restent dans la barre du haut (#335).
 - Une fois connecté, l’adresse de l’app et le logo ouvrent directement le prochain repas (#335).
 
+- Panier Chronodrive : l’exécuteur du NAS coche chaque article mis au panier par sa référence stable, et non plus par son nom ; un article ajouté à la main n’est plus confondu avec un ingrédient du même nom (#372).
+
 - Cartes repas du planning : Changer, Sélectionner et Restes sont visibles directement, sans passer par le menu « Actions » (#334).
 - Vue Cycle : régénérer un cycle qui contient déjà des repas demande maintenant une confirmation, car les repas et les coches de tout le foyer sont remplacés sans retour possible (#334).
 
