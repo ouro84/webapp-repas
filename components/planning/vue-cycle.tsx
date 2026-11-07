@@ -175,8 +175,8 @@ export function VuePlanningCycle({
   // au cycle courant (libellé relatif du navigateur). Lu au montage, avant l'ancre.
   const [jourCourses, setJourCourses] = useState<number>(1);
   // Jour courant (#352), date LOCALE du client : `null` au premier rendu (pas de
-  // date au rendu serveur), posé par l'effet de montage. Le week-end, le cycle
-  // par défaut est le suivant : aucun jour marqué.
+  // date au rendu serveur), posé par l'effet de montage. S'il reste ≤ 2 jours
+  // dans le cycle courant, le cycle par défaut est le suivant (RG-91) : aucun jour marqué.
   const [aujourdhuiISO, setAujourdhuiISO] = useState<string | null>(null);
   // Plannings des semaines ISO touchées, indexés par semaine.
   const [parSemaine, setParSemaine] = useState<Map<string, Planning>>(new Map());
