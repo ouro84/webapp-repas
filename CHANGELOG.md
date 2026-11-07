@@ -9,6 +9,7 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ### Modifié
 
+- Accueil des nouveaux inscrits : l’app demande maintenant si tu manges à la maison le midi en semaine, puis ton jour de courses (samedi proposé). Ton premier planning est un cycle de 7 jours qui démarre aujourd’hui, sans les repas déjà passés et sans déjeuners de semaine si tu as désactivé les midis. Tu arrives sur le planning en vue Cycle, avec un message « Ta liste de courses est prête » qui mène à ta liste. Si tu rejoins un foyer, rien n’est généré et tu retrouves son planning (#386).
 - Planning : les vues Semaine et Cycle partagent le même en-tête, le même navigateur et la même grille ; sur ordinateur, les repas Déjeuner et Dîner sont alignés d’une colonne à l’autre, les actions gardent leurs libellés, et le jour courant est mis en évidence (#352).
 - Navigation : sur ordinateur, la barre du haut présente les sections dans le même ordre que sur mobile — Ce soir, Planning, Courses, Recettes (#351).
 - Page « Ce soir » : quand le repas prévu est des restes, la page l’annonce clairement (« Ce midi : rien à cuisiner, on mange les restes qu’on a dans le frigo ») au lieu d’afficher le nom d’un plat qui ne sera pas cuisiné. Les ingrédients tiennent en une seule liste, au format de la liste de courses, pour laisser la place au titre et à la préparation (#349).
@@ -24,6 +25,7 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ### Corrigé
 
+- Liste de courses et vue Cycle : avec un jour de courses le samedi ou le dimanche, le week-end affichait le cycle de la semaine suivante au lieu de celui du jour. Le cycle suivant s’affiche désormais quand il reste deux jours ou moins dans le cycle en cours, quel que soit ton jour de courses ; rien ne change pour un jour de courses le lundi (#386).
 - Vue Cycle du planning : après « Changer », les mêmes avertissements que dans la vue Semaine s’affichent (pas de recette végétarienne, pas de légumes ce jour-là, recette hors saison) ; Ctrl+Z (Cmd+Z sur Mac) annule la dernière modification et « Annulé » confirme l’annulation ; quand aucune recette n’est disponible, « Pas de recette disponible » s’affiche sous le repas concerné (#373).
 - Planning : une modification faite pendant le chargement d’une semaine (changement de semaine, ouverture de la page, mise à jour venue d’un autre membre du foyer) n’est plus perdue ; elle est enregistrée avec le reste (#368).
 - Assistant connecté (MCP) et exécuteur de panier : si la durée d’un cycle de courses ne peut pas être lue, l’opération échoue au lieu de supposer un cycle de 7 jours ; avec un cycle raccourci, une date du lendemain du cycle pouvait viser le cycle en cours au lieu du suivant (et une génération avec remplacement l’écraser). L’app garde son affichage sur 7 jours, avec un avertissement dans la console (#365).
