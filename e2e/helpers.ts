@@ -424,6 +424,7 @@ export async function lireReglagesDistants(
   personnes_defaut: number;
   vege_dejeuner_semaine: boolean;
   vege_diner_semaine: boolean;
+  max_dejeuner_semaine: string;
 } | null> {
   const url = lireEnvLocal("NEXT_PUBLIC_SUPABASE_URL");
   const anon = lireEnvLocal("NEXT_PUBLIC_SUPABASE_ANON_KEY");
@@ -436,7 +437,7 @@ export async function lireReglagesDistants(
   }
   const { access_token: jeton } = (await auth.json()) as { access_token: string };
   const res = await request.get(
-    `${url}/rest/v1/reglages?select=personnes_defaut,vege_dejeuner_semaine,vege_diner_semaine`,
+    `${url}/rest/v1/reglages?select=personnes_defaut,vege_dejeuner_semaine,vege_diner_semaine,max_dejeuner_semaine`,
     { headers: { apikey: anon, Authorization: `Bearer ${jeton}` } }
   );
   if (!res.ok()) {
@@ -446,6 +447,7 @@ export async function lireReglagesDistants(
     personnes_defaut: number;
     vege_dejeuner_semaine: boolean;
     vege_diner_semaine: boolean;
+    max_dejeuner_semaine: string;
   }>;
   return rows[0] ?? null;
 }

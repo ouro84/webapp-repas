@@ -1,8 +1,8 @@
-// Parcours #22 PR2 — tunnel d'onboarding (US-23).
+// Parcours #22 PR2 — tunnel d'onboarding (US-23), calé sur le cycle (#386).
 //
 // Un nouvel inscrit (compte NON onboardé) doit être conduit, écran après écran,
-// jusqu'à un PREMIER planning déjà rempli (« aha moment »), sans jamais arriver
-// sur un écran vide.
+// jusqu'à un PREMIER cycle de courses déjà rempli (« aha moment », RG-90/RG-91),
+// sans jamais arriver sur un écran vide.
 //
 // ⚠️ Crée un compte JETABLE dédié (email unique par run), distinct du compte de
 // test partagé → aucun effet de bord sur les autres specs. Comme foyer-clonage,
@@ -13,10 +13,17 @@
 
 import { test, expect } from "./fixtures";
 import { E2E_PASSWORD, lireEnvLocal, lireReglagesDistants } from "./helpers";
+import { ancreParDefaut, datesCycle } from "../lib/cycles";
+
+// Jour de courses présélectionné par le tunnel (samedi, ISO 6) et longueur du
+// premier cycle (RG-91) : le libellé attendu se calcule à l'appel, la date du
+// jour décidant de l'ancre.
+const JOUR_COURSES_ONBOARDING = 6;
+const LONGUEUR_CYCLE = 7;
 
 const RUN = Date.now();
 
-test("le tunnel mène un nouvel inscrit à un premier planning (US-23)", async ({
+test("le tunnel mène un nouvel inscrit à un premier cycle (US-23, RG-91)", async ({
   browser,
   request,
 }) => {
@@ -54,12 +61,37 @@ test("le tunnel mène un nouvel inscrit à un premier planning (US-23)", async (
     await page.getByPlaceholder("Ton prénom").fill("Camille");
     await page.getByRole("button", { name: "Suivant" }).click();
 
-    // Écran 2 : démarrer en solo → génération du premier planning → /planning.
+    // Écran 2 : démarrer en solo → écran 3 (jour de courses).
     await page.getByRole("button", { name: /Démarrer seul/ }).click();
-    await page.waitForURL("**/planning", { timeout: 60_000 });
 
-    // Aha moment : un planning de 7 jours est déjà là (pas d'écran vide).
-    await expect(page.locator("main ul > li")).toHaveCount(7);
+    // Écran 3 : samedi présélectionné ; « Générer mon planning » lance le premier cycle.
+    await expect(page.getByText("Étape 3 sur 3")).toBeVisible();
+    await expect(page.getByRole("radio", { name: "samedi" })).toHaveAttribute(
+      "aria-checked",
+      "true"
+    );
+    await page.getByRole("button", { name: "Générer mon planning" }).click();
+
+    // `/planning?bienvenue=1` : un glob sans query ne le matcherait pas ; la page
+    // retire ensuite le paramètre (history.replaceState).
+    await page.waitForURL(/\/planning(\?.*)?$/, { timeout: 60_000 });
+    await expect(page).not.toHaveURL(/bienvenue/);
+
+    // Toast d'arrivée de l'onboarding (une fois, paramètre consommé).
+    await expect(page.getByText("Ta liste de courses est prête")).toBeVisible();
+
+    // Aha moment : la vue Cycle est active, sur le cycle du jour de courses (samedi).
+    await expect(
+      page
+        .getByRole("group", { name: "Vue du planning" })
+        .getByRole("button", { name: "Cycle" })
+    ).toHaveAttribute("aria-pressed", "true");
+    await expect(
+      page.getByText(
+        datesCycle(ancreParDefaut(new Date(), JOUR_COURSES_ONBOARDING), LONGUEUR_CYCLE),
+        { exact: true }
+      )
+    ).toBeVisible();
     // L'en-tête de l'app affiche l'avatar à l'initiale du prénom (US-23 sc. 6).
     await expect(
       page.getByRole("link", { name: "Profil de Camille" })
@@ -104,11 +136,17 @@ test("l'écran 1 du tunnel calibre les réglages de génération (US-23, RG-37)"
     await page.getByRole("button", { name: "Plus de personnes" }).click();
     await page.getByRole("button", { name: "Plus de personnes" }).click();
     await page.getByRole("switch", { name: "Foyer végétarien" }).click();
+    // Midi en semaine : l'interrupteur est actif par défaut, on le coupe (RG-90).
+    await page
+      .getByRole("switch", { name: "On mange à la maison le midi en semaine" })
+      .click();
     await page.getByRole("button", { name: "Suivant" }).click();
 
-    // Écran 2 : démarrer en solo → génération → /planning.
+    // Écran 2 : démarrer en solo → écran 3 (jour de courses) → génération → /planning.
     await page.getByRole("button", { name: /Démarrer seul/ }).click();
-    await page.waitForURL("**/planning", { timeout: 60_000 });
+    await page.getByRole("button", { name: "Générer mon planning" }).click();
+    await page.waitForURL(/\/planning(\?.*)?$/, { timeout: 60_000 });
+    await expect(page).not.toHaveURL(/bienvenue/);
 
     // RG-37 : la calibration s'est traduite dans la table reglages — nombre de
     // personnes par défaut (4) et préférence végé de SEMAINE activée (le week-end
@@ -122,6 +160,21 @@ test("l'écran 1 du tunnel calibre les réglages de génération (US-23, RG-37)"
     expect(reglages?.personnes_defaut).toBe(4);
     expect(reglages?.vege_dejeuner_semaine).toBe(true);
     expect(reglages?.vege_diner_semaine).toBe(true);
+    // Midi en semaine coupé : plafond « aucun » (créneau désactivé, RG-44).
+    expect(reglages?.max_dejeuner_semaine).toBe("aucun");
+
+    // Vue Cycle : la génération respecte le créneau désactivé. Témoin d'abord
+    // (des dîners sont bien générés), puis aucun déjeuner du lundi au vendredi.
+    // Les boutons « Changer le … » n'existent que sur un créneau rempli ; seule la
+    // grille mobile (390 px) est dans l'arbre d'accessibilité.
+    await expect(
+      page.getByRole("button", { name: /^Changer le dîner de /i }).first()
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", {
+        name: /^Changer le déjeuner de (lundi|mardi|mercredi|jeudi|vendredi) /i,
+      })
+    ).toHaveCount(0);
   } finally {
     await contexte.close();
   }
