@@ -39,7 +39,7 @@ Tout utilisateur a déjà un foyer ; il n'existe donc pas d'action « créer un 
 - **Quitter clone** tout vers un nouveau foyer solo (RG-34) ; quitter en solo est refusé, et l'UI masque le bouton si `membres <= 1`.
 - **Après jonction ou sortie** : `reinitialiserCacheFoyer()` puis rechargement de la page (cf. `sync-planning.md`).
 - **Partage du lien** : Web Share API avec repli copier, plus un QR (`qrcode.react`, `QRCodeSVG`) sur fond `bg-white` **littéral** pour rester scannable en dark mode.
-- UI : `components/profil/panneau-foyer.tsx`, section de `/profil`, qui porte aussi le sélecteur de jour de courses (`role="radiogroup"`).
+- UI : `components/profil/panneau-foyer.tsx`, section de `/profil`, qui porte aussi le sélecteur de jour de courses (`SelecteurJourCourses`, `components/ui/selecteur-jour-courses.tsx`, `role="radiogroup"`, partagé avec `/bienvenue`).
 
 ## `/profil` (identité) vs `/reglages` (génération)
 
