@@ -17,7 +17,7 @@
 // qui vide d'abord les envois en attente) se fasse avec la synchro démarrée.
 // La logique pure (réglages, cycle, filtre, URL de fin) vit dans lib/onboarding.ts.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { chargerProfil, marquerOnboardingComplete, sauvegarderProfil } from "@/lib/profil";
@@ -68,6 +68,10 @@ export default function PageBienvenue() {
   // Deep-link d'acquisition (#22 PR3) : aperçu de l'invitation en attente
   // (null = aucune / pas encore vérifiée). `valide` → écran de confirmation.
   const [apercu, setApercu] = useState<ApercuInvitation | null>(null);
+  // Mémo de la dernière génération réussie du premier cycle (#386) : si seul
+  // marquerOnboardingComplete a échoué, le réessai avec le même jour de courses
+  // va directement au marquage, sans réécrire le jour ni régénérer le cycle.
+  const generationMemo = useRef<{ jour: number; ancre: string } | null>(null);
 
   // Pré-remplissage en cas de reprise du tunnel (prénom/personnes déjà saisis à
   // une session précédente interrompue). setState dans la promesse (conforme à
@@ -174,44 +178,52 @@ export default function PageBienvenue() {
     setEnCours(true);
     setEtape("generation");
 
-    try {
-      await definirJourCoursesFoyer(jourCourses);
-    } catch (e) {
-      toast.error(
-        e instanceof Error ? e.message : "Impossible d’enregistrer ton jour de courses."
-      );
-      setEtape("courses");
-      setEnCours(false);
-      return;
-    }
-
-    // Premier cycle : date LOCALE du navigateur, comme hydraterCycle de /courses.
-    // Les jours du cycle par défaut déjà passés ne sont pas écrits.
     let generationReussie = false;
-    try {
-      const aujourdhui = new Date();
-      const { ancre, longueur } = premierCycle(aujourdhui, jourCourses);
-      const reponse = await fetch("/api/planning/generer", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ancre, longueur }),
-      });
-      if (!reponse.ok) throw new Error(await parseApiError(reponse));
-      const { semaines } = (await reponse.json()) as { semaines: SemaineGeneree[] };
-      await appliquerGenerationCycle(ancre, joursAPartirDe(semaines, versISO(aujourdhui)));
+    if (generationMemo.current?.jour === jourCourses) {
+      // Réessai après un échec du seul marquage : jour et cycle déjà écrits.
       generationReussie = true;
-    } catch (e) {
-      // On ne piège pas l'utilisateur dans le tunnel : l'onboarding se termine
-      // quand même (il pourra générer depuis /planning), sans toast « liste
-      // prête » à l'arrivée.
-      console.error("Génération du premier cycle impossible.", e);
+    } else {
+      // Jour changé (« Retour ») ou première tentative : séquence complète.
+      generationMemo.current = null;
+      try {
+        await definirJourCoursesFoyer(jourCourses);
+      } catch (erreur) {
+        console.error(erreur);
+        toast.error("Impossible d’enregistrer ton jour de courses. Réessaie.");
+        setEtape("courses");
+        setEnCours(false);
+        return;
+      }
+
+      // Premier cycle : date LOCALE du navigateur, comme hydraterCycle de /courses.
+      // Les jours du cycle par défaut déjà passés ne sont pas écrits.
+      try {
+        const aujourdhui = new Date();
+        const { ancre, longueur } = premierCycle(aujourdhui, jourCourses);
+        const reponse = await fetch("/api/planning/generer", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ancre, longueur }),
+        });
+        if (!reponse.ok) throw new Error(await parseApiError(reponse));
+        const { semaines } = (await reponse.json()) as { semaines: SemaineGeneree[] };
+        await appliquerGenerationCycle(ancre, joursAPartirDe(semaines, versISO(aujourdhui)));
+        generationMemo.current = { jour: jourCourses, ancre };
+        generationReussie = true;
+      } catch (e) {
+        // On ne piège pas l'utilisateur dans le tunnel : l'onboarding se termine
+        // quand même (il pourra générer depuis /planning), sans toast « liste
+        // prête » à l'arrivée.
+        console.error("Génération du premier cycle impossible.", e);
+      }
     }
 
     try {
       await marquerOnboardingComplete();
     } catch (e) {
       // Même garde que la branche « rejoindre » (#167) : pas de redirection tant
-      // que onboarding_complete n'est pas vrai ; retour à l'écran 3.
+      // que onboarding_complete n'est pas vrai ; retour à l'écran 3 (le réessai
+      // réutilise generationMemo si le jour n'a pas changé).
       toast.error(e instanceof Error ? e.message : "Une erreur est survenue. Réessaie.");
       setEtape("courses");
       setEnCours(false);
@@ -382,25 +394,36 @@ export default function PageBienvenue() {
             Tu fais tes courses quel jour&nbsp;?
           </h1>
           <p className="mb-6 text-sm text-brand-700/85">
-            Ta liste couvrira les 7 jours suivants. Tu pourras le changer dans ton profil.
+            Ta liste couvrira 7 jours à partir de ce jour-là. Tu pourras le changer dans ton profil.
           </p>
 
           <div className="mb-8">
             <SelecteurJourCourses
               valeur={jourCourses}
-              onChange={(j) => setJourCourses(j)}
+              onChange={setJourCourses}
               desactive={enCours}
             />
           </div>
 
-          <button
-            type="button"
-            onClick={() => void demarrerSolo()}
-            disabled={enCours}
-            className="w-full rounded-full bg-primary px-6 py-3 text-sm font-semibold text-white transition hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.98] motion-reduce:active:scale-100 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            Générer mon planning
-          </button>
+          <div className="flex flex-col gap-3">
+            <button
+              type="button"
+              onClick={() => void demarrerSolo()}
+              disabled={enCours}
+              className="w-full rounded-full bg-primary px-6 py-3 text-sm font-semibold text-white transition hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.98] motion-reduce:active:scale-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Générer mon planning
+            </button>
+            {/* Retour à l'écran 2 (#386) : le jour de courses choisi est conservé. */}
+            <button
+              type="button"
+              onClick={() => setEtape("foyer")}
+              disabled={enCours}
+              className="w-full rounded-full border border-brand-200 px-6 py-3 text-sm font-medium text-brand-700 transition hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.98] motion-reduce:active:scale-100 disabled:opacity-50"
+            >
+              Retour
+            </button>
+          </div>
         </section>
       )}
 

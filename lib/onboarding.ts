@@ -14,7 +14,7 @@ import type { ReglagesGeneration, SemaineGeneree } from "@/types"
 // Jour de courses proposé au premier planning : samedi (ISO 6).
 export const JOUR_COURSES_PROPOSE = 6
 
-// Paramètre d'URL signalant l’arrivée depuis l’onboarding (/planning?bienvenue=1).
+// Paramètre d'URL signalant l'arrivée depuis l'onboarding (/planning?bienvenue=1).
 export const PARAM_BIENVENUE = "bienvenue"
 
 export type SaisieOnboarding = {

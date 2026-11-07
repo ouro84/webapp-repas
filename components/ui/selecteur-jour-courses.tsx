@@ -21,17 +21,15 @@ export function SelecteurJourCourses({
   valeur,
   onChange,
   desactive = false,
-  libelle,
 }: {
   valeur: number | null;
   onChange: (jour: number, nom: string) => void;
   desactive?: boolean;
-  libelle?: string;
 }) {
   return (
     <div
       role="radiogroup"
-      aria-label={libelle ?? "Jour de courses"}
+      aria-label="Jour de courses"
       className="inline-flex rounded-full border border-brand-200 bg-surface p-0.5"
     >
       {JOURS_SEMAINE.map((jour) => {
