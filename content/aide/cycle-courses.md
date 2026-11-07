@@ -8,7 +8,7 @@ Avant, une virée du jeudi tombait à cheval sur deux semaines : deux listes à 
 
 ## Régler ton jour de courses
 
-Le jour de courses se choisit **une fois**, dans **/profil → section « Mon foyer » → « Jour de courses »**. Touche le jour où tu fais habituellement tes courses (L, M, M, J, V, S, D).
+Le jour de courses se choisit **une fois**, dans **/profil → section « Mon foyer » → « Jour de courses »**. Touche le jour où tu fais habituellement tes courses (L, M, M, J, V, S, D). Si tu as créé ton compte récemment, tu l'as déjà choisi pendant l'accueil (« Tu fais tes courses quel jour ? ») : tu peux le changer ici.
 
 > 🏠 C'est un réglage **du foyer** : il est **partagé** par tous les membres, pour que tout le monde voie la même liste sur la même fenêtre. Un seul cycle pour la maison.
 
@@ -21,6 +21,16 @@ En haut de la liste, un repère et les dates indiquent la fenêtre en cours, par
 - **‹ / ›** passent au cycle **précédent** ou **suivant** — pratique pour **anticiper** ta prochaine virée (souvent un ou deux jours avant la fin du cycle) ou revoir une liste passée.
 
 - Chaque cycle garde **sa propre liste et ses propres coches** : naviguer ne les mélange pas.
+
+## **Quel cycle s'affiche à l'ouverture ?**
+
+Par défaut, l'app t'ouvre le cycle en cours. **Quand il te reste deux jours ou moins avant la fin de ce cycle** (le jour même compris), elle t'ouvre directement **le suivant** : c'est celui que tu vas bientôt acheter.
+
+Exemple : tu fais tes courses le **jeudi**, donc ton cycle va du jeudi au mercredi. Du jeudi au lundi, tu vois le cycle en cours. Le **mardi** et le **mercredi**, l'app t'ouvre déjà le cycle qui commence jeudi : tu as sous les yeux la liste de ta prochaine virée.
+
+Cette règle vaut partout où l'app choisit un cycle pour toi : la liste de courses, la vue Cycle du planning, et les liens vers un cycle sans date précise. Les flèches ‹ › te ramènent au cycle en cours quand tu veux.
+
+> 💡 Avec un jour de courses le lundi, rien ne change : l'app passe au cycle suivant le samedi et le dimanche, comme avant.
 
 ## Étirer un cycle plus long
 
@@ -42,4 +52,6 @@ Quand la liste d'un cycle est vide, le bouton **« Générer mon cycle »** remp
 
 ## Et le planning ?
 
-Le **planning** (`/planning`) continue, lui, de s'afficher **par semaine** (lundi→dimanche) — c'est le plus pratique au quotidien pour répondre à « on mange quoi ce soir ? ». Les deux vues coexistent : semaine pour le planning, cycle pour les courses. Pour cocher ta liste en magasin, voir _Cocher et organiser ma liste_.
+Le **planning** (`/planning`) s'affiche **par semaine **(lundi→dimanche) par défaut, ce qui est le plus pratique au quotidien pour répondre à « on mange quoi ce soir ? ». Il a aussi une **vue Cycle** : la bascule **Semaine | Cycle**, en haut de la page, l'aligne sur la même fenêtre que ta liste. Tu y vois les repas de ton cycle, avec les mêmes flèches ‹ › que sur la liste, et tu peux les modifier comme dans la vue Semaine. Pour le détail, voir _Voir mon planning par cycle_.
+
+Si tu viens de créer ton compte, l'app t'a déjà placé sur la vue Cycle. Pour cocher ta liste en magasin, voir _Cocher et organiser ma liste_.
