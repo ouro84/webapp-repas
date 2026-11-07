@@ -26,8 +26,9 @@ test.afterAll(async () => {
 });
 
 // Ancre du cycle par défaut (jour de courses = lundi) — celle que hydraterCycle
-// calcule au montage de /courses (#257). `ancreParDefaut` inclut le décalage
-// week-end, comme la semaine visée par la génération (semaineParDefaut).
+// calcule au montage de /courses (#257). `ancreParDefaut` inclut la bascule à
+// ≤ 2 jours restants (RG-91) ; pour un jour de courses lundi, elle coïncide avec
+// la semaine visée par la génération (semaineParDefaut).
 const ANCRE = ancreParDefaut(new Date(), 1);
 
 // Depuis #257, /courses ne lit PLUS `planning_courant` (local) : il projette le

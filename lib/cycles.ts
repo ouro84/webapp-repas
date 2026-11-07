@@ -56,9 +56,9 @@ export const JOURS_RESTANTS_BASCULE = 2
  * Avant #386, la bascule suivait le WEEK-END (samedi/dimanche), aligné sur
  * `semaineParDefaut` (US-11). Pour un jour de courses lundi, les deux règles
  * coïncident (samedi et dimanche = 2 et 1 jours restants) : rien ne change.
- * Pour un autre jour, l'ancienne règle était fausse : un foyer qui fait ses
- * courses le samedi basculait le jour même sur un cycle vide, et un foyer du
- * jeudi voyait son cycle fini jusqu'au week-end. Règle partagée par /courses,
+ * Pour un autre jour, l'ancienne règle était fausse : un foyer du samedi
+ * basculait le jour même de ses courses ; un foyer du jeudi basculait dès le
+ * samedi, 5 jours avant ses courses suivantes. Règle partagée par /courses,
  * la vue Cycle, le lien profond, le MCP et la demande de panier.
  * La navigation (`cycleDecale`) et la sélection restent basées sur
  * `ancreCourante` : seul le DÉFAUT est décalé.

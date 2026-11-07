@@ -24,9 +24,10 @@ import type { Jour, Planning } from "../types";
 // l'ancre que `hydraterCycle()` calculera au montage tant que le foyer de test
 // n'a pas été réglé sur un autre jour (cf. reinitialiserJourCoursesDistant,
 // appelé ci-dessous en beforeEach). `ancreParDefaut` (pas `ancreCourante`) car
-// hydraterCycle applique le décalage WEEK-END (samedi/dimanche → cycle suivant,
-// #257) : l'injection doit porter la MÊME ancre, sinon le garde-fou « local fait
-// foi » la rejette le week-end (ancre injectée ≠ ancre calculée).
+// hydraterCycle applique la bascule à ≤ 2 jours restants (RG-91 ; pour un lundi,
+// samedi/dimanche → cycle suivant) : l'injection doit porter la MÊME ancre, sinon
+// le garde-fou « local fait foi » la rejette en fin de cycle (ancre injectée ≠
+// ancre calculée).
 const ANCRE_LUNDI = ancreParDefaut(new Date(), 1);
 
 test.beforeEach(async ({ page, request }) => {

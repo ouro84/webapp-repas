@@ -34,6 +34,7 @@ describe("ancreParDefaut (RG-91 : ≤ 2 jours restants → cycle suivant)", () =
     1: ["07-06", "07-06", "07-06", "07-06", "07-06", "07-13", "07-13"], // lundi : inchangé
     4: ["07-02", "07-09", "07-09", "07-09", "07-09", "07-09", "07-09"], // jeudi
     6: ["07-04", "07-04", "07-04", "07-11", "07-11", "07-11", "07-11"], // samedi
+    7: ["07-05", "07-05", "07-05", "07-05", "07-12", "07-12", "07-12"], // dimanche
   }
   for (const [jourCourses, ancres] of Object.entries(attendus)) {
     jours.forEach((j, i) => {
@@ -42,6 +43,16 @@ describe("ancreParDefaut (RG-91 : ≤ 2 jours restants → cycle suivant)", () =
       })
     })
   }
+  // Bascule à cheval sur un mois : jeudi 30 juillet, jour de courses samedi
+  // (recul 5, 2 jours restants) → samedi 25 juillet + 7 = samedi 1er août.
+  it("bascule en fin de mois (samedi, jeudi 30 juillet → 1er août)", () => {
+    expect(ancreParDefaut(new Date("2026-07-30T10:00:00"), 6)).toBe("2026-08-01")
+  })
+  // Fin d'année : mardi 29 décembre, jour de courses jeudi (recul 5, 2 jours
+  // restants) → jeudi 24 décembre + 7 = jeudi 31 décembre.
+  it("bascule en fin d'année (jeudi, mardi 29 décembre → 31 décembre)", () => {
+    expect(ancreParDefaut(new Date("2026-12-29T10:00:00"), 4)).toBe("2026-12-31")
+  })
 })
 
 describe("cycleDecale", () => {

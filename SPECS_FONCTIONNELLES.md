@@ -1084,7 +1084,7 @@ Le planning s'affiche en liste verticale : une ligne par jour, avec les slots em
 
 - **Règle** : le cycle affiché par défaut est le **cycle suivant** quand il reste **2 jours ou moins** dans le cycle en cours, jour même compris (cadence de 7 jours, `JOURS_RESTANTS_BASCULE`), sinon le cycle en cours. Pour un jour de courses le lundi, le comportement reste celui d'avant (bascule le samedi et le dimanche).
 - **Portée** : `ancreParDefaut` sert partout où un cycle est choisi sans ancre explicite : `/courses`, la vue Cycle de `/planning`, le lien profond `/planning?cycle=`, l'outil MCP `generer_cycle` sans ancre (RG-74) et la demande de panier Chronodrive (RG-81).
-- **Pourquoi** : on prépare déjà le cycle suivant à quelques jours de la fin. L'ancienne règle « week-end » avait été pensée pour un jour de courses le lundi : un foyer du samedi basculait le jour même de ses courses, un foyer du jeudi restait sur un cycle fini.
+- **Pourquoi** : on prépare déjà le cycle suivant à quelques jours de la fin. L'ancienne règle « week-end » avait été pensée pour un jour de courses le lundi : un foyer du samedi basculait le jour même de ses courses ; un foyer du jeudi basculait dès le samedi, 5 jours avant ses courses suivantes.
 - **Désalignement connu** : la génération de la vue Semaine (`semaineParDefaut`) garde sa règle « week-end = semaine suivante ». Hors jour de courses lundi, la semaine proposée le week-end n'est donc pas forcément couverte par le cycle affiché par défaut de `/courses`.
 
 ### RG-09 — États de l'interface

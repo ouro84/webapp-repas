@@ -618,8 +618,9 @@ export function VuePlanningCycle({
   // `resoudreCycle` (même résolution que le MCP et la route panier),
   // EN PARALLÈLE de la lecture du jour de courses ; hors plage / invalide /
   // lecture échouée → ancre par défaut. Sans lien : ancre par défaut dérivée du
-  // jour de courses du foyer (même règle que /courses, ancreParDefaut → décalage
-  // week-end inclus). Logique dans `ancreInitialeCycle` (lib, testée).
+  // jour de courses du foyer (même règle que /courses, ancreParDefaut → cycle
+  // suivant à ≤ 2 jours restants, RG-91). Logique dans `ancreInitialeCycle`
+  // (lib, testée).
   // Échec (lecture d'une semaine, erreur inattendue) → état erreur ; « Réessayer »
   // rejoue ce même chargement initial (`essaiInitial` en dépendance).
   const [essaiInitial, setEssaiInitial] = useState(0);

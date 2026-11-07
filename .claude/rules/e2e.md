@@ -66,7 +66,7 @@ Les helpers filtrent `foyer_id=not.is.null`. Les recettes créées par `recettes
 
 ## Préparer l'état de `/courses`
 
-- `/courses` projette depuis la base. Pour préparer un état, injecter **`cycle_planning` + `cycle_affiche`** en localStorage, clés sur **`ancreParDefaut(new Date(), jourCourses)`** (pas `ancreCourante`, pas la semaine ISO, sinon l'injection ne matche plus le week-end).
+- `/courses` projette depuis la base. Pour préparer un état, injecter **`cycle_planning` + `cycle_affiche`** en localStorage, clés sur **`ancreParDefaut(new Date(), jourCourses)`** (pas `ancreCourante`, pas la semaine ISO, sinon l'injection ne matche plus à ≤ 2 jours restants, RG-91).
 - Un planning de **fixtures** (id = slug, pas UUID) ne peut pas être persisté (`sauvegarder_planning` → « invalid input syntax for type uuid »). Un test d'édition qui vérifie `/courses` injecte donc `cycle_planning` directement à l'état voulu (personnes portées par `JourPlanning.personnes`).
 - Après une génération réelle, **attendre la persistance** avant de naviguer vers `/courses` : `expect.poll` sur `planning_dirty` → `null`.
 - Changer le mécanisme de `/courses` = auditer **toutes** les specs qui y naviguent ou injectent son état (cf. règle « audit par invariant » de `CLAUDE.md`).
