@@ -12,8 +12,16 @@
 // (.env.local pointe la prod).
 
 import { test, expect } from "./fixtures";
-import { E2E_PASSWORD, lireEnvLocal, lireReglagesDistants } from "./helpers";
-import { ancreParDefaut, datesCycle } from "../lib/cycles";
+import {
+  E2E_PASSWORD,
+  lireEnvLocal,
+  lirePlanningDistant,
+  lireReglagesDistants,
+} from "./helpers";
+import { ancreParDefaut, datesCycle, versISO } from "../lib/cycles";
+import { ORDRE_JOURS } from "../lib/generateur";
+import { lundiDeSemaine } from "../lib/semaines";
+import type { Jour } from "../types";
 
 // Jour de courses présélectionné par le tunnel (samedi, ISO 6) et longueur du
 // premier cycle (RG-91) : le libellé attendu se calcule à l'appel, la date du
@@ -23,11 +31,18 @@ const LONGUEUR_CYCLE = 7;
 
 const RUN = Date.now();
 
+// Date ISO locale d'un slot lu en base (lundi de la semaine + rang du jour).
+function dateDuSlot(semaine: string, jour: string): string {
+  const date = lundiDeSemaine(semaine);
+  date.setDate(date.getDate() + ORDRE_JOURS.indexOf(jour as Jour));
+  return versISO(date);
+}
+
 test("le tunnel mène un nouvel inscrit à un premier cycle (US-23, RG-91)", async ({
   browser,
   request,
 }) => {
-  // Parcours long (signup + login + 2 écrans + génération réelle) : le défaut de
+  // Parcours long (signup + login + 3 écrans + génération réelle) : le défaut de
   // 30 s ne suffit pas avec la latence staging.
   test.setTimeout(120_000);
 
@@ -96,6 +111,19 @@ test("le tunnel mène un nouvel inscrit à un premier cycle (US-23, RG-91)", asy
     await expect(
       page.getByRole("link", { name: "Profil de Camille" })
     ).toBeVisible();
+
+    // En base (RG-91) : le cycle est écrit, et aucun repas n'est planifié à une
+    // date antérieure à aujourd'hui (date locale, comme le tunnel).
+    await expect
+      .poll(async () => (await lirePlanningDistant(request, email, E2E_PASSWORD)).length, {
+        timeout: 15_000,
+      })
+      .toBeGreaterThan(0);
+    const aujourdhuiISO = versISO(new Date());
+    const slots = await lirePlanningDistant(request, email, E2E_PASSWORD);
+    expect(
+      slots.filter((s) => dateDuSlot(s.semaine, s.jour) < aujourdhuiISO)
+    ).toEqual([]);
   } finally {
     await contexte.close();
   }
@@ -136,7 +164,7 @@ test("l'écran 1 du tunnel calibre les réglages de génération (US-23, RG-37)"
     await page.getByRole("button", { name: "Plus de personnes" }).click();
     await page.getByRole("button", { name: "Plus de personnes" }).click();
     await page.getByRole("switch", { name: "Foyer végétarien" }).click();
-    // Midi en semaine : l'interrupteur est actif par défaut, on le coupe (RG-90).
+    // Midi en semaine : l'interrupteur est actif par défaut, on le coupe (RG-44).
     await page
       .getByRole("switch", { name: "On mange à la maison le midi en semaine" })
       .click();
@@ -150,7 +178,7 @@ test("l'écran 1 du tunnel calibre les réglages de génération (US-23, RG-37)"
 
     // RG-37 : la calibration s'est traduite dans la table reglages — nombre de
     // personnes par défaut (4) et préférence végé de SEMAINE activée (le week-end
-    // reste au défaut, cf. reglagesSaisis du tunnel).
+    // reste au défaut, cf. reglagesInitiaux du tunnel).
     await expect
       .poll(() => lireReglagesDistants(request, email, E2E_PASSWORD), {
         timeout: 15_000,
@@ -163,10 +191,33 @@ test("l'écran 1 du tunnel calibre les réglages de génération (US-23, RG-37)"
     // Midi en semaine coupé : plafond « aucun » (créneau désactivé, RG-44).
     expect(reglages?.max_dejeuner_semaine).toBe("aucun");
 
-    // Vue Cycle : la génération respecte le créneau désactivé. Témoin d'abord
-    // (des dîners sont bien générés), puis aucun déjeuner du lundi au vendredi.
-    // Les boutons « Changer le … » n'existent que sur un créneau rempli ; seule la
-    // grille mobile (390 px) est dans l'arbre d'accessibilité.
+    // En base : la génération respecte le créneau désactivé. Témoin d'abord
+    // (des slots sont bien écrits), puis aucun déjeuner du lundi au vendredi.
+    await expect
+      .poll(async () => (await lirePlanningDistant(request, email, E2E_PASSWORD)).length, {
+        timeout: 15_000,
+      })
+      .toBeGreaterThan(0);
+    const slots = await lirePlanningDistant(request, email, E2E_PASSWORD);
+    expect(
+      slots.filter(
+        (s) =>
+          s.type_repas === "dejeuner" &&
+          ["lundi", "mardi", "mercredi", "jeudi", "vendredi"].includes(s.jour)
+      )
+    ).toEqual([]);
+
+    // Vue Cycle active, comme pour le parcours principal.
+    await expect(
+      page
+        .getByRole("group", { name: "Vue du planning" })
+        .getByRole("button", { name: "Cycle" })
+    ).toHaveAttribute("aria-pressed", "true");
+    // Affichage : des dîners sont visibles et aucun bouton « Changer le déjeuner »
+    // en semaine. Ce contrôle UI seul ne prouve pas la génération (la vue Cycle
+    // masque au rendu les créneaux « aucun ») : la preuve est la lecture en base
+    // ci-dessus. Les boutons « Changer le … » n'existent que sur un créneau
+    // rempli ; seule la grille mobile (390 px) est dans l'arbre d'accessibilité.
     await expect(
       page.getByRole("button", { name: /^Changer le dîner de /i }).first()
     ).toBeVisible();

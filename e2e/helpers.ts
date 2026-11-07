@@ -453,6 +453,43 @@ export async function lireReglagesDistants(
 }
 
 /**
+ * Lit les slots de planning d'un compte (par mot de passe) via GET REST, tous
+ * plannings confondus (#386) : vérifie EN BASE ce que la génération a écrit,
+ * la vue Cycle masquant au rendu les créneaux « aucun ». Une ligne par slot
+ * rempli (`planning_slot.recette_id` est non nul).
+ */
+export async function lirePlanningDistant(
+  request: APIRequestContext,
+  email: string,
+  password: string
+): Promise<Array<{ semaine: string; jour: string; type_repas: string }>> {
+  const url = lireEnvLocal("NEXT_PUBLIC_SUPABASE_URL");
+  const anon = lireEnvLocal("NEXT_PUBLIC_SUPABASE_ANON_KEY");
+  const auth = await request.post(`${url}/auth/v1/token?grant_type=password`, {
+    headers: { apikey: anon, "Content-Type": "application/json" },
+    data: { email, password },
+  });
+  if (!auth.ok()) {
+    throw new Error(`Auth REST de ${email} impossible : HTTP ${auth.status()}`);
+  }
+  const { access_token: jeton } = (await auth.json()) as { access_token: string };
+  const res = await request.get(
+    `${url}/rest/v1/planning?select=semaine,planning_slot(jour,type_repas)`,
+    { headers: { apikey: anon, Authorization: `Bearer ${jeton}` } }
+  );
+  if (!res.ok()) {
+    throw new Error(`Lecture du planning impossible : HTTP ${res.status()}`);
+  }
+  const rows = (await res.json()) as Array<{
+    semaine: string;
+    planning_slot: Array<{ jour: string; type_repas: string }>;
+  }>;
+  return rows.flatMap((p) =>
+    p.planning_slot.map((s) => ({ semaine: p.semaine, ...s }))
+  );
+}
+
+/**
  * Lit les colonnes RGPD (#235) du profil d'un compte (par mot de passe) via
  * GET REST — vérifie que le signup a bien horodaté l'acceptation des CGU.
  */
