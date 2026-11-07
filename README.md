@@ -1,36 +1,60 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# On mange quoi ?
 
-## Getting Started
+[![CI](https://github.com/ouro84/webapp-repas/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ouro84/webapp-repas/actions/workflows/ci.yml)
 
-First, run the development server:
+**La question du soir a enfin sa réponse.** Webapp mobile-first qui génère le planning de repas de la semaine et en déduit la liste de courses, partagée en temps réel au sein du foyer.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+Application : <https://webapp-repas.vercel.app>
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Stack
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- [Next.js 16](https://nextjs.org) (App Router) + React 19, TypeScript strict
+- [Supabase](https://supabase.com) : Postgres, Auth, Realtime, RLS
+- Tailwind CSS v4
+- Vercel (hébergement), Sentry (erreurs), Upstash Redis (rate-limit)
+- Vitest (unitaires) et Playwright (e2e)
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Versions exactes : `package.json`. Décisions d'architecture et structure des dossiers : `ADR.md`.
 
-## Learn More
+## Démarrer en local
 
-To learn more about Next.js, take a look at the following resources:
+Prérequis : Node 22.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+1. Installer les dépendances : `npm ci`
+2. Copier `.env.example` en `.env.local`.
+3. Renseigner au minimum `NEXT_PUBLIC_SUPABASE_URL` et `NEXT_PUBLIC_SUPABASE_ANON_KEY` (dashboard Supabase → Settings → API). Les autres variables, commentées dans `.env.example`, ne servent qu'aux fonctions qu'elles nomment (monitoring, doc `/aide`, suppression de compte, rate-limit).
+4. Lancer le serveur : `npm run dev`, puis ouvrir <http://localhost:3000>.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+> **⚠ `.env.local` pointe la base de production.** Ne jamais lancer `npm run test:e2e` en local : il écrirait en prod. Les e2e locaux passent par `npm run test:e2e:staging`.
 
-## Deploy on Vercel
+Sous Windows avec un antivirus qui intercepte le TLS (Avast), voir la section « Environnement de dev » de `CLAUDE.md`.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Commandes essentielles
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+| Commande | Usage |
+|----------|-------|
+| `npm run dev` | Serveur de développement |
+| `npm run test:run` | Tests unitaires Vitest en un passage |
+| `npm run test:e2e:staging -- [specs]` | Tests e2e Playwright contre l'environnement de staging |
+
+Les autres commandes et scripts (lint, requêtes SQL distantes, doc `/aide`, génération du catalogue) sont listés dans `CLAUDE.md`.
+
+## Intégrations
+
+- **Serveur MCP** (`/api/mcp`, OAuth 2.1) : expose le planning et la liste de courses à un assistant IA. Voir `.claude/rules/mcp.md`.
+- **Exécuteur de panier Chronodrive** (`integrations/chronodrive-mcp/`) : remplit un panier drive à partir de la liste de courses. Voir `.claude/rules/chronodrive.md`.
+
+## Documentation
+
+| Fichier | Contenu |
+|---------|---------|
+| `SPECS_FONCTIONNELLES.md` | Périmètre, user stories `US-xx`, règles métier `RG-xx`, modèle de données. Source de vérité produit. |
+| `ADR.md` | Décisions de stack, structure de dossiers, environnements, sécurité. |
+| `PRODUCT.md` / `DESIGN.md` | Ton, principes produit, tokens visuels. |
+| `CHANGELOG.md` | Historique des versions (Keep a Changelog). |
+| `CLAUDE.md` / `AGENTS.md` | Conventions, workflow Git, commandes, environnement. Point d'entrée des agents IA. |
+| `.claude/rules/` | Pièges et décisions non évidentes, un fichier par sous-système. |
+
+## Licence
+
+Propriétaire, tous droits réservés. Le code est consultable mais aucune réutilisation, copie ou redistribution n'est autorisée sans accord écrit de l'auteur.
