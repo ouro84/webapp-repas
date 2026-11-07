@@ -3,7 +3,7 @@
 // PARALLÈLE, replis loggés (CLAUDE.md : toute erreur capturée est loggée).
 
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { ancreInitialeCycle, jourCoursesOuLundi } from "@/lib/ancre-initiale-cycle"
+import { ancreInitialeCycle, jourCoursesOuLundi, longueurOuDefaut } from "@/lib/ancre-initiale-cycle"
 import { ancreParDefaut } from "@/lib/cycles"
 import type { ResolutionCycle } from "@/lib/ancre-cycle"
 
@@ -34,6 +34,19 @@ describe("jourCoursesOuLundi", () => {
     const erreur = new Error("réseau")
     expect(await jourCoursesOuLundi(Promise.reject(erreur))).toBe(1)
     expect(warn).toHaveBeenCalledWith("Jour de courses illisible, lundi par défaut.", erreur)
+  })
+})
+
+describe("longueurOuDefaut (#365)", () => {
+  it("renvoie la longueur lue", async () => {
+    expect(await longueurOuDefaut(Promise.resolve(10))).toBe(10)
+  })
+
+  it("lecture en échec : 7 jours et avertissement loggé", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+    const erreur = new Error("réseau")
+    expect(await longueurOuDefaut(Promise.reject(erreur))).toBe(7)
+    expect(warn).toHaveBeenCalledWith("Longueur du cycle illisible, 7 jours par défaut.", erreur)
   })
 })
 

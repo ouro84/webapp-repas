@@ -57,7 +57,7 @@ import {
 } from "@/lib/cycles";
 import { lireCycle } from "@/lib/lecture-cycle";
 import { chargerJourCoursesFoyer } from "@/lib/foyer";
-import { jourCoursesOuLundi } from "@/lib/ancre-initiale-cycle";
+import { jourCoursesOuLundi, longueurOuDefaut } from "@/lib/ancre-initiale-cycle";
 import { parseApiError } from "@/lib/errors";
 import type { ArticleManuel, Ingredient, JourPlanning, Planning, SemaineGeneree } from "@/types";
 import type { RealtimeChannel } from "@supabase/supabase-js";
@@ -2402,9 +2402,9 @@ export async function hydraterCycle(): Promise<void> {
   // semaine prochaine (semaineParDefaut) → on décale le cycle par défaut pour la
   // couvrir, sinon /courses afficherait un cycle courant vide/écoulé (#257).
   const ancre = ancreParDefaut(new Date(), jour);
-  // Gardé (revue) : une rejection non catchée deviendrait un unhandledRejection
-  // sous `void hydraterCycle()` — repli sur LONGUEUR_DEFAUT au lieu de planter.
-  const longueur = await chargerLongueurCycle(ancre).catch(() => LONGUEUR_DEFAUT);
+  // Lecture stricte (#365) : repli client explicite et loggé sur 7 jours (une
+  // rejection non catchée deviendrait un unhandledRejection sous `void hydraterCycle()`).
+  const longueur = await longueurOuDefaut(chargerLongueurCycle(ancre));
   await chargerCycleDansCache(ancre, longueur);
   // Rétention (#257, miroir de purgerHistorique) : fire-and-forget, jamais bloquant.
   void purgerCyclesAvant(cycleDecale(ancre, -12)).catch(() => {});
@@ -2420,7 +2420,7 @@ export async function naviguerCycle(offset: number): Promise<void> {
   if (!courant) return;
   if (!(await attendreSync())) return; // hors-ligne : ne pas perdre les écritures
   const ancre = cycleDecale(courant.ancre, offset);
-  const longueur = await chargerLongueurCycle(ancre);
+  const longueur = await longueurOuDefaut(chargerLongueurCycle(ancre)); // repli client (#365)
   await chargerCycleDansCache(ancre, longueur);
 }
 
@@ -2434,7 +2434,7 @@ export async function naviguerCycle(offset: number): Promise<void> {
  */
 export async function allerAuCycle(ancre: string): Promise<void> {
   if (!(await attendreSync())) return; // hors-ligne : ne pas perdre les écritures
-  const longueur = await chargerLongueurCycle(ancre);
+  const longueur = await longueurOuDefaut(chargerLongueurCycle(ancre)); // repli client (#365)
   await chargerCycleDansCache(ancre, longueur);
 }
 

@@ -70,7 +70,7 @@ import { estRestes } from "@/lib/restes";
 import { editerSlot, MESSAGES_EDITION } from "@/lib/edition-slot";
 import { chargerJourCoursesFoyer } from "@/lib/foyer";
 import { resoudreCycle } from "@/lib/ancre-cycle";
-import { ancreInitialeCycle } from "@/lib/ancre-initiale-cycle";
+import { ancreInitialeCycle, longueurOuDefaut } from "@/lib/ancre-initiale-cycle";
 import { clientParDefaut } from "@/lib/supabase/par-defaut";
 import { aujourdhuiParis } from "@/lib/semaines";
 import { chargerLongueurCycle } from "@/lib/persistance";
@@ -505,7 +505,8 @@ export function VuePlanningCycle({
   const chargerCycle = useCallback(async (ancreCible: string, initial = false): Promise<boolean> => {
     setChargement(true);
     try {
-      const long = await chargerLongueurCycle(ancreCible).catch(() => LONGUEUR_DEFAUT);
+      // Lecture stricte (#365) : repli client explicite et loggé sur 7 jours.
+      const long = await longueurOuDefaut(chargerLongueurCycle(ancreCible));
       // Lecteur de cycle unique (chantier 05) : l'échec d'une semaine rejette
       // l'ensemble (ErreurLectureCycle), l'absence de ligne est ignorée. Toute
       // autre erreur suit le même chemin : `chargerCycle` ne lève jamais, ses

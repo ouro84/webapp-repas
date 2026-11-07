@@ -69,6 +69,30 @@ describe("resoudreCycle", () => {
     expect(trou.ok && trou.cycle).toMatchObject({ ancre: "2026-11-05", longueur: 7, du: "2026-11-05", au: "2026-11-11" })
   })
 
+  it("longueur du cycle illisible → rejet, jamais le cycle courant à la place du suivant (#365)", async () => {
+    // Cycle du 29/10 raccourci à 5 jours : le 03/11 tombe dans le trou et vise
+    // le cycle du 05/11. Une erreur transitoire de cycle_courses lue comme
+    // « 7 jours » ramenait le 03/11 au cycle du 29/10 (generer_cycle(remplacer)
+    // aurait réécrit le cycle courant).
+    const { client } = mock({ cycle_courses: { data: null, error: { message: "réseau coupé" } } })
+    await expect(resoudreCycle(client, { date: "2026-11-03" }, JEUDI)).rejects.toThrow(
+      "Lecture de la longueur du cycle impossible"
+    )
+    await expect(resoudreCycle(client, {}, JEUDI)).rejects.toThrow("Lecture de la longueur du cycle impossible")
+  })
+
+  it("longueur du cycle suivant illisible (date dans le trou) → rejet (#365)", async () => {
+    const { client } = mock({
+      cycle_courses: (appel) =>
+        filtre(appel, "eq", "ancre") === "2026-10-29"
+          ? { data: { longueur: 5 }, error: null }
+          : { data: null, error: { message: "réseau coupé" } },
+    })
+    await expect(resoudreCycle(client, { date: "2026-11-03" }, JEUDI)).rejects.toThrow(
+      "Lecture de la longueur du cycle impossible"
+    )
+  })
+
   it("cycle hors plage −12 / +6 semaines → hors_plage", async () => {
     const { client } = mock()
     expect(await resoudreCycle(client, { date: "2027-12-01" }, JEUDI)).toEqual({ ok: false, motif: "hors_plage" })

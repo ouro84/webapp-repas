@@ -429,15 +429,18 @@ export async function viderCochesDistantes(
 }
 
 /** Longueur persistée d'un cycle (défaut LONGUEUR_DEFAUT si aucune ligne,
- *  #257). Best-effort : une erreur de lecture retombe sur le défaut plutôt que
- *  de bloquer l'affichage de la liste de courses. */
+ *  #257). **Lecture stricte** : une erreur de lecture lève (#365). Pourquoi :
+ *  côté serveur, `resoudreCycle` s'en sert pour décaler une date située dans le
+ *  trou d'un cycle raccourci ; lue comme « 7 jours », une erreur transitoire
+ *  ferait viser le cycle courant au lieu du suivant. Les pages client gardent
+ *  leur repli explicitement (`longueurOuDefaut`, lib/ancre-initiale-cycle.ts). */
 export async function chargerLongueurCycle(
   ancre: string,
   supabase: ClientSupabase = clientParDefaut()
 ): Promise<number> {
   const { data, error } = await supabase
     .from("cycle_courses").select("longueur").eq("ancre", ancre).maybeSingle()
-  if (error) return LONGUEUR_DEFAUT
+  if (error) throw new Error(`Lecture de la longueur du cycle impossible : ${error.message}`)
   return data?.longueur ?? LONGUEUR_DEFAUT
 }
 

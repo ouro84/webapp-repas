@@ -392,6 +392,17 @@ describe("cocherArticleDemande (#330, RG-83)", () => {
     expect(m.cocherArticleDansCycle.mock.calls[0][1]).toStrictEqual({ libelle: "lait", quantite: "1 L" })
   })
 
+  it("cocher_article_demande : longueur du cycle illisible → exception non ErreurOutil, rien coché (#365)", async () => {
+    const { client } = creerSupabaseMock({
+      rpc: { demande_panier_en_cours: { data: { id: DEMANDE, ancre: ANCRE, pris_le: "2026-11-03T11:00:00Z" }, error: null } },
+      tables: { cycle_courses: { data: null, error: { message: "réseau coupé" } } },
+    })
+    const promesse = cocherArticleDemande(client, { libelle: "lait" })
+    await expect(promesse).rejects.toThrow("Lecture de la longueur du cycle impossible")
+    await expect(promesse).rejects.not.toBeInstanceOf(ErreurOutil)
+    expect(m.cocherArticleDansCycle).not.toHaveBeenCalled()
+  })
+
   it("cocher_article_demande, homonymes → candidats, rien coché", async () => {
     const candidats = [
       { nom: "Lait", quantite: "1 L", manuel: false, coche: false },

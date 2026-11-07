@@ -309,6 +309,22 @@ describe("allerAuCycle — relais one-shot par query param (#279)", () => {
     });
   });
 
+  it("longueur illisible → repli client sur 7 jours, loggé, le cycle s'affiche quand même (#365)", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const erreur = new Error("Lecture de la longueur du cycle impossible : réseau");
+    persistance.chargerLongueurCycle.mockRejectedValue(erreur);
+    persistance.chargerPlanningDistant.mockResolvedValue(null);
+    const { allerAuCycle } = await chargerSync();
+
+    await allerAuCycle("2026-07-13");
+
+    expect(JSON.parse(localStorage.getItem("cycle_affiche")!)).toEqual({
+      ancre: "2026-07-13",
+      longueur: 7,
+    });
+    expect(warn).toHaveBeenCalledWith("Longueur du cycle illisible, 7 jours par défaut.", erreur);
+  });
+
   it("flushe le planning dirty avant de basculer d'ancre", async () => {
     localStorage.setItem("planning_courant", JSON.stringify(planning("2026-W10")));
     localStorage.setItem("planning_dirty", "1");
