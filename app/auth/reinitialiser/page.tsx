@@ -2,9 +2,11 @@
 
 // Réinitialisation du mot de passe (#22 PR1, US-22 scénario 2, absorbe #82).
 // Étape 2/2 : l'utilisateur arrive ici depuis le lien de récupération reçu par
-// email. supabase-js (createBrowserClient, detectSessionInUrl par défaut) établit
-// une session de récupération à partir du fragment d'URL → updateUser peut poser
-// le nouveau mot de passe.
+// email. supabase-js (createBrowserClient, flux PKCE forcé, detectSessionInUrl
+// par défaut) établit une session de récupération à partir du `?code` PKCE de
+// l'URL (et non d'un fragment) → updateUser peut poser le nouveau mot de passe.
+// `capterCodeDepuisURL` ignore les chemins /auth/* pour ne pas prendre ce code
+// pour une invitation de foyer (US-57, D14).
 //
 // Au succès, on coupe la session de récupération et on invite à se reconnecter
 // avec le nouveau mot de passe (confirmation visible, plutôt qu'un toast perdu à

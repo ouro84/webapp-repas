@@ -66,6 +66,7 @@ Tout utilisateur a déjà un foyer ; il n'existe donc pas d'action « créer un 
 
 - Le lien d'invitation pointe vers `/signup?code=<code>`. Le code voyage en **`sessionStorage`** (`lib/invitation.ts`, clé `code_invitation_en_attente`), qui survit au flux d'auth. Le proxy, côté serveur, ne peut pas l'écrire : il **préserve `?code`** à travers ses redirections (`urlPreservantCode`).
 - Capture : `capterCodeDepuisURL()` (lit `?code` / `?rejoindre`, stocke, nettoie l'URL via `history.replaceState`), appelée par `InvitationEnAttente`, monté une fois dans le layout.
+- **`capterCodeDepuisURL` ignore tout chemin `/auth/*`** (ni lecture, ni retrait). Pourquoi : `createBrowserClient` force PKCE, donc le lien de reset arrive en `/auth/reinitialiser?code=<pkce>` ; ce code est celui de Supabase, le capter le volerait au SDK.
 - **Deux consommateurs, un seul code** : le nouvel inscrit (tunnel : aperçu via la RPC `apercu_invitation` → « Tu rejoins le foyer de X », puis jonction) ; le membre existant (`InvitationEnAttente`, inerte sur `/bienvenue` / `/login` / `/signup`, modale `ConfirmationModale`, refus si déjà en foyer partagé). Le code est effacé après consommation. `PanneauFoyer` ne pré-remplit pas le code, pour éviter un double traitement.
 
 ## RGPD (US-29/30, RG-64→69)
