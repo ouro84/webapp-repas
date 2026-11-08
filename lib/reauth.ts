@@ -6,7 +6,13 @@
  * pas `last_sign_in_at` : il est par utilisateur, pas par session.
  */
 
-/** Âge maximal (en secondes) de la dernière authentification acceptée. */
+/**
+ * Âge maximal (en secondes) de la dernière authentification acceptée.
+ * Jumeau SQL : `authentification_recente(p_max_s default 300)` et le contrôle
+ * OMQ06 de `supprimer_mon_compte()`
+ * (`supabase/migrations/20261108120000_suppression_compte_fraicheur.sql`) :
+ * garder le seuil et la sémantique alignés.
+ */
 export const FRAICHEUR_MAX_S = 300
 
 /**

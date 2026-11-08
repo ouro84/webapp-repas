@@ -4,6 +4,9 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import { apiError } from "@/lib/errors"
 import { authentificationRecente } from "@/lib/reauth"
 
+const MESSAGE_REAUTH =
+  "Pour supprimer ton compte, confirme d’abord ton identité. La confirmation est valable 5 minutes."
+
 export async function POST() {
   const supabase = await createClient()
 
@@ -46,13 +49,23 @@ export async function POST() {
     return apiError(
       "POST /api/compte/supprimer",
       "amr absent ou périmé",
-      "Pour supprimer ton compte, confirme d’abord ton identité. La confirmation est valable 5 minutes.",
+      MESSAGE_REAUTH,
       403
     )
   }
 
   const { error: erreurRpc } = await supabase.rpc("supprimer_mon_compte")
   if (erreurRpc) {
+    // OMQ06 : la RPC refuse aussi une authentification ancienne (jumeau SQL
+    // du contrôle ci-dessus), p. ex. si le JWT a vieilli entre les deux.
+    if (erreurRpc.code === "OMQ06") {
+      return apiError(
+        "POST /api/compte/supprimer",
+        erreurRpc,
+        MESSAGE_REAUTH,
+        403
+      )
+    }
     return apiError(
       "POST /api/compte/supprimer",
       erreurRpc,

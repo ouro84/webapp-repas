@@ -85,6 +85,30 @@ describe("POST /api/compte/supprimer", () => {
     expect(admin.deleteUser).not.toHaveBeenCalled()
   })
 
+  it("403 si la RPC renvoie OMQ06, sans deleteUser", async () => {
+    serveur.getClaims.mockResolvedValue(
+      claimsAvecAmr([{ method: "password", timestamp: MAINTENANT_S - 10 }])
+    )
+    serveur.rpc.mockResolvedValue({
+      error: { code: "OMQ06", message: "Authentification trop ancienne" },
+    })
+    const r = await POST()
+    expect(r.status).toBe(403)
+    expect((await r.json()).error).toContain("confirme d’abord ton identité")
+    expect(serveur.rpc).toHaveBeenCalledWith("supprimer_mon_compte")
+    expect(admin.deleteUser).not.toHaveBeenCalled()
+  })
+
+  it("500 si la RPC échoue pour une autre raison, sans deleteUser", async () => {
+    serveur.getClaims.mockResolvedValue(
+      claimsAvecAmr([{ method: "password", timestamp: MAINTENANT_S - 10 }])
+    )
+    serveur.rpc.mockResolvedValue({ error: { code: "23503", message: "fk" } })
+    const r = await POST()
+    expect(r.status).toBe(500)
+    expect(admin.deleteUser).not.toHaveBeenCalled()
+  })
+
   it("session fraîche : RPC puis deleteUser, dans cet ordre", async () => {
     serveur.getClaims.mockResolvedValue(
       claimsAvecAmr([{ method: "password", timestamp: MAINTENANT_S - 10 }])
