@@ -175,8 +175,8 @@ export function VuePlanningCycle({
   // au cycle courant (libellé relatif du navigateur). Lu au montage, avant l'ancre.
   const [jourCourses, setJourCourses] = useState<number>(1);
   // Jour courant (#352), date LOCALE du client : `null` au premier rendu (pas de
-  // date au rendu serveur), posé par l'effet de montage. Le week-end, le cycle
-  // par défaut est le suivant : aucun jour marqué.
+  // date au rendu serveur), posé par l'effet de montage. S'il reste ≤ 2 jours
+  // dans le cycle courant, le cycle par défaut est le suivant (RG-91) : aucun jour marqué.
   const [aujourdhuiISO, setAujourdhuiISO] = useState<string | null>(null);
   // Plannings des semaines ISO touchées, indexés par semaine.
   const [parSemaine, setParSemaine] = useState<Map<string, Planning>>(new Map());
@@ -618,8 +618,9 @@ export function VuePlanningCycle({
   // `resoudreCycle` (même résolution que le MCP et la route panier),
   // EN PARALLÈLE de la lecture du jour de courses ; hors plage / invalide /
   // lecture échouée → ancre par défaut. Sans lien : ancre par défaut dérivée du
-  // jour de courses du foyer (même règle que /courses, ancreParDefaut → décalage
-  // week-end inclus). Logique dans `ancreInitialeCycle` (lib, testée).
+  // jour de courses du foyer (même règle que /courses, ancreParDefaut → cycle
+  // suivant à ≤ 2 jours restants, RG-91). Logique dans `ancreInitialeCycle`
+  // (lib, testée).
   // Échec (lecture d'une semaine, erreur inattendue) → état erreur ; « Réessayer »
   // rejoue ce même chargement initial (`essaiInitial` en dépendance).
   const [essaiInitial, setEssaiInitial] = useState(0);

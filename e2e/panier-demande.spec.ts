@@ -813,7 +813,7 @@ test("UI : cycle passé → bouton grisé, motif affiché, aucun appel (#320, RG
   // `demandeTerminee` passe par la route : le faux exécuteur a reçu son webhook.
   recues.length = 0;
   // Deux cycles en arrière : terminé même si le cycle affiché par défaut est le
-  // suivant (week-end, `ancreParDefaut`).
+  // suivant (≤ 2 jours restants, RG-91, `ancreParDefaut`).
   const passe = cycleDecale(ancre, -2);
   const generation = await appelerOutilMcp(request, jetonA, "generer_cycle", { ancre: passe, remplacer: true });
   expect(generation.resultat?.isError).toBeFalsy();

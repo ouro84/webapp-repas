@@ -2470,9 +2470,9 @@ async function chargerCycleDansCache(
 export async function hydraterCycle(): Promise<void> {
   // Fail-open lundi, repli loggé : même helper que la vue Cycle (jumeau, #352).
   const jour = await jourCoursesOuLundi(chargerJourCoursesFoyer());
-  // ancreParDefaut (pas ancreCourante) : le week-end, la génération vise la
-  // semaine prochaine (semaineParDefaut) → on décale le cycle par défaut pour la
-  // couvrir, sinon /courses afficherait un cycle courant vide/écoulé (#257).
+  // ancreParDefaut (pas ancreCourante) : à ≤ 2 jours de la fin du cycle, on
+  // prépare déjà le suivant (RG-91, #386) ; sinon /courses afficherait un cycle
+  // courant presque écoulé (#257).
   const ancre = ancreParDefaut(new Date(), jour);
   // Lecture stricte (#365) : repli client explicite et loggé sur 7 jours (une
   // rejection non catchée deviendrait un unhandledRejection sous `void hydraterCycle()`).

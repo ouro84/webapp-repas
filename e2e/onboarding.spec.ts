@@ -1,8 +1,8 @@
-// Parcours #22 PR2 — tunnel d'onboarding (US-23).
+// Parcours #22 PR2 — tunnel d'onboarding (US-23), calé sur le cycle (#386).
 //
 // Un nouvel inscrit (compte NON onboardé) doit être conduit, écran après écran,
-// jusqu'à un PREMIER planning déjà rempli (« aha moment »), sans jamais arriver
-// sur un écran vide.
+// jusqu'à un PREMIER cycle de courses déjà rempli (« aha moment », RG-90/RG-91),
+// sans jamais arriver sur un écran vide.
 //
 // ⚠️ Crée un compte JETABLE dédié (email unique par run), distinct du compte de
 // test partagé → aucun effet de bord sur les autres specs. Comme foyer-clonage,
@@ -12,15 +12,37 @@
 // (.env.local pointe la prod).
 
 import { test, expect } from "./fixtures";
-import { E2E_PASSWORD, lireEnvLocal, lireReglagesDistants } from "./helpers";
+import {
+  E2E_PASSWORD,
+  lireEnvLocal,
+  lirePlanningDistant,
+  lireReglagesDistants,
+} from "./helpers";
+import { ancreParDefaut, datesCycle, versISO } from "../lib/cycles";
+import { ORDRE_JOURS } from "../lib/generateur";
+import { lundiDeSemaine } from "../lib/semaines";
+import type { Jour } from "../types";
+
+// Jour de courses présélectionné par le tunnel (samedi, ISO 6) et longueur du
+// premier cycle (RG-91) : le libellé attendu se calcule à l'appel, la date du
+// jour décidant de l'ancre.
+const JOUR_COURSES_ONBOARDING = 6;
+const LONGUEUR_CYCLE = 7;
 
 const RUN = Date.now();
 
-test("le tunnel mène un nouvel inscrit à un premier planning (US-23)", async ({
+// Date ISO locale d'un slot lu en base (lundi de la semaine + rang du jour).
+function dateDuSlot(semaine: string, jour: string): string {
+  const date = lundiDeSemaine(semaine);
+  date.setDate(date.getDate() + ORDRE_JOURS.indexOf(jour as Jour));
+  return versISO(date);
+}
+
+test("le tunnel mène un nouvel inscrit à un premier cycle (US-23, RG-91)", async ({
   browser,
   request,
 }) => {
-  // Parcours long (signup + login + 2 écrans + génération réelle) : le défaut de
+  // Parcours long (signup + login + 3 écrans + génération réelle) : le défaut de
   // 30 s ne suffit pas avec la latence staging.
   test.setTimeout(120_000);
 
@@ -54,16 +76,54 @@ test("le tunnel mène un nouvel inscrit à un premier planning (US-23)", async (
     await page.getByPlaceholder("Ton prénom").fill("Camille");
     await page.getByRole("button", { name: "Suivant" }).click();
 
-    // Écran 2 : démarrer en solo → génération du premier planning → /planning.
+    // Écran 2 : démarrer en solo → écran 3 (jour de courses).
     await page.getByRole("button", { name: /Démarrer seul/ }).click();
-    await page.waitForURL("**/planning", { timeout: 60_000 });
 
-    // Aha moment : un planning de 7 jours est déjà là (pas d'écran vide).
-    await expect(page.locator("main ul > li")).toHaveCount(7);
+    // Écran 3 : samedi présélectionné ; « Générer mon planning » lance le premier cycle.
+    await expect(page.getByText("Étape 3 sur 3")).toBeVisible();
+    await expect(page.getByRole("radio", { name: "samedi" })).toHaveAttribute(
+      "aria-checked",
+      "true"
+    );
+    await page.getByRole("button", { name: "Générer mon planning" }).click();
+
+    // `/planning?bienvenue=1` : un glob sans query ne le matcherait pas ; la page
+    // retire ensuite le paramètre (history.replaceState).
+    await page.waitForURL(/\/planning(\?.*)?$/, { timeout: 60_000 });
+    await expect(page).not.toHaveURL(/bienvenue/);
+
+    // Toast d'arrivée de l'onboarding (une fois, paramètre consommé).
+    await expect(page.getByText("Ta liste de courses est prête")).toBeVisible();
+
+    // Aha moment : la vue Cycle est active, sur le cycle du jour de courses (samedi).
+    await expect(
+      page
+        .getByRole("group", { name: "Vue du planning" })
+        .getByRole("button", { name: "Cycle" })
+    ).toHaveAttribute("aria-pressed", "true");
+    await expect(
+      page.getByText(
+        datesCycle(ancreParDefaut(new Date(), JOUR_COURSES_ONBOARDING), LONGUEUR_CYCLE),
+        { exact: true }
+      )
+    ).toBeVisible();
     // L'en-tête de l'app affiche l'avatar à l'initiale du prénom (US-23 sc. 6).
     await expect(
       page.getByRole("link", { name: "Profil de Camille" })
     ).toBeVisible();
+
+    // En base (RG-91) : le cycle est écrit, et aucun repas n'est planifié à une
+    // date antérieure à aujourd'hui (date locale, comme le tunnel).
+    await expect
+      .poll(async () => (await lirePlanningDistant(request, email, E2E_PASSWORD)).length, {
+        timeout: 15_000,
+      })
+      .toBeGreaterThan(0);
+    const aujourdhuiISO = versISO(new Date());
+    const slots = await lirePlanningDistant(request, email, E2E_PASSWORD);
+    expect(
+      slots.filter((s) => dateDuSlot(s.semaine, s.jour) < aujourdhuiISO)
+    ).toEqual([]);
   } finally {
     await contexte.close();
   }
@@ -104,15 +164,21 @@ test("l'écran 1 du tunnel calibre les réglages de génération (US-23, RG-37)"
     await page.getByRole("button", { name: "Plus de personnes" }).click();
     await page.getByRole("button", { name: "Plus de personnes" }).click();
     await page.getByRole("switch", { name: "Foyer végétarien" }).click();
+    // Midi en semaine : l'interrupteur est actif par défaut, on le coupe (RG-44).
+    await page
+      .getByRole("switch", { name: "On mange à la maison le midi en semaine" })
+      .click();
     await page.getByRole("button", { name: "Suivant" }).click();
 
-    // Écran 2 : démarrer en solo → génération → /planning.
+    // Écran 2 : démarrer en solo → écran 3 (jour de courses) → génération → /planning.
     await page.getByRole("button", { name: /Démarrer seul/ }).click();
-    await page.waitForURL("**/planning", { timeout: 60_000 });
+    await page.getByRole("button", { name: "Générer mon planning" }).click();
+    await page.waitForURL(/\/planning(\?.*)?$/, { timeout: 60_000 });
+    await expect(page).not.toHaveURL(/bienvenue/);
 
     // RG-37 : la calibration s'est traduite dans la table reglages — nombre de
     // personnes par défaut (4) et préférence végé de SEMAINE activée (le week-end
-    // reste au défaut, cf. reglagesSaisis du tunnel).
+    // reste au défaut, cf. reglagesInitiaux du tunnel).
     await expect
       .poll(() => lireReglagesDistants(request, email, E2E_PASSWORD), {
         timeout: 15_000,
@@ -122,6 +188,44 @@ test("l'écran 1 du tunnel calibre les réglages de génération (US-23, RG-37)"
     expect(reglages?.personnes_defaut).toBe(4);
     expect(reglages?.vege_dejeuner_semaine).toBe(true);
     expect(reglages?.vege_diner_semaine).toBe(true);
+    // Midi en semaine coupé : plafond « aucun » (créneau désactivé, RG-44).
+    expect(reglages?.max_dejeuner_semaine).toBe("aucun");
+
+    // En base : la génération respecte le créneau désactivé. Témoin d'abord
+    // (des slots sont bien écrits), puis aucun déjeuner du lundi au vendredi.
+    await expect
+      .poll(async () => (await lirePlanningDistant(request, email, E2E_PASSWORD)).length, {
+        timeout: 15_000,
+      })
+      .toBeGreaterThan(0);
+    const slots = await lirePlanningDistant(request, email, E2E_PASSWORD);
+    expect(
+      slots.filter(
+        (s) =>
+          s.type_repas === "dejeuner" &&
+          ["lundi", "mardi", "mercredi", "jeudi", "vendredi"].includes(s.jour)
+      )
+    ).toEqual([]);
+
+    // Vue Cycle active, comme pour le parcours principal.
+    await expect(
+      page
+        .getByRole("group", { name: "Vue du planning" })
+        .getByRole("button", { name: "Cycle" })
+    ).toHaveAttribute("aria-pressed", "true");
+    // Affichage : des dîners sont visibles et aucun bouton « Changer le déjeuner »
+    // en semaine. Ce contrôle UI seul ne prouve pas la génération (la vue Cycle
+    // masque au rendu les créneaux « aucun ») : la preuve est la lecture en base
+    // ci-dessus. Les boutons « Changer le … » n'existent que sur un créneau
+    // rempli ; seule la grille mobile (390 px) est dans l'arbre d'accessibilité.
+    await expect(
+      page.getByRole("button", { name: /^Changer le dîner de /i }).first()
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", {
+        name: /^Changer le déjeuner de (lundi|mardi|mercredi|jeudi|vendredi) /i,
+      })
+    ).toHaveCount(0);
   } finally {
     await contexte.close();
   }

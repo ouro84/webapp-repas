@@ -1,41 +1,57 @@
 "use client";
 
-// Tunnel d'onboarding (#22 PR2, US-23) — affiché aux nouveaux inscrits tant que
-// profiles.onboarding_complete est faux (le proxy y redirige). Deux écrans :
-//   1. Calibration : prénom + nombre de personnes + foyer végétarien (→ profiles
-//      + reglages). La couleur d'avatar est dérivée de l'email (RG-35).
-//   2. Foyer : rejoindre un foyer existant par code, ou démarrer en solo.
-// Puis : génération du PREMIER planning (solo) ou réhydratation du foyer rejoint,
-// clôture de l'onboarding, et redirection vers /planning (l'« aha moment » : on
-// n'arrive jamais sur un planning vide).
+// Tunnel d'onboarding (#22 PR2, US-23, #386) — affiché aux nouveaux inscrits tant
+// que profiles.onboarding_complete est faux (le proxy y redirige). Trois écrans :
+//   1. Calibration : prénom + nombre de personnes + foyer végétarien + déjeuner
+//      de semaine (→ profiles + reglages, cf. reglagesInitiaux). La couleur
+//      d'avatar est dérivée de l'email (RG-35).
+//   2. Foyer : rejoindre un foyer existant par code (fin du tunnel), ou démarrer
+//      en solo.
+//   3. Solo seulement : jour de courses (RG-90), puis génération du PREMIER CYCLE
+//      de courses à partir d'aujourd'hui (RG-91, jours déjà passés retirés).
+// Puis : clôture de l'onboarding et redirection vers /planning en vue Cycle
+// (l'« aha moment » : on n'arrive jamais sur un planning vide), avec le toast
+// « liste prête » si la génération a réussi (?bienvenue=1).
 //
-// useSync() est monté ici pour que le planning généré (sauvegarderPlanningComplet)
-// soit marqué « dirty » et poussé en base — sinon il resterait local (cf. #6).
+// useSync() est monté ici pour que l'écriture du cycle (appliquerGenerationCycle,
+// qui vide d'abord les envois en attente) se fasse avec la synchro démarrée.
+// La logique pure (réglages, cycle, filtre, URL de fin) vit dans lib/onboarding.ts.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { chargerProfil, marquerOnboardingComplete, sauvegarderProfil } from "@/lib/profil";
 import { couleurAvatar } from "@/lib/avatar";
 import { chargerReglages, sauvegarderReglages } from "@/lib/reglages-data";
 import { REGLAGES_DEFAUT } from "@/lib/reglages";
-import { rejoindreFoyer } from "@/lib/foyer";
+import { definirJourCoursesFoyer, rejoindreFoyer } from "@/lib/foyer";
 import {
   apercuInvitation,
   effacerCodeEnAttente,
   lireCodeEnAttente,
   type ApercuInvitation,
 } from "@/lib/invitation";
-import { reinitialiserCacheFoyer, useSync } from "@/lib/sync";
-import { sauvegarderPlanningComplet } from "@/lib/stockage";
+import { appliquerGenerationCycle, reinitialiserCacheFoyer, useSync } from "@/lib/sync";
+import { storeVuePlanning } from "@/lib/stockage";
 import { PERSONNES_MAX, PERSONNES_MIN } from "@/lib/personnes";
+import { versISO } from "@/lib/dates-iso";
+import { parseApiError } from "@/lib/errors";
+import {
+  JOUR_COURSES_PROPOSE,
+  joursAPartirDe,
+  midiSemaineDepuisReglages,
+  premierCycle,
+  reglagesInitiaux,
+  urlFinOnboarding,
+} from "@/lib/onboarding";
 import { Interrupteur } from "@/components/ui/interrupteur";
-import type { Planning, ReglagesGeneration } from "@/types";
+import { SelecteurJourCourses } from "@/components/ui/selecteur-jour-courses";
+import type { SemaineGeneree } from "@/types";
 
-type Etape = "chargement" | "identite" | "foyer" | "generation";
+type Etape = "chargement" | "identite" | "foyer" | "courses" | "generation";
 
 export default function PageBienvenue() {
-  // Monte la synchro : le planning généré sera poussé en base (#6).
+  // Monte la synchro : l'écriture du premier cycle part synchro démarrée (#6).
   useSync();
 
   const [etape, setEtape] = useState<Etape>("chargement");
@@ -43,11 +59,19 @@ export default function PageBienvenue() {
   const [prenom, setPrenom] = useState("");
   const [personnes, setPersonnes] = useState(REGLAGES_DEFAUT.personnesDefaut);
   const [vege, setVege] = useState(false);
+  // Déjeuner de semaine (#386) : désactivé → plafond « aucun » (RG-44).
+  const [midiSemaine, setMidiSemaine] = useState(true);
+  // Jour de courses du premier cycle (RG-90, écran 3, solo).
+  const [jourCourses, setJourCourses] = useState(JOUR_COURSES_PROPOSE);
   const [code, setCode] = useState("");
   const [enCours, setEnCours] = useState(false);
   // Deep-link d'acquisition (#22 PR3) : aperçu de l'invitation en attente
   // (null = aucune / pas encore vérifiée). `valide` → écran de confirmation.
   const [apercu, setApercu] = useState<ApercuInvitation | null>(null);
+  // Mémo de la dernière génération réussie du premier cycle (#386) : si seul
+  // marquerOnboardingComplete a échoué, le réessai avec le même jour de courses
+  // va directement au marquage, sans réécrire le jour ni régénérer le cycle.
+  const generationMemo = useRef<{ jour: number; ancre: string } | null>(null);
 
   // Pré-remplissage en cas de reprise du tunnel (prénom/personnes déjà saisis à
   // une session précédente interrompue). setState dans la promesse (conforme à
@@ -68,6 +92,7 @@ export default function PageBienvenue() {
         setPersonnes(reglages.personnesDefaut);
         setVege(Boolean(reglages.vegetarienPrefere?.dinerSemaine));
       }
+      setMidiSemaine(midiSemaineDepuisReglages(reglages));
       setEtape("identite");
       // Deep-link : un code d'invitation a pu être capté (sessionStorage) depuis
       // le lien /signup?code=… → on en récupère un aperçu pour l'écran 2.
@@ -88,28 +113,8 @@ export default function PageBienvenue() {
     };
   }, []);
 
-  // Réglages dérivés de l'écran 1 : on part des défauts et on surcharge le
-  // nombre de personnes et la préférence végé de semaine (le week-end reste au
-  // défaut, ajustable plus tard dans /reglages).
-  function reglagesSaisis(): ReglagesGeneration {
-    return {
-      ...REGLAGES_DEFAUT,
-      personnesDefaut: personnes,
-      ...(vege
-        ? {
-            vegetarienPrefere: {
-              dejeunerSemaine: true,
-              dinerSemaine: true,
-              dejeunerWeekend: false,
-              dinerWeekend: false,
-            },
-          }
-        : {}),
-    };
-  }
-
-  // Écran 1 validé : enregistre identité (prénom + couleur) et réglages, puis
-  // passe au choix du foyer.
+  // Écran 1 validé : enregistre identité (prénom + couleur) et réglages
+  // initiaux (reglagesInitiaux, lib/onboarding.ts), puis passe au choix du foyer.
   async function validerIdentite(): Promise<void> {
     if (prenom.trim().length === 0 || enCours) return;
     setEnCours(true);
@@ -118,7 +123,7 @@ export default function PageBienvenue() {
         prenom: prenom.trim(),
         couleurAvatar: couleurAvatar(email),
       });
-      await sauvegarderReglages(reglagesSaisis());
+      await sauvegarderReglages(reglagesInitiaux({ personnes, vege, midiSemaine }));
       setEtape("foyer");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Enregistrement impossible.");
@@ -127,29 +132,14 @@ export default function PageBienvenue() {
     }
   }
 
-  // Clôture commune : (solo) génère le premier planning et le persiste ;
-  // (rejoint) réinitialise le cache du nouveau foyer ; puis marque l'onboarding
-  // terminé et bascule sur /planning (rechargement plein → le proxy laisse
-  // désormais passer, et /planning hydrate le planning).
-  async function finaliser(options: { genererPlanning: boolean }): Promise<void> {
+  // Fin de la branche « rejoindre » : le foyer a déjà ses données, rien à
+  // générer. Cache local réinitialisé (le foyer a changé, cf. #56 PR3),
+  // onboarding marqué terminé, vue Cycle posée en préférence (#386), puis
+  // rechargement plein vers /planning (le proxy laisse désormais passer).
+  async function finaliserRejoindre(): Promise<void> {
     setEtape("generation");
     try {
-      if (options.genererPlanning) {
-        const reponse = await fetch("/api/planning/generer", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({}),
-        });
-        if (reponse.ok) {
-          const { planning } = (await reponse.json()) as { planning: Planning };
-          sauvegarderPlanningComplet(planning);
-        }
-        // Si la génération échoue, on ne piège pas l'utilisateur dans le tunnel :
-        // on termine quand même l'onboarding (il pourra générer depuis /planning).
-      } else {
-        // Foyer rejoint : le foyer a changé → cache local périmé (cf. #56 PR3).
-        reinitialiserCacheFoyer();
-      }
+      reinitialiserCacheFoyer();
       await marquerOnboardingComplete();
     } catch (e) {
       // Échec du marquage d'onboarding : NE PAS rediriger vers /planning (#167).
@@ -160,9 +150,8 @@ export default function PageBienvenue() {
       setEnCours(false);
       return;
     }
-    // Marquage réussi : rechargement plein → le proxy laisse passer, /planning
-    // réhydrate depuis le cache/la base.
-    window.location.assign("/planning");
+    storeVuePlanning.ecrire("cycle");
+    window.location.assign(urlFinOnboarding({ solo: false, generationReussie: false }));
   }
 
   async function rejoindre(): Promise<void> {
@@ -172,11 +161,76 @@ export default function PageBienvenue() {
     try {
       await rejoindreFoyer(valeur);
       effacerCodeEnAttente(); // code consommé (deep-link ou saisie manuelle)
-      await finaliser({ genererPlanning: false });
+      await finaliserRejoindre();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Impossible de rejoindre ce foyer.");
       setEnCours(false);
     }
+  }
+
+  // Écran 3 validé (solo, #386) : jour de courses (RG-90), premier cycle à
+  // partir d'aujourd'hui (RG-91), clôture de l'onboarding, puis /planning en
+  // vue Cycle.
+  async function demarrerSolo(): Promise<void> {
+    if (enCours) return;
+    // Bouton désactivé et écran d'attente AVANT tout await : un double clic ne
+    // lance qu'une génération.
+    setEnCours(true);
+    setEtape("generation");
+
+    let generationReussie = false;
+    if (generationMemo.current?.jour === jourCourses) {
+      // Réessai après un échec du seul marquage : jour et cycle déjà écrits.
+      generationReussie = true;
+    } else {
+      // Jour changé (« Retour ») ou première tentative : séquence complète.
+      generationMemo.current = null;
+      try {
+        await definirJourCoursesFoyer(jourCourses);
+      } catch (erreur) {
+        console.error(erreur);
+        toast.error("Impossible d’enregistrer ton jour de courses. Réessaie.");
+        setEtape("courses");
+        setEnCours(false);
+        return;
+      }
+
+      // Premier cycle : date LOCALE du navigateur, comme hydraterCycle de /courses.
+      // Les jours du cycle par défaut déjà passés ne sont pas écrits.
+      try {
+        const aujourdhui = new Date();
+        const { ancre, longueur } = premierCycle(aujourdhui, jourCourses);
+        const reponse = await fetch("/api/planning/generer", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ancre, longueur }),
+        });
+        if (!reponse.ok) throw new Error(await parseApiError(reponse));
+        const { semaines } = (await reponse.json()) as { semaines: SemaineGeneree[] };
+        await appliquerGenerationCycle(ancre, joursAPartirDe(semaines, versISO(aujourdhui)));
+        generationMemo.current = { jour: jourCourses, ancre };
+        generationReussie = true;
+      } catch (e) {
+        // On ne piège pas l'utilisateur dans le tunnel : l'onboarding se termine
+        // quand même (il pourra générer depuis /planning), sans toast « liste
+        // prête » à l'arrivée.
+        console.error("Génération du premier cycle impossible.", e);
+      }
+    }
+
+    try {
+      await marquerOnboardingComplete();
+    } catch (e) {
+      // Même garde que la branche « rejoindre » (#167) : pas de redirection tant
+      // que onboarding_complete n'est pas vrai ; retour à l'écran 3 (le réessai
+      // réutilise generationMemo si le jour n'a pas changé).
+      toast.error(e instanceof Error ? e.message : "Une erreur est survenue. Réessaie.");
+      setEtape("courses");
+      setEnCours(false);
+      return;
+    }
+    storeVuePlanning.ecrire("cycle");
+    window.location.assign(urlFinOnboarding({ solo: true, generationReussie }));
   }
 
   return (
@@ -190,8 +244,8 @@ export default function PageBienvenue() {
         </p>
       )}
 
-      {(etape === "identite" || etape === "foyer") && (
-        <BarreProgression etape={etape === "identite" ? 1 : 2} />
+      {(etape === "identite" || etape === "foyer" || etape === "courses") && (
+        <BarreProgression etape={etape === "identite" ? 1 : etape === "foyer" ? 2 : 3} />
       )}
 
       {etape === "identite" && (
@@ -203,7 +257,7 @@ export default function PageBienvenue() {
             Bienvenue&nbsp;! On fait connaissance&nbsp;?
           </h1>
           <p className="mb-6 text-sm text-brand-700/85">
-            Deux questions pour calibrer ton premier planning.
+            Quelques questions pour calibrer ton premier planning.
           </p>
 
           <label htmlFor="prenom" className="mb-1 block text-sm font-medium text-brand-900">
@@ -228,8 +282,19 @@ export default function PageBienvenue() {
           </p>
           <Stepper valeur={personnes} onChange={setPersonnes} />
 
-          <div className="mb-8 mt-6">
-            <InterrupteurVege actif={vege} onChange={setVege} />
+          <div className="mb-8 mt-6 flex flex-col gap-5">
+            <LigneInterrupteur
+              titre="Foyer végétarien"
+              description="Privilégie les recettes végé en semaine (ajustable ensuite)."
+              actif={vege}
+              onChange={setVege}
+            />
+            <LigneInterrupteur
+              titre="On mange à la maison le midi en semaine"
+              description="Désactivé, pas de déjeuner prévu du lundi au vendredi (ajustable dans les réglages)."
+              actif={midiSemaine}
+              onChange={setMidiSemaine}
+            />
           </div>
 
           <button
@@ -311,12 +376,54 @@ export default function PageBienvenue() {
 
           <button
             type="button"
-            onClick={() => void finaliser({ genererPlanning: true })}
+            onClick={() => setEtape("courses")}
             disabled={enCours}
             className="w-full rounded-full border border-brand-200 px-6 py-3 text-sm font-medium text-brand-700 transition hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.98] motion-reduce:active:scale-100 disabled:opacity-50"
           >
             Démarrer seul·e
           </button>
+        </section>
+      )}
+
+      {etape === "courses" && (
+        <section aria-labelledby="titre-courses">
+          <h1
+            id="titre-courses"
+            className="mb-2 font-display text-2xl font-semibold text-brand-900"
+          >
+            Tu fais tes courses quel jour&nbsp;?
+          </h1>
+          <p className="mb-6 text-sm text-brand-700/85">
+            Ta liste couvrira 7 jours à partir de ce jour-là. Tu pourras le changer dans ton profil.
+          </p>
+
+          <div className="mb-8">
+            <SelecteurJourCourses
+              valeur={jourCourses}
+              onChange={setJourCourses}
+              desactive={enCours}
+            />
+          </div>
+
+          <div className="flex flex-col gap-3">
+            <button
+              type="button"
+              onClick={() => void demarrerSolo()}
+              disabled={enCours}
+              className="w-full rounded-full bg-primary px-6 py-3 text-sm font-semibold text-white transition hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.98] motion-reduce:active:scale-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Générer mon planning
+            </button>
+            {/* Retour à l'écran 2 (#386) : le jour de courses choisi est conservé. */}
+            <button
+              type="button"
+              onClick={() => setEtape("foyer")}
+              disabled={enCours}
+              className="w-full rounded-full border border-brand-200 px-6 py-3 text-sm font-medium text-brand-700 transition hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.98] motion-reduce:active:scale-100 disabled:opacity-50"
+            >
+              Retour
+            </button>
+          </div>
         </section>
       )}
 
@@ -333,17 +440,19 @@ export default function PageBienvenue() {
   );
 }
 
-function BarreProgression({ etape }: { etape: 1 | 2 }) {
+function BarreProgression({ etape }: { etape: 1 | 2 | 3 }) {
   return (
     <div className="mb-8">
       <p className="mb-2 text-xs font-medium uppercase tracking-wide text-brand-700/85">
-        Étape {etape} sur 2
+        Étape {etape} sur 3
       </p>
       <div className="flex gap-2" aria-hidden="true">
-        <span className="h-1.5 flex-1 rounded-full bg-primary" />
-        <span
-          className={`h-1.5 flex-1 rounded-full ${etape === 2 ? "bg-primary" : "bg-brand-100"}`}
-        />
+        {([1, 2, 3] as const).map((rang) => (
+          <span
+            key={rang}
+            className={`h-1.5 flex-1 rounded-full ${rang <= etape ? "bg-primary" : "bg-brand-100"}`}
+          />
+        ))}
       </div>
     </div>
   );
@@ -386,22 +495,25 @@ function Stepper({
   );
 }
 
-function InterrupteurVege({
+// Ligne « intitulé + description + interrupteur » de l'écran 1 (végé, midis).
+function LigneInterrupteur({
+  titre,
+  description,
   actif,
   onChange,
 }: {
+  titre: string;
+  description: string;
   actif: boolean;
   onChange: (v: boolean) => void;
 }) {
   return (
     <label className="flex cursor-pointer items-center justify-between gap-4">
       <span className="text-sm font-medium text-brand-900">
-        Foyer végétarien
-        <span className="block text-xs font-normal text-brand-700/85">
-          Privilégie les recettes végé en semaine (ajustable ensuite).
-        </span>
+        {titre}
+        <span className="block text-xs font-normal text-brand-700/85">{description}</span>
       </span>
-      <Interrupteur actif={actif} onChange={onChange} label="Foyer végétarien" />
+      <Interrupteur actif={actif} onChange={onChange} label={titre} />
     </label>
   );
 }

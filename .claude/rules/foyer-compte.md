@@ -39,7 +39,7 @@ Tout utilisateur a déjà un foyer ; il n'existe donc pas d'action « créer un 
 - **Quitter clone** tout vers un nouveau foyer solo (RG-34) ; quitter en solo est refusé, et l'UI masque le bouton si `membres <= 1`.
 - **Après jonction ou sortie** : `reinitialiserCacheFoyer()` puis rechargement de la page (cf. `sync-planning.md`).
 - **Partage du lien** : Web Share API avec repli copier, plus un QR (`qrcode.react`, `QRCodeSVG`) sur fond `bg-white` **littéral** pour rester scannable en dark mode.
-- UI : `components/profil/panneau-foyer.tsx`, section de `/profil`, qui porte aussi le sélecteur de jour de courses (`role="radiogroup"`).
+- UI : `components/profil/panneau-foyer.tsx`, section de `/profil`, qui porte aussi le sélecteur de jour de courses (`SelecteurJourCourses`, `components/ui/selecteur-jour-courses.tsx`, `role="radiogroup"`, partagé avec `/bienvenue`).
 
 ## `/profil` (identité) vs `/reglages` (génération)
 
@@ -54,10 +54,13 @@ Tout utilisateur a déjà un foyer ; il n'existe donc pas d'action « créer un 
 
 ## Tunnel d'onboarding `/bienvenue` (US-23)
 
-- Deux écrans : (1) prénom + nombre de personnes + « foyer végétarien » → écrit `profiles` **et** `reglages` ; (2) rejoindre par code ou « Démarrer seul·e ».
+- **Trois écrans** (barre « Étape X sur 3 » pour tout le monde ; la branche « rejoindre » s'arrête à l'étape 2) : (1) prénom + nombre de personnes + « foyer végétarien » + « On mange à la maison le midi en semaine » (activé par défaut ; désactivé → `plafonds.dejeunerSemaine = "aucun"`) → écrit `profiles` **et** `reglages` ; (2) rejoindre par code ou « Démarrer seul·e » ; (3) **solo seulement**, « Tu fais tes courses quel jour ? » avec `SelecteurJourCourses` (samedi présélectionné, `JOUR_COURSES_PROPOSE`) et « Générer mon planning ». L'écran 3 a un bouton « Retour » vers l'écran 2 (jour choisi conservé). Pourquoi : le premier cycle se cale sur le jour de courses (RG-90), que seul un foyer solo choisit (un foyer rejoint a déjà le sien) ; « Retour » laisse rejoindre un foyer après coup sans recharger le tunnel.
+- **Logique pure dans `lib/onboarding.ts`** (`reglagesInitiaux`, `midiSemaineDepuisReglages`, `joursAPartirDe`, `premierCycle`, `urlFinOnboarding`) ; `app/bienvenue/page.tsx` ne fait qu'orchestrer. Pourquoi : la logique reste testable sans navigateur (`tests/onboarding.test.ts`).
 - **Garde proxy** : `proxy.ts` lit `profiles.onboarding_complete` à chaque navigation connectée et redirige vers `/bienvenue` tant que la valeur est fausse ; une fois vraie, il en interdit le retour. **Exemptés** : `/api/*`, `/auth/*`, `/legal/*` (sinon déconnexion, reset de mot de passe, génération et lecture des CGU au signup casseraient). **Fail-open** sur erreur de lecture, pour ne jamais créer de boucle.
-- **Branche solo** : génère le premier planning (`POST /api/planning/generer` puis `sauvegarderPlanningComplet`), d'où le `useSync()` monté sur `/bienvenue` pour que le planning soit poussé. Un échec de génération termine quand même l'onboarding.
-- **Branche « rejoindre »** : ne génère pas (le foyer a déjà ses données) ; `reinitialiserCacheFoyer()` puis redirection.
+- **Branche solo** (RG-90, #386), dans cet ordre : `definirJourCoursesFoyer(jour)` (échec → toast, on reste sur l'écran 3, rien n'est généré), `POST /api/planning/generer` avec `{ ancre, longueur }` (`premierCycle` = `ancreParDefaut(aujourd'hui, jour)`, 7 jours), `joursAPartirDe` (jours antérieurs à aujourd'hui retirés, aujourd'hui gardé), `appliquerGenerationCycle`, `marquerOnboardingComplete`. Un échec de génération termine quand même l'onboarding, sans le paramètre de bienvenue. Pourquoi : un premier planning par semaine ISO donnait à un inscrit du mercredi des repas déjà passés, et le jour de courses n'était jamais demandé.
+- **Réessai après un échec du seul marquage** : `generationMemo` (`useRef<{ jour, ancre }>`) retient la génération réussie ; un nouveau clic avec le même jour va directement à `marquerOnboardingComplete`, un jour changé (après « Retour ») rejoue toute la séquence. Pourquoi : régénérer réécrirait pour rien un cycle déjà en base.
+- **Fin de tunnel, pour tout nouvel inscrit** : `storeVuePlanning.ecrire("cycle")`, puis redirection par `window.location.assign`. Solo avec génération réussie → `/planning?bienvenue=1` : `app/planning/page.tsx` lit le paramètre une fois, l'efface par `history.replaceState` (cf. `next-react.md`) et affiche le toast « Ta liste de courses est prête » (action « Voir » vers `/courses`), gardé par un `useRef` contre le double montage StrictMode. Pourquoi : un paramètre d'URL survit au rechargement complet, un état React non.
+- **Branche « rejoindre »** : ne génère pas (le foyer a déjà ses données), n'affiche pas le toast, ne demande pas de jour de courses ; `reinitialiserCacheFoyer()` puis redirection.
 
 ## Invitation par deep-link (US-24)
 

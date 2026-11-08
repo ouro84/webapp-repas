@@ -66,8 +66,8 @@ test("changer le jour de courses puis naviguer les cycles", async ({ page }) => 
   // Ancre du cycle jeudi calculée dans le test — c'est exactement ce que
   // hydraterCycle() calculera au montage de /courses désormais que le jour
   // de courses du foyer vaut 4 (cf. ci-dessus). `ancreParDefaut` (pas
-  // `ancreCourante`) pour inclure le décalage WEEK-END appliqué par
-  // hydraterCycle (#257) — sinon l'injection ne matcherait pas le samedi/dimanche.
+  // `ancreCourante`) pour inclure la bascule à ≤ 2 jours restants (RG-91)
+  // appliquée par hydraterCycle — sinon l'injection ne matcherait pas en fin de cycle.
   const ancreJeudi = ancreParDefaut(new Date(), 4);
 
   // Planning synthétique déterministe, injecté directement dans le cache du

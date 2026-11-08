@@ -38,7 +38,7 @@ export function longueurOuDefaut(lecture: Promise<number>): Promise<number> {
  * Jour de courses du foyer et ancre du cycle à afficher au montage. Avec un lien
  * (`lien`), l'ancre résolue par `resoudreLien` (même résolution que le MCP et la
  * route panier) ; sinon, ou si le lien est hors plage / invalide / illisible,
- * l'ancre par défaut (`ancreParDefaut`, décalage week-end inclus, comme /courses).
+ * l'ancre par défaut (`ancreParDefaut`, bascule à ≤ 2 jours restants incluse, RG-91, comme /courses).
  */
 export async function ancreInitialeCycle({
   chargerJour,

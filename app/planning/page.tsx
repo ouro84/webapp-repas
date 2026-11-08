@@ -16,7 +16,7 @@
 // Responsive (RG-06 à RG-08) : liste verticale par jour en mobile,
 // grille 7 colonnes à partir de md (≥ 768px).
 
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { flushSync } from "react-dom";
 import { toast } from "sonner";
@@ -40,6 +40,7 @@ import { personnesDuSlot } from "@/lib/personnes";
 import { estRestes } from "@/lib/restes";
 import { lireLienCycle, PARAM_LIEN_CYCLE } from "@/lib/lien-cycle";
 import { lireLienSemaine, PARAM_LIEN_SEMAINE } from "@/lib/lien-semaine";
+import { PARAM_BIENVENUE } from "@/lib/onboarding";
 import { naviguerVers, useSemaineAffichee, useSync } from "@/lib/sync";
 import { chargerRecettesGerees, type RecetteGeree } from "@/lib/recettes";
 import { chargerPreferences } from "@/lib/preferences";
@@ -295,17 +296,32 @@ function ContenuPlanning() {
   );
   const [paramSemainePresent] = useState(() => paramsUrl.has(PARAM_LIEN_SEMAINE));
   const [lienSemaineActif, setLienSemaineActif] = useState(lienSemaine !== null);
+  // Arrivée depuis l'onboarding (#386, US-23) : `?bienvenue=1`, posé seulement
+  // si le premier cycle a été généré. Lu une fois, comme les liens ci-dessus.
+  const [arriveeBienvenue] = useState(() => paramsUrl.has(PARAM_BIENVENUE));
   // Retrait par `history.replaceState`, comme le relais `?ancre=` de /courses :
   // `router.replace("/planning")` est sans effet en build de prod, où la page
   // statique initialise le routeur sur `/planning` (déjà l'URL « courante »).
   // Next synchronise `useSearchParams` avec l'History API native.
   useEffect(() => {
-    if (!paramLienPresent && !paramSemainePresent) return;
+    if (!paramLienPresent && !paramSemainePresent && !arriveeBienvenue) return;
     const url = new URL(window.location.href);
     url.searchParams.delete(PARAM_LIEN_CYCLE);
     url.searchParams.delete(PARAM_LIEN_SEMAINE);
+    url.searchParams.delete(PARAM_BIENVENUE);
     window.history.replaceState(window.history.state, "", url);
-  }, [paramLienPresent, paramSemainePresent]);
+  }, [paramLienPresent, paramSemainePresent, arriveeBienvenue]);
+  // Toast d'arrivée de l'onboarding (#386) : une seule fois, la garde useRef
+  // protège du double montage des effets en dev (StrictMode).
+  const router = useRouter();
+  const toastBienvenueAffiche = useRef(false);
+  useEffect(() => {
+    if (!arriveeBienvenue || toastBienvenueAffiche.current) return;
+    toastBienvenueAffiche.current = true;
+    toast.success("Ta liste de courses est prête", {
+      action: { label: "Voir", onClick: () => router.push("/courses") },
+    });
+  }, [arriveeBienvenue, router]);
   // Le lien force la vue Cycle pour la visite SANS écrire storeVuePlanning : la
   // vue préférée enregistrée reste celle de tous les jours.
   const vue: VuePlanning = lienSemaineActif

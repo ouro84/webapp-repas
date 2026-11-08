@@ -499,13 +499,37 @@ Réduire à zéro l'effort de planification hebdomadaire des repas, du choix des
 > **When** j'accède à l'app  
 > **Then** je suis conduit au tunnel **`/bienvenue`** tant que l'onboarding n'est pas terminé (RG-36)
 
-> **Given** l'écran 1 du tunnel  
-> **When** je saisis mon **prénom**, le **nombre de personnes** du foyer et l'option **« foyer végétarien »**  
-> **Then** ces données calibrent mon profil (prénom + avatar, RG-35) et mes réglages de génération (RG-37)
+> **Given** l'écran 1 du tunnel (« Quelques questions pour calibrer ton premier planning. »)  
+> **When** je saisis mon **prénom**, le **nombre de personnes** du foyer, l'option **« foyer végétarien »** et l'interrupteur **« On mange à la maison le midi en semaine »** (activé par défaut)  
+> **Then** ces données calibrent mon profil (prénom + avatar, RG-35) et mes réglages de génération (RG-37) ; midis désactivés, le plafond du déjeuner de semaine passe à « aucun » (RG-44) et mon premier planning ne contient aucun déjeuner du lundi au vendredi
+
+> **Given** l'écran 2 du tunnel  
+> **When** je saisis un code d'invitation ou j'ouvre un lien d'invitation, et que je rejoins un foyer  
+> **Then** le tunnel s'arrête là : **aucune question sur le jour de courses, aucune génération, aucun toast** ; j'arrive sur `/planning` en vue Cycle avec le contenu du foyer
 
 > **Given** l'écran 2 du tunnel  
 > **When** je choisis « Démarrer seul·e »  
-> **Then** l'app **génère mon premier planning** et m'amène sur `/planning` déjà rempli
+> **Then** l'écran 3 me demande « Tu fais tes courses quel jour ? »
+
+> **Given** l'écran 3 du tunnel (solo uniquement)  
+> **When** je choisis mon jour de courses parmi 7 pastilles Lun→Dim (**samedi présélectionné**) et que je touche « Générer mon planning »  
+> **Then** le jour est enregistré comme jour de courses du foyer, l'app **génère mon premier cycle** (RG-90), et j'arrive sur `/planning` **en vue Cycle**, avec le toast « Ta liste de courses est prête » et son action « Voir » vers `/courses`
+
+> **Given** l'écran 3 du tunnel  
+> **When** j'ai besoin de corriger mes réponses précédentes  
+> **Then** un bouton « Retour » me ramène à l'écran 2
+
+> **Given** l'enregistrement du jour de courses échoue sur l'écran 3  
+> **When** je touche « Générer mon planning »  
+> **Then** un toast d'erreur s'affiche, je reste sur l'écran 3 et rien n'est généré
+
+> **Given** la génération du premier cycle échoue  
+> **When** je touche « Générer mon planning »  
+> **Then** l'onboarding se termine quand même et j'arrive sur `/planning` **sans** toast « liste prête » (je pourrai générer depuis le planning)
+
+> **Given** je suis dans le tunnel  
+> **When** je regarde la barre de progression  
+> **Then** elle indique « Étape X sur 3 » pour tout le monde ; la branche « rejoindre » s'arrête à l'étape 2
 
 > **Given** j'ai terminé l'onboarding et je m'appelle « Arnaud »  
 > **When** j'utilise l'app  
@@ -1048,6 +1072,21 @@ Le planning s'affiche en liste verticale : une ligne par jour, avec les slots em
 - **Aperçu « Ensuite »** : en bas de page, le repas actif suivant (« Ensuite : Dîner de demain, {plat} », « Ensuite : Dîner de demain, restes » pour des restes, sans nom de plat), absent si ce créneau n'a pas de recette.
 - **États** : chargement ; erreur de lecture du planning avec « Réessayer » (distincte d'un planning absent) ; rien de prévu avec une issue (« Générer mon planning » si la semaine du repas n'a aucun planning, « Voir le planning » sinon, les deux ouvrant le planning sur la semaine du repas) ; restes (#349) : « {moment court} : rien à cuisiner » (Ce midi, Ce soir, Demain midi, Lundi soir…) et « On mange les restes qu'on a dans le frigo », sans nom de plat ni ingrédients, puis l'aperçu « Ensuite ». La recette conservée sur un créneau en restes est celle qui a été remplacée (RG-22) : l'afficher induirait en erreur.
 
+### RG-90 — Fenêtre du premier planning d'onboarding (US-23, #386)
+
+- **Fenêtre** : en solo, le premier planning est le **cycle** `ancreParDefaut(aujourd'hui, jour de courses choisi)` (RG-91), sur **7 jours** (`{ ancre, longueur }` passés à `POST /api/planning/generer`), et non une semaine ISO.
+- **Jours déjà passés non générés** : les jours antérieurs à aujourd'hui sont retirés du résultat avant l'écriture ; **aujourd'hui est gardé en entier**. Une personne qui s'inscrit un mercredi ne reçoit donc pas les repas de lundi et mardi.
+- **Séquence** : enregistrer le jour de courses du foyer, générer, filtrer, écrire le cycle (écriture atomique, RG-56), puis marquer l'onboarding terminé. Si l'enregistrement du jour de courses échoue, on reste sur l'écran 3 sans rien générer. Si la génération échoue, l'onboarding se termine quand même.
+- **Arrivée** : tout nouvel inscrit (solo ou « rejoindre ») termine le tunnel avec la préférence de vue du planning sur **Cycle**. La branche solo arrive sur `/planning?bienvenue=1` : la page efface le paramètre et affiche le toast « Ta liste de courses est prête » (action « Voir » vers `/courses`), **seulement si la génération a réussi**. La branche « rejoindre » ne génère rien et n'affiche pas ce toast.
+- **Hors périmètre** : comptes existants (aucun rattrapage), longueur du cycle, midi du week-end, mini-cycle avant le premier jour de courses.
+
+### RG-91 — Ancre de cycle par défaut (#386)
+
+- **Règle** : le cycle affiché par défaut est le **cycle suivant** quand il reste **2 jours ou moins** dans le cycle en cours, jour même compris (cadence de 7 jours, `JOURS_RESTANTS_BASCULE`), sinon le cycle en cours. Pour un jour de courses le lundi, le comportement reste celui d'avant (bascule le samedi et le dimanche).
+- **Portée** : `ancreParDefaut` sert partout où un cycle est choisi sans ancre explicite : `/courses`, la vue Cycle de `/planning`, le lien profond `/planning?cycle=`, l'outil MCP `generer_cycle` sans ancre (RG-74) et la demande de panier Chronodrive (RG-81).
+- **Pourquoi** : on prépare déjà le cycle suivant à quelques jours de la fin. L'ancienne règle « week-end » avait été pensée pour un jour de courses le lundi : un foyer du samedi basculait le jour même de ses courses ; un foyer du jeudi basculait dès le samedi, 5 jours avant ses courses suivantes.
+- **Désalignement connu** : la génération de la vue Semaine (`semaineParDefaut`) garde sa règle « week-end = semaine suivante ». Hors jour de courses lundi, la semaine proposée le week-end n'est donc pas forcément couverte par le cycle affiché par défaut de `/courses`.
+
 ### RG-09 — États de l'interface
 
 Chaque écran doit gérer trois états :
@@ -1090,7 +1129,7 @@ Une catégorie est **terminée** lorsqu'elle contient au moins un article **et**
 
 La liste de courses (US-03/RG-05) n'est plus fenêtrée sur la semaine ISO mais sur un **cycle** ancré sur le jour de courses du foyer. Le stockage du planning (par semaine ISO) est inchangé : le cycle est une **projection**.
 
-- **RG-53 — Fenêtre `ancre + longueur`** : un cycle est défini par une **ancre** (date du dernier jour de courses du foyer survenu au plus tard aujourd'hui) et une **longueur** (nombre de jours couverts, défaut **7**, étirable de **1 à 14**). La liste agrège exactement les repas planifiés sur les jours du cycle (les jours d'un cycle > 7 j peuvent chevaucher la semaine ISO suivante et donc le cycle suivant — chevauchement assumé, coches indépendantes par cycle). La navigation `/courses` (‹ cycle précédent / suivant ›) est indépendante de la navigation par semaine de `/planning` (RG-24) : les deux coexistent. Étirer la longueur ne décale **pas** l'ancre du cycle suivant (cadence fixe : +7 j).
+- **RG-53 — Fenêtre `ancre + longueur`** : un cycle est défini par une **ancre** (date du dernier jour de courses du foyer survenu au plus tard aujourd'hui) et une **longueur** (nombre de jours couverts, défaut **7**, étirable de **1 à 14**). La liste agrège exactement les repas planifiés sur les jours du cycle (les jours d'un cycle > 7 j peuvent chevaucher la semaine ISO suivante et donc le cycle suivant — chevauchement assumé, coches indépendantes par cycle). La navigation `/courses` (‹ cycle précédent / suivant ›) est indépendante de la navigation par semaine de `/planning` (RG-24) : les deux coexistent. Étirer la longueur ne décale **pas** l'ancre du cycle suivant (cadence fixe : +7 j). Le cycle **affiché par défaut** suit RG-91 (cycle suivant à 2 jours ou moins de la fin).
 - **RG-54 — Réglage foyer & rétro-compatibilité** : le jour de courses (`jourCourses`, ISO 1=lundi…7=dimanche) est un réglage **du foyer** (pas de l'utilisateur), car les coches sont partagées au foyer ; défaut **lundi**. Avec ce défaut, le cycle **coïncide exactement** avec la semaine ISO lundi→dimanche — **zéro changement de comportement observable** pour un foyer qui ne touche pas ce réglage. Changer le jour de courses ne s'applique qu'aux **cycles futurs** : les ancres et coches déjà constituées restent accessibles telles quelles en navigation.
 - **RG-55 — Coches par cycle, temps réel inchangé** : les coches de la liste (RG-10 à RG-14) sont clées par **ancre de cycle** (et non plus par semaine) ; la synchronisation temps réel entre membres du foyer (US-20) et la présence « en magasin » (RG-31) fonctionnent à l'identique, à l'échelle du cycle affiché.
 - **RG-56 — Génération fenêtrée (US-48, #259)** : « Générer mon cycle » remplit les 14 slots du cycle affiché (saison = ancre du cycle ; `lib/generateur.ts` inchangé), répartis dans les **1-2 semaines ISO** touchées (3 pour un cycle étiré de 14 j) et persistés en **une seule écriture atomique** (#304) qui n'écrit **que** les jours du cycle (les jours hors cycle des semaines touchées sont préservés). Comme toute génération complète, elle **réinitialise les coches** du cycle (RG-13), dans la même écriture (jamais de cycle à moitié écrit ni de coches purgées sans cycle), et bump la version du planning → un membre « en magasin » est alerté (US-21/RG-55). Faute d'annulation possible à l'échelle d'un cycle (le snapshot RG-19 est mono-semaine), l'UI ne propose de **régénérer** un cycle déjà rempli qu'après confirmation (vue Cycle de `/planning`), miroir du refus de l'outil MCP sans `remplacer: true` (RG-74) ; `/courses` n'offre « Générer mon cycle » que sur un cycle vide (#334). La navigation planning par semaine (RG-24) reste la vue de référence « on mange quoi ce soir ? ».
@@ -1382,7 +1421,7 @@ Tout nouveau compte naît avec un onboarding **non terminé** : l'app le redirig
 
 ### RG-37 — L'onboarding calibre les réglages existants (US-23, #22)
 
-L'écran de calibration n'introduit **aucun nouveau champ** : le nombre de personnes alimente `reglages.personnes_defaut` (la base de mise à l'échelle des recettes reste figée à 2, RG-16) et l'option « foyer végétarien » active la préférence végé de semaine (RG-26). La fin du tunnel **génère le premier planning** (ou, si l'on rejoint un foyer, en réhydrate le contenu existant — sans régénérer).
+L'écran de calibration n'introduit **aucun nouveau champ** : le nombre de personnes alimente `reglages.personnes_defaut` (la base de mise à l'échelle des recettes reste figée à 2, RG-16) et l'option « foyer végétarien » active la préférence végé de semaine (RG-26). La fin du tunnel **génère le premier planning** — un cycle de 7 jours calé sur le jour de courses choisi, sans les jours déjà passés (RG-90, #386) — ou, si l'on rejoint un foyer, en réhydrate le contenu existant, sans régénérer. L'interrupteur « midi en semaine » de l'écran 1 écrit le plafond du déjeuner de semaine (RG-44) : il n'ajoute pas de champ.
 
 ### RG-38 — Survie du code d'invitation au flux d'auth (US-24, #22)
 

@@ -71,9 +71,10 @@ beforeEach(() => {
   )
   serveur.lireFoyer.mockResolvedValue({ data: { jour_courses: 4 }, error: null })
   serveur.lireCycle.mockResolvedValue({ data: null, error: null })
-  // Horloge figée (seul `Date`) : mercredi 28 octobre 2026, 12 h à Paris.
+  // Horloge figée (seul `Date`) : vendredi 23 octobre 2026, 12 h à Paris
+  // (jour de courses jeudi : 6 jours restants dans le cycle, pas de bascule RG-91).
   vi.useFakeTimers({ toFake: ["Date"] })
-  vi.setSystemTime(new Date("2026-10-28T11:00:00Z"))
+  vi.setSystemTime(new Date("2026-10-23T11:00:00Z"))
   rateLimit.limitePanier.mockResolvedValue({ autorise: true })
   rpcs({
     creer_demande_panier: { data: ENVOI, error: null },
@@ -118,21 +119,32 @@ describe("POST /api/panier/demande", () => {
     expect(await reponse.json()).toEqual({ demande_id: "d1" })
     expect(serveur.from).toHaveBeenCalledWith("foyers")
     expect(serveur.rpc).toHaveBeenCalledTimes(1)
-    // Jour de courses = jeudi : dernier jeudi ≤ mercredi 28 octobre.
+    // Jour de courses = jeudi : dernier jeudi ≤ vendredi 23 octobre.
     expect(serveur.rpc).toHaveBeenCalledWith("creer_demande_panier", { p_ancre: "2026-10-22" })
     // Aucun `fetch` injecté : l'option n'est même pas passée (égalité stricte).
     expect(panier.envoyerWebhook.mock.calls[0][1]).toStrictEqual({})
   })
 
-  it("le week-end : demande sur le cycle suivant, comme /courses (ancreParDefaut)", async () => {
+  it("à 2 jours ou moins de la fin du cycle : demande sur le cycle suivant, comme /courses (ancreParDefaut, RG-91)", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] })
+    vi.setSystemTime(new Date("2026-10-28T11:00:00Z")) // mercredi, 12 h à Paris
+
+    const reponse = await POST(requete())
+
+    expect(reponse.status).toBe(202)
+    // Ancre courante = jeudi 22 octobre, il reste 1 jour : un cycle plus loin.
+    expect(serveur.rpc).toHaveBeenCalledWith("creer_demande_panier", { p_ancre: "2026-10-29" })
+  })
+
+  it("le week-end avec un jour de courses jeudi : cycle courant (3 jours restants ou plus, RG-91)", async () => {
     vi.useFakeTimers({ toFake: ["Date"] })
     vi.setSystemTime(new Date("2026-10-31T11:00:00Z")) // samedi, 12 h à Paris
 
     const reponse = await POST(requete())
 
     expect(reponse.status).toBe(202)
-    // Ancre courante = jeudi 29 octobre ; le week-end, un cycle plus loin.
-    expect(serveur.rpc).toHaveBeenCalledWith("creer_demande_panier", { p_ancre: "2026-11-05" })
+    // Ancre courante = jeudi 29 octobre ; il reste 5 jours : pas de bascule.
+    expect(serveur.rpc).toHaveBeenCalledWith("creer_demande_panier", { p_ancre: "2026-10-29" })
   })
 
   it("500 si la lecture du jour de courses échoue, sans créer de demande", async () => {
