@@ -66,11 +66,24 @@ export async function GET(request: NextRequest) {
   const supabase = await createClient()
 
   const erreur = erreurOAuthDepuisCallback(params)
-  if (erreur) return redirigerEnErreur(request, supabase, erreur)
+  if (erreur) {
+    // access_denied = annulation voulue, pas une panne : seul le reste est loggé.
+    const erreurFournisseur = params.get("error")
+    if (erreurFournisseur && erreurFournisseur !== "access_denied") {
+      console.error("Callback OAuth : erreur renvoyée par le fournisseur.", {
+        error: erreurFournisseur,
+        error_description: params.get("error_description"),
+      })
+    }
+    return redirigerEnErreur(request, supabase, erreur)
+  }
+
+  const code = params.get("code")
+  if (!code) return redirigerEnErreur(request, supabase, "echec")
 
   let userId: string
   try {
-    const { data, error } = await supabase.auth.exchangeCodeForSession(params.get("code")!)
+    const { data, error } = await supabase.auth.exchangeCodeForSession(code)
     if (error || !data.user) {
       console.error("Échange du code OAuth Google échoué.", error)
       return redirigerEnErreur(request, supabase, "echec")

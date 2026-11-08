@@ -1,19 +1,19 @@
 // Tests de l'horodatage des CGU après connexion Google (US-57, RG-92).
-// Client Supabase simulé : on vérifie la lecture de profiles.cgu_version puis
-// l'éventuel update filtré sur user_id.
+// Client Supabase simulé : on vérifie l'update atomique filtré sur user_id et
+// sur cgu_version nulle, sans lecture préalable.
 
 import { describe, test, expect, vi, afterEach } from "vitest"
 import type { ClientSupabase } from "@/lib/supabase/types"
+import { CGU_VERSION_ACTUELLE } from "@/lib/legal"
 import { horodaterCguSiAbsentes } from "@/lib/cgu-oauth"
 
-function clientSimule(lecture: { data: { cgu_version: number | null } | null; error: unknown }) {
-  const eqUpdate = vi.fn().mockResolvedValue({ error: null })
-  const update = vi.fn().mockReturnValue({ eq: eqUpdate })
-  const maybeSingle = vi.fn().mockResolvedValue(lecture)
-  const eqSelect = vi.fn().mockReturnValue({ maybeSingle })
-  const select = vi.fn().mockReturnValue({ eq: eqSelect })
-  const from = vi.fn().mockReturnValue({ select, update })
-  return { client: { from } as unknown as ClientSupabase, from, select, eqSelect, update, eqUpdate }
+function clientSimule(resultat: { error: unknown } = { error: null }) {
+  const is = vi.fn().mockResolvedValue(resultat)
+  const eq = vi.fn().mockReturnValue({ is })
+  const update = vi.fn().mockReturnValue({ eq })
+  const select = vi.fn()
+  const from = vi.fn().mockReturnValue({ update, select })
+  return { client: { from } as unknown as ClientSupabase, from, update, eq, is, select }
 }
 
 afterEach(() => {
@@ -21,40 +21,39 @@ afterEach(() => {
 })
 
 describe("horodaterCguSiAbsentes", () => {
-  test("cgu_version nulle : update de la version courante filtré sur user_id", async () => {
-    const { client, from, eqSelect, update, eqUpdate } = clientSimule({
-      data: { cgu_version: null },
-      error: null,
-    })
+  test("update atomique de la version courante, filtré sur user_id et cgu_version nulle", async () => {
+    const { client, from, update, eq, is, select } = clientSimule()
     await horodaterCguSiAbsentes(client, "user-1")
     expect(from).toHaveBeenCalledWith("profiles")
-    expect(eqSelect).toHaveBeenCalledWith("user_id", "user-1")
     expect(update).toHaveBeenCalledTimes(1)
     expect(update).toHaveBeenCalledWith({
-      cgu_version: 1,
+      cgu_version: CGU_VERSION_ACTUELLE,
       cgu_acceptees_le: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
     })
-    expect(eqUpdate).toHaveBeenCalledWith("user_id", "user-1")
+    expect(eq).toHaveBeenCalledWith("user_id", "user-1")
+    expect(is).toHaveBeenCalledWith("cgu_version", null)
+    // Aucune lecture préalable : la garde « déjà horodaté » est dans le filtre.
+    expect(select).not.toHaveBeenCalled()
   })
 
-  test("cgu_version déjà renseignée : aucun update", async () => {
-    const { client, update } = clientSimule({ data: { cgu_version: 1 }, error: null })
-    await horodaterCguSiAbsentes(client, "user-1")
-    expect(update).not.toHaveBeenCalled()
-  })
-
-  test("erreur de lecture : aucune exception, erreur loggée, aucun update", async () => {
+  test("aucune ligne touchée (déjà horodaté) : rien n'est loggé", async () => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
-    const { client, update } = clientSimule({ data: null, error: { message: "boom" } })
-    await expect(horodaterCguSiAbsentes(client, "user-1")).resolves.toBeUndefined()
-    expect(consoleError).toHaveBeenCalled()
-    expect(update).not.toHaveBeenCalled()
+    const { client } = clientSimule({ error: null })
+    await horodaterCguSiAbsentes(client, "user-1")
+    expect(consoleError).not.toHaveBeenCalled()
   })
 
   test("erreur d'écriture : aucune exception, erreur loggée", async () => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
-    const { client, eqUpdate } = clientSimule({ data: { cgu_version: null }, error: null })
-    eqUpdate.mockResolvedValue({ error: { message: "rls" } })
+    const { client } = clientSimule({ error: { message: "rls" } })
+    await expect(horodaterCguSiAbsentes(client, "user-1")).resolves.toBeUndefined()
+    expect(consoleError).toHaveBeenCalled()
+  })
+
+  test("exception du client : aucune exception, erreur loggée", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
+    const { client, is } = clientSimule()
+    is.mockRejectedValue(new Error("réseau"))
     await expect(horodaterCguSiAbsentes(client, "user-1")).resolves.toBeUndefined()
     expect(consoleError).toHaveBeenCalled()
   })

@@ -82,6 +82,20 @@ describe("GET /auth/callback, erreurs sans session", () => {
     expect(serveur.exchangeCodeForSession).not.toHaveBeenCalled()
   })
 
+  it("erreur fournisseur autre que access_denied : échec et log de l'erreur", async () => {
+    const url = await appeler("?error=server_error&error_description=boom")
+    expect(url.searchParams.get("erreur_oauth")).toBe("echec")
+    expect(console.error).toHaveBeenCalledWith(
+      expect.stringContaining("fournisseur"),
+      expect.objectContaining({ error: "server_error", error_description: "boom" })
+    )
+  })
+
+  it("access_denied n'est pas loggé comme une panne", async () => {
+    await appeler("?error=access_denied")
+    expect(console.error).not.toHaveBeenCalled()
+  })
+
   it("échec d'échange : /login?erreur_oauth=echec avec suivant", async () => {
     serveur.exchangeCodeForSession.mockResolvedValue({ data: { user: null }, error: { message: "bad" } })
     const url = await appeler("?code=bidon&suivant=%2Fplanning%3Fcycle%3D2026-11-09")
