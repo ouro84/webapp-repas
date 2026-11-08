@@ -335,6 +335,18 @@ Un audit de sécurité white box (cf. `RAPPORT_AUDIT_SECURITE.md`) a passé en r
 ### Conséquence pratique
 Toute nouvelle origine externe (CDN, API tierce) devra être ajoutée à la future CSP. Le rate-limiting n'est actif qu'avec les secrets Upstash en prod (cf. Gestion des secrets). Le **volet config de F-02** (activation Supabase : longueur/complexité + Leaked Password Protection, possiblement Pro) et la **dette F-05** (confirmation email) sont à solder **avant toute ouverture publique** (cf. checklist #192).
 
+> [RÉVISION - ADR-10 — 2026-11-08] **Connexion Google (US-57) : fraîcheur d'authentification avant la suppression de compte (RG-93).** Un compte Google n'a pas de mot de passe à ressaisir, alors que la suppression de compte reposait sur la ré-authentification par mot de passe. Quatre décisions.
+>
+> (a) **Fraîcheur lue sur le JWT de la session, pas sur `last_sign_in_at`.** La route `POST /api/compte/supprimer` lit le claim `amr` par `getClaims()` et refuse (403) si son horodatage le plus récent a plus de 300 s (`lib/reauth.ts`, `authentificationRecente`) ; un claim absent ou sans horodatage est refusé. `user.last_sign_in_at` est écarté : il est global à l'utilisateur, donc une connexion légitime sur un autre appareil validerait un cookie volé. `signInWithPassword` et une connexion Google ouvrent chacun une session dont l'`amr` est frais.
+>
+> (b) **Fermeture en base.** `supprimer_mon_compte()` est appelable directement par tout `authenticated` via PostgREST : le seul contrôle de la route se contournait. La RPC refuse désormais elle-même (`OMQ06`) en première instruction, par `authentification_recente(p_max_s default 300)`, jumeau SQL de `authentificationRecente` (le seuil doit rester aligné des deux côtés ; fonction sans droit client). La route traduit `OMQ06` en 403, comme le contrôle amont. Une panne de lecture du claim répond 500, pas 403.
+>
+> (c) **Limite de la ré-authentification Google.** Google n'impose pas la ressaisie de son mot de passe : si le navigateur a déjà une session Google active, « Confirmer avec Google » se fait en un clic (`prompt=select_account` laisse choisir le compte, `login_hint` présélectionne le bon). Le contrôle protège contre le vol du seul cookie OMQ, pas contre un appareil déverrouillé laissé sans surveillance. Limite acceptée. Un compte choisi par erreur est détecté au retour (uid comparé à celui mémorisé avant le départ) : suppression bloquée, déconnexion locale.
+>
+> (d) **Liaison automatique des identités et callback en route handler.** Un compte email dont l'adresse est confirmée qui se connecte avec Google sous la même adresse récupère l'identité Google (comportement par défaut de Supabase) ; pas d'écran de liaison manuelle. Le retour OAuth arrive sur `app/auth/callback/route.ts`, un route handler et non une page : `capterCodeDepuisURL` (monté dans le layout) lit `?code` sur les pages comme code d'invitation au foyer, alors que celui du retour OAuth est le code PKCE de Supabase. Pour la même raison, `capterCodeDepuisURL` ignore tout chemin `/auth/*`, ce qui corrige aussi le lien de réinitialisation du mot de passe (`/auth/reinitialiser?code=`). Le callback ne redirige jamais vers une page en gardant le `code`.
+>
+> **Dette F-05 mise à jour** : la confirmation email est **activée en prod** (`mailer_autoconfirm = false`) et désactivée sur staging, dont les e2e dépendent. Le volet config de F-05 est donc en place en prod ; le volet config de F-02 reste à solder.
+
 ---
 
 ## ADR-11 — Serveur MCP et autorisation OAuth 2.1 (#302)

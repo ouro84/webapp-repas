@@ -5,7 +5,7 @@
 
 import { cheminDeRetour } from "@/lib/redirection"
 
-/** Route qui échange le `code` OAuth contre une session (RG-93). */
+/** Route qui échange le `code` OAuth contre une session (US-57). */
 export const CHEMIN_CALLBACK = "/auth/callback"
 
 /**
@@ -41,7 +41,7 @@ const MESSAGES_ERREUR_OAUTH: Record<ErreurOAuth, string> = {
   echec: "La connexion avec Google a échoué. Réessaie dans un instant ou utilise ton email.",
 }
 
-/** Message français pour la clé `?erreur=` de /login ; `null` si inconnue. */
+/** Message français pour la clé `?erreur_oauth=` de /login ; `null` si inconnue. */
 export function messageErreurOAuth(cle: string | null): string | null {
   if (cle === "annule" || cle === "echec") return MESSAGES_ERREUR_OAUTH[cle]
   return null
@@ -52,7 +52,7 @@ function texteNonVide(valeur: unknown): string {
 }
 
 /**
- * Prénom proposé à l'onboarding depuis les métadonnées Google (RG-92) :
+ * Prénom proposé à l'onboarding depuis les métadonnées Google (RG-94) :
  * `given_name`, sinon premier mot de `full_name`, sinon de `name`, sinon "".
  */
 export function prenomDepuisMetadonnees(

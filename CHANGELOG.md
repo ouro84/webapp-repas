@@ -25,6 +25,7 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ### Corrigé
 
+- Mot de passe oublié : le code du lien reçu par email n’est plus pris pour un code d’invitation à un foyer. Il n’est plus retiré de l’adresse avant que la page de réinitialisation ne s’en serve pour te laisser choisir ton nouveau mot de passe.
 - Liste de courses et vue Cycle : avec un jour de courses le samedi ou le dimanche, le week-end affichait le cycle de la semaine suivante au lieu de celui du jour. Le cycle suivant s’affiche désormais quand il reste deux jours ou moins dans le cycle en cours, quel que soit ton jour de courses ; rien ne change pour un jour de courses le lundi (#386).
 - Vue Cycle du planning : après « Changer », les mêmes avertissements que dans la vue Semaine s’affichent (pas de recette végétarienne, pas de légumes ce jour-là, recette hors saison) ; Ctrl+Z (Cmd+Z sur Mac) annule la dernière modification et « Annulé » confirme l’annulation ; quand aucune recette n’est disponible, « Pas de recette disponible » s’affiche sous le repas concerné (#373).
 - Planning : une modification faite pendant le chargement d’une semaine (changement de semaine, ouverture de la page, mise à jour venue d’un autre membre du foyer) n’est plus perdue ; elle est enregistrée avec le reste (#368).
@@ -56,12 +57,14 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ### Sécurité
 
+- Suppression de compte : elle exige maintenant une authentification de moins de 5 minutes, pour tous les comptes, avec ton mot de passe ou avec Google. Le contrôle est aussi fait dans la base de données : un appel direct qui contournerait l’app est refusé de la même façon. Si tu choisis un autre compte Google que le tien pour confirmer, rien n’est supprimé.
 - Dépendances : Sentry passe en 10.78.0, qui corrige une faille critique de contournement du proxy (GHSA-mchm-gjx6-7h55). Elle n’était pas exploitable chez nous, faute de `tunnelRoute` configuré. D’autres paquets de build et de test sont mis à jour dans leurs plages autorisées. Restent deux avis modérés sans correctif compatible (`minimatch`, `glob`), limités à l’outillage de lint et de build.
 - Limitation du nombre de requêtes désormais active en production (#191, #305) : la génération de planning (10 par minute) et le serveur MCP des assistants IA (60 par minute) sont plafonnés par utilisateur. Un usage normal n'est jamais concerné.
 - Panier Chronodrive (#330) : le remplissage du panier ne dépend plus des consignes données au modèle. Le run passe par un serveur MCP dédié d’OMQ (`/api/mcp/executeur`) et chaque article porte un jeton signé, valable 30 minutes, que le MCP Chronodrive vérifie avant tout ajout. Un run qui saute la prise de la demande ou invente un cycle est refusé sans rien ajouter au panier, et un jeton n’est plus accepté une fois expiré (30 minutes après la prise). Ces outils quittent le serveur général `/api/mcp`.
 
 ### Ajouté
 
+- Connexion et inscription avec un compte Google : le bouton « Continuer avec Google » est sur les écrans de connexion et d’inscription, avec un lien vers les CGU et la politique de confidentialité en dessous. Un nouveau compte arrive dans l’accueil avec son prénom déjà rempli depuis Google. Si tu as déjà un compte avec la même adresse email, Google s’y rattache et tu retrouves tes données. Un compte Google n’a pas de mot de passe : « Mon profil » affiche « Connecté avec Google » à la place du changement de mot de passe, et la suppression du compte se confirme avec Google. Sur iPhone, dans l’app installée sur l’écran d’accueil, le bouton est remplacé par un message qui invite à ouvrir OMQ dans Safari.
 - Assistant IA : chaque article de la liste de courses porte une référence stable, que l’assistant peut utiliser pour cocher l’article sans risque de confusion entre deux articles de même nom (#372).
 - Hermes : skill « préparer mon cycle » (tendances confirmées, ajustements, deux validations, panier et partage WhatsApp sur ordre) et mesure de la durée machine d’un run (#320).
 - Lien vers un cycle : `/planning?cycle=AAAA-MM-JJ` ouvre la vue Cycle sur ce cycle, sans changer ta vue préférée, y compris après connexion (#320).

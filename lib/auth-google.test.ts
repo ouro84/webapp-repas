@@ -8,7 +8,7 @@ import {
   urlRetourOAuth,
 } from "@/lib/auth-google"
 
-describe("urlRetourOAuth (US-57, RG-93)", () => {
+describe("urlRetourOAuth (US-57)", () => {
   it("expose le chemin du callback", () => {
     expect(CHEMIN_CALLBACK).toBe("/auth/callback")
   })
@@ -78,7 +78,7 @@ describe("messageErreurOAuth", () => {
   })
 })
 
-describe("prenomDepuisMetadonnees (RG-92)", () => {
+describe("prenomDepuisMetadonnees (RG-94)", () => {
   it("given_name prioritaire", () => {
     expect(prenomDepuisMetadonnees({ given_name: "Arnaud", full_name: "Jean Dupont" })).toBe("Arnaud")
   })

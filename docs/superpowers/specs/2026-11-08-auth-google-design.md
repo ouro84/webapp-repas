@@ -54,7 +54,7 @@ Réduire la friction d'inscription pour les bêta-testeurs et l'ouverture B2C (�
 - **D4.** Bouton « Continuer avec Google », **même libellé** en haut de `/login` et de `/signup`, séparateur « ou » au-dessus du formulaire email existant. Respect de la charte « Sign in with Google » (logo G officiel, couleurs imposées, variantes clair et sombre). Le bouton appelle `supabase.auth.signInWithOAuth({ provider: "google", options: { redirectTo } })` avec `redirectTo = <origine>/auth/callback`, plus `?suivant=<valeur>` si la page courante en porte un.
 - **D5.** Route handler `app/auth/callback/route.ts` :
   1. lit `code`, `error`, `error_description`, `suivant` ;
-  2. si `error` (dont l'annulation `access_denied`) ou `code` absent : redirection vers `/login?erreur_oauth=<clé>` (message en français affiché par la page) ;
+  2. si `error` (dont l'annulation `access_denied`) ou `code` absent : redirection vers `/login?erreur_oauth=annule|echec` (la clé est `annule` pour `access_denied`, `echec` sinon ; le bouton Google affiche le message français) ;
   3. sinon `exchangeCodeForSession(code)` avec le client serveur à cookies ; échec → même redirection d'erreur, erreur loggée ;
   4. succès → horodatage CGU (D7), puis redirection vers `cheminDeRetour(suivant)`, **sans** recopier `code`. Le proxy envoie ensuite un compte non onboardé vers `/bienvenue`.
 - **D6.** Le code d'invitation au foyer (`/signup?code=…`) est déjà en `sessionStorage` avant le départ vers Google (capté par `InvitationEnAttente`) et survit à l'aller-retour dans le même onglet : aucun changement du mécanisme d'invitation.
@@ -69,7 +69,7 @@ Réduire la friction d'inscription pour les bêta-testeurs et l'ouverture B2C (�
 
 ### Suppression de compte et mot de passe (RG-93)
 
-- **D9.** La route `POST /api/compte/supprimer` refuse (403, message français) si l'authentification **de la session courante** date de plus de **5 minutes**, pour **tous** les comptes. Signal : l'horodatage le plus récent du claim `amr` du JWT, lu côté serveur via `supabase.auth.getClaims()`. `signInWithPassword` comme une connexion Google ouvrent une nouvelle session avec un `amr` frais. *Choix de l'agent après relecture :* `user.last_sign_in_at` est écarté, car il est global à l'utilisateur (une connexion légitime sur un autre appareil validerait un cookie volé).
+- **D9.** La route `POST /api/compte/supprimer` refuse (403, message français) si l'authentification **de la session courante** date de plus de **5 minutes**, pour **tous** les comptes. Signal : l'horodatage le plus récent du claim `amr` du JWT, lu côté serveur via `supabase.auth.getClaims()`. *Écart à l'implémentation :* si la lecture du claim échoue (erreur retournée ou exception du SDK), la route répond **500** (« Vérification de ta session impossible… »), pas 403 : une panne ne se présente pas comme une session ancienne. Un claim lu mais absent, illisible ou sans horodatage reste un 403. `signInWithPassword` comme une connexion Google ouvrent une nouvelle session avec un `amr` frais. *Choix de l'agent après relecture :* `user.last_sign_in_at` est écarté, car il est global à l'utilisateur (une connexion légitime sur un autre appareil validerait un cookie volé).
 - **D10.** Méthode de ré-authentification selon les identités de l'utilisateur (`user.identities`) :
   - identité `email` présente (avec ou sans Google lié) : mot de passe, comme aujourd'hui ;
   - Google seul : bouton « Confirmer avec Google » → `signInWithOAuth` avec `queryParams: { prompt: "select_account" }` et retour sur `/profil?suppression=confirmer` (via `/auth/callback?suivant=…`). Au retour, la section « Supprimer mon compte » s'ouvre directement à l'étape de saisie de « SUPPRIMER », le contrôle de fraîcheur serveur faisant foi.
@@ -84,6 +84,12 @@ Réduire la friction d'inscription pour les bêta-testeurs et l'ouverture B2C (�
 ### Collision `?code` existante (correctif embarqué)
 
 - **D14.** Avec PKCE (défaut de `createBrowserClient`), le lien « mot de passe oublié » arrive probablement sur `/auth/reinitialiser?code=…`, une page où `capterCodeDepuisURL()` prendrait ce code pour une invitation au foyer. À vérifier d'abord (lien de reset reçu sur staging, ou lecture du flux supabase-js) ; si confirmé, `capterCodeDepuisURL()` ignore les chemins `/auth/*`, test unitaire à l'appui, commit dédié. Le commentaire de `app/auth/reinitialiser/page.tsx` (« fragment d'URL ») est corrigé au passage.
+
+*Confirmé à l'implémentation :* la collision existait, `capterCodeDepuisURL()` ignore désormais `/auth/*` (commit dédié, test unitaire). Elle couvre aussi le retour OAuth `/auth/callback?code=…`.
+
+### Fermeture de la RPC de suppression
+
+- **D16.** *(Décidé par Arnaud le 2026-11-08.)* Le contrôle de fraîcheur de D9 est **aussi** posé dans `supprimer_mon_compte()` : la RPC est appelable directement par PostgREST par tout utilisateur connecté, et sans contrôle en base la purge des données contournait la route. Migration `20261108120000_suppression_compte_fraicheur.sql` : fonction `authentification_recente(p_max_s integer default 300)` (jumeau SQL de `authentificationRecente`, `lib/reauth.ts` ; aucun droit client) et refus `OMQ06` en première instruction de la RPC recréée. La route traduit `OMQ06` en 403, comme son propre contrôle. Le seuil de 300 s doit rester identique des deux côtés. Appliquée sur staging avant les e2e ; la prod la reçoit par la CI au push sur `main`.
 
 ### Mise en production
 
@@ -110,7 +116,7 @@ Réduire la friction d'inscription pour les bêta-testeurs et l'ouverture B2C (�
 - `ADR.md` : révision d'ADR-10 (fraîcheur serveur, limite de la ré-authentification Google, liaison automatique).
 - `.claude/rules/foyer-compte.md` : connexion Google, callback, ré-authentification ; corriger la section « Dette pré-ouverture publique » (la confirmation email est **activée** en prod, désactivée sur staging).
 - `CHANGELOG.md` : entrée `[Unreleased]`.
-- Aide Notion : article « Se connecter avec Google » via l'API REST (`NOTION_TOKEN`), puis `npm run pull:aide`.
+- Aide Notion : article « Se connecter avec Google » (slug `connexion-google`) à créer au statut **Brouillon**, à publier au merge puis `npm run pull:aide`. Pourquoi : le hook `prebuild` de Vercel tire tous les articles « Publié » à chaque déploiement, y compris ceux de `main` ; un article publié avant le merge apparaîtrait en prod avant la fonctionnalité. Les articles « Supprimer mon compte » et « Profil, avatar et mot de passe » demandent aussi une mise à jour au merge (mot de passe, Google).
 
 ## Laissé au builder
 

@@ -26,10 +26,10 @@ const MESSAGE_GENERIQUE =
 
 // Message NEUTRE à l'inscription quand l'adresse est déjà prise : il ne confirme
 // pas l'existence du compte (anti-énumération, F-05), tout en restant actionnable.
-// ⚠️ Limite connue : tant que la confirmation email est désactivée (cf. ADR-02),
-// le SDK renvoie aussi un CODE distinct lisible par un script — la fermeture
-// complète de l'énumération est couplée à l'activation de la confirmation email
-// (reportée à l'ouverture publique). Ici on neutralise le signal côté UI.
+// ⚠️ Limite connue : la confirmation email est activée en prod mais désactivée
+// sur staging (les e2e en dépendent) ; là où elle est désactivée, le SDK
+// renvoie aussi un CODE distinct lisible par un script. Ici on neutralise le
+// signal côté UI (cf. ADR-10, dette F-05).
 const MESSAGE_INSCRIPTION_NEUTRE =
   "Inscription impossible avec cette adresse. Si tu as déjà un compte, connecte-toi ou réinitialise ton mot de passe."
 

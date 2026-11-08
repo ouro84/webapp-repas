@@ -1,4 +1,4 @@
-// Callback OAuth Google (US-57, RG-93) : Google → Supabase → ici avec
+// Callback OAuth Google (US-57) : Google → Supabase → ici avec
 // `?code=<pkce>&suivant=<chemin>` (ou `?error=…`). On échange le code contre
 // une session à cookies, on horodate les CGU si absentes (RG-92), puis on
 // redirige. L'URL finale ne contient jamais le `code`.
