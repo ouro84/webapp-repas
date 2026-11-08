@@ -10,11 +10,23 @@
 // fermeture qui vaudrait acceptation implicite — les deux actions sont des
 // boutons de même poids visuel.
 
+import { useSyncExternalStore } from "react";
 import { accepterConsentement, refuserConsentement, useConsentementAnalytics } from "@/lib/consentement";
+
+// Vrai seulement après hydratation (snapshot serveur `false`).
+const sAbonnerRien = () => () => {};
+function useHydrate(): boolean {
+  return useSyncExternalStore(sAbonnerRien, () => true, () => false);
+}
 
 export function BandeauCookies() {
   const choix = useConsentementAnalytics();
-  if (choix !== null) return null;
+  const hydrate = useHydrate();
+  // Rendu après hydratation seulement : le choix vit dans le localStorage,
+  // inconnu au prérendu. Prérendu pour tous puis retiré chez ceux qui ont déjà
+  // choisi, le bandeau décalait le pied de page à chaque chargement (CLS) et
+  // passait pour l'élément LCP.
+  if (!hydrate || choix !== null) return null;
 
   return (
     // PAS de position fixed/sticky (bug vécu, e2e profil.spec) : un bandeau

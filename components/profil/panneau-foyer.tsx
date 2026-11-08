@@ -210,7 +210,9 @@ export function PanneauFoyer() {
 
   if (etat === null) {
     return (
-      <section className="mb-8" aria-labelledby="section-foyer">
+      // Hauteur réservée ≈ panneau chargé d'un foyer solo (538 px mobile,
+      // 490 px desktop) : sinon la suite de /profil saute à l'arrivée (CLS).
+      <section className="mb-8 min-h-[33.6rem] md:min-h-[30.6rem]" aria-labelledby="section-foyer">
         <h2 id="section-foyer" className="mb-1 text-lg font-semibold text-brand-900">
           Mon foyer
         </h2>

@@ -80,6 +80,7 @@ import { GrilleJours, type JourGrille } from "@/components/planning/grille-jours
 import { ConfirmationModale } from "@/components/ui/confirmation";
 import { PulsationAtterrissage } from "@/components/ui/pulsation-atterrissage";
 import type { Jour, JourPlanning, Planning, Recette } from "@/types";
+import { EcranChargement } from "@/components/ui/ecran-chargement";
 
 type TypeRepas = "dejeuner" | "diner";
 
@@ -945,15 +946,7 @@ function ContenuPlanning() {
 export default function PagePlanning() {
   // Frontière Suspense exigée par useSearchParams (Next 16, cf. app/courses/page.tsx).
   return (
-    <Suspense
-      fallback={
-        <main id="contenu" className="flex flex-1 flex-col items-center justify-center p-8">
-          <p role="status" className="animate-pulse text-lg text-brand-700/85">
-            Chargement…
-          </p>
-        </main>
-      }
-    >
+    <Suspense fallback={<EcranChargement largeur="pleine" />}>
       <ContenuPlanning />
     </Suspense>
   );

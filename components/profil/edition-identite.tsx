@@ -23,7 +23,9 @@ export function EditionIdentite() {
 
   if (profil === null) {
     return (
-      <section className="mb-8" aria-labelledby="section-identite">
+      // Hauteur réservée ≈ section chargée (246 px mobile, 208 px desktop) :
+      // sinon tout /profil descend à l'arrivée du profil (CLS).
+      <section className="mb-8 min-h-[15.4rem] md:min-h-[13rem]" aria-labelledby="section-identite">
         <h2
           id="section-identite"
           className="mb-4 text-lg font-semibold text-brand-900"

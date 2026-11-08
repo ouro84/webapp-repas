@@ -193,7 +193,9 @@ export default function PageReglages() {
         {erreur}
       </p>
     ) : form === null ? (
-      <p role="status" className="animate-pulse text-brand-700/85">
+      // min-h-dvh : le pied de page reste sous la ligne de flottaison au lieu
+      // d'être repoussé par le formulaire chargé (CLS).
+      <p role="status" className="min-h-dvh animate-pulse text-brand-700/85">
         Chargement…
       </p>
     ) : (

@@ -350,9 +350,11 @@ function ContenuRecettes() {
         </p>
       )}
 
-      {/* État chargement (RG-09) */}
+      {/* État chargement (RG-09). min-h-dvh : la suite de la page et le pied
+          de page restent sous la ligne de flottaison au lieu d'être repoussés
+          par la liste chargée (CLS). */}
       {recettes === null && erreur === null && (
-        <p role="status" className="animate-pulse text-brand-700/85">
+        <p role="status" className="min-h-dvh animate-pulse text-brand-700/85">
           Chargement…
         </p>
       )}
