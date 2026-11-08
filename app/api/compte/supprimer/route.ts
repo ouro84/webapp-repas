@@ -22,8 +22,21 @@ export async function POST() {
 
   // RG-93 : la session courante doit s’être authentifiée il y a moins de
   // 5 minutes (claim `amr` du JWT). Contrôle AVANT la RPC : l’ordre
-  // RPC puis deleteUser reste strict.
-  const { data: claims } = await supabase.auth.getClaims()
+  // RPC puis deleteUser reste strict. Une panne de vérification (erreur
+  // retournée ou exception du SDK) se distingue d’une session ancienne.
+  let claims
+  try {
+    const { data, error: erreurClaims } = await supabase.auth.getClaims()
+    if (erreurClaims) throw erreurClaims
+    claims = data
+  } catch (erreur) {
+    return apiError(
+      "POST /api/compte/supprimer",
+      erreur,
+      "Vérification de ta session impossible. Réessaie dans quelques instants.",
+      500
+    )
+  }
   if (
     !authentificationRecente(
       claims?.claims?.amr,
@@ -32,7 +45,7 @@ export async function POST() {
   ) {
     return apiError(
       "POST /api/compte/supprimer",
-      null,
+      "amr absent ou périmé",
       "Pour supprimer ton compte, confirme d’abord ton identité. La confirmation est valable 5 minutes.",
       403
     )
