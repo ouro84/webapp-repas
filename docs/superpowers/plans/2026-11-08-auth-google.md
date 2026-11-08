@@ -202,6 +202,38 @@ expect(methodeReauth(undefined)).toBe("google")
 
 ---
 
+### Task 5b : même contrôle de fraîcheur dans la RPC `supprimer_mon_compte` (RG-93, ajout du 2026-11-08)
+
+Ajout demandé par Arnaud après la revue de la Tâche 5 : la RPC `supprimer_mon_compte()` reste appelable directement via PostgREST par tout `authenticated`, ce qui contourne le contrôle de la route pour la purge des données. On ferme la faille en base, en jumeau SQL de `authentificationRecente` (règle du jumeau de `CLAUDE.md`).
+
+**Files :**
+- Create : `supabase/migrations/20261108120000_suppression_compte_fraicheur.sql`
+- Modify : `app/api/compte/supprimer/route.ts` (traduction de l'erreur de la RPC)
+- Modify : `lib/reauth.ts` (commentaire de jumeau uniquement)
+- Test : test SQL en transaction `rollback` sur staging (impersonation), + test Vitest de route si `app/api/compte/supprimer/route.test.ts` existe (créé en fix de la Tâche 5)
+
+**Interfaces :**
+- Consumes : la définition actuelle de `supprimer_mon_compte()` (`supabase/migrations/20260716090000_suppression_compte.sql`, seule définition existante), à reprendre **à l'identique** pour le corps.
+- Produces :
+  - `authentification_recente(p_max_s integer default 300) returns boolean` — `language sql stable`, lit `auth.jwt() -> 'amr'` ; vrai si c'est un tableau jsonb dont le plus grand `timestamp` numérique (objets seulement) vérifie `extract(epoch from now()) - max <= p_max_s` ; `amr` absent, non-tableau, tableau de chaînes ou sans timestamp numérique → `false`. Aucun droit d'exécution pour les rôles client (`revoke execute … from public, anon, authenticated`).
+  - `supprimer_mon_compte()` recréée : **première instruction** `if not authentification_recente() then raise exception using errcode = 'OMQ06', message = 'Authentification trop ancienne pour supprimer le compte'; end if;`, puis le corps existant inchangé. Grants : `revoke execute … from public` **et** `from anon`, `grant execute … to authenticated`.
+  - Route : une erreur de la RPC dont `code === "OMQ06"` → même 403 et même message que le refus de fraîcheur de la route ; toute autre erreur → 500 existant.
+
+- [ ] **Step 1 : écrire la migration** (en-tête de commentaire : pourquoi, jumeau `lib/reauth.ts`, constante 300 à garder alignée).
+- [ ] **Step 2 : appliquer sur staging** par un script Node jetable (hors repo, dans le scratchpad de la session ou `.superpowers/`) qui lit le fichier et l'envoie à `https://api.supabase.com/v1/projects/upxoxrjumxpzumakawiv/database/query` avec `SUPABASE_ACCESS_TOKEN` lu dans `.env.local`, puis inscrit `(version '20261108120000', name 'suppression_compte_fraicheur', statements array[<contenu>])` dans `supabase_migrations.schema_migrations`. **Staging uniquement** ; la prod est appliquée par la CI au push sur `main`.
+- [ ] **Step 3 : test SQL en transaction `rollback` sur staging** (même script, ou un second), sur un utilisateur de test existant de staging résolu par email via `auth.users` (ex. le compte e2e partagé, lu dans `.env.local`/helpers e2e), avec `set local role authenticated; set local request.jwt.claims = '<json>'` :
+  - `amr` frais (`[{"method":"password","timestamp": <now - 10>}]`) → `select authentification_recente()` vaut `true` ;
+  - `amr` ancien (`now - 301`) → `false`, et `select supprimer_mon_compte()` lève `OMQ06` ;
+  - `amr` = `["password"]` → `false` ;
+  - toujours `rollback` : **aucune donnée de staging ne doit être modifiée** ;
+  - `has_function_privilege('anon', 'supprimer_mon_compte()', 'execute')` = `false`, `has_function_privilege('authenticated', 'authentification_recente(integer)', 'execute')` = `false`.
+  Consigner les requêtes et résultats dans le rapport.
+- [ ] **Step 4 : route** : traduire `OMQ06` en 403 (message existant) ; si `route.test.ts` existe, ajouter le cas « RPC renvoie OMQ06 → 403, deleteUser non appelé ». Commentaire de jumeau dans `lib/reauth.ts` pointant la migration.
+- [ ] **Step 5 :** `npx vitest run lib/reauth.test.ts app/api/compte/supprimer` → PASS ; `npx tsc --noEmit` ; `npm run test:e2e:staging -- e2e/suppression-compte.spec.ts --retries=2` → PASS (la RPC reçoit le JWT frais de la route).
+- [ ] **Step 6 :** commit `fix: la RPC supprimer_mon_compte exige aussi une authentification récente (RG-93)`.
+
+---
+
 ### Task 6 : `/profil` pour un compte Google sans mot de passe (D10, D11)
 
 **Files :**
