@@ -142,7 +142,7 @@ export function ConnexionGoogle() {
 
 // Logo « G » officiel de Google (4 tracés aux couleurs de la charte) — SVG
 // inline, masqué aux lecteurs d'écran (le libellé du bouton porte le nom).
-function LogoGoogle() {
+export function LogoGoogle() {
   return (
     <svg aria-hidden="true" viewBox="0 0 48 48" className="size-[18px] shrink-0">
       <path

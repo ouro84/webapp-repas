@@ -7,12 +7,20 @@
 // ré-authentifie d'abord (signInWithPassword avec le mot de passe actuel) pour
 // que la modification soit gardée par une preuve de connaissance — sinon une
 // session volée pourrait changer le mot de passe sans le connaître.
+//
+// Compte Google sans mot de passe (US-57, D11) : il n'y a ni mot de passe
+// actuel à saisir ni mot de passe à changer ; la section se réduit à la
+// mention « Connecté avec Google ». Un compte qui a aussi une identité email
+// garde le formulaire. Tant que l'identité n'est pas connue, on affiche le
+// formulaire (cas majoritaire, pas de décalage de mise en page).
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { traduireErreurAuth } from "@/lib/messages-auth";
 import { LONGUEUR_MIN_MDP } from "@/lib/auth-regles";
+import { methodeReauth } from "@/lib/reauth";
+import { LogoGoogle } from "@/components/auth/connexion-google";
 
 // Aligne la borne sur l'inscription via la source unique partagée (#189).
 const LONGUEUR_MIN = LONGUEUR_MIN_MDP;
@@ -24,6 +32,26 @@ export function ChangerMotDePasse() {
   const [confirmation, setConfirmation] = useState("");
   const [erreur, setErreur] = useState<string | null>(null);
   const [enregistrement, setEnregistrement] = useState(false);
+  // true = compte Google sans mot de passe (D11).
+  const [googleSeul, setGoogleSeul] = useState(false);
+
+  useEffect(() => {
+    let actif = true;
+    supabase.auth
+      .getUser()
+      .then(({ data: { user } }) => {
+        if (actif && user) setGoogleSeul(methodeReauth(user.identities) === "google");
+      })
+      .catch((e) => {
+        // Repli sur le formulaire : l'échec de lecture ne doit pas masquer la section.
+        console.error("Profil : lecture des identités impossible.", e);
+      });
+    return () => {
+      actif = false;
+    };
+    // `supabase` est recréé à chaque rendu : l'effet ne tourne qu'au montage.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function soumettre(evenement: React.FormEvent): Promise<void> {
     evenement.preventDefault();
@@ -76,6 +104,25 @@ export function ChangerMotDePasse() {
     } finally {
       setEnregistrement(false);
     }
+  }
+
+  if (googleSeul) {
+    return (
+      <section className="mb-8" aria-labelledby="section-securite">
+        <h2 id="section-securite" className="mb-4 text-lg font-semibold text-brand-900">
+          Sécurité
+        </h2>
+        <div className="flex max-w-sm flex-col gap-1">
+          <p className="flex items-center gap-2 text-sm font-medium text-brand-900">
+            <LogoGoogle />
+            Connecté avec Google
+          </p>
+          <p className="text-sm text-brand-700/85">
+            Ton compte n’a pas de mot de passe : la connexion passe par ton compte Google.
+          </p>
+        </div>
+      </section>
+    );
   }
 
   return (
