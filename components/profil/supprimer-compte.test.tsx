@@ -215,6 +215,37 @@ describe("SupprimerCompte, compte Google sans mot de passe (D10)", () => {
     expect(sessionStorage.getItem(CLE)).toBeNull()
   })
 
+  it("retour annulé chez Google (erreur_oauth=annule) : message, mémo consommé, paramètres retirés, pas de champ SUPPRIMER", async () => {
+    stubUrl("?suppression=confirmer&erreur_oauth=annule")
+    sessionStorage.setItem(CLE, JSON.stringify({ uid: "u1", email: "a@example.com" }))
+    const remplacer = vi.spyOn(window.history, "replaceState")
+    utilisateur("google", "u1")
+    render(<SupprimerCompte />)
+
+    expect(
+      await screen.findByText("Confirmation avec Google annulée. Tu peux réessayer.")
+    ).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Confirmer avec Google" })).toBeTruthy()
+    expect(screen.queryByLabelText("Tape SUPPRIMER pour confirmer")).toBeNull()
+    expect(sessionStorage.getItem(CLE)).toBeNull()
+    expect(remplacer).toHaveBeenCalled()
+    const urlNettoyee = String(remplacer.mock.calls[0][2])
+    expect(urlNettoyee).not.toContain("suppression=")
+    expect(urlNettoyee).not.toContain("erreur_oauth=")
+    expect(auth.signOut).not.toHaveBeenCalled()
+  })
+
+  it("retour en échec (erreur_oauth=echec, sans suppression=confirmer) : message d’échec, pas de champ SUPPRIMER", async () => {
+    stubUrl("?erreur_oauth=echec")
+    sessionStorage.setItem(CLE, JSON.stringify({ uid: "u1", email: "a@example.com" }))
+    utilisateur("google", "u1")
+    render(<SupprimerCompte />)
+
+    expect(await screen.findByText(/La connexion avec Google a échoué/)).toBeTruthy()
+    expect(screen.queryByLabelText("Tape SUPPRIMER pour confirmer")).toBeNull()
+    expect(sessionStorage.getItem(CLE)).toBeNull()
+  })
+
   it("retour sans mémo (onglet fermé) : repli sur le bouton Google, pas de champ SUPPRIMER", async () => {
     stubUrl("?suppression=confirmer")
     utilisateur("google", "u1")

@@ -18,6 +18,23 @@ test("refus chez Google : retour sur /login?erreur_oauth=annule (US-57)", async 
   }
 });
 
+test("refus chez Google avec suivant valide : /login garde suivant pour un nouvel essai (US-57)", async ({
+  browser,
+}) => {
+  const contexte = await browser.newContext({ storageState: { cookies: [], origins: [] } });
+  const page = await contexte.newPage();
+  try {
+    await page.goto("/auth/callback?error=access_denied&suivant=%2Foauth%2Fconsent%3Fauthorization_id%3Dx");
+    await expect(page).toHaveURL(/\/login\?/);
+    const url = new URL(page.url());
+    expect(url.pathname).toBe("/login");
+    expect(url.searchParams.get("erreur_oauth")).toBe("annule");
+    expect(url.searchParams.get("suivant")).toBe("/oauth/consent?authorization_id=x");
+  } finally {
+    await contexte.close();
+  }
+});
+
 test("code invalide + suivant malveillant : échec sur /login, jamais de redirection externe (US-57)", async ({
   browser,
 }) => {

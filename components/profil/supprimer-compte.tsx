@@ -12,7 +12,9 @@
 //    (`prompt=select_account`, `login_hint`) qui revient sur
 //    `/profil?suppression=confirmer`. L'uid et l'email d'origine voyagent en
 //    `sessionStorage` : au retour, un autre uid (autre compte Google choisi)
-//    déconnecte et affiche un message. Cas « compte Google neuf choisi par
+//    déconnecte et affiche un message. Annulation ou échec chez Google : le
+//    callback revient ici avec `erreur_oauth` (session conservée), on consomme
+//    le mémo, on affiche le message et on redemande. Cas « compte Google neuf choisi par
 //    erreur » : ce compte n'a pas fini l'onboarding, le proxy l'envoie sur
 //    /bienvenue et la page n'est jamais atteinte, donc rien n'est supprimé.
 // Le mot "SUPPRIMER" reste une confirmation UX (RG design D6).
@@ -22,7 +24,7 @@ import { createClient } from "@/lib/supabase/client";
 import { reinitialiserCacheFoyer } from "@/lib/sync";
 import { chargerFoyer } from "@/lib/foyer";
 import { methodeReauth, type MethodeReauth } from "@/lib/reauth";
-import { urlRetourOAuth } from "@/lib/auth-google";
+import { messageErreurOAuth, urlRetourOAuth } from "@/lib/auth-google";
 import { LogoGoogle } from "@/components/auth/connexion-google";
 
 const MOT_CONFIRMATION = "SUPPRIMER";
@@ -30,6 +32,9 @@ const MOT_CONFIRMATION = "SUPPRIMER";
 const CLE_REAUTH = "reauth_suppression_uid";
 const PARAM_RETOUR = "suppression";
 const VALEUR_RETOUR = "confirmer";
+// Posé par /auth/callback quand Google a été annulé ou a échoué (session conservée).
+const PARAM_ERREUR_OAUTH = "erreur_oauth";
+const MESSAGE_REAUTH_ANNULEE = "Confirmation avec Google annulée. Tu peux réessayer.";
 const CHEMIN_RETOUR = `/profil?${PARAM_RETOUR}=${VALEUR_RETOUR}`;
 
 type Utilisateur = { id: string; email: string | null; methode: MethodeReauth };
@@ -96,8 +101,11 @@ export function SupprimerCompte() {
         });
 
         const params = new URLSearchParams(window.location.search);
-        if (params.get(PARAM_RETOUR) !== VALEUR_RETOUR) return;
+        const retourGoogle = params.get(PARAM_RETOUR) === VALEUR_RETOUR;
+        const cleErreur = params.get(PARAM_ERREUR_OAUTH);
+        if (!retourGoogle && cleErreur === null) return;
         params.delete(PARAM_RETOUR);
+        params.delete(PARAM_ERREUR_OAUTH);
         const reste = params.toString();
         window.history.replaceState(
           window.history.state,
@@ -106,6 +114,15 @@ export function SupprimerCompte() {
         );
 
         const memo = consommerMemoReauth();
+        // Annulation ou échec chez Google (le callback renvoie ici avec
+        // `erreur_oauth`, avec ou sans `suppression=confirmer`) : la
+        // ré-authentification n'a pas eu lieu, on redemande.
+        if (cleErreur !== null) {
+          setErreur(
+            cleErreur === "annule" ? MESSAGE_REAUTH_ANNULEE : messageErreurOAuth("echec")
+          );
+          return;
+        }
         if (memo === null) return; // pas de preuve du retour : on redemande
         if (memo.uid === user.id) {
           setReauthGoogleOk(true);
