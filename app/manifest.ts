@@ -19,7 +19,10 @@ export default function manifest(): MetadataRoute.Manifest {
     description:
       "Génère ton planning de repas hebdomadaire et ta liste de courses.",
     lang: "fr",
-    start_url: "/",
+    // Ouvre directement le prochain repas : « / » redirigeait un connecté vers
+    // /ce-soir (#335), soit un passage de proxy et un aller-retour de plus à
+    // chaque lancement. Non connecté, /ce-soir renvoie vers /login.
+    start_url: "/ce-soir",
     display: "standalone",
     background_color: "#fafaf5", // canvas (écran de démarrage)
     theme_color: "#3d7a44", // brand-600 (barre système)

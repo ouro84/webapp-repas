@@ -104,6 +104,12 @@ L'app doit être accessible depuis internet, idéalement avec un déploiement au
 - **Render / Railway** : bien pour du backend Node custom, surdimensionné pour un Next.js simple.
 - **VPS (DigitalOcean, OVH)** : contrôle total, mais implique de gérer le serveur soi-même — hors scope vibe coding.
 
+### [RÉVISION - ADR-03] 2026-11-08 — Région des fonctions : `cdg1` (Paris)
+- **Décision** : `vercel.json` fixe `"regions": ["cdg1"]` (une seule région, possible en Hobby). Les fonctions tournaient en `iad1` (Washington, défaut Vercel), alors que Supabase est en `eu-west-3` (Paris) et les utilisateurs en France.
+- **Pourquoi** : chaque appel serveur → Supabase traversait l'Atlantique (~85 ms). Mesuré en prod (Speed Insights, p75 sur 7 j) : TTFB de 1,7 à 2,3 s sur les pages d'entrée (`/ce-soir`, `/planning`). Le proxy faisait 2 appels Supabase en série à chaque requête, la génération 7.
+- **Avec** : le proxy n'appelle plus le réseau pour un utilisateur déjà onboardé (`getClaims`, JWT ES256 vérifié localement, et cookie `omq_onboarde` lié au `sub`) ; la génération lance ses 5 lectures en parallèle.
+- **Conséquence** : la base Upstash du rate-limit reste en `iad1` ; chaque génération et chaque appel MCP y fait un aller-retour transatlantique tant qu'elle n'est pas recréée en Europe.
+
 ---
 
 ## ADR-04 — CSS : Tailwind CSS
@@ -237,6 +243,7 @@ webapp-repas/
 ├── proxy.ts                      # ex-middleware (#12) — refresh session + routes protégées + garde onboarding
 ├── instrumentation.ts  instrumentation-client.ts  sentry.server.config.ts  sentry.edge.config.ts
 ├── next.config.ts  tsconfig.json  vitest.config.ts  playwright.config.ts
+├── vercel.json                   # région des fonctions (cdg1, ADR-03)
 ├── .env.local  .env.example  .gitignore
 └── CLAUDE.md  ADR.md  SPECS_FONCTIONNELLES.md  CHANGELOG.md  README.md  AGENTS.md  QA_CHECKLIST.md
 ```

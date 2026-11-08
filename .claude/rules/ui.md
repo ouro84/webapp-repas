@@ -102,4 +102,4 @@ Store `lib/theme.ts` (`useSyncExternalStore`, clé localStorage `theme` ∈ clai
 
 ## PWA
 
-`app/manifest.ts` est servi en `/manifest.webmanifest`, `<link rel="manifest">` auto-injecté par Next. `theme_color` passe par `viewport.themeColor`. Trois `purpose` : `any`, `maskable`, `monochrome` (mark blanc sur transparent). iOS ignore le manifest : `app/apple-icon.png` + `metadata.appleWebApp` font foi. Pas de service worker (choix volontaire, l'offline complet est un chantier séparé).
+`app/manifest.ts` est servi en `/manifest.webmanifest`, `<link rel="manifest">` auto-injecté par Next. **`start_url: "/ce-soir"`**, pas `/` : pourquoi, `/` redirige un connecté vers `/ce-soir` (#335), soit un passage de proxy et un aller-retour de plus à chaque lancement ; les installations iOS déjà faites gardent l'ancienne URL. Le manifest est exclu du `matcher` du proxy. `theme_color` passe par `viewport.themeColor`. Trois `purpose` : `any`, `maskable`, `monochrome` (mark blanc sur transparent). iOS ignore le manifest : `app/apple-icon.png` + `metadata.appleWebApp` font foi. Pas de service worker (choix volontaire, l'offline complet est un chantier séparé).
