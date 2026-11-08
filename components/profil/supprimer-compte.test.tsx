@@ -123,6 +123,22 @@ describe("SupprimerCompte, compte Google sans mot de passe (D10)", () => {
     expect(stocke.email).toBe("a@example.com")
   })
 
+  it("retour arrière depuis Google (bfcache, pageshow persisted) : le bouton se réarme", async () => {
+    utilisateur("google")
+    render(<SupprimerCompte />)
+    const bouton = await screen.findByRole("button", { name: "Confirmer avec Google" })
+    fireEvent.click(bouton)
+    await waitFor(() => expect(auth.signInWithOAuth).toHaveBeenCalled())
+    expect((bouton as HTMLButtonElement).disabled).toBe(true)
+
+    // Un pageshow non restauré du bfcache ne réarme pas.
+    window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: false }))
+    expect((bouton as HTMLButtonElement).disabled).toBe(true)
+
+    window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true }))
+    await waitFor(() => expect((bouton as HTMLButtonElement).disabled).toBe(false))
+  })
+
   it("échec du démarrage OAuth : erreur affichée et mémo effacé", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {})
     utilisateur("google")

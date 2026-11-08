@@ -129,6 +129,17 @@ export function SupprimerCompte() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Retour arrière depuis Google (bfcache iOS/Safari) : la page est restaurée
+  // telle quelle, bouton encore en chargement — on le réarme (jumeau de
+  // `connexion-google.tsx`).
+  useEffect(() => {
+    function surAffichage(evenement: PageTransitionEvent) {
+      if (evenement.persisted) setRedirectionGoogle(false);
+    }
+    window.addEventListener("pageshow", surAffichage);
+    return () => window.removeEventListener("pageshow", surAffichage);
+  }, []);
+
   const voieGoogle = utilisateur?.methode === "google";
   const confirmationValide = confirmation === MOT_CONFIRMATION;
 
