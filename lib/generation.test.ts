@@ -157,6 +157,51 @@ describe("genererPourUtilisateur — lectures", () => {
     expect(r.mode).toBe("semaine")
     expect(espion).toHaveBeenCalledTimes(4)
   })
+
+  it("les 5 lectures partent ensemble, pas l'une après l'autre", async () => {
+    // Chaque lecture répond après un tour de boucle : en série, une seule est en
+    // vol à la fois ; en parallèle, les 5 le sont. En prod, chaque lecture est un
+    // aller-retour réseau (~85 ms depuis iad1) : la série en coûtait 5.
+    const base = client()
+    let enVol = 0
+    let maxEnVol = 0
+    const differer = <T,>(valeur: T) => {
+      enVol++
+      maxEnVol = Math.max(maxEnVol, enVol)
+      return new Promise<T>((ok) =>
+        setTimeout(() => {
+          enVol--
+          ok(valeur)
+        }, 0)
+      )
+    }
+    const c = new Proxy(base, {
+      get(cible, prop) {
+        if (prop !== "from") return Reflect.get(cible, prop)
+        return (table: string) => {
+          const builder = cible.from(table) as unknown as Record<string, unknown>
+          const enveloppe: Record<string, unknown> = new Proxy(builder, {
+            get(b, p) {
+              if (p === "then") {
+                return (ok: (v: unknown) => unknown, ko: (e: unknown) => unknown) =>
+                  Promise.resolve(b).then(differer).then(ok, ko)
+              }
+              const methode = Reflect.get(b, p) as (...args: unknown[]) => unknown
+              return (...args: unknown[]) => {
+                const r = methode(...args)
+                return p === "maybeSingle" || p === "single" ? (r as Promise<unknown>).then(differer) : enveloppe
+              }
+            },
+          })
+          return enveloppe
+        }
+      },
+    })
+
+    await genererPourUtilisateur(c, { semaine: "2026-W45" }, { aujourdhui: JEUDI })
+
+    expect(maxEnVol).toBe(5)
+  })
 })
 
 describe("semaineDansPlage (RG-24, RG-73)", () => {
