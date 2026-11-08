@@ -27,7 +27,7 @@ stable
 set search_path = public
 as $$
   select coalesce((
-    select extract(epoch from now()) - max((e ->> 'timestamp')::numeric) <= p_max_s
+    select floor(extract(epoch from now())) - max((e ->> 'timestamp')::numeric) <= p_max_s
     from jsonb_array_elements(
       case
         when jsonb_typeof(auth.jwt() -> 'amr') = 'array' then auth.jwt() -> 'amr'
@@ -44,7 +44,8 @@ $$;
 revoke execute on function authentification_recente(integer) from public, anon, authenticated;
 
 -- Corps repris à l'identique de 20260716090000_suppression_compte.sql ;
--- seul le contrôle de fraîcheur en tête est nouveau.
+-- seul le contrôle de fraîcheur en tête est nouveau. `v_foyer` est lu après
+-- ce contrôle : une session ancienne est refusée avant toute lecture.
 create or replace function supprimer_mon_compte()
 returns void
 language plpgsql
@@ -52,7 +53,7 @@ security definer
 set search_path = public
 as $$
 declare
-  v_foyer uuid := mon_foyer();
+  v_foyer uuid;
   v_membres int;
 begin
   if not authentification_recente() then
@@ -60,6 +61,8 @@ begin
       errcode = 'OMQ06',
       message = 'Authentification trop ancienne pour supprimer le compte';
   end if;
+
+  v_foyer := mon_foyer();
 
   if v_foyer is null then
     raise exception 'Aucun foyer rattaché à l''utilisateur courant';
