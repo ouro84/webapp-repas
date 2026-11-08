@@ -13,7 +13,6 @@
 import { useEffect, useState, useSyncExternalStore } from "react"
 import Link from "next/link"
 import { Roboto } from "next/font/google"
-import { useSearchParams } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import { estPwaIos, messageErreurOAuth, urlRetourOAuth } from "@/lib/auth-google"
 
@@ -29,8 +28,22 @@ const sAbonnerSansEvenement = () => () => {}
 const lireModeStandalone = (): boolean => estPwaIos(navigator as { standalone?: unknown })
 const lireModeStandaloneServeur = (): boolean | null => null
 
+// Clé `?erreur_oauth=` lue SANS `useSearchParams` : ce hook force le repli
+// `<Suspense>` dans le HTML prérendu, donc le bouton n'apparaîtrait qu'après
+// l'hydratation et décalerait le formulaire déjà affiché. Même mécanisme que
+// la détection iOS : snapshot serveur `null` (prérendu = bouton, sans erreur),
+// snapshot client = la chaîne de requête (primitive, donc stable).
+const sAbonnerSansEvenementUrl = () => () => {}
+const lireErreurOAuth = (): string | null =>
+  new URLSearchParams(window.location.search).get("erreur_oauth")
+const lireErreurOAuthServeur = (): string | null => null
+
 export function ConnexionGoogle() {
-  const parametres = useSearchParams()
+  const cleErreur = useSyncExternalStore<string | null>(
+    sAbonnerSansEvenementUrl,
+    lireErreurOAuth,
+    lireErreurOAuthServeur
+  )
   const standalone = useSyncExternalStore<boolean | null>(
     sAbonnerSansEvenement,
     lireModeStandalone,
@@ -49,7 +62,7 @@ export function ConnexionGoogle() {
     return () => window.removeEventListener("pageshow", surAffichage)
   }, [])
 
-  const message = erreurClic ?? messageErreurOAuth(parametres.get("erreur_oauth"))
+  const message = erreurClic ?? messageErreurOAuth(cleErreur)
 
   async function continuer() {
     setChargement(true)

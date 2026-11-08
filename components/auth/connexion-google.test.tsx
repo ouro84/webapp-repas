@@ -5,9 +5,6 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 
 const signInWithOAuth = vi.hoisted(() => vi.fn())
 vi.mock("@/lib/supabase/client", () => ({ createClient: () => ({ auth: { signInWithOAuth } }) }))
-vi.mock("next/navigation", () => ({
-  useSearchParams: () => new URLSearchParams(window.location.search),
-}))
 // next/font/google est substitué par l'alias de vitest.config.ts.
 
 import { ConnexionGoogle } from "./connexion-google"

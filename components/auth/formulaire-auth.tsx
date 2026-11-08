@@ -15,7 +15,7 @@
 // (= redirection vers /login) et ignorer la session toute neuve. Un vrai
 // chargement force le passage par le proxy avec le cookie.
 
-import { Suspense, useId, useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import Link from "next/link";
 import { cheminDeRetour } from "@/lib/redirection";
 import { ConnexionGoogle } from "@/components/auth/connexion-google";
@@ -93,12 +93,7 @@ export function FormulaireAuth({
       <div className="w-full max-w-sm">
         <h1 className="mb-6 font-display text-2xl font-semibold text-brand-900">{titre}</h1>
 
-        {connexionGoogle && (
-          // useSearchParams (erreur_oauth) exige une frontière Suspense.
-          <Suspense fallback={null}>
-            <ConnexionGoogle />
-          </Suspense>
-        )}
+        {connexionGoogle && <ConnexionGoogle />}
 
         <form onSubmit={soumettre} className="flex flex-col gap-4" noValidate>
           <div className="flex flex-col gap-1">
