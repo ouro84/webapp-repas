@@ -48,6 +48,7 @@ export default function SignupPage() {
       labelChargement="Création…"
       onSoumettre={inscrire}
       cguRequise
+      connexionGoogle
       pied={
         <>
           Déjà un compte ? <LienPied href="/login">Se connecter</LienPied>
