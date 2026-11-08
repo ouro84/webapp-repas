@@ -2,6 +2,10 @@ import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { apiError } from "@/lib/errors"
+import { authentificationRecente } from "@/lib/reauth"
+
+const MESSAGE_REAUTH =
+  "Pour supprimer ton compte, confirme d’abord ton identité. La confirmation est valable 5 minutes."
 
 export async function POST() {
   const supabase = await createClient()
@@ -19,8 +23,59 @@ export async function POST() {
     )
   }
 
+  // RG-93 : la session courante doit s’être authentifiée il y a moins de
+  // 5 minutes (claim `amr` du JWT). Contrôle AVANT la RPC : l’ordre
+  // RPC puis deleteUser reste strict. Une panne de vérification (erreur
+  // retournée ou exception du SDK) se distingue d’une session ancienne.
+  let claims
+  try {
+    const { data, error: erreurClaims } = await supabase.auth.getClaims()
+    if (erreurClaims) throw erreurClaims
+    claims = data
+  } catch (erreur) {
+    return apiError(
+      "POST /api/compte/supprimer",
+      erreur,
+      "Vérification de ta session impossible. Réessaie dans quelques instants.",
+      500
+    )
+  }
+  // Contrôle croisé : les claims lus doivent être ceux de l’utilisateur
+  // vérifié par getUser(). Un écart (cookies incohérents) n’autorise rien.
+  if (claims?.claims?.sub !== user.id) {
+    return apiError(
+      "POST /api/compte/supprimer",
+      `sub des claims (${String(claims?.claims?.sub)}) différent de l’utilisateur (${user.id})`,
+      MESSAGE_REAUTH,
+      403
+    )
+  }
+  if (
+    !authentificationRecente(
+      claims?.claims?.amr,
+      Math.floor(Date.now() / 1000)
+    )
+  ) {
+    return apiError(
+      "POST /api/compte/supprimer",
+      "amr absent ou périmé",
+      MESSAGE_REAUTH,
+      403
+    )
+  }
+
   const { error: erreurRpc } = await supabase.rpc("supprimer_mon_compte")
   if (erreurRpc) {
+    // OMQ06 : la RPC refuse aussi une authentification ancienne (jumeau SQL
+    // du contrôle ci-dessus), p. ex. si le JWT a vieilli entre les deux.
+    if (erreurRpc.code === "OMQ06") {
+      return apiError(
+        "POST /api/compte/supprimer",
+        erreurRpc,
+        MESSAGE_REAUTH,
+        403
+      )
+    }
     return apiError(
       "POST /api/compte/supprimer",
       erreurRpc,

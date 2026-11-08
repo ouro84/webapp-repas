@@ -23,6 +23,7 @@ export default function LoginPage() {
       labelSoumettre="Se connecter"
       labelChargement="Connexion…"
       onSoumettre={connecter}
+      connexionGoogle
       pied={
         <>
           Pas encore de compte ? <LienPied href="/signup">S&apos;inscrire</LienPied>

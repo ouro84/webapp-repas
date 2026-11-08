@@ -13,6 +13,11 @@ export default defineConfig({
       // les imports type `import { genererPlanning } from "@/lib/generateur"`
       // échoueraient dans les tests.
       "@": path.resolve(__dirname, "."),
+      // next/font n'est résolu que par le build Next : en Vitest, un substitut
+      // évite de casser tout test qui importe un composant à police dédiée
+      // (ex. le bouton Google de FormulaireAuth). Les imports exacts sont
+      // ciblés pour ne pas masquer `next/font/local` & co.
+      "next/font/google": path.resolve(__dirname, "tests/stubs/next-font-google.ts"),
     },
   },
 

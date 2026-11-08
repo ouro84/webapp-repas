@@ -18,6 +18,7 @@
 import { useId, useRef, useState } from "react";
 import Link from "next/link";
 import { cheminDeRetour } from "@/lib/redirection";
+import { ConnexionGoogle } from "@/components/auth/connexion-google";
 
 export function FormulaireAuth({
   titre,
@@ -28,6 +29,7 @@ export function FormulaireAuth({
   onSoumettre,
   pied,
   cguRequise = false,
+  connexionGoogle = false,
 }: {
   titre: string;
   /** "current-password" en connexion, "new-password" à l'inscription. */
@@ -42,6 +44,9 @@ export function FormulaireAuth({
    *  bloque la soumission (jamais envoyée à onSoumettre) tant qu'elle n'est
    *  pas cochée. Absente en connexion. */
   cguRequise?: boolean;
+  /** US-57 : affiche « Continuer avec Google » (et l'erreur de retour OAuth)
+   *  entre le titre et le formulaire. Login et signup seulement. */
+  connexionGoogle?: boolean;
 }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -87,6 +92,8 @@ export function FormulaireAuth({
     >
       <div className="w-full max-w-sm">
         <h1 className="mb-6 font-display text-2xl font-semibold text-brand-900">{titre}</h1>
+
+        {connexionGoogle && <ConnexionGoogle />}
 
         <form onSubmit={soumettre} className="flex flex-col gap-4" noValidate>
           <div className="flex flex-col gap-1">

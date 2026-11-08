@@ -1,5 +1,7 @@
 # Rapport d'audit de sécurité — Webapp « On mange quoi ? »
 
+> **Mise à jour du 2026-11-08 (ce rapport reste un instantané du 2026-06-18, non réécrit).** Depuis l'audit : la confirmation email est **activée en prod** (volet config de F-05 en place) et reste désactivée sur staging pour les e2e ; la suppression de compte exige une authentification de moins de 5 minutes, contrôlée par la route et par la RPC `supprimer_mon_compte()` (RG-93, connexion Google US-57). L'état courant des constats est tenu dans `ADR.md` (ADR-10 et ses révisions).
+
 | | |
 |---|---|
 | **Cible** | webapp-repas — https://webapp-repas.vercel.app |

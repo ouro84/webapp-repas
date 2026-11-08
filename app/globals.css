@@ -48,6 +48,11 @@
   --color-primary-hover: #2e5e34;  /* = brand-700 en clair */
   --color-danger: #dc2626;         /* = red-600 */
   --color-danger-hover: #b91c1c;   /* = red-700 */
+  /* Bouton « Continuer avec Google » (US-57) — couleurs imposées par la charte
+     « Sign in with Google », thème clair ; le thème sombre a son propre jeu. */
+  --color-google-fond: #ffffff;
+  --color-google-bordure: #747775;
+  --color-google-texte: #1f1f1f;
   /* Lavis de la pulsation d'atterrissage (RG-11 / RG-39). Token SÉMANTIQUE
      plutôt que `brand-50` : en sombre, brand-50 (#232f27) sur surface
      (#1d2520) serait quasi invisible — or ce repère doit se voir dans les DEUX
@@ -214,6 +219,11 @@ body {
   /* États — encadrés sombres, texte clair ; bouton destructif via --color-danger */
   --color-danger: #e5484d;
   --color-danger-hover: #f1666a;
+
+  /* Bouton Google, thème sombre de la charte « Sign in with Google » */
+  --color-google-fond: #131314;
+  --color-google-bordure: #8e918f;
+  --color-google-texte: #e3e3e3;
   /* Nettement au-dessus de surface (#1d2520) : le lavis doit rester lisible
      sous le texte rayé à 40 % d'opacité de la ligne cochée. */
   --color-atterrissage: #33463a;

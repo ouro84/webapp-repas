@@ -22,6 +22,7 @@ import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { chargerProfil, marquerOnboardingComplete, sauvegarderProfil } from "@/lib/profil";
 import { couleurAvatar } from "@/lib/avatar";
+import { prenomDepuisMetadonnees } from "@/lib/auth-google";
 import { chargerReglages, sauvegarderReglages } from "@/lib/reglages-data";
 import { REGLAGES_DEFAUT } from "@/lib/reglages";
 import { definirJourCoursesFoyer, rejoindreFoyer } from "@/lib/foyer";
@@ -74,8 +75,8 @@ export default function PageBienvenue() {
   const generationMemo = useRef<{ jour: number; ancre: string } | null>(null);
 
   // Pré-remplissage en cas de reprise du tunnel (prénom/personnes déjà saisis à
-  // une session précédente interrompue). setState dans la promesse (conforme à
-  // set-state-in-effect).
+  // une session précédente interrompue) ou du prénom Google (RG-94). setState
+  // dans la promesse (conforme à set-state-in-effect).
   useEffect(() => {
     let actif = true;
     (async () => {
@@ -87,7 +88,12 @@ export default function PageBienvenue() {
       ]);
       if (!actif) return;
       setEmail(data.user?.email ?? "");
-      if (profil?.prenom) setPrenom(profil.prenom);
+      // Prénom : celui déjà saisi (reprise du tunnel), sinon celui de Google
+      // (RG-94, D8). Simple suggestion modifiable : rien n’est écrit en base
+      // avant la validation de l’écran.
+      const prenomPropose =
+        profil?.prenom || prenomDepuisMetadonnees(data.user?.user_metadata);
+      if (prenomPropose) setPrenom(prenomPropose);
       if (reglages) {
         setPersonnes(reglages.personnesDefaut);
         setVege(Boolean(reglages.vegetarienPrefere?.dinerSemaine));

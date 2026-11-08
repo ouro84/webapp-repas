@@ -706,6 +706,10 @@ Réduire à zéro l'effort de planification hebdomadaire des repas, du choix des
 > **When** je confirme la suppression  
 > **Then** rien n'est supprimé, un message m'indique que le mot de passe est incorrect
 
+> **Given** mon compte n'a pas de mot de passe (Google seul)  
+> **When** je touche « Confirmer avec Google », je choisis mon compte, puis je tape « SUPPRIMER » au retour sur `/profil`  
+> **Then** mon compte est supprimé comme ci-dessus ; si je choisis un autre compte Google, rien n'est supprimé et je suis invité à me reconnecter avec le bon (RG-93)
+
 ### US-50 — Connecter un assistant IA à OMQ (#302, #305)
 
 > **En tant qu'** utilisateur d'un assistant IA (Hermes via WhatsApp/Telegram, Claude, Cursor, OpenCode…), je veux **autoriser mon assistant à accéder à mon compte OMQ**, et pouvoir lui retirer cet accès, afin de piloter mes repas sans ouvrir l'app.
@@ -839,6 +843,37 @@ Réduire à zéro l'effort de planification hebdomadaire des repas, du choix des
 
 > **Given** rien n'est prévu pour le prochain repas  
 > **Then** la page me propose « Générer mon planning » si la semaine n'a pas de planning, « Voir le planning » sinon (RG-89)
+
+### US-57 — Se connecter avec Google
+
+> **En tant que** nouvel utilisateur ou utilisateur existant, je veux **créer mon compte ou me connecter avec mon compte Google en un clic**, sans mot de passe à choisir ni à retenir.
+
+> **Given** je suis sur `/login` ou `/signup`, sans compte OMQ  
+> **When** je touche « Continuer avec Google » et je choisis mon compte Google  
+> **Then** un compte est créé avec son foyer d'une personne, comme à l'inscription par email, et j'arrive dans le tunnel d'accueil `/bienvenue` avec mon prénom déjà rempli (RG-94) ; mon acceptation des CGU est horodatée (RG-92)
+
+> **Given** j'ai déjà un compte OMQ créé avec Google  
+> **When** je touche « Continuer avec Google » sur `/login`  
+> **Then** je suis connecté et j'arrive sur la page demandée (paramètre `suivant`, sinon `/planning`) ; la date d'acceptation des CGU d'origine n'est pas réécrite (RG-92)
+
+> **Given** j'ai un compte créé par email, dont l'adresse est confirmée  
+> **When** je me connecte avec Google sous la même adresse  
+> **Then** Google se rattache à ce compte : je retrouve mon foyer et mes données, et mon mot de passe continue de fonctionner (pas de second compte, pas d'écran de liaison)
+
+> **Given** je suis chez Google  
+> **When** j'annule ou je refuse l'accès  
+> **Then** je reviens sur `/login` avec le message « Connexion avec Google annulée. Tu peux réessayer ou utiliser ton email. » et aucun compte n'est créé ; toute autre erreur affiche « La connexion avec Google a échoué. Réessaie dans un instant ou utilise ton email. »
+
+> **Given** j'arrive par un lien d'invitation au foyer (`/signup?code=…`)  
+> **When** je continue avec Google  
+> **Then** le code d'invitation survit à l'aller-retour et je rejoins le foyer comme avec un compte email (RG-38)
+
+> **Given** j'utilise l'app installée sur l'écran d'accueil d'un iPhone  
+> **Then** le bouton Google est remplacé par l'indice « Pour te connecter avec Google, ouvre OMQ dans Safari » ; le formulaire email reste disponible (#390 : lever ce masquage après un test sur un iPhone)
+
+> **Given** mon compte n'a pas de mot de passe (Google seul)  
+> **When** j'ouvre `/profil`  
+> **Then** la section Sécurité affiche « Connecté avec Google » à la place du changement de mot de passe, et je peux supprimer mon compte en confirmant avec Google (US-31, RG-93)
 
 ---
 
@@ -1087,6 +1122,28 @@ Le planning s'affiche en liste verticale : une ligne par jour, avec les slots em
 - **Pourquoi** : on prépare déjà le cycle suivant à quelques jours de la fin. L'ancienne règle « week-end » avait été pensée pour un jour de courses le lundi : un foyer du samedi basculait le jour même de ses courses ; un foyer du jeudi basculait dès le samedi, 5 jours avant ses courses suivantes.
 - **Désalignement connu** : la génération de la vue Semaine (`semaineParDefaut`) garde sa règle « week-end = semaine suivante ». Hors jour de courses lundi, la semaine proposée le week-end n'est donc pas forcément couverte par le cycle affiché par défaut de `/courses`.
 
+### RG-92 — CGU à la connexion Google (US-57)
+
+- **Mention passive** : sous le bouton Google de `/login` et de `/signup`, « En continuant, tu acceptes les CGU et la politique de confidentialité » (liens vers `/legal/*`). La case à cocher du formulaire email de `/signup` est inchangée (RG-64).
+- **Horodatage au callback** : après l'échange du code, si `profiles.cgu_version` est vide, le serveur écrit `cgu_version = CGU_VERSION_ACTUELLE` et `cgu_acceptees_le = now()`. Une valeur déjà présente n'est jamais réécrite.
+- **Best-effort** : un échec de lecture ou d'écriture est loggé et ne bloque pas la connexion.
+- **Pourquoi** : un compte créé par Google ne passe pas par la case du formulaire ; arriver au callback après la mention vaut acceptation.
+
+### RG-93 — Authentification récente avant la suppression de compte (US-31, US-57)
+
+- **Règle** : la suppression de compte n'est acceptée que si la session courante s'est authentifiée il y a **5 minutes au plus** (300 s), pour **tous** les comptes. Au-delà, la route répond 403 « Pour supprimer ton compte, confirme d’abord ton identité. La confirmation est valable 5 minutes. »
+- **Signal** : le plus récent horodatage du claim `amr` du JWT de la session, lu côté serveur (`getClaims()`). Un claim absent, illisible ou sans horodatage est refusé. `last_sign_in_at` n'est pas utilisé : il est par utilisateur, donc une connexion sur un autre appareil validerait un cookie volé.
+- **Deux contrôles** : la route, puis la RPC `supprimer_mon_compte()` (erreur `OMQ06`, traduite en 403 par la route). Pourquoi : un utilisateur connecté peut appeler la RPC directement ; sans contrôle en base, la purge contournerait la route. Une panne de lecture du claim répond 500, distincte d'une session ancienne.
+- **Méthode de ré-authentification** selon les identités du compte : avec une identité email (Google lié ou non), le mot de passe, comme avant ; avec Google seul, un aller-retour Google (« Confirmer avec Google ») qui revient sur `/profil?suppression=confirmer`, où la saisie de « SUPPRIMER » est alors proposée.
+- **Mauvais compte Google** : le compte choisi chez Google est comparé à celui de la session de départ. Si c'est un autre compte OMQ **existant**, rien n'est supprimé, le message « Tu t’es connecté avec un autre compte Google. Reconnecte-toi avec {email} pour supprimer ton compte. » s'affiche (sans email connu : « … avec ton compte Google d’origine … »), la session locale est fermée et un lien « Se reconnecter » mène à `/login`. Un compte Google **neuf** choisi par erreur crée un nouveau compte OMQ : la garde d'onboarding l'envoie sur `/bienvenue`, la page de suppression n'est jamais atteinte et rien n'est supprimé ; ce cas n'est pas détecté comme « mauvais compte ».
+- **Annulation ou échec chez Google** : retour sur `/profil` avec le message « Confirmation avec Google annulée. Tu peux réessayer. » (ou le message d'échec), sans formulaire « SUPPRIMER ».
+- **Limite assumée** : Google n'impose pas la ressaisie de son mot de passe. Si le navigateur est déjà connecté à Google, la confirmation tient en un clic. Elle protège d'un cookie OMQ volé, pas d'un appareil déverrouillé laissé sans surveillance.
+
+### RG-94 — Prénom proposé depuis Google (US-57, US-23)
+
+- **Règle** : à l'étape 1 de `/bienvenue`, si `profiles.prenom` est vide, le champ est pré-rempli avec `given_name` des métadonnées Google, sinon avec le premier mot de `full_name`, sinon de `name`. Un prénom déjà saisi (reprise du tunnel) est prioritaire.
+- **Suggestion seulement** : le champ reste modifiable et rien n'est écrit en base avant la validation de l'étape.
+
 ### RG-09 — États de l'interface
 
 Chaque écran doit gérer trois états :
@@ -1305,7 +1362,7 @@ Un foyer peut exprimer une préférence explicite pour une recette, sans jamais 
 
 ### RG-70 — Suppression de compte, droit à l'effacement (US-31, #237)
 
-- **Ré-authentification + confirmation forte** : la suppression exige le mot de passe actuel (`signInWithPassword`, contrôle de sécurité réel) **et** la saisie exacte du mot « SUPPRIMER » (confirmation UX contre le clic accidentel, aucune valeur de sécurité). Section « Zone dangereuse », dernier bloc de `/profil`.
+- **Ré-authentification + confirmation forte** : la suppression exige une authentification de moins de 5 minutes, contrôlée côté serveur (RG-93) : le mot de passe actuel (`signInWithPassword`) pour un compte qui en a un, une confirmation Google pour un compte Google seul. Elle exige **aussi** la saisie exacte du mot « SUPPRIMER » (confirmation UX contre le clic accidentel, aucune valeur de sécurité). Section « Zone dangereuse », dernier bloc de `/profil`.
 - **Solo (1 membre du foyer)** : purge intégrale — coches par-article, articles manuels, cycles étirés, préférences, masquages, plannings (+ slots), recettes (+ ingrédients), profil, puis le foyer lui-même. Le catalogue global (`foyer_id IS NULL`) n'est jamais concerné.
 - **Partagé (2+ membres)** : le partant est retiré (suppression de sa seule ligne `profiles`) ; ses recettes créées dans le foyer **restent visibles pour les autres** (réattribuées à aucun auteur, `foyer_id` inchangé — la visibilité d'une recette ne dépend que de `foyer_id` depuis #56). Rien d'autre n'est touché : planning, coches et recettes des autres membres sont intacts.
 - **Piège d'implémentation** : `recette.user_id` référence `auth.users(id)` en **cascade** — la purge/réattribution des données doit impérativement s'exécuter **avant** la suppression du compte d'authentification, jamais après, sous peine de détruire par ricochet les recettes d'un foyer partagé.

@@ -18,9 +18,16 @@ const CLE = "code_invitation_en_attente";
  * sessionStorage, puis NETTOIE l'URL (history.replaceState) pour qu'un
  * rechargement ne le re-capte pas. Renvoie le code capté (ou déjà en attente),
  * ou null. No-op côté serveur.
+ *
+ * Exception : sous `/auth/*`, `?code` est le code PKCE de Supabase (lien de
+ * réinitialisation du mot de passe, retour OAuth Google — US-57, D14), pas une
+ * invitation. On n'y lit ni ne retire rien : le SDK doit l'échanger lui-même.
  */
 export function capterCodeDepuisURL(): string | null {
   if (typeof window === "undefined") return null;
+  if (window.location.pathname.startsWith("/auth/")) {
+    return sessionStorage.getItem(CLE);
+  }
   const params = new URLSearchParams(window.location.search);
   const codeUrl = params.get("code") ?? params.get("rejoindre");
   if (codeUrl) {
