@@ -20,7 +20,7 @@ import { createClient } from "@/lib/supabase/client";
 import { traduireErreurAuth } from "@/lib/messages-auth";
 import { LONGUEUR_MIN_MDP } from "@/lib/auth-regles";
 import { methodeReauth } from "@/lib/reauth";
-import { LogoGoogle } from "@/components/auth/connexion-google";
+import { LogoGoogle } from "@/components/auth/logo-google";
 
 // Aligne la borne sur l'inscription via la source unique partagée (#189).
 const LONGUEUR_MIN = LONGUEUR_MIN_MDP;

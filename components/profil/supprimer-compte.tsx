@@ -25,7 +25,7 @@ import { reinitialiserCacheFoyer } from "@/lib/sync";
 import { chargerFoyer } from "@/lib/foyer";
 import { methodeReauth, type MethodeReauth } from "@/lib/reauth";
 import { messageErreurOAuth, urlRetourOAuth } from "@/lib/auth-google";
-import { LogoGoogle } from "@/components/auth/connexion-google";
+import { CLASSES_BOUTON_GOOGLE, LogoGoogle, SpinnerGoogle } from "@/components/auth/logo-google";
 
 const MOT_CONFIRMATION = "SUPPRIMER";
 // Mémo de l'aller-retour Google : JSON `{ uid, email }` (US-57, D10).
@@ -277,9 +277,9 @@ export function SupprimerCompte() {
               onClick={confirmerAvecGoogle}
               disabled={redirectionGoogle}
               aria-busy={redirectionGoogle}
-              className="flex items-center justify-center gap-3 self-start rounded-full border border-google-bordure bg-google-fond px-5 py-2.5 text-sm font-medium text-google-texte transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100 disabled:opacity-60"
+              className={`${CLASSES_BOUTON_GOOGLE} self-start px-5 py-2.5`}
             >
-              <LogoGoogle />
+              {redirectionGoogle ? <SpinnerGoogle /> : <LogoGoogle />}
               Confirmer avec Google
             </button>
           </>

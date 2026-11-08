@@ -24,6 +24,7 @@ Toute la config vit dans `app/globals.css` via `@theme` ; chaque token `--color-
   - `backdrop:bg-black/50` pour les backdrops de dialog.
   Pourquoi : l'échelle brand sert à la fois de texte (`text-brand-700`) et de fond de bouton (`bg-brand-600`) ; le dark mode redéfinit les valeurs des tokens au lieu de flipper la rampe, qui casserait les boutons.
 - **Bouton Google : tokens `--color-google-fond` / `-bordure` / `-texte`** (`bg-google-fond`, `border-google-bordure`, `text-google-texte`), un jeu clair et un jeu sombre. Ne pas les remplacer par `bg-surface` ni par les tokens de marque. Pourquoi : la charte « Sign in with Google » impose ces couleurs (fond, bordure, texte) dans chaque thème, et le logo G garde ses quatre couleurs en dur.
+- **Boutons Google = `components/auth/logo-google.tsx`** (`LogoGoogle`, `SpinnerGoogle`, `CLASSES_BOUTON_GOOGLE`), partagé par « Continuer avec Google » et « Confirmer avec Google » (`/profil`) ; l'appelant ajoute padding et alignement. Désactivé pendant la redirection : `disabled:cursor-wait` et spinner, sans baisse d'opacité. Pourquoi : deux chaînes de classes copiées divergeaient, et une opacité réduite dégrade le contraste imposé par la charte.
 - Toute nouvelle couleur se définit pour les **deux modes** (bloc `:root[data-theme="dark"]`, avec variantes sombres dédiées pour `red-*`/`amber-*`) et vise un contraste ≥ 4.5:1.
 
 ## Thème clair/sombre
@@ -34,7 +35,7 @@ Store `lib/theme.ts` (`useSyncExternalStore`, clé localStorage `theme` ∈ clai
 
 `next/font/google` dans `app/layout.tsx` : **Nunito** = corps (`--font-sans`), **Fredoka** = display (`font-display`), **Geist_Mono** = mono, utilisé seulement par le digest d'erreur de `app/error.tsx`. La display s'applique au wordmark de la nav, au hero d'accueil et aux **`h1`**, en `font-semibold`. Les `h2` de section et de dialog restent en police de corps, pour la scannabilité.
 
-**Roboto 500 est limitée au bouton « Continuer avec Google »** (`components/auth/connexion-google.tsx`, `next/font/google` appelé dans ce module, `roboto.className` sur le bouton) : ne pas la poser dans `app/layout.tsx` ni sur d'autres éléments. Pourquoi : la charte Google impose ce libellé en Roboto Medium ; l'auto-hébergement par `next/font` évite toute origine de CSP et un chargement global.
+**Roboto 500 est limitée au bouton « Continuer avec Google »** (`components/auth/connexion-google.tsx`, `next/font/google` appelé dans ce module, `roboto.className` sur le bouton) : ne pas la poser dans `app/layout.tsx` ni sur d'autres éléments, ni l'importer dans `logo-google.tsx` (module partagé avec `/profil`). Pourquoi : la charte Google impose ce libellé en Roboto Medium ; l'auto-hébergement par `next/font` évite toute origine de CSP et un chargement global.
 
 ## Marque et icônes
 

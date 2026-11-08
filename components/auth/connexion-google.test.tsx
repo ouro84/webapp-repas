@@ -69,6 +69,59 @@ describe("ConnexionGoogle (US-57)", () => {
     expect((bouton as HTMLButtonElement).disabled).toBe(false)
   })
 
+  it("échec du démarrage : le focus revient sur le bouton", async () => {
+    let terminer: (valeur: unknown) => void = () => {}
+    signInWithOAuth.mockReturnValue(new Promise((resolve) => (terminer = resolve)))
+    vi.spyOn(console, "error").mockImplementation(() => {})
+    render(<ConnexionGoogle />)
+    const bouton = screen.getByRole("button", { name: "Continuer avec Google" })
+    bouton.focus()
+    fireEvent.click(bouton)
+    await waitFor(() => expect((bouton as HTMLButtonElement).disabled).toBe(true))
+    // Un navigateur retire le focus d'un bouton désactivé (jsdom ne le fait pas).
+    bouton.blur()
+    terminer({ data: null, error: new Error("boom") })
+    await screen.findByRole("alert")
+    await waitFor(() => expect(document.activeElement).toBe(bouton))
+  })
+
+  it("clic : retire erreur_oauth de l’URL, l’ancien message disparaît", async () => {
+    signInWithOAuth.mockReturnValue(new Promise(() => {}))
+    stubUrl("?erreur_oauth=annule&suivant=%2Foauth%2Fconsent")
+    const remplacer = vi
+      .spyOn(window.history, "replaceState")
+      .mockImplementation((_etat, _titre, url) => {
+        stubUrl(new URL(String(url), "http://localhost:3000").search)
+      })
+    render(<ConnexionGoogle />)
+    expect(screen.getByRole("alert").textContent).toContain("Connexion avec Google annulée")
+
+    fireEvent.click(screen.getByRole("button", { name: "Continuer avec Google" }))
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull())
+    const urlNettoyee = String(remplacer.mock.calls[0][2])
+    expect(urlNettoyee).not.toContain("erreur_oauth")
+    expect(urlNettoyee).toContain("suivant=")
+    // suivant est conservé pour le redirectTo.
+    await waitFor(() => expect(signInWithOAuth).toHaveBeenCalledTimes(1))
+    expect(signInWithOAuth.mock.calls[0][0].options.redirectTo).toBe(
+      "http://localhost:3000/auth/callback?suivant=%2Foauth%2Fconsent"
+    )
+  })
+
+  it("retour arrière depuis Google (bfcache, pageshow persisted) : le bouton se réarme", async () => {
+    render(<ConnexionGoogle />)
+    const bouton = screen.getByRole("button", { name: "Continuer avec Google" })
+    fireEvent.click(bouton)
+    await waitFor(() => expect(signInWithOAuth).toHaveBeenCalled())
+    expect((bouton as HTMLButtonElement).disabled).toBe(true)
+
+    window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: false }))
+    expect((bouton as HTMLButtonElement).disabled).toBe(true)
+
+    window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true }))
+    await waitFor(() => expect((bouton as HTMLButtonElement).disabled).toBe(false))
+  })
+
   it("?erreur_oauth=annule : message d’annulation affiché", () => {
     stubUrl("?erreur_oauth=annule")
     render(<ConnexionGoogle />)
