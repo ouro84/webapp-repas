@@ -11,8 +11,9 @@
 //  - compte Google sans mot de passe (US-57, D10) : aller-retour OAuth
 //    (`prompt=select_account`, `login_hint`) qui revient sur
 //    `/profil?suppression=confirmer`. L'uid et l'email d'origine voyagent en
-//    `sessionStorage` : au retour, un autre uid (autre compte Google choisi)
-//    déconnecte et affiche un message. Annulation ou échec chez Google : le
+//    `sessionStorage` (`lireMemoReauth`, `lib/reauth.ts`) : au retour, un autre
+//    uid (`compteDifferent`) déconnecte et affiche un message avec un lien
+//    « Se reconnecter » vers /login. Annulation ou échec chez Google : le
 //    callback revient ici avec `erreur_oauth` (session conservée), on consomme
 //    le mémo, on affiche le message et on redemande. Cas « compte Google neuf choisi par
 //    erreur » : ce compte n'a pas fini l'onboarding, le proxy l'envoie sur
@@ -23,7 +24,15 @@ import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { reinitialiserCacheFoyer } from "@/lib/sync";
 import { chargerFoyer } from "@/lib/foyer";
-import { methodeReauth, type MethodeReauth } from "@/lib/reauth";
+import Link from "next/link";
+import {
+  compteDifferent,
+  lireMemoReauth,
+  messageMauvaisCompte,
+  methodeReauth,
+  type MemoReauth,
+  type MethodeReauth,
+} from "@/lib/reauth";
 import { messageErreurOAuth, urlRetourOAuth } from "@/lib/auth-google";
 import { CLASSES_BOUTON_GOOGLE, LogoGoogle, SpinnerGoogle } from "@/components/auth/logo-google";
 
@@ -39,22 +48,40 @@ const CHEMIN_RETOUR = `/profil?${PARAM_RETOUR}=${VALEUR_RETOUR}`;
 
 type Utilisateur = { id: string; email: string | null; methode: MethodeReauth };
 
-/** Lit puis efface le mémo ; `null` si absent ou illisible. */
-function consommerMemoReauth(): { uid: string; email: string } | null {
+/** Lit puis efface le mémo ; `null` si absent, illisible ou stockage indisponible. */
+function consommerMemoReauth(): MemoReauth | null {
   try {
     const brut = sessionStorage.getItem(CLE_REAUTH);
     sessionStorage.removeItem(CLE_REAUTH);
-    if (brut === null) return null;
-    const memo = JSON.parse(brut) as { uid?: unknown; email?: unknown };
-    if (typeof memo.uid !== "string") return null;
-    return { uid: memo.uid, email: typeof memo.email === "string" ? memo.email : "" };
+    return lireMemoReauth(brut);
   } catch {
     return null;
   }
 }
 
+/**
+ * Lit les paramètres de retour de Google (`suppression=confirmer`,
+ * `erreur_oauth`) puis les retire de l'URL par `history.replaceState`
+ * (cf. `next-react.md`), pour qu'un rechargement ne les rejoue pas.
+ */
+function retirerParametresRetour(): { retourGoogle: boolean; cleErreur: string | null } {
+  const params = new URLSearchParams(window.location.search);
+  const retourGoogle = params.get(PARAM_RETOUR) === VALEUR_RETOUR;
+  const cleErreur = params.get(PARAM_ERREUR_OAUTH);
+  if (retourGoogle || cleErreur !== null) {
+    params.delete(PARAM_RETOUR);
+    params.delete(PARAM_ERREUR_OAUTH);
+    const reste = params.toString();
+    window.history.replaceState(
+      window.history.state,
+      "",
+      window.location.pathname + (reste ? `?${reste}` : "")
+    );
+  }
+  return { retourGoogle, cleErreur };
+}
+
 export function SupprimerCompte() {
-  const supabase = createClient();
   const [motDePasse, setMotDePasse] = useState("");
   const [confirmation, setConfirmation] = useState("");
   const [erreur, setErreur] = useState<string | null>(null);
@@ -86,33 +113,27 @@ export function SupprimerCompte() {
   }, []);
 
   // Identité + éventuel retour de la ré-authentification Google. `setState`
-  // dans la promesse (règle set-state-in-effect) ; le mémo n'est consommé que
-  // si l'effet est encore actif, sinon le double montage StrictMode le volerait.
+  // dans la promesse (règle set-state-in-effect) ; les paramètres et le mémo
+  // ne sont consommés que si l'effet est encore actif, sinon le double montage
+  // StrictMode les volerait. Client créé dans l'effet (cf. InvitationEnAttente).
   useEffect(() => {
+    const supabase = createClient();
     let actif = true;
     supabase.auth
       .getUser()
-      .then(({ data: { user } }) => {
-        if (!actif || !user) return;
-        setUtilisateur({
-          id: user.id,
-          email: user.email ?? null,
-          methode: methodeReauth(user.identities),
-        });
+      .then(({ data: { user }, error }) => {
+        if (!actif) return;
+        const { retourGoogle, cleErreur } = retirerParametresRetour();
+        if (error) {
+          // Repli sur la voie mot de passe : l'échec de lecture ne bloque pas la section.
+          console.error("Suppression : lecture de l'utilisateur impossible.", error);
+        }
+        if (!user) return;
+        const methode = methodeReauth(user.identities);
+        setUtilisateur({ id: user.id, email: user.email ?? null, methode });
 
-        const params = new URLSearchParams(window.location.search);
-        const retourGoogle = params.get(PARAM_RETOUR) === VALEUR_RETOUR;
-        const cleErreur = params.get(PARAM_ERREUR_OAUTH);
+        // Sans paramètre de retour, le mémo n'est pas touché.
         if (!retourGoogle && cleErreur === null) return;
-        params.delete(PARAM_RETOUR);
-        params.delete(PARAM_ERREUR_OAUTH);
-        const reste = params.toString();
-        window.history.replaceState(
-          window.history.state,
-          "",
-          window.location.pathname + (reste ? `?${reste}` : "")
-        );
-
         const memo = consommerMemoReauth();
         // Annulation ou échec chez Google (le callback renvoie ici avec
         // `erreur_oauth`, avec ou sans `suppression=confirmer`) : la
@@ -123,8 +144,9 @@ export function SupprimerCompte() {
           );
           return;
         }
-        if (memo === null) return; // pas de preuve du retour : on redemande
-        if (memo.uid === user.id) {
+        // Pas de preuve du retour, ou compte avec mot de passe : on redemande.
+        if (memo === null || methode !== "google") return;
+        if (!compteDifferent(memo, user.id)) {
           setReauthGoogleOk(true);
           return;
         }
@@ -136,14 +158,14 @@ export function SupprimerCompte() {
         });
       })
       .catch((e) => {
+        if (!actif) return;
+        retirerParametresRetour();
         // Repli sur la voie mot de passe : l'échec de lecture ne bloque pas la section.
         console.error("Suppression : lecture de l'utilisateur impossible.", e);
       });
     return () => {
       actif = false;
     };
-    // `supabase` est recréé à chaque rendu : l'effet ne tourne qu'au montage.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Retour arrière depuis Google (bfcache iOS/Safari) : la page est restaurée
@@ -167,9 +189,9 @@ export function SupprimerCompte() {
     try {
       sessionStorage.setItem(
         CLE_REAUTH,
-        JSON.stringify({ uid: utilisateur.id, email: utilisateur.email ?? "" })
+        JSON.stringify({ uid: utilisateur.id, email: utilisateur.email ?? "" } satisfies MemoReauth)
       );
-      const { error } = await supabase.auth.signInWithOAuth({
+      const { error } = await createClient().auth.signInWithOAuth({
         provider: "google",
         options: {
           redirectTo: urlRetourOAuth(window.location.origin, CHEMIN_RETOUR),
@@ -201,6 +223,7 @@ export function SupprimerCompte() {
     if (voieGoogle && !reauthGoogleOk) return;
 
     setSuppression(true);
+    const supabase = createClient();
     try {
       // Voie Google : la ré-authentification vient d'avoir lieu (retour OAuth) ;
       // le serveur en vérifie la fraîcheur (RG-93).
@@ -263,9 +286,19 @@ export function SupprimerCompte() {
         </p>
 
         {autreCompte !== null ? (
-          <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">
-            {`Tu t’es connecté avec un autre compte Google. Reconnecte-toi avec ${autreCompte} pour supprimer ton compte.`}
-          </p>
+          // La session vient d'être fermée : le lien évite de laisser l'utilisateur
+          // devant un /profil qui n'a plus de session.
+          <div className="flex flex-col gap-3">
+            <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">
+              {messageMauvaisCompte(autreCompte)}
+            </p>
+            <Link
+              href="/login"
+              className="self-start rounded-full bg-primary px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100"
+            >
+              Se reconnecter
+            </Link>
+          </div>
         ) : voieGoogle && !reauthGoogleOk ? (
           <>
             <p className="text-sm text-brand-700/85">

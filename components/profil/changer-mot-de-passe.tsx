@@ -26,7 +26,6 @@ import { LogoGoogle } from "@/components/auth/logo-google";
 const LONGUEUR_MIN = LONGUEUR_MIN_MDP;
 
 export function ChangerMotDePasse() {
-  const supabase = createClient();
   const [actuel, setActuel] = useState("");
   const [nouveau, setNouveau] = useState("");
   const [confirmation, setConfirmation] = useState("");
@@ -35,22 +34,23 @@ export function ChangerMotDePasse() {
   // true = compte Google sans mot de passe (D11).
   const [googleSeul, setGoogleSeul] = useState(false);
 
+  // Client créé dans l'effet (cf. InvitationEnAttente) : l'effet ne dépend de
+  // rien et ne tourne qu'au montage.
   useEffect(() => {
     let actif = true;
-    supabase.auth
-      .getUser()
-      .then(({ data: { user } }) => {
+    createClient()
+      .auth.getUser()
+      .then(({ data: { user }, error }) => {
+        // Repli sur le formulaire : l'échec de lecture ne doit pas masquer la section.
+        if (error) console.error("Profil : lecture des identités impossible.", error);
         if (actif && user) setGoogleSeul(methodeReauth(user.identities) === "google");
       })
       .catch((e) => {
-        // Repli sur le formulaire : l'échec de lecture ne doit pas masquer la section.
         console.error("Profil : lecture des identités impossible.", e);
       });
     return () => {
       actif = false;
     };
-    // `supabase` est recréé à chaque rendu : l'effet ne tourne qu'au montage.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function soumettre(evenement: React.FormEvent): Promise<void> {
@@ -67,6 +67,7 @@ export function ChangerMotDePasse() {
     }
 
     setEnregistrement(true);
+    const supabase = createClient();
     try {
       const {
         data: { user },

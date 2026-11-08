@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest"
-import { authentificationRecente, aMotDePasse, methodeReauth } from "./reauth"
+import {
+  authentificationRecente,
+  aMotDePasse,
+  compteDifferent,
+  lireMemoReauth,
+  messageMauvaisCompte,
+  methodeReauth,
+} from "./reauth"
 
 const t = 1_800_000_000
 
@@ -53,5 +60,36 @@ describe("aMotDePasse / methodeReauth", () => {
     expect(methodeReauth([{ provider: "google" }])).toBe("google")
     expect(methodeReauth([{ provider: "email" }, { provider: "google" }])).toBe("mot-de-passe")
     expect(methodeReauth(undefined)).toBe("google")
+  })
+})
+
+describe("mémo de ré-authentification Google (D10)", () => {
+  it("lireMemoReauth : JSON { uid, email } lu, email absent ramené à \"\"", () => {
+    expect(lireMemoReauth(JSON.stringify({ uid: "u1", email: "a@example.com" }))).toEqual({
+      uid: "u1",
+      email: "a@example.com",
+    })
+    expect(lireMemoReauth(JSON.stringify({ uid: "u1" }))).toEqual({ uid: "u1", email: "" })
+    expect(lireMemoReauth(JSON.stringify({ uid: "u1", email: 42 }))).toEqual({ uid: "u1", email: "" })
+  })
+  it("lireMemoReauth : absent, illisible ou sans uid chaîne → null", () => {
+    expect(lireMemoReauth(null)).toBeNull()
+    expect(lireMemoReauth("pas du json")).toBeNull()
+    expect(lireMemoReauth("null")).toBeNull()
+    expect(lireMemoReauth("42")).toBeNull()
+    expect(lireMemoReauth(JSON.stringify({ email: "a@example.com" }))).toBeNull()
+    expect(lireMemoReauth(JSON.stringify({ uid: 7 }))).toBeNull()
+  })
+  it("compteDifferent : vrai seulement si l’uid diffère", () => {
+    expect(compteDifferent({ uid: "u1", email: "" }, "u1")).toBe(false)
+    expect(compteDifferent({ uid: "u1", email: "" }, "u2")).toBe(true)
+  })
+  it("messageMauvaisCompte : email d’origine, ou repli sans email", () => {
+    expect(messageMauvaisCompte("a@example.com")).toBe(
+      "Tu t’es connecté avec un autre compte Google. Reconnecte-toi avec a@example.com pour supprimer ton compte."
+    )
+    expect(messageMauvaisCompte("")).toBe(
+      "Tu t’es connecté avec un autre compte Google. Reconnecte-toi avec ton compte Google d’origine pour supprimer ton compte."
+    )
   })
 })

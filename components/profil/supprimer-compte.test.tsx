@@ -94,6 +94,42 @@ describe("SupprimerCompte, compte avec mot de passe (inchangé)", () => {
   })
 })
 
+describe("SupprimerCompte, identités mixtes email + Google", () => {
+  function identitesMixtes() {
+    auth.getUser.mockResolvedValue({
+      data: {
+        user: {
+          id: "u1",
+          email: "a@example.com",
+          identities: [{ provider: "email" }, { provider: "google" }],
+        },
+      },
+      error: null,
+    })
+  }
+
+  it("voie mot de passe, pas de bouton Google", async () => {
+    identitesMixtes()
+    render(<SupprimerCompte />)
+    expect(await screen.findByLabelText("Mot de passe")).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Confirmer avec Google" })).toBeNull()
+  })
+
+  it("un retour Google avec mémo valide ne dispense pas du mot de passe", async () => {
+    stubUrl("?suppression=confirmer")
+    sessionStorage.setItem(CLE, JSON.stringify({ uid: "u1", email: "a@example.com" }))
+    identitesMixtes()
+    render(<SupprimerCompte />)
+    await screen.findByLabelText("Mot de passe")
+    fireEvent.change(screen.getByLabelText("Tape SUPPRIMER pour confirmer"), {
+      target: { value: "SUPPRIMER" },
+    })
+    fireEvent.change(screen.getByLabelText("Mot de passe"), { target: { value: "secret-1234" } })
+    fireEvent.click(screen.getByRole("button", { name: "Supprimer mon compte" }))
+    await waitFor(() => expect(auth.signInWithPassword).toHaveBeenCalled())
+  })
+})
+
 describe("SupprimerCompte, compte Google sans mot de passe (D10)", () => {
   it("sans paramètre : bouton « Confirmer avec Google », ni champ mot de passe ni champ SUPPRIMER", async () => {
     utilisateur("google")
@@ -244,6 +280,48 @@ describe("SupprimerCompte, compte Google sans mot de passe (D10)", () => {
     expect(await screen.findByText(/La connexion avec Google a échoué/)).toBeTruthy()
     expect(screen.queryByLabelText("Tape SUPPRIMER pour confirmer")).toBeNull()
     expect(sessionStorage.getItem(CLE)).toBeNull()
+  })
+
+  it("autre compte : lien « Se reconnecter » vers /login", async () => {
+    stubUrl("?suppression=confirmer")
+    sessionStorage.setItem(CLE, JSON.stringify({ uid: "u1", email: "a@example.com" }))
+    utilisateur("google", "u2", "autre@example.com")
+    render(<SupprimerCompte />)
+    const lien = await screen.findByRole("link", { name: "Se reconnecter" })
+    expect(lien.getAttribute("href")).toBe("/login")
+  })
+
+  it("autre compte, email d’origine vide : message de repli", async () => {
+    stubUrl("?suppression=confirmer")
+    sessionStorage.setItem(CLE, JSON.stringify({ uid: "u1", email: "" }))
+    utilisateur("google", "u2", "autre@example.com")
+    render(<SupprimerCompte />)
+    expect(
+      await screen.findByText(
+        "Tu t’es connecté avec un autre compte Google. Reconnecte-toi avec ton compte Google d’origine pour supprimer ton compte."
+      )
+    ).toBeTruthy()
+  })
+
+  it("sans paramètre de retour : le mémo n’est pas consommé", async () => {
+    sessionStorage.setItem(CLE, JSON.stringify({ uid: "u1", email: "a@example.com" }))
+    utilisateur("google", "u1")
+    render(<SupprimerCompte />)
+    await screen.findByRole("button", { name: "Confirmer avec Google" })
+    expect(sessionStorage.getItem(CLE)).not.toBeNull()
+    expect(screen.queryByLabelText("Tape SUPPRIMER pour confirmer")).toBeNull()
+  })
+
+  it("getUser renvoie une erreur : loggée, suppression=confirmer retiré quand même, repli mot de passe", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {})
+    stubUrl("?suppression=confirmer")
+    const remplacer = vi.spyOn(window.history, "replaceState")
+    auth.getUser.mockResolvedValue({ data: { user: null }, error: new Error("JWT expiré") })
+    render(<SupprimerCompte />)
+    await waitFor(() => expect(log).toHaveBeenCalled())
+    expect(remplacer).toHaveBeenCalled()
+    expect(String(remplacer.mock.calls[0][2])).not.toContain("suppression=")
+    expect(screen.getByLabelText("Mot de passe")).toBeTruthy()
   })
 
   it("retour sans mémo (onglet fermé) : repli sur le bouton Google, pas de champ SUPPRIMER", async () => {

@@ -55,3 +55,39 @@ export type MethodeReauth = "mot-de-passe" | "google"
 export function methodeReauth(identites: Identites): MethodeReauth {
   return aMotDePasse(identites) ? "mot-de-passe" : "google"
 }
+
+/** Mémo de l’aller-retour Google avant suppression (D10), stocké en JSON. */
+export type MemoReauth = { uid: string; email: string }
+
+/**
+ * Lit le mémo brut (`sessionStorage`) : `{ uid, email }`, email ramené à ""
+ * s’il manque ; `null` si absent, illisible ou sans `uid` chaîne (on redemande
+ * alors la confirmation).
+ */
+export function lireMemoReauth(brut: string | null): MemoReauth | null {
+  if (brut === null) return null
+  try {
+    const memo: unknown = JSON.parse(brut)
+    if (typeof memo !== "object" || memo === null) return null
+    const { uid, email } = memo as { uid?: unknown; email?: unknown }
+    if (typeof uid !== "string") return null
+    return { uid, email: typeof email === "string" ? email : "" }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Vrai si le retour de Google s’est fait sur un autre compte que celui du
+ * départ. `login_hint` ne force pas le compte : seule la comparaison des `uid`
+ * détecte l’erreur.
+ */
+export function compteDifferent(memo: MemoReauth, uidActuel: string): boolean {
+  return memo.uid !== uidActuel
+}
+
+/** Message « mauvais compte Google » ; repli générique si l’email d’origine est inconnu. */
+export function messageMauvaisCompte(emailOrigine: string): string {
+  const cible = emailOrigine.trim() || "ton compte Google d’origine"
+  return `Tu t’es connecté avec un autre compte Google. Reconnecte-toi avec ${cible} pour supprimer ton compte.`
+}
