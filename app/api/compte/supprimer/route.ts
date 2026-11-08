@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { apiError } from "@/lib/errors"
+import { authentificationRecente } from "@/lib/reauth"
 
 export async function POST() {
   const supabase = await createClient()
@@ -16,6 +17,24 @@ export async function POST() {
       authError,
       "Tu dois être connecté pour supprimer ton compte.",
       401
+    )
+  }
+
+  // RG-93 : la session courante doit s’être authentifiée il y a moins de
+  // 5 minutes (claim `amr` du JWT). Contrôle AVANT la RPC : l’ordre
+  // RPC puis deleteUser reste strict.
+  const { data: claims } = await supabase.auth.getClaims()
+  if (
+    !authentificationRecente(
+      claims?.claims?.amr,
+      Math.floor(Date.now() / 1000)
+    )
+  ) {
+    return apiError(
+      "POST /api/compte/supprimer",
+      null,
+      "Pour supprimer ton compte, confirme d’abord ton identité. La confirmation est valable 5 minutes.",
+      403
     )
   }
 
