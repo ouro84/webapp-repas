@@ -75,8 +75,8 @@ export default function PageBienvenue() {
   const generationMemo = useRef<{ jour: number; ancre: string } | null>(null);
 
   // Pré-remplissage en cas de reprise du tunnel (prénom/personnes déjà saisis à
-  // une session précédente interrompue) ou du prénom Google (RG-94). setState dans la promesse (conforme à
-  // set-state-in-effect).
+  // une session précédente interrompue) ou du prénom Google (RG-94). setState
+  // dans la promesse (conforme à set-state-in-effect).
   useEffect(() => {
     let actif = true;
     (async () => {
