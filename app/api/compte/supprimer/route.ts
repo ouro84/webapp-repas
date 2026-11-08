@@ -40,6 +40,16 @@ export async function POST() {
       500
     )
   }
+  // Contrôle croisé : les claims lus doivent être ceux de l’utilisateur
+  // vérifié par getUser(). Un écart (cookies incohérents) n’autorise rien.
+  if (claims?.claims?.sub !== user.id) {
+    return apiError(
+      "POST /api/compte/supprimer",
+      `sub des claims (${String(claims?.claims?.sub)}) différent de l’utilisateur (${user.id})`,
+      MESSAGE_REAUTH,
+      403
+    )
+  }
   if (
     !authentificationRecente(
       claims?.claims?.amr,

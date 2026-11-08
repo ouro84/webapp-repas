@@ -29,6 +29,17 @@ describe("authentificationRecente (RG-93)", () => {
   it("refuse la forme string[] (sans horodatage)", () => {
     expect(authentificationRecente(["password"], t)).toBe(false)
   })
+  it("tableau mixte chaîne + objet : seul l’objet horodaté compte", () => {
+    expect(authentificationRecente(["password", { method: "oauth", timestamp: t }], t)).toBe(true)
+    expect(authentificationRecente(["password", { method: "oauth", timestamp: t - 301 }], t)).toBe(
+      false
+    )
+  })
+  it("timestamp futur (horloges décalées) : accepté", () => {
+    // Choix documenté : le JWT est signé par Supabase, un léger décalage
+    // d’horloge ne doit pas bloquer une suppression légitime.
+    expect(authentificationRecente([{ method: "password", timestamp: t + 60 }], t)).toBe(true)
+  })
 })
 
 describe("aMotDePasse / methodeReauth", () => {

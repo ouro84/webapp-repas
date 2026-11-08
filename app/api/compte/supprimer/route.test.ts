@@ -26,8 +26,8 @@ import { POST } from "@/app/api/compte/supprimer/route"
 
 const MAINTENANT_S = 1_800_000_000
 
-function claimsAvecAmr(amr: unknown) {
-  return { data: { claims: { amr } }, error: null }
+function claimsAvecAmr(amr: unknown, sub = "u1") {
+  return { data: { claims: { sub, amr } }, error: null }
 }
 
 beforeEach(() => {
@@ -47,15 +47,35 @@ describe("POST /api/compte/supprimer", () => {
     const r = await POST()
     expect(r.status).toBe(403)
     expect((await r.json()).error).toContain("confirme d’abord ton identité")
+    expect(console.error).toHaveBeenCalledWith(
+      "[POST /api/compte/supprimer]",
+      "amr absent ou périmé"
+    )
     expect(serveur.rpc).not.toHaveBeenCalled()
     expect(admin.deleteUser).not.toHaveBeenCalled()
   })
 
-  it("403 si amr est absent", async () => {
-    serveur.getClaims.mockResolvedValue({ data: { claims: {} }, error: null })
+  it("403 si amr est absent, sans RPC ni deleteUser", async () => {
+    serveur.getClaims.mockResolvedValue({ data: { claims: { sub: "u1" } }, error: null })
     const r = await POST()
     expect(r.status).toBe(403)
     expect(serveur.rpc).not.toHaveBeenCalled()
+    expect(admin.deleteUser).not.toHaveBeenCalled()
+  })
+
+  it("403 si le sub des claims diffère de l’utilisateur, log explicite, sans RPC ni deleteUser", async () => {
+    serveur.getClaims.mockResolvedValue(
+      claimsAvecAmr([{ method: "password", timestamp: MAINTENANT_S - 10 }], "u2")
+    )
+    const r = await POST()
+    expect(r.status).toBe(403)
+    expect((await r.json()).error).toContain("confirme d’abord ton identité")
+    expect(console.error).toHaveBeenCalledWith(
+      "[POST /api/compte/supprimer]",
+      expect.stringMatching(/sub.*u2.*u1/)
+    )
+    expect(serveur.rpc).not.toHaveBeenCalled()
+    expect(admin.deleteUser).not.toHaveBeenCalled()
   })
 
   it("500 si getClaims renvoie une erreur, sans RPC ni deleteUser", async () => {

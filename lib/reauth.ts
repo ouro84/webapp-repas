@@ -19,7 +19,9 @@ export const FRAICHEUR_MAX_S = 300
  * Vrai si la session s’est authentifiée il y a au plus `FRAICHEUR_MAX_S`.
  * `amr` vient d’un JWT : type `AMREntry[] | string[]` côté SDK. La forme
  * `string[]` n’a pas d’horodatage, donc refus (fail-safe), comme pour tout
- * tableau vide, non-tableau ou timestamp non numérique.
+ * tableau vide, non-tableau ou timestamp non numérique. Un tableau mixte
+ * (chaînes et objets) ne compte que ses objets horodatés. Un timestamp futur
+ * (horloges décalées) est accepté : le JWT est signé par Supabase.
  */
 export function authentificationRecente(
   amr: unknown,
