@@ -148,17 +148,18 @@ export async function purgerCyclesAvant(cutoffAncre: string): Promise<void> {
 }
 
 /** Foyer de l'utilisateur courant (pour scoper les canaux temps réel par foyer,
- *  #56 PR4). La RLS de `profiles` ne renvoie que la ligne du membre courant. */
-export async function chargerFoyerId(): Promise<string | null> {
-  const supabase = createClient()
-  const { data, error } = await supabase
-    .from("profiles")
-    .select("foyer_id")
-    .maybeSingle()
+ *  #56 PR4). Lu dans `foyers`, dont la RLS (`id = mon_foyer()`) ne renvoie que
+ *  le foyer courant ; jamais dans `profiles`, dont la RLS renvoie TOUS les
+ *  membres : `.maybeSingle()` y échouait (PGRST116) dès 2 membres, et aucun
+ *  canal temps réel ne s'ouvrait dans un foyer partagé. */
+export async function chargerFoyerId(
+  supabase: ClientSupabase = clientParDefaut()
+): Promise<string | null> {
+  const { data, error } = await supabase.from("foyers").select("id").maybeSingle()
   if (error) {
     throw new Error(`Chargement du foyer impossible : ${error.message}`)
   }
-  return (data as { foyer_id: string } | null)?.foyer_id ?? null
+  return (data as { id: string } | null)?.id ?? null
 }
 
 // Construit les slots à passer à la RPC sauvegarder_planning (sans planning_id :

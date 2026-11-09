@@ -96,6 +96,7 @@ import { formaterQuantite } from "@/lib/unites";
 import { LIBELLES_CATEGORIES } from "@/lib/courses";
 import { FormulaireArticleManuel } from "@/components/courses/formulaire-article-manuel";
 import { PanierChronodrive } from "@/components/courses/panier-chronodrive";
+import { EcranChargement } from "@/components/ui/ecran-chargement";
 import type { SaisieArticleManuel } from "@/lib/persistance";
 import type {
   ArticleManuel,
@@ -462,14 +463,7 @@ function ContenuCourses() {
   // localStorage) tombait dans l'état vide le temps d'un rendu, même pour un
   // utilisateur qui a bien un planning (#257). ---
   if (!hydrate || cycle === null) {
-    return (
-      <main id="contenu" className="flex flex-1 flex-col items-center justify-center p-8">
-        {/* role="status" : annonce le chargement aux lecteurs d'écran */}
-        <p role="status" className="animate-pulse text-lg text-brand-700/85">
-          Chargement…
-        </p>
-      </main>
-    );
+    return <EcranChargement />;
   }
 
   // --- État vide (RG-09) : cycle résolu mais aucun repas planifié dessus
@@ -477,7 +471,8 @@ function ContenuCourses() {
   // couvre les jours du cycle courant) ---
   if (liste === null) {
     return (
-      <main id="contenu" className="flex flex-1 flex-col items-center justify-center gap-8 p-8">
+      // Même boîte que l'état chargé (mx-auto max-w-2xl) : sinon décalage desktop.
+      <main id="contenu" className="mx-auto flex w-full max-w-2xl flex-1 flex-col items-center justify-center gap-8 p-8">
         <div className="flex flex-col items-center text-center">
           <h1 className="font-display text-2xl font-semibold text-brand-900">Liste de courses</h1>
           <p className="mt-2 text-brand-700/85">Aucun repas planifié sur ce cycle</p>
@@ -824,15 +819,7 @@ function ContenuCourses() {
 export default function PageCourses() {
   // Frontière Suspense exigée par useSearchParams (Next 16, cf. app/recettes/page.tsx).
   return (
-    <Suspense
-      fallback={
-        <main id="contenu" className="flex flex-1 flex-col items-center justify-center p-8">
-          <p role="status" className="animate-pulse text-lg text-brand-700/85">
-            Chargement…
-          </p>
-        </main>
-      }
-    >
+    <Suspense fallback={<EcranChargement />}>
       <ContenuCourses />
     </Suspense>
   );

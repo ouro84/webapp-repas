@@ -19,10 +19,13 @@ const ROUTE = "POST /api/planning/generer"
 export async function POST(request: Request) {
   const supabase = await createClient()
 
-  // Vérifie que l'utilisateur est connecté
-  const { data: { user }, error: authError } = await supabase.auth.getUser()
+  // Vérifie que l'utilisateur est connecté. `getClaims` vérifie la signature du
+  // JWT localement (clés ES256 publiques, JWKS en cache) : pas d'aller-retour
+  // vers Supabase Auth, contrairement à `getUser`. Les lectures restent sous RLS.
+  const { data: auth, error: authError } = await supabase.auth.getClaims()
+  const userId = auth?.claims.sub
 
-  if (authError || !user) {
+  if (authError || !userId) {
     return apiError(
       ROUTE,
       authError,
@@ -32,9 +35,9 @@ export async function POST(request: Request) {
   }
 
   // Rate-limiting (#191, audit F-04) : borne le nombre de générations par
-  // utilisateur (clé = user.id). No-op si Upstash non configuré (CI/dev) et
+  // utilisateur (clé = `sub` du JWT). No-op si Upstash non configuré (CI/dev) et
   // fail-open si indisponible — cf. lib/rate-limit.ts.
-  const { autorise } = await limiteGeneration(user.id)
+  const { autorise } = await limiteGeneration(userId)
   if (!autorise) {
     return apiError(
       ROUTE,

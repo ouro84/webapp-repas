@@ -86,6 +86,14 @@ Store `lib/theme.ts` (`useSyncExternalStore`, clé localStorage `theme` ∈ clai
 - **Hero d'accueil** : `components/ui/apercu-planning.tsx` affiche 3 cartes factices, `aria-hidden` et non interactives, qui réutilisent `BadgeTemps` / `BadgeVegetarien` pour rester fidèles au rendu réel. Il sert aussi l'état vide de `/planning` (#337 : logo, baseline, aperçu, bascule, navigateur de semaine), qui garde le `h1` « Mon planning de la semaine » et la phrase « Aucun planning pour cette semaine. » (lus par `auth.setup` et `planning.spec`).
 - **Badges** : `badge-vegetarien.tsx` (`Leaf`), `badge-accompagnement.tsx` (`Wheat` accent / `Carrot` brand), `badge-saison.tsx` (style outline, automne = `TreeDeciduous` pour ne pas se confondre avec `Leaf`). Prop `compact` = icône seule + `aria-label`.
 - **Bandeau cookies dans le flux normal** (`app/layout.tsx`, `body` en `flex flex-col`), jamais en `fixed`/`sticky`. Pourquoi : en `fixed`, il interceptait les clics sur les boutons de bas de page (ex. « Se déconnecter » de `/profil`) ; dans le flux, les zones `flex-1` se réduisent et le chevauchement devient impossible.
+- **Bandeau cookies rendu après hydratation seulement** (`components/ui/bandeau-cookies.tsx`). Pourquoi : le choix vit dans le localStorage ; prérendu pour tous puis retiré chez ceux qui avaient déjà choisi, il décalait le pied de page à chaque chargement (CLS) et passait pour l'élément LCP. Contrepartie assumée : un premier visiteur voit le contenu centré de la vitrine remonter une fois à son apparition.
+
+## Stabilité visuelle au chargement (CLS)
+
+- **« Chargement… » d'une page = `EcranChargement`** (`components/ui/ecran-chargement.tsx`, `largeur` `"etroite"` | `"pleine"`), jamais un `<main>` maison. Il garde la boîte du `<main>` de l'état chargé et occupe `min-h-dvh`. Pourquoi : React réutilise le `<main>` ; un chargement pleine largeur suivi d'un état `max-w-2xl` décalait toute la page (CLS 0,82 sur `/courses` desktop), et un pied de page visible pendant le chargement était repoussé par le contenu (0,08 sur mobile).
+- **États vide et erreur d'une page : même boîte que l'état chargé** (`mx-auto w-full max-w-2xl` sur `/courses` et `/ce-soir`), pour la même raison.
+- **Un bloc chargé en différé à l'intérieur d'une page réserve sa hauteur** pendant son chargement : `min-h-dvh` sur le « Chargement… » de `/recettes` et `/reglages`, hauteur mesurée de la section chargée sur `EditionIdentite` et `PanneauFoyer` (`/profil`, 0,38 → 0). Une section dont la hauteur chargée change beaucoup se re-mesure.
+- **Limite connue** : `/planning` sans cache local (nouvel appareil) affiche brièvement l'état vide avant le planning lu en base ; rien ne distingue « pas encore lu » de « vide » dans `useSync`.
 
 ## Carte de slot du planning (`components/planning/slot-repas.tsx`)
 
@@ -102,4 +110,4 @@ Store `lib/theme.ts` (`useSyncExternalStore`, clé localStorage `theme` ∈ clai
 
 ## PWA
 
-`app/manifest.ts` est servi en `/manifest.webmanifest`, `<link rel="manifest">` auto-injecté par Next. `theme_color` passe par `viewport.themeColor`. Trois `purpose` : `any`, `maskable`, `monochrome` (mark blanc sur transparent). iOS ignore le manifest : `app/apple-icon.png` + `metadata.appleWebApp` font foi. Pas de service worker (choix volontaire, l'offline complet est un chantier séparé).
+`app/manifest.ts` est servi en `/manifest.webmanifest`, `<link rel="manifest">` auto-injecté par Next. **`start_url: "/ce-soir"`**, pas `/` : pourquoi, `/` redirige un connecté vers `/ce-soir` (#335), soit un passage de proxy et un aller-retour de plus à chaque lancement ; les installations iOS déjà faites gardent l'ancienne URL. Le manifest est exclu du `matcher` du proxy. `theme_color` passe par `viewport.themeColor`. Trois `purpose` : `any`, `maskable`, `monochrome` (mark blanc sur transparent). iOS ignore le manifest : `app/apple-icon.png` + `metadata.appleWebApp` font foi. Pas de service worker (choix volontaire, l'offline complet est un chantier séparé).

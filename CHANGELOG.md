@@ -9,6 +9,8 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ### Modifié
 
+- Rapidité : les pages s’ouvrent plus vite, surtout à l’ouverture de l’app. Les serveurs de l’app tournent désormais à Paris, à côté de la base de données (ils étaient aux États-Unis), le contrôle de connexion de chaque page ne fait plus d’aller-retour vers la base, et la génération d’un planning lit ses données en une seule fois. L’app installée sur l’écran d’accueil s’ouvre directement sur le prochain repas.
+
 - Accueil des nouveaux inscrits : l’app demande maintenant si tu manges à la maison le midi en semaine, puis ton jour de courses (samedi proposé), avec un bouton « Retour » pour revenir au choix du foyer. Ton premier planning couvre ton cycle de courses en cours, ou le prochain s’il se termine dans deux jours ou moins, sans les repas déjà passés et sans déjeuners de semaine si tu as désactivé les midis. Tu arrives sur le planning en vue Cycle, avec un message « Ta liste de courses est prête » qui mène à ta liste. Si tu rejoins un foyer, rien n’est généré et tu retrouves son planning (#386).
 - Planning : les vues Semaine et Cycle partagent le même en-tête, le même navigateur et la même grille ; sur ordinateur, les repas Déjeuner et Dîner sont alignés d’une colonne à l’autre, les actions gardent leurs libellés, et le jour courant est mis en évidence (#352).
 - Navigation : sur ordinateur, la barre du haut présente les sections dans le même ordre que sur mobile — Ce soir, Planning, Courses, Recettes (#351).
@@ -26,6 +28,8 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 ### Corrigé
 
 - Mot de passe oublié : le code du lien reçu par email n’est plus pris pour un code d’invitation à un foyer. Le lien fonctionne de nouveau normalement.
+- Pages qui « sautent » au chargement : la liste de courses, la page « Ce soir », le profil, les recettes et les réglages ne se décalent plus quand leur contenu arrive (sur ordinateur, la liste de courses glissait d’un bloc vers le centre). Le bandeau cookies ne clignote plus en bas de page quand tu as déjà fait ton choix.
+- Foyer partagé : les mises à jour en direct ne marchaient pas dès que le foyer comptait deux membres ou plus. Les coches et les articles ajoutés par un autre membre, l’indication « Un autre membre est aussi sur la liste » et l’alerte de modification du planning n’apparaissaient qu’après un rechargement ; elles arrivent de nouveau en direct.
 - Liste de courses et vue Cycle : avec un jour de courses le samedi ou le dimanche, le week-end affichait le cycle de la semaine suivante au lieu de celui du jour. Le cycle suivant s’affiche désormais quand il reste deux jours ou moins dans le cycle en cours, quel que soit ton jour de courses ; rien ne change pour un jour de courses le lundi (#386).
 - Vue Cycle du planning : après « Changer », les mêmes avertissements que dans la vue Semaine s’affichent (pas de recette végétarienne, pas de légumes ce jour-là, recette hors saison) ; Ctrl+Z (Cmd+Z sur Mac) annule la dernière modification et « Annulé » confirme l’annulation ; quand aucune recette n’est disponible, « Pas de recette disponible » s’affiche sous le repas concerné (#373).
 - Planning : une modification faite pendant le chargement d’une semaine (changement de semaine, ouverture de la page, mise à jour venue d’un autre membre du foyer) n’est plus perdue ; elle est enregistrée avec le reste (#368).

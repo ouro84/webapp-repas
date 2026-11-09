@@ -134,10 +134,38 @@ export async function genererPourUtilisateur(
     semaine = demande.semaine
   }
 
-  // Recettes visibles du foyer (catalogue global + recettes du foyer, RLS).
-  const { data: recettes, error: recettesError } = await supabase
-    .from("recette")
-    .select(SELECT_RECETTE)
+  // Les 5 lectures sont indépendantes : elles partent ensemble. En série, chacune
+  // coûtait un aller-retour réseau de plus (fonctions Vercel → Supabase).
+  // RG-49/50/52 — Mémoire de variété (#218) : plannings du foyer des
+  // FENETRE_VARIETE semaines PRÉCÉDANT la cible.
+  const borneInf = semaineDecalee(semaine, -FENETRE_VARIETE)
+  const [
+    { data: recettes, error: recettesError },
+    { data: masques, error: masquesError },
+    { data: dbReglages, error: reglagesError },
+    { data: historique, error: historiqueError },
+    { data: preferencesDb, error: preferencesError },
+  ] = await Promise.all([
+    // Recettes visibles du foyer (catalogue global + recettes du foyer, RLS).
+    supabase.from("recette").select(SELECT_RECETTE),
+    // Recettes « supprimées » (masquées) par le foyer (#105).
+    supabase.from("recette_masquee").select("recette_id"),
+    // Réglages de génération (#45, P09) : la RLS ne renvoie que la ligne de
+    // l'utilisateur (ou aucune → réglages par défaut).
+    supabase
+      .from("reglages")
+      .select(
+        "personnes_defaut, max_dejeuner_semaine, max_diner_semaine, max_dejeuner_weekend, max_diner_weekend, vege_dejeuner_semaine, vege_diner_semaine, vege_dejeuner_weekend, vege_diner_weekend, mix_accompagnement_jour, saisonnalite"
+      )
+      .maybeSingle(),
+    supabase
+      .from("planning")
+      .select("semaine, planning_slot ( recette_id )")
+      .gte("semaine", borneInf)
+      .lt("semaine", semaine),
+    // RG-58/60/61 — Favoris/évités (#219), préférences du FOYER.
+    supabase.from("recette_preference").select("recette_id, preference"),
+  ])
 
   if (recettesError) {
     throw new ErreurGeneration(
@@ -147,12 +175,8 @@ export async function genererPourUtilisateur(
     )
   }
 
-  // Recettes « supprimées » (masquées) par le foyer (#105) : exclues de la
-  // génération. En cas d'erreur de lecture, on n'exclut rien (la génération
-  // prime) et on journalise — jamais de catch muet.
-  const { data: masques, error: masquesError } = await supabase
-    .from("recette_masquee")
-    .select("recette_id")
+  // Recettes masquées : exclues de la génération. En cas d'erreur de lecture,
+  // on n'exclut rien (la génération prime) et on journalise — jamais de catch muet.
   if (masquesError) {
     console.error("Lecture des recettes masquées échouée (aucune exclusion).", masquesError)
   }
@@ -165,16 +189,8 @@ export async function genererPourUtilisateur(
     .map(dbRecetteToDomain)
     .filter((r) => !idsMasques.has(r.id))
 
-  // Réglages de génération personnalisés (#45, P09) : la RLS ne renvoie que la
-  // ligne de l'utilisateur (ou aucune → réglages par défaut). En cas d'erreur
-  // de lecture, on retombe sur les défauts pour ne pas bloquer la génération
-  // (et on le journalise).
-  const { data: dbReglages, error: reglagesError } = await supabase
-    .from("reglages")
-    .select(
-      "personnes_defaut, max_dejeuner_semaine, max_diner_semaine, max_dejeuner_weekend, max_diner_weekend, vege_dejeuner_semaine, vege_diner_semaine, vege_dejeuner_weekend, vege_diner_weekend, mix_accompagnement_jour, saisonnalite"
-    )
-    .maybeSingle()
+  // Réglages : en cas d'erreur de lecture, on retombe sur les défauts pour ne
+  // pas bloquer la génération (et on le journalise).
   if (reglagesError) {
     console.error("Lecture des réglages échouée (défauts appliqués).", reglagesError)
   }
@@ -182,17 +198,10 @@ export async function genererPourUtilisateur(
     ? dbReglagesToDomain(dbReglages as DbReglages)
     : REGLAGES_DEFAUT
 
-  // RG-49/50/52 — Mémoire de variété (#218) : plannings du foyer des
-  // FENETRE_VARIETE semaines PRÉCÉDANT la cible, pour défavoriser dans le
-  // tirage les recettes servies récemment. Best-effort : en cas d'erreur, on
-  // génère sans mémoire (jamais de blocage) et on journalise. La sélection
-  // manuelle n'est pas concernée (RG-03 #23).
-  const borneInf = semaineDecalee(semaine, -FENETRE_VARIETE)
-  const { data: historique, error: historiqueError } = await supabase
-    .from("planning")
-    .select("semaine, planning_slot ( recette_id )")
-    .gte("semaine", borneInf)
-    .lt("semaine", semaine)
+  // Mémoire de variété : défavorise dans le tirage les recettes servies
+  // récemment. Best-effort : en cas d'erreur, on génère sans mémoire (jamais
+  // de blocage) et on journalise. La sélection manuelle n'est pas concernée
+  // (RG-03 #23).
   if (historiqueError) {
     console.error(
       "Lecture de l'historique de variété échouée (variété ignorée).",
@@ -216,12 +225,9 @@ export async function genererPourUtilisateur(
     }
   }
 
-  // RG-58/60/61 — Favoris/évités (#219) : préférences du FOYER appliquées comme
-  // poids multiplicatif, composé avec la mémoire de variété. Best-effort : en
-  // cas d'erreur de lecture, on génère sans biais de préférence et on journalise.
-  const { data: preferencesDb, error: preferencesError } = await supabase
-    .from("recette_preference")
-    .select("recette_id, preference")
+  // Favoris/évités : poids multiplicatif, composé avec la mémoire de variété.
+  // Best-effort : en cas d'erreur de lecture, on génère sans biais de
+  // préférence et on journalise.
   if (preferencesError) {
     console.error(
       "Lecture des préférences favoris/évités échouée (préférence ignorée).",

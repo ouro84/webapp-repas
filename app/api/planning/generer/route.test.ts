@@ -6,9 +6,11 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
-const serveur = vi.hoisted(() => ({ getUser: vi.fn() }))
+// Auth par `getClaims` (JWT vérifié localement par JWKS) : pas d'aller-retour réseau
+// vers Supabase Auth, contrairement à `getUser`.
+const serveur = vi.hoisted(() => ({ getClaims: vi.fn() }))
 vi.mock("@/lib/supabase/server", () => ({
-  createClient: async () => ({ auth: { getUser: serveur.getUser } }),
+  createClient: async () => ({ auth: { getClaims: serveur.getClaims } }),
 }))
 
 const rateLimit = vi.hoisted(() => ({ limiteGeneration: vi.fn() }))
@@ -36,7 +38,7 @@ function requete(corps: unknown): Request {
 beforeEach(() => {
   vi.clearAllMocks()
   vi.spyOn(console, "error").mockImplementation(() => {})
-  serveur.getUser.mockResolvedValue({ data: { user: { id: "u1" } }, error: null })
+  serveur.getClaims.mockResolvedValue({ data: { claims: { sub: "u1" } }, error: null })
   rateLimit.limiteGeneration.mockResolvedValue({ autorise: true })
   generation.genererPourUtilisateur.mockResolvedValue({
     mode: "semaine",
@@ -47,7 +49,7 @@ beforeEach(() => {
 
 describe("POST /api/planning/generer", () => {
   it("401 sans utilisateur", async () => {
-    serveur.getUser.mockResolvedValue({ data: { user: null }, error: null })
+    serveur.getClaims.mockResolvedValue({ data: null, error: null })
 
     const reponse = await POST(requete({}))
 

@@ -35,6 +35,7 @@ import { useEcranAllume } from "@/lib/ecran-allume";
 import { semaineISO, semaineDecalee } from "@/lib/semaines";
 import { BadgesRecette, ContenuRecette } from "@/components/planning/contenu-recette";
 import type { Planning, ReglagesGeneration } from "@/types";
+import { EcranChargement } from "@/components/ui/ecran-chargement";
 
 type Donnees = {
   reglages: ReglagesGeneration;
@@ -102,20 +103,16 @@ export default function PageCeSoir() {
   useEcranAllume(recetteAffichee);
 
   if (donnees === undefined) {
-    return (
-      <main id="contenu" className="flex flex-1 flex-col items-center justify-center p-8">
-        <p role="status" className="animate-pulse text-lg text-brand-700/85">
-          Chargement…
-        </p>
-      </main>
-    );
+    return <EcranChargement />;
   }
 
+  // États erreur et vide : même boîte que l'état chargé (mx-auto max-w-2xl),
+  // sinon le `<main>` réutilisé se décale en desktop (CLS).
   if (donnees === null) {
     return (
       <main
         id="contenu"
-        className="flex flex-1 flex-col items-center justify-center gap-4 p-8 text-center"
+        className="mx-auto flex w-full max-w-2xl flex-1 flex-col items-center justify-center gap-4 p-8 text-center"
       >
         <p role="alert" className="text-brand-900">
           Impossible de charger le repas. Vérifie ta connexion.
@@ -147,7 +144,7 @@ export default function PageCeSoir() {
     return (
       <main
         id="contenu"
-        className="flex flex-1 flex-col items-center justify-center gap-4 p-8 text-center"
+        className="mx-auto flex w-full max-w-2xl flex-1 flex-col items-center justify-center gap-4 p-8 text-center"
       >
         <div className="flex flex-col gap-2">
           <h1 className="font-display text-2xl font-semibold text-brand-900">

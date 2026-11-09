@@ -17,6 +17,7 @@ import {
   chargerArticlesManuelsDistants,
   chargerCochesDistantes,
   chargerEtatCochesDistant,
+  chargerFoyerId,
   chargerLongueurCycle,
   chargerPlanningDistant,
   basculerCocheArticleManuelDistant,
@@ -141,6 +142,17 @@ describe("lectures du cycle — client injecté", () => {
       tables: { foyers: { data: null, error: { message: "boom" } } },
     })
     expect(await chargerJourCoursesFoyer(enErreur.client)).toBe(1)
+  })
+
+  it("chargerFoyerId lit `foyers` (une ligne par RLS), jamais `profiles` (tous les membres)", async () => {
+    const { client, appels } = creerSupabaseMock({
+      tables: { foyers: { data: { id: "foyer-1" }, error: null } },
+    })
+    expect(await chargerFoyerId(client)).toBe("foyer-1")
+    expect(appels.map((a) => a.table)).toEqual(["foyers"])
+
+    const enErreur = creerSupabaseMock({ tables: { foyers: { data: null, error: { message: "boom" } } } })
+    await expect(chargerFoyerId(enErreur.client)).rejects.toThrow("Chargement du foyer impossible : boom")
   })
 
   it("chargerReglages : REGLAGES_DEFAUT sans ligne", async () => {

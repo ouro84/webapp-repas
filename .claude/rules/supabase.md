@@ -23,6 +23,7 @@ paths:
 ## Scope foyer et RLS
 
 - La propriété des données partagées est le **foyer** : `recette` (garde aussi `user_id` = créateur ; global = `foyer_id IS NULL`), `recette_ingredient` / `planning_slot` (via le parent), `planning`, `etat_courses_article`, `recette_masquee`, `recette_preference`, `cycle_courses`, `article_manuel`. **`reglages` reste par utilisateur.**
+- **La RLS de `profiles` renvoie TOUS les membres du foyer** (`foyer_id = mon_foyer()`) : toute lecture de son propre profil filtre `.eq("user_id", …)`, et le foyer courant se lit dans `foyers` (une seule ligne visible), jamais par `profiles` + `.maybeSingle()`. Pourquoi : dès 2 membres, `.maybeSingle()` échoue (PGRST116) ; `chargerFoyerId` le faisait, et aucun canal temps réel ne s'ouvrait dans un foyer partagé.
 - **Toute RLS passe par le helper `mon_foyer()`** (`SECURITY DEFINER`, lit `profiles`), plutôt qu'une réimplémentation de `auth.uid() = user_id`.
 - Les inserts directs **omettent `foyer_id`** : la colonne a `default mon_foyer()`.
 - **Insertion de `recette`** : le `with check` contraint aussi `user_id IS NULL OR user_id = auth.uid()` (anti-usurpation d'auteur). L'UPDATE n'a pas cette contrainte, car un membre édite la recette d'un autre (RG-30).

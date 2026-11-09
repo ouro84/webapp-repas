@@ -10,7 +10,7 @@ const ORIGINE = `http://localhost:${PORT}`;
 // Specs à comptes JETABLES (emails uniques par run, disjoints du compte de test
 // partagé) → parallélisables sans course de données. Tout le reste écrit le
 // compte partagé et reste sérialisé (cf. `workers` + projets ci-dessous).
-const SPECS_JETABLE = /(onboarding|acquisition|foyer-clonage|foyer-rg29|rgpd-signup|suppression-compte|oauth-mcp|mcp-ecriture|panier-demande)\.spec\.ts$/;
+const SPECS_JETABLE = /(onboarding|acquisition|foyer-clonage|foyer-rg29|foyer-temps-reel|rgpd-signup|suppression-compte|oauth-mcp|mcp-ecriture|panier-demande)\.spec\.ts$/;
 
 // Configuration Playwright — tests e2e des parcours critiques (ADR-05).
 //
