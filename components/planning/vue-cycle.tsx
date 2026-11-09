@@ -29,7 +29,7 @@
 // une seule écriture en vol par jour, retour à l'état confirmé + toast en cas
 // d'échec. Jamais de `chargerCycle` après une édition : son
 // `setChargement(true)` estompe la grille et ignore les flèches le temps d'un
-// aller-retour réseau (« Chargement… » seul n'existe qu'au premier chargement),
+// aller-retour réseau (le squelette n'existe qu'au premier chargement),
 // et sa relecture écraserait l'état optimiste. La file est vidée avant toute
 // relecture (navigation, génération) et au démontage.
 //
@@ -183,7 +183,7 @@ export function VuePlanningCycle({
   const [parSemaine, setParSemaine] = useState<Map<string, Planning>>(new Map());
   const [chargement, setChargement] = useState(true);
   // Premier chargement en échec (RG-09, 3 états) : sans cycle affiché, l'écran
-  // propose « Réessayer » au lieu de rester sur « Chargement… ».
+  // propose « Réessayer » au lieu de rester sur le squelette.
   const [erreurInitiale, setErreurInitiale] = useState(false);
   const [ficheOuverte, setFicheOuverte] = useState<{
     recette: Recette;
@@ -656,7 +656,7 @@ export function VuePlanningCycle({
     setEssaiInitial((n) => n + 1);
   }
 
-  // « Chargement… » seul uniquement au premier chargement. Aux rechargements
+  // Squelette (`SquelettePlanning`) uniquement au premier chargement. Aux rechargements
   // (navigation entre cycles, génération), l'en-tête / état vide et le navigateur
   // restent montés (comme la semaine, #352) : pas de saut de mise en page, bascule
   // disponible, focus conservé sur la flèche cliquée ; seul le corps est estompé.
@@ -690,7 +690,7 @@ export function VuePlanningCycle({
   }
 
   // Position du cycle affiché vs le cycle courant (#352). Calculé ici, après
-  // chargement client : pas de mismatch d'hydratation (SSR = « Chargement… »).
+  // chargement client : pas de mismatch d'hydratation (SSR = squelette).
   const offsetCycle = decalageCycles(ancre, ancreCourante(new Date(), jourCourses));
   const jours = joursDuCycle(ancre, longueur);
   // Chaque date → le JourPlanning correspondant (ou null si non planifié).

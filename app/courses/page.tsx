@@ -13,8 +13,8 @@
 //
 // Le cycle affiché et son planning projeté sont branchés via useSyncExternalStore
 // (useCycleAffiche/useCyclePlanning) ; les coches via storeCoches (lib/stockage.ts).
-// Côté serveur les snapshots valent null : la page est prérendue en état
-// "Chargement…", puis hydratée.
+// Côté serveur les snapshots valent null : la page est prérendue en squelette
+// (`SqueletteCourses`, #400), puis hydratée.
 //
 // Animation de réordonnancement (RG-11) : un article coché glisse en fin de
 // catégorie via l'API View Transitions quand le navigateur la supporte —
@@ -106,8 +106,8 @@ import type {
   ReglagesGeneration,
 } from "@/types";
 
-// Vrai uniquement après hydratation côté navigateur — permet d'afficher
-// "Chargement…" pendant le prérendu/calcul initial sans setState (RG-09).
+// Vrai uniquement après hydratation côté navigateur — permet d'afficher le
+// squelette pendant le prérendu/calcul initial sans setState (RG-09, #400).
 function useHydratation(): boolean {
   return useSyncExternalStore(
     () => () => {},
