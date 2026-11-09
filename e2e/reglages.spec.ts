@@ -10,7 +10,11 @@
 // le cache local pour que /planning parte d'un état vide.
 
 import { test, expect } from "./fixtures";
-import { nettoyerEtatDistant, nettoyerReglagesDistants } from "./helpers";
+import {
+  attendreChargementTermine,
+  nettoyerEtatDistant,
+  nettoyerReglagesDistants,
+} from "./helpers";
 
 test.beforeEach(async ({ page, request }) => {
   await nettoyerReglagesDistants(request);
@@ -184,8 +188,7 @@ test("désactiver un créneau masque immédiatement le repas, sans régénérer 
 
   // La liste de courses applique le même filtre live, sans planter (RG-46).
   await page.goto("/courses");
-  await expect(page.getByText("Chargement…")).toHaveCount(0);
-  await expect(page.locator("main")).toBeVisible();
+  await attendreChargementTermine(page);
 });
 
 test("RG-47 : impossible d'enregistrer une config aux 4 créneaux désactivés", async ({

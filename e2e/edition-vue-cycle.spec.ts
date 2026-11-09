@@ -5,6 +5,7 @@
 import type { Page } from "@playwright/test";
 import { test, expect } from "./fixtures";
 import {
+  attendreChargementTermine,
   definirJourCoursesDistant,
   nettoyerEtatDistant,
   reinitialiserJourCoursesDistant,
@@ -38,7 +39,10 @@ test("changer un repas depuis la vue Cycle persiste au reload", async ({ page })
   await page.goto("/planning");
   await page.getByRole("button", { name: "Cycle" }).click();
   await page.getByRole("button", { name: "Générer mon cycle" }).click();
-  await expect(page.locator("main li").first()).toBeVisible({ timeout: 20_000 });
+  // Un repas réel (#400 : `main li` matcherait aussi le squelette).
+  await expect(page.locator("main button[aria-label^='Voir la recette']").first()).toBeVisible({
+    timeout: 20_000,
+  });
 
   const nomAvant = await page
     .locator("main button[aria-label^='Voir la recette']")
@@ -62,7 +66,10 @@ test("Ctrl+Z en vue Cycle annule le dernier « Changer » : « Annulé », repas
   await page.goto("/planning");
   await page.getByRole("button", { name: "Cycle" }).click();
   await page.getByRole("button", { name: "Générer mon cycle" }).click();
-  await expect(page.locator("main li").first()).toBeVisible({ timeout: 20_000 });
+  // Un repas réel (#400 : `main li` matcherait aussi le squelette).
+  await expect(page.locator("main button[aria-label^='Voir la recette']").first()).toBeVisible({
+    timeout: 20_000,
+  });
 
   const nom = page.locator("main button[aria-label^='Voir la recette']").first();
   const nomAvant = await nom.textContent();
@@ -89,7 +96,10 @@ test("modifier le nombre de personnes depuis la vue Cycle persiste au reload", a
   await page.goto("/planning");
   await page.getByRole("button", { name: "Cycle" }).click();
   await page.getByRole("button", { name: "Générer mon cycle" }).click();
-  await expect(page.locator("main li").first()).toBeVisible({ timeout: 20_000 });
+  // Un repas réel (#400 : `main li` matcherait aussi le squelette).
+  await expect(page.locator("main button[aria-label^='Voir la recette']").first()).toBeVisible({
+    timeout: 20_000,
+  });
 
   // Le stepper personnes n'est PAS gardé par la confirmation "jour passé"
   // (action mineure, même comportement que la vue Semaine).
@@ -120,7 +130,10 @@ async function genererCycleDepuisVueCycle(page: Page): Promise<void> {
   await page.goto("/planning");
   await page.getByRole("button", { name: "Cycle" }).click();
   await page.getByRole("button", { name: "Générer mon cycle" }).click();
-  await expect(page.locator("main li").first()).toBeVisible({ timeout: 20_000 });
+  // Un repas réel (#400 : `main li` matcherait aussi le squelette).
+  await expect(page.locator("main button[aria-label^='Voir la recette']").first()).toBeVisible({
+    timeout: 20_000,
+  });
 }
 
 async function lirePersonnes(carte: ReturnType<Page["locator"]>): Promise<number> {
@@ -206,7 +219,10 @@ test("marquer un repas en restes depuis la vue Cycle persiste au reload", async 
   await page.goto("/planning");
   await page.getByRole("button", { name: "Cycle" }).click();
   await page.getByRole("button", { name: "Générer mon cycle" }).click();
-  await expect(page.locator("main li").first()).toBeVisible({ timeout: 20_000 });
+  // Un repas réel (#400 : `main li` matcherait aussi le squelette).
+  await expect(page.locator("main button[aria-label^='Voir la recette']").first()).toBeVisible({
+    timeout: 20_000,
+  });
 
   await page.getByRole("button", { name: /^Marquer/ }).first().click();
   await confirmerSiModaleJourPasse(page);
@@ -249,7 +265,15 @@ test("cycle chevauchant deux semaines ISO — éditer vendredi/samedi/dimanche n
   await expect(page.getByText("Pas de repas prévu")).toHaveCount(0);
 
   await page.reload();
+  // #400 : au rechargement, la vue Cycle passe par un squelette qui rend aussi
+  // 7 `main li` et aucun « Pas de repas prévu » (faux vert) : attendre la vue
+  // chargée (bascule « Cycle » pressée, absente du squelette).
+  await expect(page.getByRole("button", { name: "Cycle", pressed: true })).toBeVisible({
+    timeout: 20_000,
+  });
+  await attendreChargementTermine(page);
   await expect(page.locator("main li")).toHaveCount(7);
+  await expect(page.locator("main button[aria-label^='Voir la recette']").first()).toBeVisible();
   await expect(page.getByText("Pas de repas prévu")).toHaveCount(0);
 });
 

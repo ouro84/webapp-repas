@@ -7,6 +7,7 @@
 // casserait l'état vide attendu.
 
 import { readFileSync } from "node:fs";
+import { expect } from "@playwright/test";
 import type { APIRequestContext, Page, WebSocket } from "@playwright/test";
 
 export const E2E_EMAIL = process.env.E2E_EMAIL ?? "claude-e2e-test@example.com";
@@ -111,6 +112,32 @@ export function abonnementRealtimePret(
   // worker ; l'appelant qui attend la promesse reçoit bien l'erreur.
   promesse.catch(() => {});
   return promesse;
+}
+
+/**
+ * Attend la fin du chargement de la page (#400) : plus aucune zone
+ * `role="status"` « Chargement… » dans `main` (le filtre sur le texte écarte
+ * l'indicateur de synchro de /planning, lui aussi `role="status"`). Pourquoi :
+ * un squelette rend des `ul > li` (7 jours du planning) et du texte factice
+ * transparent que `getByText` trouve ; `main li` n'est plus une preuve de page
+ * chargée.
+ *
+ * À appeler juste après un `goto`, un `reload` ou un `waitForURL` : le
+ * squelette est prérendu, donc présent dès le premier rendu. Après une
+ * navigation SPA ou un changement de vue, l'ancien `main` peut encore être
+ * affiché sans squelette : faire suivre d'un marqueur réel (rôle ARIA, qui
+ * exclut le contenu `aria-hidden` du squelette, ou
+ * `main button[aria-label^='Voir la recette']`). Un `toHaveCount(0)` seul passe
+ * à son premier essai (cf. e2e.md, « Pièges Playwright »).
+ */
+export async function attendreChargementTermine(
+  page: Page,
+  options: { timeout?: number } = {}
+): Promise<void> {
+  await expect(page.locator("main").first()).toBeVisible(options);
+  await expect(
+    page.locator("main [role=status]").filter({ hasText: "Chargement…" })
+  ).toHaveCount(0, options);
 }
 
 /**

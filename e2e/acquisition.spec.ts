@@ -19,6 +19,7 @@ import type {
 import {
   E2E_PASSWORD,
   lireEnvLocal,
+  attendreChargementTermine,
   marquerOnboardingCompletDistant,
 } from "./helpers";
 
@@ -111,6 +112,12 @@ test("un nouvel inscrit invité rejoint le foyer via le lien (US-24)", async ({
 
   // Y atterrit sur /planning et voit le planning PARTAGÉ de X (foyer commun).
   await y.waitForURL("**/planning", { timeout: 60_000 });
+  // #400 : le squelette rend aussi 7 `main ul > li` (faux vert) ; on attend la
+  // fin du chargement puis un repas réel (rôle ARIA : le squelette est aria-hidden).
+  await attendreChargementTermine(y, { timeout: 30_000 });
+  await expect(y.getByRole("button", { name: /^Voir la recette :/ }).first()).toBeVisible({
+    timeout: 20_000,
+  });
   await expect(y.locator("main ul > li")).toHaveCount(7);
 
   await ctxX.close();

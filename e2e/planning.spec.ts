@@ -11,7 +11,7 @@
 
 import { test, expect } from "./fixtures";
 import { recetteFixture } from "../tests/fixtures/recettes";
-import { nettoyerEtatDistant } from "./helpers";
+import { attendreChargementTermine, nettoyerEtatDistant } from "./helpers";
 import { semaineParDefaut } from "../lib/semaines";
 import { ancreParDefaut } from "../lib/cycles";
 
@@ -329,6 +329,7 @@ test("le planning généré est resynchronisé depuis la base sur un device au c
   // est réhydraté depuis la base.
   await page.reload();
 
+  await attendreChargementTermine(page); // #400 : pas les 7 `li` du squelette
   await expect(page.locator("main ul > li")).toHaveCount(7);
   await expect.poll(async () => liste.innerText()).toBe(planningGenere);
 });
