@@ -63,6 +63,11 @@
      aussi le CANVAS crème (#fafaf5) pour un en-tête de catégorie, où brand-50
      (#edf7ee) était quasi invisible (mesuré à l'écran). */
   --color-atterrissage: #d4ecd6;   /* = brand-100 en clair */
+  /* Squelettes de chargement (#400). `squelette` suit brand-100 (déjà redéfini
+     en sombre) ; `squelette-carte` sert dans une carte `bg-surface`, où brand-100
+     se confondrait avec la bordure — brand-50 en clair, brand-200 en sombre. */
+  --color-squelette: var(--color-brand-100);
+  --color-squelette-carte: var(--color-brand-50);
 
   /* ---- Typographie (#66, P14) ----
      Pairing rond et chaleureux. Nunito porte le corps (--font-sans, appliqué
@@ -227,6 +232,7 @@ body {
   /* Nettement au-dessus de surface (#1d2520) : le lavis doit rester lisible
      sous le texte rayé à 40 % d'opacité de la ligne cochée. */
   --color-atterrissage: #33463a;
+  --color-squelette-carte: var(--color-brand-200);
   --color-red-50:  #3a1d1d;
   --color-red-200: #5e2b2b;
   --color-red-600: #f87171; /* texte erreur */

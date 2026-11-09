@@ -195,6 +195,9 @@ Le motion sert le sens, jamais la décoration : il explique un état, une relati
 - **Glissement** (`--duree-glissement` 320 ms, `--courbe-glissement` `cubic-bezier(0.2, 0, 0, 1)`) : réordonnancement de la liste de courses via View Transitions — un article coché descend en fin de catégorie, une catégorie terminée descend en bas de liste. Départ franc, arrivée molle : « ça a été posé là », pas « ça a filé ».
 - **Atterrissage** (`--animate-atterrissage`, 620 ms ease-out) : lavis vert bref (`--color-atterrissage`) sur l'élément **à sa nouvelle place**, joué après la fin du glissement. Calque de couleur statique à opacité animée — jamais un `background-color` animé.
 
+### Squelettes de chargement
+Un écran en chargement montre sa forme réelle, pas un texte « Chargement… » : les textes fixes (titres, intitulés) sont rendus en vrai, les données en barres au gabarit exact du texte, les contrôles en blocs de leur taille. Teintes : `--color-squelette` (fond de page, suit `brand-100`) et `--color-squelette-carte` (dans une carte `surface` : `brand-50` en clair, `brand-200` en sombre). Pulsation `animate-pulse` sous `motion-safe:` uniquement, et aucun délai d'apparition : le squelette est prérendu et s'affiche immédiatement.
+
 ### Named Rules
 **Le moment focal est l'arrivée, pas le départ.** Quand un élément change de place, l'utilisateur regarde son doigt, pas le trajet : il faut marquer **où ça atterrit**, pas seulement rendre le déplacement plus long. Corollaire : quand la destination sort de l'écran, le motion ne suffit pas — il faut un repère textuel persistant (et annoncé), pas un toast fugace.
 
