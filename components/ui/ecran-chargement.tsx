@@ -1,4 +1,4 @@
-// Coque « Chargement… » d'une page chargée côté client (RG-09, #400).
+// Coque de chargement d'une page chargée côté client (RG-09, #400).
 //
 // Deux contraintes de stabilité visuelle (CLS), mesurées sur /courses (0,82 en
 // desktop) et /ce-soir (0,22) :
@@ -8,9 +8,8 @@
 // - `min-h-dvh` : le pied de page (et le bandeau cookies) reste sous la ligne
 //   de flottaison, au lieu d'être visible puis repoussé par le contenu chargé.
 //
-// Avec `children` : le squelette de la page (blocs `Squelette`), sans centrage,
-// sous une `ZoneChargement`. Sans `children` : texte « Chargement… » visible
-// centré. PROVISOIRE : retiré quand chaque page aura son squelette (#400).
+// `children` : le squelette de la page (blocs `Squelette`), sans centrage, sous
+// une `ZoneChargement` (RG-09, #400).
 import type { ReactNode } from "react"
 
 import { ZoneChargement } from "./squelette"
@@ -22,20 +21,10 @@ export function EcranChargement({
 }: {
   largeur?: "etroite" | "pleine"
   espacement?: string
-  children?: ReactNode
+  children: ReactNode
 }) {
   const boite = largeur === "etroite" ? "mx-auto w-full max-w-2xl" : "w-full"
   const base = `${boite} flex min-h-dvh flex-1 flex-col ${espacement}`
-  if (children === undefined) {
-    return (
-      <main id="contenu" className={`${base} items-center justify-center`}>
-        {/* role="status" : annonce le chargement aux lecteurs d'écran */}
-        <p role="status" className="animate-pulse text-lg text-brand-700/85">
-          Chargement…
-        </p>
-      </main>
-    )
-  }
   return (
     <main id="contenu" className={base}>
       {/* `contents` : les enfants restent des enfants flex directs du <main> (mêmes gaps que l'état chargé) ; role="status" reste exposé sur un élément display:contents dans les navigateurs actuels. */}

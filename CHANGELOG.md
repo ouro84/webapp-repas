@@ -9,6 +9,8 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ### Modifié
 
+- Chargement : pendant que les données arrivent, les pages (Ce soir, Planning, Courses, Recettes, Profil, Réglages) affichent leur silhouette — les titres et les intitulés sont déjà là, les contenus apparaissent en blocs grisés qui pulsent doucement (sans animation si elle est réduite sur l’appareil) — au lieu d’un simple « Chargement… ». La page ne saute plus quand le contenu arrive, et les lecteurs d’écran annoncent le chargement une seule fois (#400).
+
 - Rapidité : les pages s’ouvrent plus vite, surtout à l’ouverture de l’app. Les serveurs de l’app tournent désormais à Paris, à côté de la base de données (ils étaient aux États-Unis), le contrôle de connexion de chaque page ne fait plus d’aller-retour vers la base, et la génération d’un planning lit ses données en une seule fois. L’app installée sur l’écran d’accueil s’ouvre directement sur le prochain repas.
 
 - Accueil des nouveaux inscrits : l’app demande maintenant si tu manges à la maison le midi en semaine, puis ton jour de courses (samedi proposé), avec un bouton « Retour » pour revenir au choix du foyer. Ton premier planning couvre ton cycle de courses en cours, ou le prochain s’il se termine dans deux jours ou moins, sans les repas déjà passés et sans déjeuners de semaine si tu as désactivé les midis. Tu arrives sur le planning en vue Cycle, avec un message « Ta liste de courses est prête » qui mène à ta liste. Si tu rejoins un foyer, rien n’est généré et tu retrouves son planning (#386).
@@ -26,6 +28,8 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 - Vue Cycle : régénérer un cycle qui contient déjà des repas demande maintenant une confirmation, car les repas et les coches de tout le foyer sont remplacés sans retour possible (#334).
 
 ### Corrigé
+
+- Planning : sur un nouvel appareil, la semaine n’affiche plus un instant « Aucun planning pour cette semaine. » avant de montrer le planning enregistré (#400).
 
 - Connexion d’un assistant IA : l’écran d’autorisation n’affiche plus à tort « Cette demande d’autorisation est invalide ou a expiré » quand il se charge deux fois de suite ; il ne lit plus la demande qu’une fois (#399).
 - Mot de passe oublié : le code du lien reçu par email n’est plus pris pour un code d’invitation à un foyer. Le lien fonctionne de nouveau normalement.

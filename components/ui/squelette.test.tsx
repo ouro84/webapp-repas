@@ -117,11 +117,4 @@ describe("EcranChargement", () => {
     expect(classes).not.toContain("p-4")
     expect(classes).not.toContain("md:p-8")
   })
-
-  it("sans enfants : texte visible centré (rendu historique provisoire)", () => {
-    const { container } = render(<EcranChargement />)
-    const main = container.querySelector("main#contenu") as HTMLElement
-    expect(main.className).toContain("justify-center")
-    expect(screen.getByRole("status").textContent).toBe("Chargement…")
-  })
 })
