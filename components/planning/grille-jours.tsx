@@ -33,6 +33,7 @@
 // `relative`, reste dessus) : un lavis translucide, pas un fond (cf. ui.md).
 
 import type { CSSProperties, ReactNode } from "react";
+import { TexteSquelette } from "@/components/ui/squelette";
 import { delaiJour } from "@/lib/choregraphie-generation";
 import {
   enRangees,
@@ -51,6 +52,13 @@ export type JourGrille = {
 
 type Palier = "mobile" | "desktop";
 
+// Squelette (#400) : libellés de jour factices, de longueur plausible, rendus
+// en barre (`TexteSquelette`) ; `dateISO` est alors ignoré.
+const JOUR_FACTICE: Record<Palier, string> = {
+  mobile: "Mercredi 11 novembre",
+  desktop: "Mer. 11",
+};
+
 // `bg-primary` (et non brand-600, éclairci en sombre) : texte blanc lisible dans
 // les deux thèmes, comme les boutons d'action.
 function Pastille() {
@@ -68,6 +76,7 @@ export function GrilleJours({
   enAttente = false,
   animerEntree = false,
   decor,
+  squelette = false,
 }: {
   jours: JourGrille[];
   aujourdhuiISO: string | null;
@@ -75,9 +84,25 @@ export function GrilleJours({
   enAttente?: boolean;
   animerEntree?: boolean;
   decor?: (jour: JourGrille, index: number, palier: Palier) => ReactNode;
+  /** Squelette de chargement (#400) : libellés de jour en barre, sans pastille. */
+  squelette?: boolean;
 }) {
   const estAujourdhui = (jour: JourGrille) =>
-    aujourdhuiISO !== null && jour.dateISO === aujourdhuiISO;
+    !squelette && aujourdhuiISO !== null && jour.dateISO === aujourdhuiISO;
+  const libelleJour = (jour: JourGrille, palier: Palier): ReactNode => {
+    // Mobile : le libellé est dans la carte du jour (`bg-surface`) ; desktop :
+    // sur le fond de page.
+    if (squelette) {
+      return (
+        <TexteSquelette sur={palier === "mobile" ? "carte" : "fond"}>
+          {JOUR_FACTICE[palier]}
+        </TexteSquelette>
+      );
+    }
+    return palier === "mobile"
+      ? libelleJourComplet(jour.dateISO)
+      : libelleJourAbrege(jour.dateISO);
+  };
   // Entrée en cascade (#69, #337) : 60 ms/jour, `backwards` (cf. token) garde
   // la carte invisible pendant son délai ; motion-safe : rien si l'utilisateur
   // a réduit les animations. Index GLOBAL (pas par rangée) : la cascade suit
@@ -110,7 +135,7 @@ export function GrilleJours({
             >
               {decor?.(jour, i, "mobile")}
               <h2 className="relative mb-3 flex flex-wrap items-center gap-x-2 gap-y-1 font-semibold text-brand-900">
-                <span>{libelleJourComplet(jour.dateISO)}</span>
+                <span>{libelleJour(jour, "mobile")}</span>
                 {aujourdhui && <Pastille />}
               </h2>
               {/* Déjeuner + dîner côte à côte dès sm (#3 : chaque jour tient sur
@@ -145,7 +170,7 @@ export function GrilleJours({
                 {/* Libellé en bas de sa cellule : il reste aligné avec celui de
                     la colonne du jour courant, plus haute (pastille au-dessus). */}
                 <h2 className="relative flex flex-col-reverse items-center justify-start gap-1 text-center text-sm font-semibold uppercase tracking-wide text-brand-700/85">
-                  <span>{libelleJourAbrege(jour.dateISO)}</span>
+                  <span>{libelleJour(jour, "desktop")}</span>
                   {estAujourdhui(jour) && <Pastille />}
                 </h2>
                 {jour.slots}

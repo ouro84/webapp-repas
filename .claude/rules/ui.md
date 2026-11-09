@@ -97,7 +97,6 @@ Store `lib/theme.ts` (`useSyncExternalStore`, clé localStorage `theme` ∈ clai
 - **Une zone en chargement = une `ZoneChargement`** (`role="status"` + « Chargement… » en `sr-only`, blocs sous `aria-hidden`). Pourquoi : une seule annonce vocale, aucun bloc lisible, et les tests (unitaires et e2e) qui détectent le chargement par le texte « Chargement… » gardent leur sens.
 - **États vide et erreur d'une page : même boîte que l'état chargé** (`mx-auto w-full max-w-2xl` sur `/courses` et `/ce-soir`), pour la même raison.
 - **Un bloc chargé en différé à l'intérieur d'une page réserve sa hauteur** pendant son chargement : `min-h-dvh` sur le « Chargement… » de `/recettes` et `/reglages`, hauteur mesurée de la section chargée sur `EditionIdentite` et `PanneauFoyer` (`/profil`, 0,38 → 0). Une section dont la hauteur chargée change beaucoup se re-mesure.
-- **Limite connue** : `/planning` sans cache local (nouvel appareil) affiche brièvement l'état vide avant le planning lu en base ; rien ne distingue « pas encore lu » de « vide » dans `useSync`.
 
 ## Carte de slot du planning (`components/planning/slot-repas.tsx`)
 

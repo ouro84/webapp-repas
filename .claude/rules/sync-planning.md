@@ -23,6 +23,7 @@ La base est la source de vérité ; localStorage est le cache de la semaine affi
 - **Dirty-first** : une édition pose `planning_dirty` et, tant qu'il est posé, **le local fait foi**. Un pull n'a lieu que si le cache est vide ou si l'`updated_at` serveur est **strictement** plus récent que `planning_courant_maj`. Un cache non horodaté (offline, injecté en test) compte comme le plus frais.
 - **Horloge 100 % serveur** : un trigger SQL `BEFORE INSERT OR UPDATE` pose `updated_at = now()` et écrase toute valeur client. Les payloads omettent donc `updated_at`, et le client lit la valeur renvoyée par le RETURNING.
 - Les `pousser*()` sont **sérialisés** (garde anti-concurrence), pour éviter `duplicate key` et les échecs RLS.
+- **Squelette de la vue Semaine tant que `useSemaineLue()` est faux** (`storeSemaineLue`, en mémoire) : `hydrater` le pose dans un `finally` (lecture réussie, ratée ou levée) et tout de suite quand le cache local fait foi ; il ne repasse jamais à faux (SPA : `dejaHydrate`). `/planning` ne rend l'état vide que si `planning === null && semaineLue`. Pourquoi : `planning === null` confondait « pas encore lu » et « vide », d'où un faux état vide (« Aucun planning pour cette semaine. ») sur un appareil sans cache local (#400).
 - **Historique** : les semaines s'accumulent en base. `hydrater` purge une fois par session ce qui précède `semaineDecalee(courante, -12)` (fire-and-forget, garde `dejaPurge`).
 
 ## Rechargements après édition
