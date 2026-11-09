@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import type { OAuthGrant } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
 import { ConfirmationModale } from "@/components/ui/confirmation";
+import { SqueletteAssistants } from "@/components/profil/squelettes-profil";
 
 type Etat = { type: "chargement" } | { type: "erreur" } | { type: "pret"; grants: OAuthGrant[] };
 
@@ -64,13 +65,14 @@ export function AssistantsConnectes() {
     }
   }
 
+  // Squelette de deux lignes (#400) : même `h2`, mêmes lignes que la liste chargée.
+  if (etat.type === "chargement") return <SqueletteAssistants />;
+
   return (
     <section aria-labelledby="titre-assistants" className="mb-8">
       <h2 id="titre-assistants" className="mb-4 text-lg font-semibold text-brand-900">
         Assistants connectés
       </h2>
-
-      {etat.type === "chargement" && <p className="text-sm text-brand-700/85">Chargement…</p>}
 
       {etat.type === "erreur" && (
         <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">
