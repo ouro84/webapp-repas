@@ -1,6 +1,7 @@
 // Écran de consentement OAuth (#305, US-50, RG-72) : session requise (proxy),
 // nom du client et droits affichés, approuver ou refuser, redirection vers le
 // client OAuth avec l'URL renvoyée par Supabase.
+import { StrictMode } from "react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 
@@ -49,6 +50,28 @@ describe("EcranConsentement (US-50, RG-72)", () => {
     expect(screen.getByText("127.0.0.1:27890")).toBeTruthy()
     expect(screen.queryByText(/hermes\.example\.com/)).toBeNull()
     expect(oauth.getAuthorizationDetails).toHaveBeenCalledWith("auth-1")
+  })
+
+  it("double montage (StrictMode) : une seule lecture de la demande (#399)", async () => {
+    // Supabase verrouille la demande en `FOR UPDATE SKIP LOCKED` pendant sa
+    // lecture : un second GET concurrent saute la ligne et reçoit « authorization
+    // not found ». Le double effet de StrictMode doit donc partager la lecture.
+    render(
+      <StrictMode>
+        <EcranConsentement authorizationId="auth-1" />
+      </StrictMode>
+    )
+    expect(await screen.findByRole("heading", { name: /^Autoriser Hermes\s\?$/ })).toBeTruthy()
+    expect(oauth.getAuthorizationDetails).toHaveBeenCalledTimes(1)
+  })
+
+  it("une nouvelle visite relit la demande (pas de cache après réponse)", async () => {
+    render(<EcranConsentement authorizationId="auth-1" />)
+    await screen.findByRole("heading", { name: /^Autoriser Hermes\s\?$/ })
+    cleanup()
+    render(<EcranConsentement authorizationId="auth-1" />)
+    await screen.findByRole("heading", { name: /^Autoriser Hermes\s\?$/ })
+    expect(oauth.getAuthorizationDetails).toHaveBeenCalledTimes(2)
   })
 
   it("Autoriser → approveAuthorization(id, { skipBrowserRedirect: true }) puis redirection vers redirect_url", async () => {

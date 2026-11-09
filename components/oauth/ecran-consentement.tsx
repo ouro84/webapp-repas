@@ -33,6 +33,24 @@ type Etat =
 
 type Decision = "autoriser" | "refuser";
 
+// Lectures en vol, par demande (#399). Supabase lit la demande sous
+// `FOR UPDATE SKIP LOCKED` : un second GET concurrent saute la ligne verrouillée
+// et reçoit « authorization not found ». Deux montages rapprochés (double effet
+// de StrictMode en dev, remontage) partagent donc la même lecture. L'entrée
+// part dès la réponse : une visite ultérieure relit la demande.
+type LectureDemande = ReturnType<ReturnType<typeof createClient>["auth"]["oauth"]["getAuthorizationDetails"]>;
+const lecturesEnVol = new Map<string, LectureDemande>();
+
+function lireDemande(authorizationId: string): LectureDemande {
+  const enVol = lecturesEnVol.get(authorizationId);
+  if (enVol) return enVol;
+  const lecture = createClient().auth.oauth.getAuthorizationDetails(authorizationId);
+  lecturesEnVol.set(authorizationId, lecture);
+  const liberer = () => lecturesEnVol.delete(authorizationId);
+  lecture.then(liberer, liberer);
+  return lecture;
+}
+
 function hote(uri: string): string | null {
   try {
     return uri ? new URL(uri).host : null;
@@ -49,8 +67,7 @@ export function EcranConsentement({ authorizationId }: { authorizationId: string
   useEffect(() => {
     if (!authorizationId) return;
     let actif = true;
-    createClient()
-      .auth.oauth.getAuthorizationDetails(authorizationId)
+    lireDemande(authorizationId)
       .then(({ data, error }) => {
         if (!actif) return;
         if (error || !data) {

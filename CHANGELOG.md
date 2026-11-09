@@ -27,6 +27,7 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ### Corrigé
 
+- Connexion d’un assistant IA : l’écran d’autorisation n’affiche plus à tort « Cette demande d’autorisation est invalide ou a expiré » quand il se charge deux fois de suite ; il ne lit plus la demande qu’une fois (#399).
 - Mot de passe oublié : le code du lien reçu par email n’est plus pris pour un code d’invitation à un foyer. Le lien fonctionne de nouveau normalement.
 - Pages qui « sautent » au chargement : la liste de courses, la page « Ce soir », le profil, les recettes et les réglages ne se décalent plus quand leur contenu arrive (sur ordinateur, la liste de courses glissait d’un bloc vers le centre). Le bandeau cookies ne clignote plus en bas de page quand tu as déjà fait ton choix.
 - Foyer partagé : les mises à jour en direct ne marchaient pas dès que le foyer comptait deux membres ou plus. Les coches et les articles ajoutés par un autre membre, l’indication « Un autre membre est aussi sur la liste » et l’alerte de modification du planning n’apparaissaient qu’après un rechargement ; elles arrivent de nouveau en direct.
