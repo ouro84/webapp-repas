@@ -38,6 +38,7 @@ export function EcranChargement({
   }
   return (
     <main id="contenu" className={base}>
+      {/* `contents` : les enfants restent des enfants flex directs du <main> (mêmes gaps que l'état chargé) ; role="status" reste exposé sur un élément display:contents dans les navigateurs actuels. */}
       <ZoneChargement className="contents">{children}</ZoneChargement>
     </main>
   )

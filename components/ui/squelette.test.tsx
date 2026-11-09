@@ -42,6 +42,18 @@ describe("Squelette", () => {
     expect(classes).toContain("h-10")
   })
 
+  it("un rayon fourni par l’appelant remplace le rayon par défaut", () => {
+    const { container } = render(<Squelette className="rounded-full" />)
+    const classes = (container.firstElementChild as HTMLElement).className.split(/\s+/)
+    expect(classes).toContain("rounded-full")
+    expect(classes).not.toContain("rounded-md")
+  })
+
+  it("garde rounded-md par défaut sans rayon fourni", () => {
+    const { container } = render(<Squelette className="h-4 w-4" />)
+    expect((container.firstElementChild as HTMLElement).className.split(/\s+/)).toContain("rounded-md")
+  })
+
   it("sur=\"carte\" utilise la teinte carte", () => {
     const { container } = render(<Squelette sur="carte" />)
     const classes = (container.firstElementChild as HTMLElement).className.split(/\s+/)

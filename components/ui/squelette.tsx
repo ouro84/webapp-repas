@@ -15,11 +15,15 @@ const TEINTE: Record<Teinte, string> = {
   carte: "bg-squelette-carte",
 }
 
-/** Bloc plein de la taille d'un contrôle ; l'appelant donne taille et forme via `className`. */
+/** Bloc plein de la taille d'un contrôle ; l'appelant donne taille et forme via `className` (`rounded-md` par défaut). */
 export function Squelette({ className = "", sur = "fond" }: { className?: string; sur?: Teinte }) {
+  // Tailwind v4 émet les utilitaires de même propriété par ordre alphabétique :
+  // `rounded-md` l'emporterait sur un `rounded-full` de l'appelant. On ne pose
+  // donc le rayon par défaut que si l'appelant n'en donne pas.
+  const rayon = /(^|\s)rounded(-|\s|$)/.test(className) ? "" : "rounded-md "
   return (
     <span
-      className={`block rounded-md ${TEINTE[sur]} motion-safe:animate-pulse ${className}`.trim()}
+      className={`block ${rayon}${TEINTE[sur]} motion-safe:animate-pulse ${className}`.trim()}
     />
   )
 }
