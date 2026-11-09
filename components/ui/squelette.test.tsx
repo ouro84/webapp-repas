@@ -28,6 +28,13 @@ describe("ZoneChargement", () => {
     expect(zone.tagName).toBe("SECTION")
     expect(zone.className).toContain("flex gap-2")
   })
+
+  it("n’accepte pas `li` : un role=status écraserait la sémantique listitem", () => {
+    // Vérifié par `tsc --noEmit` : la directive échoue si `li` redevient accepté.
+    // @ts-expect-error — `as` se limite à "div" | "section".
+    const element = <ZoneChargement as="li">x</ZoneChargement>
+    expect(element).toBeTruthy()
+  })
 })
 
 describe("Squelette", () => {
@@ -49,6 +56,24 @@ describe("Squelette", () => {
     expect(classes).not.toContain("rounded-md")
   })
 
+  it.each(["rounded", "rounded-none", "rounded-lg", "rounded-2xl", "rounded-[10px]"])(
+    "un rayon tous coins (%s) remplace le rayon par défaut",
+    (rayon) => {
+      const { container } = render(<Squelette className={`h-4 ${rayon}`} />)
+      expect((container.firstElementChild as HTMLElement).className.split(/\s+/)).not.toContain("rounded-md")
+    },
+  )
+
+  it.each(["rounded-t-lg", "rounded-b-xl", "rounded-s-full", "rounded-tl-md"])(
+    "un rayon partiel (%s) garde rounded-md sur les autres coins",
+    (rayon) => {
+      const { container } = render(<Squelette className={`h-4 ${rayon}`} />)
+      const classes = (container.firstElementChild as HTMLElement).className.split(/\s+/)
+      expect(classes).toContain("rounded-md")
+      expect(classes).toContain(rayon)
+    },
+  )
+
   it("garde rounded-md par défaut sans rayon fourni", () => {
     const { container } = render(<Squelette className="h-4 w-4" />)
     expect((container.firstElementChild as HTMLElement).className.split(/\s+/)).toContain("rounded-md")
@@ -59,6 +84,19 @@ describe("Squelette", () => {
     const classes = (container.firstElementChild as HTMLElement).className.split(/\s+/)
     expect(classes).toContain("bg-squelette-carte")
     expect(classes).not.toContain("bg-squelette")
+  })
+})
+
+describe("teinte placard", () => {
+  it("sur=\"placard\" utilise la teinte placard (Squelette et TexteSquelette)", () => {
+    const { container } = render(
+      <>
+        <Squelette sur="placard" />
+        <TexteSquelette sur="placard">Sel</TexteSquelette>
+      </>,
+    )
+    expect((container.firstElementChild as HTMLElement).className.split(/\s+/)).toContain("bg-squelette-placard")
+    expect(screen.getByText("Sel").className.split(/\s+/)).toContain("bg-squelette-placard")
   })
 })
 

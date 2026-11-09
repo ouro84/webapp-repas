@@ -7,20 +7,27 @@
 //   (`role="status"`) et masque tous les blocs (`aria-hidden`).
 import type { ReactNode } from "react"
 
-type Teinte = "fond" | "carte"
+type Teinte = "fond" | "carte" | "placard"
 
-// `bg-squelette` sur le fond de page, `bg-squelette-carte` dans une carte `bg-surface`.
+// `bg-squelette` sur le fond de page, `bg-squelette-carte` dans une carte
+// `bg-surface`, `bg-squelette-placard` dans la section « Fond de placard »
+// (`bg-accent-50`) de /courses.
 const TEINTE: Record<Teinte, string> = {
   fond: "bg-squelette",
   carte: "bg-squelette-carte",
+  placard: "bg-squelette-placard",
 }
+
+// `rounded`, `rounded-<taille>` ou `rounded-[…]`, sans préfixe de variante.
+const RAYON_TOUS_COINS = /(^|\s)rounded(-(none|xs|sm|md|lg|xl|2xl|3xl|4xl|full)|-\[[^\]\s]+\])?(?=\s|$)/
 
 /** Bloc plein de la taille d'un contrôle ; l'appelant donne taille et forme via `className` (`rounded-md` par défaut). */
 export function Squelette({ className = "", sur = "fond" }: { className?: string; sur?: Teinte }) {
   // Tailwind v4 émet les utilitaires de même propriété par ordre alphabétique :
   // `rounded-md` l'emporterait sur un `rounded-full` de l'appelant. On ne pose
-  // donc le rayon par défaut que si l'appelant n'en donne pas.
-  const rayon = /(^|\s)rounded(-|\s|$)/.test(className) ? "" : "rounded-md "
+  // donc le rayon par défaut que si l'appelant donne un rayon tous coins ; un
+  // rayon partiel (`rounded-t-lg`, `rounded-s-full`…) garde `rounded-md` ailleurs.
+  const rayon = RAYON_TOUS_COINS.test(className) ? "" : "rounded-md "
   return (
     <span
       className={`block ${rayon}${TEINTE[sur]} motion-safe:animate-pulse ${className}`.trim()}
@@ -51,7 +58,8 @@ export function ZoneChargement({
 }: {
   children: ReactNode
   className?: string
-  as?: "div" | "section" | "li"
+  // Pas de `li` : `role="status"` y écraserait la sémantique listitem.
+  as?: "div" | "section"
 }) {
   return (
     <Balise role="status" className={className}>

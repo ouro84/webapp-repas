@@ -65,9 +65,12 @@
   --color-atterrissage: #d4ecd6;   /* = brand-100 en clair */
   /* Squelettes de chargement (#400). `squelette` suit brand-100 (déjà redéfini
      en sombre) ; `squelette-carte` sert dans une carte `bg-surface`, où brand-100
-     se confondrait avec la bordure — brand-50 en clair, brand-200 en sombre. */
+     se confondrait avec la bordure — brand-50 en clair, brand-200 en sombre ;
+     `squelette-placard` sert sur le fond accent-50 du « Fond de placard », où
+     brand-100 disparaît en sombre — accent-100 en clair, #5a3a2b en sombre. */
   --color-squelette: var(--color-brand-100);
   --color-squelette-carte: var(--color-brand-50);
+  --color-squelette-placard: var(--color-accent-100);
 
   /* ---- Typographie (#66, P14) ----
      Pairing rond et chaleureux. Nunito porte le corps (--font-sans, appliqué
@@ -233,6 +236,9 @@ body {
      sous le texte rayé à 40 % d'opacité de la ligne cochée. */
   --color-atterrissage: #33463a;
   --color-squelette-carte: var(--color-brand-200);
+  /* Nettement au-dessus d'accent-50 sombre (#3a241b) : accent-100 sombre
+     (#482c20) s'y confondrait. */
+  --color-squelette-placard: #5a3a2b;
   --color-red-50:  #3a1d1d;
   --color-red-200: #5e2b2b;
   --color-red-600: #f87171; /* texte erreur */

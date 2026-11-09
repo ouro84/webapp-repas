@@ -51,6 +51,19 @@ describe("SqueletteCourses", () => {
     }
   });
 
+  it("fond de placard : blocs en teinte placard (lisible sur accent-50, clair et sombre)", () => {
+    const { container } = rendre();
+    const placard = within(screen.getByRole("status")).getByText("Fond de placard").closest("section");
+    expect(placard).not.toBeNull();
+    const blocs = Array.from(placard!.querySelectorAll('[class~="motion-safe:animate-pulse"]'));
+    expect(blocs.length).toBeGreaterThan(0);
+    for (const bloc of blocs) {
+      expect(bloc.className.split(/\s+/)).toContain("bg-squelette-placard");
+    }
+    // Hors placard, aucune teinte placard.
+    expect(container.querySelectorAll(".bg-squelette-placard")).toHaveLength(blocs.length);
+  });
+
   it("ne rend aucun bouton ni lien réel (les contrôles sont des blocs)", () => {
     const { container } = rendre();
     expect(container.querySelectorAll("button, a, input")).toHaveLength(0);

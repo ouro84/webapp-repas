@@ -521,6 +521,13 @@ function GenerationReglages({
         </p>
       )}
 
+      {/* Pendant le chargement, les boutons n'existent pas encore : un bloc
+          invisible réserve leur rangée (CLS, #400). Mobile : Réinitialiser
+          (`py-2.5` + `text-sm` + bordure = 42 px) + `gap-2` + Enregistrer
+          (40 px, sans bordure) = 90 px ; dès `sm`, une rangée de 42 px. */}
+      {form === null && (
+        <div data-testid="reserve-boutons-reglages" className="invisible h-[90px] sm:h-[42px]" />
+      )}
       {form !== null && (
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <button

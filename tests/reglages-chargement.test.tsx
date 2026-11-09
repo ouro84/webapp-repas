@@ -59,6 +59,21 @@ describe("/reglages — chargement", () => {
     expect(container.querySelector('[role="alert"]')).toBeNull();
   });
 
+  it("réserve la hauteur de la rangée de boutons pendant le chargement (CLS)", () => {
+    m.chargerReglages.mockReturnValue(new Promise(() => {}));
+    m.chargerRecettes.mockReturnValue(new Promise(() => {}));
+    const { container } = render(<PageReglages />);
+
+    // Mobile : Réinitialiser (42 px, bordure) + gap-2 + Enregistrer (40 px) = 90 px ;
+    // dès sm, une rangée de 42 px.
+    const reserve = container.querySelector('[data-testid="reserve-boutons-reglages"]');
+    expect(reserve).not.toBeNull();
+    expect(reserve!.className.split(/\s+/)).toEqual(
+      expect.arrayContaining(["h-[90px]", "sm:h-[42px]", "invisible"])
+    );
+    expect(reserve!.closest('[aria-hidden="true"]')).not.toBeNull();
+  });
+
   it("remplace le squelette par les contrôles une fois les réglages lus", async () => {
     m.chargerReglages.mockResolvedValue(REGLAGES_DEFAUT);
     m.chargerRecettes.mockResolvedValue([]);
@@ -68,7 +83,11 @@ describe("/reglages — chargement", () => {
     expect(screen.queryByText("Chargement…")).toBeNull();
     expect(screen.queryAllByRole("status")).toHaveLength(0);
     expect(screen.getAllByRole("radiogroup")).toHaveLength(4);
-    expect(screen.getByRole("button", { name: "Enregistrer" })).toBeTruthy();
+    // Rien à enregistrer juste après la lecture (RG-25, enregistrement explicite).
+    expect(
+      (screen.getByRole("button", { name: "Enregistrer" }) as HTMLButtonElement).disabled
+    ).toBe(true);
+    expect(document.querySelector('[data-testid="reserve-boutons-reglages"]')).toBeNull();
     expect(screen.getByRole("button", { name: "Réinitialiser" })).toBeTruthy();
     expect(screen.getByText("2 pers.")).toBeTruthy();
     for (const titre of TITRES) expect(screen.getAllByText(titre)).toHaveLength(1);

@@ -39,7 +39,7 @@ const CATEGORIES: { titre: string; lignes: LigneSquelette[] }[] = [
     lignes: [
       { nom: "Crème fraîche épaisse", quantite: "20 cl" },
       { nom: "Gruyère râpé", quantite: "200 g" },
-      { nom: "Œufs", quantite: "6" },
+      { nom: "Yaourts nature", quantite: "4" },
     ],
   },
   {
@@ -61,14 +61,15 @@ const FOND_DE_PLACARD: LigneSquelette[] = [
 
 // Ligne en squelette : `li > div` comme `li > label` chargé (la bordure du
 // `divide-y` compte DANS le `li`, donc même nesting, sinon 1 px de dérive par
-// ligne). `sur` : teinte de la carte (`bg-surface`) ou du fond. `placard` :
-// la ligne du fond de placard n'a pas de `px-4`.
+// ligne). `sur` : teinte de la carte (`bg-surface`), du fond ou du fond de
+// placard (`bg-accent-50`). `placard` : la ligne du fond de placard n'a pas de
+// `px-4`.
 function LigneArticle({
   nom,
   quantite,
   sur,
   placard = false,
-}: LigneSquelette & { sur: "fond" | "carte"; placard?: boolean }) {
+}: LigneSquelette & { sur: "fond" | "carte" | "placard"; placard?: boolean }) {
   return (
     <li className="relative flex items-center">
       <div
@@ -106,9 +107,11 @@ export function SqueletteCourses() {
               <Squelette className="size-6 shrink-0 rounded-full" />
             </div>
           </div>
-          {/* Progression (compteur : donnée). */}
+          {/* Progression (compteur : donnée). Texte factice sans « coché » : les
+              e2e lisent le compteur réel par /\d+ cochés? sur \d+/ comme preuve
+              d’une liste chargée, et `getByText` lit le texte transparent. */}
           <p className="text-sm text-brand-700/85">
-            <TexteSquelette>3 cochés sur 22</TexteSquelette>
+            <TexteSquelette>progression liste</TexteSquelette>
           </p>
           {/* Deux lignes `mt-1 text-xs` toujours montées dans l'état chargé, vides :
               même gabarit (la seconde garde l'icône `size-3.5` qui fixe sa hauteur). */}
@@ -149,13 +152,13 @@ export function SqueletteCourses() {
           <h2>
             <span className={`${TITRE_SECTION} text-accent-700`}>
               Fond de placard
-              <Squelette className="size-4 shrink-0" />
+              <Squelette sur="placard" className="size-4 shrink-0" />
             </span>
           </h2>
           <p className="mb-2 text-xs text-accent-700">À vérifier avant d’acheter</p>
           <ul className="divide-y divide-accent-100">
             {FOND_DE_PLACARD.map((ligne) => (
-              <LigneArticle key={ligne.nom} {...ligne} sur="fond" placard />
+              <LigneArticle key={ligne.nom} {...ligne} sur="placard" placard />
             ))}
           </ul>
         </section>

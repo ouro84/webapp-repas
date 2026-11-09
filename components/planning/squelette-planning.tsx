@@ -37,7 +37,7 @@ function SlotSquelette({ libelle }: { libelle: string }) {
     <div className="flex h-full flex-col rounded-lg border border-brand-100 bg-surface p-3 shadow-sm">
       <p className="text-xs font-medium uppercase tracking-wide text-brand-700/85">{libelle}</p>
       <p className="mt-1 line-clamp-3 w-full text-left text-sm font-medium">
-        <TexteSquelette sur="carte">Gratin de courgettes</TexteSquelette>
+        <TexteSquelette sur="carte">Gratin du marché</TexteSquelette>
       </p>
       <div className="mt-auto">
         {/* Badges : temps de préparation + un badge compact. */}

@@ -4,6 +4,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 
+import { libelleJourAbrege, libelleJourComplet } from "@/lib/planning-affichage";
 import { SquelettePlanning } from "./squelette-planning";
 
 afterEach(cleanup);
@@ -19,6 +20,12 @@ describe("SquelettePlanning", () => {
     render(<SquelettePlanning titre="Mon planning de la semaine" />);
     expect(screen.getAllByText("Déjeuner")).toHaveLength(14);
     expect(screen.getAllByText("Dîner")).toHaveLength(14);
+  });
+
+  it("libellés de jour factices au format réel (mobile `libelleJourComplet`, desktop `libelleJourAbrege`)", () => {
+    render(<SquelettePlanning titre="Mon planning de la semaine" />);
+    expect(screen.getAllByText(libelleJourComplet("2026-11-11"))).toHaveLength(7);
+    expect(screen.getAllByText(libelleJourAbrege("2026-11-11"))).toHaveLength(7);
   });
 
   it("titre connu → h1 réel (masqué aux lecteurs d’écran comme tout le squelette)", () => {

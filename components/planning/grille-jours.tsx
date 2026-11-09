@@ -53,10 +53,11 @@ export type JourGrille = {
 type Palier = "mobile" | "desktop";
 
 // Squelette (#400) : libellés de jour factices, de longueur plausible, rendus
-// en barre (`TexteSquelette`) ; `dateISO` est alors ignoré.
+// en barre (`TexteSquelette`) ; `dateISO` est alors ignoré. Même format que
+// `libelleJourComplet` (`month: "short"`) et `libelleJourAbrege`.
 const JOUR_FACTICE: Record<Palier, string> = {
-  mobile: "Mercredi 11 novembre",
-  desktop: "Mer. 11",
+  mobile: "Mercredi 11 nov.",
+  desktop: "Mer 11",
 };
 
 // `bg-primary` (et non brand-600, éclairci en sombre) : texte blanc lisible dans

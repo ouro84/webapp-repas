@@ -9,17 +9,8 @@
 // contrôles en `Squelette` de leur taille (badges, cases, pastilles, lien).
 // Contenu SANS `<main>` ni `ZoneChargement` : l'appelant le place dans
 // `<EcranChargement espacement="px-4 py-6 md:py-10">`, qui porte le `role`.
+import { CLASSES_TITRE_SECTION_CUISINE } from "@/components/planning/contenu-recette";
 import { Squelette, TexteSquelette } from "@/components/ui/squelette";
-
-// Mêmes classes que `TitreSection` (variante "cuisine") de
-// `components/planning/contenu-recette.tsx` : à garder jumelés.
-function TitreSection({ children }: { children: string }) {
-  return (
-    <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-brand-700/85">
-      {children}
-    </h2>
-  );
-}
 
 const INGREDIENTS: readonly [string, string][] = [
   ["Lentilles corail", "250 g"],
@@ -35,7 +26,7 @@ const ETAPES: readonly string[] = [
   "Émincer l’oignon et l’ail, puis les faire revenir quelques minutes dans un filet d’huile avant d’ajouter les épices.",
   "Verser les lentilles rincées, les tomates et le lait de coco, puis laisser mijoter vingt minutes à feu doux.",
   "Servir bien chaud avec le riz, parsemer de coriandre ciselée et rectifier l’assaisonnement selon les goûts.",
-]
+];
 
 export function SqueletteCeSoir() {
   return (
@@ -60,24 +51,28 @@ export function SqueletteCeSoir() {
 
       <div className="mt-8">
         <section>
-          <TitreSection>Ingrédients</TitreSection>
+          <h2 className={CLASSES_TITRE_SECTION_CUISINE}>Ingrédients</h2>
           <ul className="divide-y divide-brand-100">
             {INGREDIENTS.map(([nom, quantite]) => (
-              <li key={nom} className="flex min-h-11 items-center gap-3 py-2.5">
-                <Squelette className="size-4 shrink-0" />
-                <span className="flex-1 text-sm">
-                  <TexteSquelette>{nom}</TexteSquelette>
-                </span>
-                <span className="shrink-0 text-sm font-medium">
-                  <TexteSquelette>{quantite}</TexteSquelette>
-                </span>
+              <li key={nom}>
+                {/* `li > div` jumeau du `li > label` chargé (même imbrication
+                    que le squelette de /courses : pas de décalage de 1 px). */}
+                <div className="flex min-h-11 items-center gap-3 py-2.5">
+                  <Squelette className="size-4 shrink-0" />
+                  <span className="flex-1 text-sm">
+                    <TexteSquelette>{nom}</TexteSquelette>
+                  </span>
+                  <span className="shrink-0 text-sm font-medium">
+                    <TexteSquelette>{quantite}</TexteSquelette>
+                  </span>
+                </div>
               </li>
             ))}
           </ul>
         </section>
 
         <section className="mt-10">
-          <TitreSection>Préparation</TitreSection>
+          <h2 className={CLASSES_TITRE_SECTION_CUISINE}>Préparation</h2>
           <ol className="flex flex-col gap-5">
             {ETAPES.map((etape) => (
               <li key={etape} className="flex gap-4">
@@ -93,7 +88,9 @@ export function SqueletteCeSoir() {
 
       <footer className="mt-10 flex flex-col gap-4 border-t border-brand-100 pt-6">
         <p className="text-base">
-          <TexteSquelette>Ensuite : demain midi, Salade niçoise</TexteSquelette>
+          {/* Sans le préfixe « Ensuite : » (getByText le trouverait dans le
+              texte transparent) et court : une ligne à 320 px. */}
+          <TexteSquelette>demain midi, poêlée du marché</TexteSquelette>
         </p>
         <div>
           {/* Lien « Voir dans le planning » : `min-h-11` + pilule, donc un contrôle. */}
@@ -101,5 +98,5 @@ export function SqueletteCeSoir() {
         </div>
       </footer>
     </>
-  )
+  );
 }

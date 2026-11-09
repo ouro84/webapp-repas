@@ -11,18 +11,20 @@
 // bouton de ligne `py-2` + `text-sm` = 36 px.
 import { Squelette, TexteSquelette, ZoneChargement } from "@/components/ui/squelette";
 
-// Noms factices de longueur plausible (une recette chargée tient sur 1 à 2 lignes).
+// Noms factices de longueur plausible (une recette chargée tient sur 1 à 2 lignes),
+// absents du catalogue, des fixtures et des e2e : `getByText` lit le texte
+// transparent d’un `TexteSquelette`.
 const NOMS = [
-  "Gratin de courgettes au chèvre",
+  "Gratin du marché aux herbes",
   "Poulet rôti et pommes de terre",
-  "Dahl de lentilles corail",
+  "Galettes de légumes au four",
   "Pâtes à la crème de poireaux",
-  "Curry de pois chiches",
+  "Bol du jardin aux herbes",
   "Salade de riz niçoise",
   "Soupe de potiron",
-  "Quiche lorraine",
-  "Chili sin carne",
-  "Omelette aux champignons",
+  "Tarte fine du potager",
+  "Tian provençal",
+  "Cocotte de légumes mijotés",
 ];
 
 const BOUTONS_LIGNE = ["w-[5.5rem]", "w-20", "w-[5.5rem]"];

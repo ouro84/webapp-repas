@@ -114,7 +114,7 @@ export function SqueletteAssistants() {
             <span className="text-sm font-medium text-brand-900">
               <TexteSquelette>{nom}</TexteSquelette>
               <span className="block text-xs font-normal text-brand-700/85">
-                <TexteSquelette>autorisé le 29 octobre 2026</TexteSquelette>
+                <TexteSquelette>autorisé le 14 février 2026</TexteSquelette>
               </span>
             </span>
             {/* Bouton « Déconnecter » : py-2 + ligne 20 px + bordure = 38 px. */}
