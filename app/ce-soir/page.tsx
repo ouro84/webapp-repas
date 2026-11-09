@@ -36,6 +36,7 @@ import { semaineISO, semaineDecalee } from "@/lib/semaines";
 import { BadgesRecette, ContenuRecette } from "@/components/planning/contenu-recette";
 import type { Planning, ReglagesGeneration } from "@/types";
 import { EcranChargement } from "@/components/ui/ecran-chargement";
+import { SqueletteCeSoir } from "@/components/ce-soir/squelette-ce-soir";
 
 type Donnees = {
   reglages: ReglagesGeneration;
@@ -103,7 +104,12 @@ export default function PageCeSoir() {
   useEcranAllume(recetteAffichee);
 
   if (donnees === undefined) {
-    return <EcranChargement />;
+    // Même boîte que le `<main>` chargé (px-4 py-6 md:py-10), cf. ui.md (CLS).
+    return (
+      <EcranChargement espacement="px-4 py-6 md:py-10">
+        <SqueletteCeSoir />
+      </EcranChargement>
+    );
   }
 
   // États erreur et vide : même boîte que l'état chargé (mx-auto max-w-2xl),
