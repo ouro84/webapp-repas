@@ -100,6 +100,7 @@ import { FicheRecette } from "@/components/planning/fiche-recette";
 import { NavigateurPeriode } from "@/components/planning/navigateur-periode";
 import { EntetePlanning, type VuePlanning } from "@/components/planning/entete-planning";
 import { EtatVidePlanning } from "@/components/planning/etat-vide-planning";
+import { SquelettePlanning } from "@/components/planning/squelette-planning";
 import type { JourPlanning, Planning, Recette, ReglagesGeneration } from "@/types";
 
 type TypeRepas = "dejeuner" | "diner";
@@ -683,9 +684,7 @@ export function VuePlanningCycle({
   if (ancre === null) {
     return (
       <div className="flex-1 p-4 md:p-8">
-        <p role="status" className="animate-pulse py-12 text-center text-brand-700/85">
-          Chargement…
-        </p>
+        <SquelettePlanning titre="Mon planning du cycle" />
       </div>
     );
   }
