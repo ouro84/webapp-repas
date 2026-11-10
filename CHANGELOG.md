@@ -7,6 +7,8 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [2.1.1] - 2026-11-10
+
 ### Modifié
 
 - Dépendances : Next.js 16.4.5, supabase-js 2.119, Playwright 1.65, Tailwind CSS 4.3.5 et autres mises à jour mineures (#394) ; Vitest 5.1 (#397, #398) ; CLI Supabase 3.1, avec migrations de la CI adaptées (#395).
@@ -273,7 +275,8 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 - CI GitHub Actions (Vitest + Playwright)
 - Déploiement Vercel avec preview deployments
 
-[Unreleased]: https://github.com/ouro84/webapp-repas/compare/v2.1.0...HEAD
+[Unreleased]: https://github.com/ouro84/webapp-repas/compare/v2.1.1...HEAD
+[2.1.1]: https://github.com/ouro84/webapp-repas/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/ouro84/webapp-repas/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/ouro84/webapp-repas/compare/v1.2.0...v2.0.0
 [1.2.0]: https://github.com/ouro84/webapp-repas/compare/v1.1.0...v1.2.0
