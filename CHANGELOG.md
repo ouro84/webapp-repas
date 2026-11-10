@@ -72,6 +72,7 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ### Corrigé
 
+- Vue Cycle du planning : une modification (repas changé, annulation par Ctrl+Z, nombre de personnes…) n’est plus perdue si tu recharges la page ou fermes l’app pendant son enregistrement ; elle est enregistrée à la prochaine ouverture de la vue.
 - Recettes : une recette marquée favorite ou évitée garde ce choix même si tu recharges la page ou fermes l’app aussitôt après (sur réseau lent, le choix pouvait être perdu) ; il est enregistré à la prochaine ouverture (#404).
 - Liste de courses : à la première ouverture sur un appareil, si la liste ne peut pas être chargée (réseau coupé), la page affiche « Impossible de charger la liste de courses. » et un bouton « Réessayer », au lieu de rester indéfiniment en chargement (#402).
 - Planning : sur un nouvel appareil, la semaine n’affiche plus un instant « Aucun planning pour cette semaine. » avant de montrer le planning enregistré (#400).

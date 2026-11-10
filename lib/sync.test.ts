@@ -2248,11 +2248,13 @@ describe("relecture US-21 : rejeu des éditions locales en attente (#355)", () =
     expect(localStorage.getItem("planning_confirme")).toBeNull();
   });
 
-  it("reinitialiserCacheFoyer efface les préférences en attente de l'ancien foyer (#404)", async () => {
+  it("reinitialiserCacheFoyer efface les préférences et modifications du cycle en attente de l'ancien foyer (#404)", async () => {
     const sync = await chargerSync();
     localStorage.setItem("preferences_en_attente", JSON.stringify({ r1: "evitee" }));
+    localStorage.setItem("slots_cycle_en_attente", JSON.stringify({ "2026-W46|lundi": {} }));
     sync.reinitialiserCacheFoyer();
     expect(localStorage.getItem("preferences_en_attente")).toBeNull();
+    expect(localStorage.getItem("slots_cycle_en_attente")).toBeNull();
   });
 });
 

@@ -60,6 +60,7 @@ import { chargerJourCoursesFoyer } from "@/lib/foyer";
 import { jourCoursesOuLundi, longueurOuDefaut } from "@/lib/ancre-initiale-cycle";
 import { parseApiError } from "@/lib/errors";
 import { CLE_PREFERENCES_EN_ATTENTE } from "@/lib/preferences";
+import { CLE_SLOTS_CYCLE_EN_ATTENTE } from "@/lib/journal-slots-cycle";
 import type { ArticleManuel, Ingredient, JourPlanning, Planning, SemaineGeneree } from "@/types";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 
@@ -151,6 +152,8 @@ export function reinitialiserCacheFoyer(): void {
   // Préférences favori/évité non confirmées (#404) : elles visaient l'ancien
   // foyer, les rejouer les écrirait dans le nouveau.
   localStorage.removeItem(CLE_PREFERENCES_EN_ATTENTE);
+  // Modifications de la vue Cycle non confirmées (PR #405) : même raison.
+  localStorage.removeItem(CLE_SLOTS_CYCLE_EN_ATTENTE);
 }
 
 /**

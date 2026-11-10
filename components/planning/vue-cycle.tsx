@@ -61,6 +61,12 @@ import {
   type FileEcritureSlots,
 } from "@/lib/file-ecriture-slots";
 import {
+  journaliserSlot,
+  pageQuittee,
+  rejouerSlotsEnAttente,
+  retirerSlot,
+} from "@/lib/journal-slots-cycle";
+import {
   decalageCycles,
   libelleJourComplet,
   libelleRelatifCycle,
@@ -224,6 +230,9 @@ export function VuePlanningCycle({
   const [file] = useState<FileEcritureSlots>(() =>
     creerFileEcritureSlots({
       ecrire: modifierSlotDistant,
+      // Valeurs non confirmées gardées en localStorage, rejouées au prochain
+      // chargement (rechargement pendant une écriture en vol, PR #405).
+      journal: { poser: journaliserSlot, retirer: retirerSlot, pageQuittee },
       surEchec: (semaine, jourConfirme, erreur) => {
         console.error("Édition du slot échouée.", erreur);
         setParSemaine((m) => remplacerJourDansSemaines(m, semaine, jourConfirme));
@@ -237,8 +246,8 @@ export function VuePlanningCycle({
 
   // Ne jamais perdre une écriture débouncée : ni en basculant vers la vue
   // Semaine (démontage), ni quand l'app passe en arrière-plan ou se ferme
-  // (mobile verrouillé, onglet quitté, rechargement) — contrairement à la vue
-  // Semaine, rien n'est gardé en localStorage pour la rejouer plus tard.
+  // (mobile verrouillé, onglet quitté, rechargement). Ce qui ne part pas à
+  // temps reste dans le journal, rejoué au prochain chargement (PR #405).
   useEffect(() => {
     const surMasquage = () => {
       if (document.visibilityState === "hidden") void file.vider();
@@ -633,10 +642,14 @@ export function VuePlanningCycle({
       lien: lienInitial,
       maintenant: new Date(),
     })
-      .then(({ jourCourses: jour, ancre: cible }) => {
+      .then(async ({ jourCourses: jour, ancre: cible }) => {
         if (!actif) return true;
         setJourCourses(jour);
         setAujourdhuiISO(versISO(new Date()));
+        // Modifications d'une page précédente pas confirmées (rechargement
+        // pendant une écriture en vol) : écrites AVANT la lecture du cycle,
+        // sinon la vue afficherait la base d'avant (PR #405).
+        await rejouerSlotsEnAttente(modifierSlotDistant);
         return chargerCycle(cible, true);
       })
       .catch((erreur) => {

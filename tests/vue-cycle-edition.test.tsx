@@ -66,6 +66,7 @@ beforeEach(() => {
   m.modifierSlotDistant.mockReset();
   m.modifierSlotDistant.mockResolvedValue(undefined);
   m.barriereLecture = null;
+  localStorage.clear(); // journal des modifications en attente (PR #405)
   for (const f of [toast, toast.error, toast.success, toast.warning, toast.dismiss]) vi.mocked(f).mockClear();
 });
 
@@ -226,5 +227,29 @@ describe("VuePlanningCycle : squelette du premier chargement (#400)", () => {
 
     await screen.findAllByLabelText(CHANGER_DINER);
     expect(screen.queryAllByRole("status")).toHaveLength(0);
+  });
+});
+
+// Écriture d'une page précédente restée en attente (rechargement pendant une
+// écriture en vol, PR #405) : rejouée AVANT la lecture du cycle, sinon la vue
+// afficherait la base d'avant l'annulation.
+describe("VuePlanningCycle : rejeu des modifications en attente", () => {
+  it("rejoue le journal avant de lire le cycle, puis le vide", async () => {
+    const enAttente = { jour: "lundi", diner: recette("origine") };
+    localStorage.setItem(
+      "slots_cycle_en_attente",
+      JSON.stringify({ "2026-W46|lundi": { semaine: "2026-W46", jour: enAttente } })
+    );
+    let ecrit!: () => void;
+    m.modifierSlotDistant.mockReturnValue(new Promise<void>((r) => (ecrit = r)));
+    render(<VuePlanningCycle idsModifiables={new Set()} vue="cycle" onChangerVue={() => {}} />);
+
+    await waitFor(() => expect(m.modifierSlotDistant).toHaveBeenCalledWith("2026-W46", enAttente));
+    // Lecture du cycle pas encore faite : toujours le squelette.
+    expect(screen.getAllByRole("status")).toHaveLength(1);
+
+    await act(async () => ecrit());
+    await screen.findAllByLabelText(CHANGER_DINER);
+    expect(localStorage.getItem("slots_cycle_en_attente")).toBeNull();
   });
 });

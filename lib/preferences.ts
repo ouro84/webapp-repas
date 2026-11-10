@@ -10,6 +10,7 @@ import { createClient } from "@/lib/supabase/client"
 import { clientParDefaut } from "@/lib/supabase/par-defaut"
 import type { ClientSupabase } from "@/lib/supabase/types"
 import type { PreferencesRecettes, RecettePreference } from "@/lib/generateur"
+import { pageQuittee } from "@/lib/page-quittee"
 
 // Écritures en vol par recette (#352) : chaque écriture part après la
 // précédente de la même recette, et une lecture attend leur fin. Pourquoi :
@@ -48,14 +49,6 @@ function majJournal(maj: (journal: Record<string, Intention>) => void): void {
   } catch (erreur) {
     console.error("Journal des préférences non enregistré.", erreur)
   }
-}
-
-// Page quittée (rechargement, fermeture) : une écriture qui échoue ensuite a
-// été coupée par le navigateur, pas refusée ; son intention reste à rejouer.
-let pageQuittee = false
-if (typeof window !== "undefined") {
-  window.addEventListener("pagehide", () => (pageQuittee = true))
-  window.addEventListener("pageshow", () => (pageQuittee = false))
 }
 
 // Rejoue les intentions d'une page précédente (aucune écriture en vol pour
@@ -145,11 +138,12 @@ export function definirPreference(
   ecrituresEnVol.set(recetteId, ecriture)
   // Fin de la DERNIÈRE écriture demandée pour la recette : l'intention est
   // retirée (confirmée, ou refusée et déjà remontée à l'écran), sauf échec
-  // après que la page a été quittée (requête coupée : à rejouer).
+  // pendant que la page est quittée (requête coupée : à rejouer,
+  // `lib/page-quittee.ts`).
   const terminer = (echec: boolean) => {
     if (ecrituresEnVol.get(recetteId) !== ecriture) return
     ecrituresEnVol.delete(recetteId)
-    if (echec && pageQuittee) return
+    if (echec && pageQuittee()) return
     majJournal((journal) => {
       delete journal[recetteId]
     })

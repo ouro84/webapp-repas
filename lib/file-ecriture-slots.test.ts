@@ -134,3 +134,72 @@ describe("creerFileEcritureSlots (#301)", () => {
     expect(fini).toBe(true);
   });
 });
+
+// Journal des écritures non confirmées : une page rechargée pendant une
+// écriture en vol perdait la valeur suivante, mise en file derrière (Ctrl+Z
+// juste après « Changer » : l'annulation n'était jamais envoyée). La file
+// pose chaque valeur voulue dans le journal et l'en retire une fois le jour
+// réglé (écrit, ou refusé et remis à l'écran).
+describe("creerFileEcritureSlots : journal des écritures non confirmées", () => {
+  function journalFactice(quittee = false) {
+    const poses: Map<string, JourPlanning> = new Map();
+    return {
+      poses,
+      journal: {
+        poser: (semaine: string, jour: JourPlanning) => void poses.set(`${semaine}|${jour.jour}`, jour),
+        retirer: (semaine: string, nom: JourPlanning["jour"]) => void poses.delete(`${semaine}|${nom}`),
+        pageQuittee: () => quittee,
+      },
+    };
+  }
+
+  it("valeur en file derrière une écriture en vol : journalisée jusqu'à son écriture", async () => {
+    const vols = [differee(), differee()];
+    let n = 0;
+    const ecrire = vi.fn(() => vols[n++].promesse);
+    const { poses, journal } = journalFactice();
+    const file = creerFileEcritureSlots({ ecrire, surEchec: vi.fn(), journal });
+
+    file.planifier("2026-W46", jp("lundi", 4), { delaiMs: 0, precedent: jp("lundi", 2) });
+    file.planifier("2026-W46", jp("lundi", 2), { delaiMs: 0, precedent: jp("lundi", 4) }); // Ctrl+Z
+    expect(poses.get("2026-W46|lundi")).toEqual(jp("lundi", 2));
+
+    vols[0].resoudre();
+    await vi.waitFor(() => expect(ecrire).toHaveBeenCalledTimes(2));
+    expect(poses.has("2026-W46|lundi")).toBe(true); // annulation encore en vol
+    vols[1].resoudre();
+    await vi.waitFor(() => expect(poses.has("2026-W46|lundi")).toBe(false));
+  });
+
+  it("valeur débouncée (stepper) : journalisée dès le clic, avant tout envoi", () => {
+    const ecrire = vi.fn().mockResolvedValue(undefined);
+    const { poses, journal } = journalFactice();
+    const file = creerFileEcritureSlots({ ecrire, surEchec: vi.fn(), journal });
+
+    file.planifier("2026-W46", jp("mardi", 3), { delaiMs: DELAI_STEPPER_MS, precedent: jp("mardi", 2) });
+    expect(ecrire).not.toHaveBeenCalled();
+    expect(poses.get("2026-W46|mardi")).toEqual(jp("mardi", 3));
+  });
+
+  it("échec (écran remis au confirmé) : retirée du journal", async () => {
+    const ecrire = vi.fn().mockRejectedValue(new Error("réseau"));
+    const { poses, journal } = journalFactice();
+    const surEchec = vi.fn();
+    const file = creerFileEcritureSlots({ ecrire, surEchec, journal });
+
+    file.planifier("2026-W46", jp("lundi", 4), { delaiMs: 0, precedent: jp("lundi", 2) });
+    await vi.waitFor(() => expect(surEchec).toHaveBeenCalled());
+    expect(poses.size).toBe(0);
+  });
+
+  it("échec après que la page a été quittée (requête coupée) : gardée dans le journal", async () => {
+    const ecrire = vi.fn().mockRejectedValue(new Error("Failed to fetch"));
+    const { poses, journal } = journalFactice(true);
+    const surEchec = vi.fn();
+    const file = creerFileEcritureSlots({ ecrire, surEchec, journal });
+
+    file.planifier("2026-W46", jp("lundi", 4), { delaiMs: 0, precedent: jp("lundi", 2) });
+    await vi.waitFor(() => expect(surEchec).toHaveBeenCalled());
+    expect(poses.get("2026-W46|lundi")).toEqual(jp("lundi", 4));
+  });
+});
