@@ -21,6 +21,15 @@ updates:
         update-types:
           - "minor"
           - "patch"
+      # Majeures de Vitest groupées : @vitest/ui exige la même version exacte
+      # de vitest en peer, donc deux PRs séparées cassent chacune `npm ci`
+      # (ERESOLVE, cas #397/#398).
+      vitest-majeure:
+        patterns:
+          - "vitest"
+          - "@vitest/*"
+        update-types:
+          - "major"
     ignore:
       # ESLint 10 casse eslint-config-next 16.2.7 : son eslint-plugin-react
       # (7.x) utilise context.getFilename, supprimé en v10. Retirer cette

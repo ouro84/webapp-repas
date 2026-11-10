@@ -7,6 +7,11 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+### Modifié
+
+- Dépendances : Next.js 16.4.5, supabase-js 2.119, Playwright 1.65, Tailwind CSS 4.3.5 et autres mises à jour mineures (#394) ; Vitest 5.1 (#397, #398).
+- Suivi des erreurs (Sentry 11, #396) : le périmètre des données envoyées à Sentry est désormais fixé explicitement. Aucun cookie, corps de requête, information utilisateur ni échange avec un assistant IA n’est transmis, comme avant la mise à jour.
+
 ## [2.1.0] - 2026-11-10
 
 ### Ajouté

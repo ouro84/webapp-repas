@@ -1,4 +1,5 @@
-import { withSentryConfig } from "@sentry/nextjs";
+// Sentry v11 : withSentryConfig vit dans l'entrée `/config`, plus à la racine.
+import { withSentryConfig } from "@sentry/nextjs/config";
 import type { NextConfig } from "next";
 
 // En-têtes de sécurité (#188, audit F-01, palier 1). Statiques et sans risque
