@@ -59,6 +59,8 @@ import { lireCycle } from "@/lib/lecture-cycle";
 import { chargerJourCoursesFoyer } from "@/lib/foyer";
 import { jourCoursesOuLundi, longueurOuDefaut } from "@/lib/ancre-initiale-cycle";
 import { parseApiError } from "@/lib/errors";
+import { CLE_PREFERENCES_EN_ATTENTE } from "@/lib/preferences";
+import { CLE_SLOTS_CYCLE_EN_ATTENTE } from "@/lib/journal-slots-cycle";
 import type { ArticleManuel, Ingredient, JourPlanning, Planning, SemaineGeneree } from "@/types";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 
@@ -147,6 +149,11 @@ export function reinitialiserCacheFoyer(): void {
   // périmés (autre foyer = autres plannings/jour de courses).
   localStorage.removeItem(CLE_CYCLE);
   localStorage.removeItem(CLE_CYCLE_PLANNING);
+  // Préférences favori/évité non confirmées (#404) : elles visaient l'ancien
+  // foyer, les rejouer les écrirait dans le nouveau.
+  localStorage.removeItem(CLE_PREFERENCES_EN_ATTENTE);
+  // Modifications de la vue Cycle non confirmées (PR #405) : même raison.
+  localStorage.removeItem(CLE_SLOTS_CYCLE_EN_ATTENTE);
 }
 
 /**
@@ -328,6 +335,58 @@ export function useCycleAffiche(): CycleAffiche | null {
     storeCycle.lire,
     storeCycle.lireServeur
   );
+}
+
+// ---------------------------------------------------------------------------
+// Échec du premier chargement du cycle sur /courses (#402, RG-09) — store en
+// mémoire. Vrai quand un chargement n'a pu poser AUCUN cycle affiché (lecture
+// ratée, ou relais `?ancre=` dont l'envoi préalable échoue) : la page quitte
+// alors son squelette pour un état erreur. Un cycle déjà affiché (cache) reste
+// affiché, sans erreur. « Réessayer » rejoue le dernier chargement tenté.
+// ---------------------------------------------------------------------------
+let echecChargementCycle = false;
+const abonnesEchecCycle = new Set<() => void>();
+let relanceChargementCycle: (() => Promise<void>) | null = null;
+
+function poserEchecChargementCycle(echec: boolean): void {
+  if (echecChargementCycle === echec) return;
+  echecChargementCycle = echec;
+  for (const rappel of abonnesEchecCycle) rappel();
+}
+
+// Fin d'un chargement initial ou d'un relais : échec seulement si aucun cycle
+// n'est affiché.
+function signalerEchecSiAucunCycle(): void {
+  if (lireCycleAffiche() === null) poserEchecChargementCycle(true);
+}
+
+export const storeEchecChargementCycle = {
+  sAbonner(rappel: () => void): () => void {
+    abonnesEchecCycle.add(rappel);
+    return () => abonnesEchecCycle.delete(rappel);
+  },
+  lire: (): boolean => echecChargementCycle,
+  // Prérendu : jamais en échec (le squelette est rendu côté serveur).
+  lireServeur: (): boolean => false,
+};
+
+/** Vrai si le premier chargement du cycle de /courses a échoué (#402). */
+export function useEchecChargementCycle(): boolean {
+  return useSyncExternalStore(
+    storeEchecChargementCycle.sAbonner,
+    storeEchecChargementCycle.lire,
+    storeEchecChargementCycle.lireServeur
+  );
+}
+
+/**
+ * « Réessayer » de l'état erreur de /courses (#402) : lève l'échec tout de
+ * suite (retour au squelette) et rejoue le dernier chargement tenté
+ * (`hydraterCycle`, ou `allerAuCycle` sur la même ancre).
+ */
+export function reessayerChargementCycle(): Promise<void> {
+  poserEchecChargementCycle(false);
+  return relanceChargementCycle?.() ?? hydraterCycle();
 }
 
 // ---------------------------------------------------------------------------
@@ -2489,6 +2548,9 @@ async function chargerCycleDansCache(
     }
   } catch (erreur) {
     console.error("Chargement du cycle échoué.", erreur);
+    // Aucun cycle affiché (premier accès sans cache) : état erreur, sinon
+    // squelette sans fin (#402, RG-09). Un cycle déjà affiché reste affiché.
+    signalerEchecSiAucunCycle();
   }
   // (Ré)abonne le temps réel des coches à l'ancre désormais affichée + le
   // temps réel du PLANNING sur les 1-2 semaines du cycle (alerte US-21, #259)
@@ -2504,6 +2566,8 @@ async function chargerCycleDansCache(
  * (défaut 7). Purge de rétention best-effort (cycles > 12 semaines) — une fois.
  */
 export async function hydraterCycle(): Promise<void> {
+  relanceChargementCycle = hydraterCycle; // « Réessayer » (#402)
+  poserEchecChargementCycle(false);
   // Fail-open lundi, repli loggé : même helper que la vue Cycle (jumeau, #352).
   const jour = await jourCoursesOuLundi(chargerJourCoursesFoyer());
   // ancreParDefaut (pas ancreCourante) : à ≤ 2 jours de la fin du cycle, on
@@ -2541,7 +2605,14 @@ export async function naviguerCycle(offset: number): Promise<void> {
  * ancre est imposée au montage.
  */
 export async function allerAuCycle(ancre: string): Promise<void> {
-  if (!(await attendreSync())) return; // hors-ligne : ne pas perdre les écritures
+  relanceChargementCycle = () => allerAuCycle(ancre); // « Réessayer » (#402)
+  poserEchecChargementCycle(false);
+  if (!(await attendreSync())) {
+    // Hors-ligne : ne pas perdre les écritures. Sans cycle affiché, la page
+    // passerait sinon un squelette sans fin (#402).
+    signalerEchecSiAucunCycle();
+    return;
+  }
   const longueur = await longueurOuDefaut(chargerLongueurCycle(ancre)); // repli client (#365)
   await chargerCycleDansCache(ancre, longueur);
 }

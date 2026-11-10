@@ -10,6 +10,7 @@ import { createClient } from "@/lib/supabase/client"
 import { clientParDefaut } from "@/lib/supabase/par-defaut"
 import type { ClientSupabase } from "@/lib/supabase/types"
 import type { PreferencesRecettes, RecettePreference } from "@/lib/generateur"
+import { pageQuittee } from "@/lib/page-quittee"
 
 // Écritures en vol par recette (#352) : chaque écriture part après la
 // précédente de la même recette, et une lecture attend leur fin. Pourquoi :
@@ -17,6 +18,49 @@ import type { PreferencesRecettes, RecettePreference } from "@/lib/generateur"
 // pouvaient se valider dans le désordre (la base gardait « favorite »), et une
 // fiche rouverte aussitôt relisait la base avant la dernière écriture.
 const ecrituresEnVol = new Map<string, Promise<void>>()
+
+// Journal des intentions non confirmées (#404) : la dernière préférence voulue
+// par recette, écrite en localStorage AVANT l'envoi et retirée quand l'écriture
+// se termine. Rejouée au chargement suivant (`rejouerIntentionsEnAttente`).
+// Pourquoi : la bascule est optimiste ; une page rechargée (ou l'app fermée)
+// pendant l'écriture la perdait, et la seconde écriture d'une bascule rapide
+// (sérialisée derrière la première) n'était même jamais envoyée. Purgé au
+// changement de foyer (`reinitialiserCacheFoyer`, lib/sync.ts).
+export const CLE_PREFERENCES_EN_ATTENTE = "preferences_en_attente"
+type Intention = RecettePreference | "neutre"
+
+function lireJournal(): Record<string, Intention> {
+  if (typeof window === "undefined") return {} // serveur (MCP) : pas de journal
+  try {
+    return JSON.parse(localStorage.getItem(CLE_PREFERENCES_EN_ATTENTE) ?? "{}")
+  } catch (erreur) {
+    console.error("Journal des préférences illisible (ignoré).", erreur)
+    return {}
+  }
+}
+
+function majJournal(maj: (journal: Record<string, Intention>) => void): void {
+  if (typeof window === "undefined") return
+  const journal = lireJournal()
+  maj(journal)
+  try {
+    if (Object.keys(journal).length === 0) localStorage.removeItem(CLE_PREFERENCES_EN_ATTENTE)
+    else localStorage.setItem(CLE_PREFERENCES_EN_ATTENTE, JSON.stringify(journal))
+  } catch (erreur) {
+    console.error("Journal des préférences non enregistré.", erreur)
+  }
+}
+
+// Rejoue les intentions d'une page précédente (aucune écriture en vol pour
+// elles dans ce chargement). Leur échec est journalisé, la lecture suit.
+function rejouerIntentionsEnAttente(): void {
+  for (const [recetteId, intention] of Object.entries(lireJournal())) {
+    if (ecrituresEnVol.has(recetteId)) continue
+    definirPreference(recetteId, intention === "neutre" ? null : intention).catch((erreur) => {
+      console.error("Préférence en attente non rejouée.", erreur)
+    })
+  }
+}
 
 // Attend la fin (succès ou échec) des écritures en vol, d'une recette ou de toutes.
 async function attendreEcritures(recetteId?: string): Promise<void> {
@@ -33,6 +77,7 @@ async function attendreEcritures(recetteId?: string): Promise<void> {
 export async function chargerPreferences(
   client: ClientSupabase = clientParDefaut()
 ): Promise<PreferencesRecettes> {
+  rejouerIntentionsEnAttente() // #404
   await attendreEcritures()
   const { data, error } = await client
     .from("recette_preference")
@@ -55,6 +100,7 @@ export async function chargerPreferences(
 export async function chargerPreference(
   recetteId: string
 ): Promise<RecettePreference | null> {
+  rejouerIntentionsEnAttente() // #404
   await attendreEcritures(recetteId)
   const client = createClient()
   const { data, error } = await client
@@ -80,15 +126,32 @@ export function definirPreference(
   recetteId: string,
   preference: RecettePreference | null
 ): Promise<void> {
+  // Intention journalisée avant tout `await` (#404) : un rechargement
+  // immédiat la retrouve.
+  majJournal((journal) => {
+    journal[recetteId] = preference ?? "neutre"
+  })
   const precedente = ecrituresEnVol.get(recetteId) ?? Promise.resolve()
   const ecriture = precedente
     .catch(() => {}) // un échec précédent (déjà remonté à son appelant) ne bloque pas
     .then(() => ecrirePreference(recetteId, preference))
   ecrituresEnVol.set(recetteId, ecriture)
-  const nettoyer = () => {
-    if (ecrituresEnVol.get(recetteId) === ecriture) ecrituresEnVol.delete(recetteId)
+  // Fin de la DERNIÈRE écriture demandée pour la recette : l'intention est
+  // retirée (confirmée, ou refusée et déjà remontée à l'écran), sauf échec
+  // pendant que la page est quittée (requête coupée : à rejouer,
+  // `lib/page-quittee.ts`).
+  const terminer = (echec: boolean) => {
+    if (ecrituresEnVol.get(recetteId) !== ecriture) return
+    ecrituresEnVol.delete(recetteId)
+    if (echec && pageQuittee()) return
+    majJournal((journal) => {
+      delete journal[recetteId]
+    })
   }
-  ecriture.then(nettoyer, nettoyer)
+  ecriture.then(
+    () => terminer(false),
+    () => terminer(true)
+  )
   return ecriture
 }
 

@@ -92,6 +92,50 @@ test("Ctrl+Z en vue Cycle annule le dernier « Changer » : « Annulé », repas
   }).toPass({ timeout: 20_000 });
 });
 
+// Rechargement pendant l'écriture du « Changer » (PR #405) : l'annulation,
+// en file derrière, n'était jamais envoyée et la base gardait le repas changé
+// (le test ci-dessus tombait 3/3 en CI les jours où le premier repas du cycle
+// est passé). La réponse du « Changer » est retenue 1,5 s (le serveur, lui, a
+// déjà écrit) : le reload part donc toujours pendant l'écriture, quel que soit
+// le jour. L'annulation, journalisée, est rejouée au chargement suivant.
+test("Ctrl+Z puis rechargement pendant l'écriture du « Changer » : l'annulation est rejouée (PR #405)", async ({
+  page,
+}) => {
+  await page.goto("/planning");
+  await page.getByRole("button", { name: "Cycle" }).click();
+  await page.getByRole("button", { name: "Générer mon cycle" }).click();
+  const nom = page.locator("main button[aria-label^='Voir la recette']").first();
+  await expect(nom).toBeVisible({ timeout: 20_000 });
+  const nomAvant = (await nom.textContent()) ?? "";
+
+  let retenue = true;
+  await page.route("**/rest/v1/rpc/sauvegarder_slots", async (route) => {
+    if (!retenue) return route.continue().catch(() => {});
+    retenue = false;
+    const reponse = await route.fetch().catch(() => null); // le serveur écrit
+    await new Promise((r) => setTimeout(r, 1_500));
+    if (reponse) await route.fulfill({ response: reponse }).catch(() => {});
+  });
+
+  await page.getByRole("button", { name: /^Changer/ }).first().click();
+  await confirmerSiModaleJourPasse(page);
+  await expect(nom).not.toHaveText(nomAvant);
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(page.getByText("Annulé", { exact: true })).toBeVisible();
+  await expect(nom).toHaveText(nomAvant);
+
+  await page.reload(); // l'écriture du « Changer » est encore en vol
+  await page.unroute("**/rest/v1/rpc/sauvegarder_slots");
+  await expect(page.locator("main button[aria-label^='Voir la recette']").first()).toHaveText(nomAvant, {
+    timeout: 10_000,
+  });
+  // Relu depuis la base : l'annulation y est bien écrite.
+  await page.reload();
+  await expect(page.locator("main button[aria-label^='Voir la recette']").first()).toHaveText(nomAvant, {
+    timeout: 10_000,
+  });
+});
+
 test("modifier le nombre de personnes depuis la vue Cycle persiste au reload", async ({ page }) => {
   await page.goto("/planning");
   await page.getByRole("button", { name: "Cycle" }).click();

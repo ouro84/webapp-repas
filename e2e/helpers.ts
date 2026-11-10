@@ -23,6 +23,69 @@ export function lireEnvLocal(cle: string): string {
   return ligne.slice(cle.length + 1).trim().replace(/^"|"$/g, "");
 }
 
+// Une seule connexion par mot de passe et par compte (#404) : le jeton est
+// gardé par worker jusqu'à une minute de son expiration, et `inscrireDistant`
+// l'amorce avec celui du signup. Pourquoi : l'Auth de staging limite les
+// connexions par IP ; avec 4 workers jetables en parallèle, la CI prenait des
+// 429 (`suppression-compte.spec`, `panier-demande.spec`), et une preuve en
+// `--repeat-each` sur le compte partagé s'en approchait (deux `nettoyer*` par
+// test). Toute lecture ou écriture REST d'un compte passe par `sessionDe`.
+const sessions = new Map<string, { jeton: string; expire: number }>();
+
+function memoriserSession(email: string, corps: { access_token?: string; expires_in?: number }): void {
+  if (!corps.access_token) return;
+  sessions.set(email, {
+    jeton: corps.access_token,
+    expire: Date.now() + (corps.expires_in ?? 3600) * 1000,
+  });
+}
+
+/** Jeton d'accès d'un compte (connexion par mot de passe au plus une fois par worker). */
+export async function sessionDe(
+  request: APIRequestContext,
+  email: string = E2E_EMAIL,
+  password: string = E2E_PASSWORD
+): Promise<string> {
+  const connue = sessions.get(email);
+  if (connue && connue.expire - Date.now() > 60_000) return connue.jeton;
+  const url = lireEnvLocal("NEXT_PUBLIC_SUPABASE_URL");
+  const anon = lireEnvLocal("NEXT_PUBLIC_SUPABASE_ANON_KEY");
+  const auth = await request.post(`${url}/auth/v1/token?grant_type=password`, {
+    headers: { apikey: anon, "Content-Type": "application/json" },
+    data: { email, password },
+  });
+  if (!auth.ok()) {
+    throw new Error(`Auth REST de ${email} impossible : HTTP ${auth.status()}`);
+  }
+  const corps = (await auth.json()) as { access_token: string; expires_in?: number };
+  memoriserSession(email, corps);
+  return corps.access_token;
+}
+
+/**
+ * Signup REST idempotent d'un compte jetable (confirmation email désactivée sur
+ * staging : le compte est utilisable aussitôt). Le jeton renvoyé par le signup
+ * amorce `sessionDe`, sans connexion supplémentaire. `onboarde` (défaut) marque
+ * l'onboarding terminé, sinon le login atterrirait sur /bienvenue.
+ */
+export async function inscrireDistant(
+  request: APIRequestContext,
+  email: string,
+  { onboarde = true }: { onboarde?: boolean } = {}
+): Promise<void> {
+  const url = lireEnvLocal("NEXT_PUBLIC_SUPABASE_URL");
+  const anon = lireEnvLocal("NEXT_PUBLIC_SUPABASE_ANON_KEY");
+  const r = await request.post(`${url}/auth/v1/signup`, {
+    headers: { apikey: anon, "Content-Type": "application/json" },
+    data: { email, password: E2E_PASSWORD },
+  });
+  if (![200, 400, 422].includes(r.status())) {
+    throw new Error(`Signup ${email} impossible : HTTP ${r.status()} — ${await r.text()}`);
+  }
+  if (r.status() === 200) memoriserSession(email, (await r.json()) as { access_token?: string });
+  if (onboarde) await marquerOnboardingCompletDistant(request, email, E2E_PASSWORD);
+}
+
 /** Préfixes des topics temps réel de l'app (`realtime:<prefixe>…`). */
 export type PrefixeRealtime =
   | "planning:" // planning de la semaine (`/planning`, `planning:<foyer>:<semaine>`)
@@ -142,8 +205,8 @@ export async function attendreChargementTermine(
 
 /**
  * Supprime le planning et les coches du compte de test côté base (RLS
- * propriétaire → ne touche que ses propres lignes). Authentification REST par
- * mot de passe, comme auth.setup. À appeler en beforeEach des specs qui
+ * propriétaire → ne touche que ses propres lignes). Session REST du compte
+ * mise en cache (`sessionDe`). À appeler en beforeEach des specs qui
  * dépendent d'un état distant vierge (#6, US-13).
  */
 export async function nettoyerEtatDistant(
@@ -152,18 +215,7 @@ export async function nettoyerEtatDistant(
   const url = lireEnvLocal("NEXT_PUBLIC_SUPABASE_URL");
   const anon = lireEnvLocal("NEXT_PUBLIC_SUPABASE_ANON_KEY");
 
-  const auth = await request.post(`${url}/auth/v1/token?grant_type=password`, {
-    headers: { apikey: anon, "Content-Type": "application/json" },
-    data: { email: E2E_EMAIL, password: E2E_PASSWORD },
-  });
-  if (!auth.ok()) {
-    throw new Error(
-      `Auth REST du compte de test impossible : HTTP ${auth.status()}`
-    );
-  }
-  const { access_token: jeton } = (await auth.json()) as {
-    access_token: string;
-  };
+  const jeton = await sessionDe(request, E2E_EMAIL, E2E_PASSWORD);
   const headers = { apikey: anon, Authorization: `Bearer ${jeton}` };
 
   // PostgREST exige un filtre pour DELETE ; foyer_id=not.is.null couvre toutes
@@ -215,27 +267,15 @@ export async function nettoyerReglagesDistants(
   });
 }
 
-// Jeton d'accès du compte de test (auth REST par mot de passe). Exporté pour
-// les specs qui relisent la base en boucle (`coches-concurrence.spec`) : une
-// connexion par test, pas une par lecture (l'Auth de staging limite le débit).
+// En-têtes REST du compte de test (session mise en cache, `sessionDe`).
+// Exporté pour les specs qui relisent la base en boucle (`coches-concurrence.spec`).
 export async function jetonTest(request: APIRequestContext): Promise<{
   url: string;
   headers: Record<string, string>;
 }> {
   const url = lireEnvLocal("NEXT_PUBLIC_SUPABASE_URL");
   const anon = lireEnvLocal("NEXT_PUBLIC_SUPABASE_ANON_KEY");
-  const auth = await request.post(`${url}/auth/v1/token?grant_type=password`, {
-    headers: { apikey: anon, "Content-Type": "application/json" },
-    data: { email: E2E_EMAIL, password: E2E_PASSWORD },
-  });
-  if (!auth.ok()) {
-    throw new Error(
-      `Auth REST du compte de test impossible : HTTP ${auth.status()}`
-    );
-  }
-  const { access_token: jeton } = (await auth.json()) as {
-    access_token: string;
-  };
+  const jeton = await sessionDe(request, E2E_EMAIL, E2E_PASSWORD);
   return { url, headers: { apikey: anon, Authorization: `Bearer ${jeton}` } };
 }
 
@@ -421,14 +461,7 @@ export async function marquerOnboardingCompletDistant(
 ): Promise<void> {
   const url = lireEnvLocal("NEXT_PUBLIC_SUPABASE_URL");
   const anon = lireEnvLocal("NEXT_PUBLIC_SUPABASE_ANON_KEY");
-  const auth = await request.post(`${url}/auth/v1/token?grant_type=password`, {
-    headers: { apikey: anon, "Content-Type": "application/json" },
-    data: { email, password },
-  });
-  if (!auth.ok()) {
-    throw new Error(`Auth REST de ${email} impossible : HTTP ${auth.status()}`);
-  }
-  const { access_token: jeton } = (await auth.json()) as { access_token: string };
+  const jeton = await sessionDe(request, email, password);
   // RLS UPDATE « ma propre ligne » → ne touche que le profil de ce compte (le
   // filtre est requis par PostgREST). Grant au niveau colonne : onboarding_complete
   // est modifiable par le rôle authenticated.
@@ -455,14 +488,7 @@ export async function lireReglagesDistants(
 } | null> {
   const url = lireEnvLocal("NEXT_PUBLIC_SUPABASE_URL");
   const anon = lireEnvLocal("NEXT_PUBLIC_SUPABASE_ANON_KEY");
-  const auth = await request.post(`${url}/auth/v1/token?grant_type=password`, {
-    headers: { apikey: anon, "Content-Type": "application/json" },
-    data: { email, password },
-  });
-  if (!auth.ok()) {
-    throw new Error(`Auth REST de ${email} impossible : HTTP ${auth.status()}`);
-  }
-  const { access_token: jeton } = (await auth.json()) as { access_token: string };
+  const jeton = await sessionDe(request, email, password);
   const res = await request.get(
     `${url}/rest/v1/reglages?select=personnes_defaut,vege_dejeuner_semaine,vege_diner_semaine,max_dejeuner_semaine`,
     { headers: { apikey: anon, Authorization: `Bearer ${jeton}` } }
@@ -492,14 +518,7 @@ export async function lirePlanningDistant(
 ): Promise<Array<{ semaine: string; jour: string; type_repas: string }>> {
   const url = lireEnvLocal("NEXT_PUBLIC_SUPABASE_URL");
   const anon = lireEnvLocal("NEXT_PUBLIC_SUPABASE_ANON_KEY");
-  const auth = await request.post(`${url}/auth/v1/token?grant_type=password`, {
-    headers: { apikey: anon, "Content-Type": "application/json" },
-    data: { email, password },
-  });
-  if (!auth.ok()) {
-    throw new Error(`Auth REST de ${email} impossible : HTTP ${auth.status()}`);
-  }
-  const { access_token: jeton } = (await auth.json()) as { access_token: string };
+  const jeton = await sessionDe(request, email, password);
   const res = await request.get(
     `${url}/rest/v1/planning?select=semaine,planning_slot(jour,type_repas)`,
     { headers: { apikey: anon, Authorization: `Bearer ${jeton}` } }
@@ -527,14 +546,7 @@ export async function lireProfilRgpdDistant(
 ): Promise<{ cgu_version: number | null; cgu_acceptees_le: string | null }> {
   const url = lireEnvLocal("NEXT_PUBLIC_SUPABASE_URL");
   const anon = lireEnvLocal("NEXT_PUBLIC_SUPABASE_ANON_KEY");
-  const auth = await request.post(`${url}/auth/v1/token?grant_type=password`, {
-    headers: { apikey: anon, "Content-Type": "application/json" },
-    data: { email, password },
-  });
-  if (!auth.ok()) {
-    throw new Error(`Auth REST de ${email} impossible : HTTP ${auth.status()}`);
-  }
-  const { access_token: jeton } = (await auth.json()) as { access_token: string };
+  const jeton = await sessionDe(request, email, password);
   const res = await request.get(
     `${url}/rest/v1/profiles?select=cgu_version,cgu_acceptees_le`,
     { headers: { apikey: anon, Authorization: `Bearer ${jeton}` } }

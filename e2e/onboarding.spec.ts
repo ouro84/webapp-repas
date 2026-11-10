@@ -14,7 +14,7 @@
 import { test, expect } from "./fixtures";
 import {
   E2E_PASSWORD,
-  lireEnvLocal,
+  inscrireDistant,
   lirePlanningDistant,
   lireReglagesDistants,
 } from "./helpers";
@@ -47,16 +47,9 @@ test("le tunnel mène un nouvel inscrit à un premier cycle (US-23, RG-91)", asy
   test.setTimeout(120_000);
 
   const email = `onboarding-${RUN}@example.com`;
-  const url = lireEnvLocal("NEXT_PUBLIC_SUPABASE_URL");
-  const anon = lireEnvLocal("NEXT_PUBLIC_SUPABASE_ANON_KEY");
-
   // Signup REST — compte NON onboardé (on teste justement le tunnel : pas de
   // marquerOnboardingCompletDistant ici, contrairement aux autres specs).
-  const r = await request.post(`${url}/auth/v1/signup`, {
-    headers: { apikey: anon, "Content-Type": "application/json" },
-    data: { email, password: E2E_PASSWORD },
-  });
-  expect([200, 400, 422]).toContain(r.status());
+  await inscrireDistant(request, email, { onboarde: false }); // jeton mis en cache (#404)
 
   // Contexte vierge + connexion : le proxy redirige vers /bienvenue (non onboardé).
   const contexte = await browser.newContext({
@@ -138,15 +131,8 @@ test("l'écran 1 du tunnel calibre les réglages de génération (US-23, RG-37)"
   test.setTimeout(120_000);
 
   const email = `calibration-${RUN}@example.com`;
-  const url = lireEnvLocal("NEXT_PUBLIC_SUPABASE_URL");
-  const anon = lireEnvLocal("NEXT_PUBLIC_SUPABASE_ANON_KEY");
-
   // Signup REST — compte NON onboardé (on veut le tunnel).
-  const r = await request.post(`${url}/auth/v1/signup`, {
-    headers: { apikey: anon, "Content-Type": "application/json" },
-    data: { email, password: E2E_PASSWORD },
-  });
-  expect([200, 400, 422]).toContain(r.status());
+  await inscrireDistant(request, email, { onboarde: false }); // jeton mis en cache (#404)
 
   const contexte = await browser.newContext({
     storageState: { cookies: [], origins: [] },

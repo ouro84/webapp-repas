@@ -9,7 +9,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { APIRequestContext, APIResponse, Page } from "@playwright/test";
 import { expect } from "./fixtures";
-import { E2E_PASSWORD, lireEnvLocal, marquerOnboardingCompletDistant } from "./helpers";
+import { E2E_PASSWORD, inscrireDistant, lireEnvLocal, sessionDe } from "./helpers";
 
 export const REDIRECTION = "http://127.0.0.1:9999/callback";
 
@@ -172,14 +172,9 @@ export async function listerOutilsMcp(
   return (corps.result?.tools ?? []).map((t) => t.name);
 }
 
-/** Jeton de session web (mot de passe) d'un compte — pour préparer des données. */
+/** Jeton de session web (mot de passe) d'un compte, mis en cache (`sessionDe`). */
 export async function jetonMotDePasse(request: APIRequestContext, email: string): Promise<string> {
-  const r = await request.post(`${urlSupabase()}/auth/v1/token?grant_type=password`, {
-    headers: { apikey: lireEnvLocal("NEXT_PUBLIC_SUPABASE_ANON_KEY"), "Content-Type": "application/json" },
-    data: { email, password: E2E_PASSWORD },
-  });
-  if (!r.ok()) throw new Error(`Auth REST de ${email} impossible : HTTP ${r.status()}`);
-  return ((await r.json()) as { access_token: string }).access_token;
+  return sessionDe(request, email, E2E_PASSWORD);
 }
 
 /** Enregistre la semaine `semaine` d'un compte (RPC sauvegarder_planning) avec ces dîners. */
@@ -226,14 +221,7 @@ export async function recettesCatalogue(
 // --- Parcours partagés par oauth-mcp.spec et mcp-ecriture.spec (#306) ---
 
 export async function inscrire(request: APIRequestContext, email: string, onboarde = true): Promise<void> {
-  const r = await request.post(`${lireEnvLocal("NEXT_PUBLIC_SUPABASE_URL")}/auth/v1/signup`, {
-    headers: { apikey: lireEnvLocal("NEXT_PUBLIC_SUPABASE_ANON_KEY"), "Content-Type": "application/json" },
-    data: { email, password: E2E_PASSWORD },
-  });
-  if (![200, 400, 422].includes(r.status())) {
-    throw new Error(`Signup ${email} impossible : HTTP ${r.status()} — ${await r.text()}`);
-  }
-  if (onboarde) await marquerOnboardingCompletDistant(request, email, E2E_PASSWORD);
+  await inscrireDistant(request, email, { onboarde });
 }
 
 export async function remplirLogin(page: Page, email: string): Promise<void> {

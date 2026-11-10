@@ -24,12 +24,13 @@ import type { AddressInfo } from "node:net";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import type { APIRequestContext, BrowserContext, Locator, Page, Request } from "@playwright/test";
 import { test, expect } from "./fixtures";
-import { appelerOutilMcp, autoriser, connecter, inscrire, jetonMotDePasse, listerOutilsMcp } from "./oauth";
+import { appelerOutilMcp, autoriser, connecter, inscrire, listerOutilsMcp } from "./oauth";
 import {
   demandesPanierActives,
   deplacerDemandePanier,
   enregistrerExecuteurPanier,
   lireEnvLocal,
+  sessionDe,
   supprimerDemandesPanier,
   supprimerExecuteurPanier,
   vieillirDemandePanier,
@@ -93,19 +94,7 @@ function signatureAttendue(id: string, horodatage: string, corps: string): strin
   return `v1,${createHmac("sha256", cle).update(`${id}.${horodatage}.${corps}`).digest("base64")}`;
 }
 
-// Un seul login par mot de passe et par compte, réutilisé par les lectures
-// REST : l'Auth de staging limite les connexions (429 en CI avec 4 workers).
-const sessions = new Map<string, string>();
-
-async function sessionDe(request: APIRequestContext, email: string): Promise<string> {
-  let jeton = sessions.get(email);
-  if (!jeton) {
-    jeton = await jetonMotDePasse(request, email);
-    sessions.set(email, jeton);
-  }
-  return jeton;
-}
-
+// Lectures REST : une seule connexion par compte (`sessionDe`, e2e/helpers.ts).
 async function foyerDe(request: APIRequestContext, email: string): Promise<string> {
   const jeton = await sessionDe(request, email);
   const r = await request.get(`${lireEnvLocal("NEXT_PUBLIC_SUPABASE_URL")}/rest/v1/profiles?select=foyer_id`, {

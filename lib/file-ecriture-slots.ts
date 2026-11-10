@@ -16,7 +16,14 @@
 // upserte le JourPlanning complet, donc deux éditions du même jour (déjeuner
 // puis dîner) se fondent en une seule écriture du jour le plus récent.
 //
-// Pur : ni React ni Supabase, l'écriture et le callback d'échec sont injectés.
+// Journal (optionnel, injecté) : chaque valeur voulue y est posée avant tout
+// envoi et retirée quand le jour est réglé (écrit, ou refusé et remis au
+// confirmé) ; un échec survenu après `pagehide` la garde. Une page rechargée
+// pendant une écriture en vol ne perd plus la valeur en file derrière
+// (`lib/journal-slots-cycle.ts`, rejouée au chargement suivant).
+//
+// Pur : ni React ni Supabase, l'écriture, le callback d'échec et le journal
+// sont injectés.
 
 import type { JourPlanning } from "@/types";
 
@@ -42,9 +49,16 @@ type Entree = {
   enVol: Promise<void> | null;
 };
 
+export type JournalSlots = {
+  poser(semaine: string, jour: JourPlanning): void;
+  retirer(semaine: string, nomJour: JourPlanning["jour"]): void;
+  pageQuittee(): boolean;
+};
+
 export function creerFileEcritureSlots(deps: {
   ecrire: (semaine: string, jour: JourPlanning) => Promise<void>;
   surEchec: (semaine: string, jourConfirme: JourPlanning, erreur: unknown) => void;
+  journal?: JournalSlots;
 }): FileEcritureSlots {
   const entrees = new Map<string, Entree>();
 
@@ -64,11 +78,15 @@ export function creerFileEcritureSlots(deps: {
         // Une valeur arrivée pendant le vol dont le minuteur a déjà expiré part
         // maintenant ; sinon son minuteur la déclenchera.
         if (entree.enAttente !== null && entree.minuteur === null) envoyer(cle);
-        else if (entree.enAttente === null) entrees.delete(cle);
+        else if (entree.enAttente === null) {
+          entrees.delete(cle);
+          deps.journal?.retirer(entree.semaine, valeur.jour);
+        }
       },
       (erreur: unknown) => {
         if (entree.minuteur) clearTimeout(entree.minuteur);
         entrees.delete(cle);
+        if (!deps.journal?.pageQuittee()) deps.journal?.retirer(entree.semaine, valeur.jour);
         deps.surEchec(entree.semaine, entree.confirme, erreur);
       }
     );
@@ -83,6 +101,7 @@ export function creerFileEcritureSlots(deps: {
         entrees.set(cle, entree);
       }
       entree.enAttente = jour;
+      deps.journal?.poser(semaine, jour);
       if (entree.minuteur) clearTimeout(entree.minuteur);
       entree.minuteur = null;
       if (delaiMs <= 0) {

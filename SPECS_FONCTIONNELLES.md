@@ -1148,7 +1148,7 @@ Le planning s'affiche en liste verticale : une ligne par jour, avec les slots em
 
 Chaque écran doit gérer trois états :
 - **Loading** : pendant la génération du planning, et tant qu'un écran n'a pas lu ses données. L'état Loading d'un écran est un squelette calqué sur l'état chargé (mêmes boîtes, pour éviter tout décalage au remplacement), annoncé une seule fois aux lecteurs d'écran (« Chargement… »). Un écran ne montre jamais son état Empty avant d'avoir lu ses données : tant qu'elles ne sont pas lues, il reste en Loading (#400)
-- **Error** : si la génération échoue (ex: pas assez de recettes éligibles)
+- **Error** : si la génération échoue (ex: pas assez de recettes éligibles), ou si le premier chargement d'un écran échoue sans rien à afficher (lecture en échec, hors ligne) : message d'erreur et bouton « Réessayer », qui relance le chargement. Un chargement ne reste jamais en Loading indéfiniment (vue Cycle #352, liste de courses #402)
 - **Empty** : état initial avant toute génération
 
 ### RG-10 — Bascule cocher/décocher (US-05)

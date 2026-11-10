@@ -66,6 +66,7 @@ beforeEach(() => {
   m.modifierSlotDistant.mockReset();
   m.modifierSlotDistant.mockResolvedValue(undefined);
   m.barriereLecture = null;
+  localStorage.clear(); // journal des modifications en attente (PR #405)
   for (const f of [toast, toast.error, toast.success, toast.warning, toast.dismiss]) vi.mocked(f).mockClear();
 });
 
@@ -74,11 +75,18 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+// Boutons « Changer le dîner » de la grille (14 cellules × 2 paliers), ciblés
+// par leur aria-label : une requête par rôle avec `name` calcule le rôle, la
+// visibilité et le nom accessible de chaque élément (~1 000 nœuds), et coûtait
+// ~2 s sous la charge de la suite complète, assez pour dépasser le délai du
+// test (#403).
+const CHANGER_DINER = /^Changer le dîner/;
+
 // Le dernier « Changer » de la grille : dernier jour du cycle, jamais passé
 // (pas de confirmation RG-24 à traverser).
 async function afficherEtChanger(): Promise<void> {
   render(<VuePlanningCycle idsModifiables={new Set()} vue="cycle" onChangerVue={() => {}} />);
-  const boutons = await screen.findAllByRole("button", { name: /^Changer le dîner/ });
+  const boutons = await screen.findAllByLabelText(CHANGER_DINER);
   fireEvent.click(boutons[boutons.length - 1]);
 }
 
@@ -193,7 +201,7 @@ describe("VuePlanningCycle : retours d'édition alignés sur la vue Semaine (#37
     expect(toast.error).toHaveBeenCalledWith(MESSAGES_EDITION.indisponible);
 
     editionReussie();
-    const boutons = screen.getAllByRole("button", { name: /^Changer le dîner/ });
+    const boutons = screen.getAllByLabelText(CHANGER_DINER);
     fireEvent.click(boutons[boutons.length - 1]);
 
     await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
@@ -217,7 +225,31 @@ describe("VuePlanningCycle : squelette du premier chargement (#400)", () => {
 
     await act(async () => lire());
 
-    await screen.findAllByRole("button", { name: /^Changer le dîner/ });
+    await screen.findAllByLabelText(CHANGER_DINER);
     expect(screen.queryAllByRole("status")).toHaveLength(0);
+  });
+});
+
+// Écriture d'une page précédente restée en attente (rechargement pendant une
+// écriture en vol, PR #405) : rejouée AVANT la lecture du cycle, sinon la vue
+// afficherait la base d'avant l'annulation.
+describe("VuePlanningCycle : rejeu des modifications en attente", () => {
+  it("rejoue le journal avant de lire le cycle, puis le vide", async () => {
+    const enAttente = { jour: "lundi", diner: recette("origine") };
+    localStorage.setItem(
+      "slots_cycle_en_attente",
+      JSON.stringify({ "2026-W46|lundi": { semaine: "2026-W46", jour: enAttente } })
+    );
+    let ecrit!: () => void;
+    m.modifierSlotDistant.mockReturnValue(new Promise<void>((r) => (ecrit = r)));
+    render(<VuePlanningCycle idsModifiables={new Set()} vue="cycle" onChangerVue={() => {}} />);
+
+    await waitFor(() => expect(m.modifierSlotDistant).toHaveBeenCalledWith("2026-W46", enAttente));
+    // Lecture du cycle pas encore faite : toujours le squelette.
+    expect(screen.getAllByRole("status")).toHaveLength(1);
+
+    await act(async () => ecrit());
+    await screen.findAllByLabelText(CHANGER_DINER);
+    expect(localStorage.getItem("slots_cycle_en_attente")).toBeNull();
   });
 });
