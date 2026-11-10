@@ -9,6 +9,7 @@ import { test, expect, attacherGardeCrash } from "./fixtures";
 import type { APIRequestContext, BrowserContext, Page } from "@playwright/test";
 import {
   E2E_PASSWORD,
+  attendreChargementTermine,
   fermerModaleDoublonsSiPresente,
   lireEnvLocal,
   marquerOnboardingCompletDistant,
@@ -128,6 +129,7 @@ test("supprimer son compte en foyer partagé préserve les données des autres m
   // --- X : le foyer partagé et son planning sont intacts ---
   await x.reload();
   await x.goto("/planning");
+  await attendreChargementTermine(x); // #400 : pas les 7 `li` du squelette
   await expect(x.locator("main ul > li")).toHaveCount(7);
 
   await ctxX.close();

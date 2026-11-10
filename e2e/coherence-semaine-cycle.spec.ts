@@ -6,6 +6,7 @@
 import { test, expect } from "./fixtures";
 import type { Page } from "@playwright/test";
 import {
+  attendreChargementTermine,
   nettoyerEtatDistant,
   planifierRepasDistant,
   reinitialiserJourCoursesDistant,
@@ -52,7 +53,8 @@ test("« Générer mon cycle » est accessible et fonctionne depuis la vue Cycle
   await page.getByRole("button", { name: "Générer mon cycle" }).click();
   // Une recette apparaît dans la projection (génération réelle, catalogue seedé CI-only).
   await attendreCycleGenere(page);
-  await expect(page.locator("main li").first()).toBeVisible();
+  // Un repas réel (#400 : `main li` matcherait aussi le squelette).
+  await expect(page.locator("main button[aria-label^='Voir la recette']").first()).toBeVisible();
 });
 
 // #334 : régénérer un cycle déjà rempli écrase les repas et purge les coches du
@@ -65,7 +67,8 @@ test("régénérer un cycle déjà rempli depuis la vue Cycle demande confirmati
   await page.getByRole("button", { name: "Cycle" }).click();
   await page.getByRole("button", { name: "Générer mon cycle" }).click();
   await attendreCycleGenere(page);
-  await expect(page.locator("main li").first()).toBeVisible();
+  // Un repas réel (#400 : `main li` matcherait aussi le squelette).
+  await expect(page.locator("main button[aria-label^='Voir la recette']").first()).toBeVisible();
   const recettesAvant = await page
     .locator("main button[aria-label^='Voir la recette']")
     .allTextContents();
@@ -124,7 +127,8 @@ test("le lien « Liste de courses → » depuis la vue Cycle conserve la même f
   // rempli (pas dans l'état vide, comme en semaine) : on génère d'abord.
   await page.getByRole("button", { name: "Générer mon cycle" }).click();
   await attendreCycleGenere(page);
-  await expect(page.locator("main li").first()).toBeVisible();
+  // Un repas réel (#400 : `main li` matcherait aussi le squelette).
+  await expect(page.locator("main button[aria-label^='Voir la recette']").first()).toBeVisible();
   // #352 : le navigateur de période (libellé relatif + dates) remplace « Courses du… ».
   const navigateurCycle = page.getByRole("group", { name: "Naviguer entre les cycles" });
   const libelleCycle = (await navigateurCycle.innerText()).trim();
@@ -168,7 +172,13 @@ test("naviguer entre les cycles garde l'en-tête et le focus sur la flèche pend
   ]);
   await page.goto("/planning");
   await page.getByRole("button", { name: "Cycle" }).click();
-  await expect(page.locator("main li").first()).toBeVisible({ timeout: 20_000 });
+  // #400 : le premier chargement du cycle rend un squelette (7 `main li`) ; la
+  // bascule « Cycle » pressée n'existe que dans la vue chargée.
+  await expect(page.getByRole("button", { name: "Cycle", pressed: true })).toBeVisible({
+    timeout: 20_000,
+  });
+  await attendreChargementTermine(page);
+  await expect(page.locator("main button[aria-label^='Voir la recette']").first()).toBeVisible();
 
   // Première lecture de chaque chargement de cycle : retardée pour rendre la
   // fenêtre de chargement observable.

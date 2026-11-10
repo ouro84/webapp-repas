@@ -41,7 +41,7 @@ import { estRestes } from "@/lib/restes";
 import { lireLienCycle, PARAM_LIEN_CYCLE } from "@/lib/lien-cycle";
 import { lireLienSemaine, PARAM_LIEN_SEMAINE } from "@/lib/lien-semaine";
 import { PARAM_BIENVENUE } from "@/lib/onboarding";
-import { naviguerVers, useSemaineAffichee, useSync } from "@/lib/sync";
+import { naviguerVers, useSemaineAffichee, useSemaineLue, useSync } from "@/lib/sync";
 import { chargerRecettesGerees, type RecetteGeree } from "@/lib/recettes";
 import { chargerPreferences } from "@/lib/preferences";
 import { chargerReglages } from "@/lib/reglages-data";
@@ -76,11 +76,11 @@ import { EtatVidePlanning } from "@/components/planning/etat-vide-planning";
 import { NavigateurPeriode } from "@/components/planning/navigateur-periode";
 import { VuePlanningCycle } from "@/components/planning/vue-cycle";
 import { SlotRepas } from "@/components/planning/slot-repas";
+import { SquelettePlanning } from "@/components/planning/squelette-planning";
 import { GrilleJours, type JourGrille } from "@/components/planning/grille-jours";
 import { ConfirmationModale } from "@/components/ui/confirmation";
 import { PulsationAtterrissage } from "@/components/ui/pulsation-atterrissage";
 import type { Jour, JourPlanning, Planning, Recette } from "@/types";
-import { EcranChargement } from "@/components/ui/ecran-chargement";
 
 type TypeRepas = "dejeuner" | "diner";
 
@@ -358,6 +358,9 @@ function ContenuPlanning() {
   // pousse les changements (indicateur) ; useSemaineAffichee donne la semaine
   // courante affichée (navigation #5).
   const etatSync = useSync(lienSemaine);
+  // Première lecture de la semaine terminée (#400) : avant, `planning === null`
+  // veut dire « pas encore lu », pas « vide » (squelette, pas état vide).
+  const semaineLue = useSemaineLue();
   const semaineAffichee = useSemaineAffichee();
 
   // Chargement des recettes au montage (système externe asynchrone : setState
@@ -781,6 +784,17 @@ function ContenuPlanning() {
     );
   }
 
+  // --- Chargement (RG-09, #400) : semaine pas encore lue (nouvel appareil,
+  // sans cache local). Premier chargement seulement : `semaineLue` ne repasse
+  // jamais à faux, la navigation entre semaines garde son comportement. ---
+  if (planning === null && !semaineLue) {
+    return (
+      <main id="contenu" className="flex-1 p-4 md:p-8">
+        <SquelettePlanning titre="Mon planning de la semaine" />
+      </main>
+    );
+  }
+
   // --- État vide (RG-09) : semaine affichée sans planning (#5) ---
   // Hero de la vitrine (#337), partagé avec la vue Cycle (#352).
   if (planning === null) {
@@ -945,8 +959,16 @@ function ContenuPlanning() {
 
 export default function PagePlanning() {
   // Frontière Suspense exigée par useSearchParams (Next 16, cf. app/courses/page.tsx).
+  // Repli = squelette de la vue Semaine (#400), titre en barre : la vue préférée
+  // (`vue_planning`, localStorage) n'est pas connue au prérendu.
   return (
-    <Suspense fallback={<EcranChargement largeur="pleine" />}>
+    <Suspense
+      fallback={
+        <main id="contenu" className="flex-1 p-4 md:p-8">
+          <SquelettePlanning titre={null} />
+        </main>
+      }
+    >
       <ContenuPlanning />
     </Suspense>
   );

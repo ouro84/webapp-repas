@@ -35,6 +35,7 @@ import { detecterDoublons, type GroupeDoublon } from "@/lib/doublons";
 import { ConfirmationModale } from "@/components/ui/confirmation";
 import { SelecteurJourCourses } from "@/components/ui/selecteur-jour-courses";
 import { ModaleDoublons } from "@/components/profil/modale-doublons";
+import { SqueletteFoyer } from "@/components/profil/squelettes-profil";
 import type { Recette } from "@/types";
 
 // Un code est utilisable tant qu'il n'a pas expiré (le serveur fait foi via
@@ -208,20 +209,9 @@ export function PanneauFoyer() {
     );
   }
 
-  if (etat === null) {
-    return (
-      // Hauteur réservée ≈ panneau chargé d'un foyer solo (538 px mobile,
-      // 490 px desktop) : sinon la suite de /profil saute à l'arrivée (CLS).
-      <section className="mb-8 min-h-[33.6rem] md:min-h-[30.6rem]" aria-labelledby="section-foyer">
-        <h2 id="section-foyer" className="mb-1 text-lg font-semibold text-brand-900">
-          Mon foyer
-        </h2>
-        <p role="status" className="animate-pulse text-brand-700/85">
-          Chargement…
-        </p>
-      </section>
-    );
-  }
+  // Squelette à la hauteur d'un panneau chargé de foyer solo (538 px mobile,
+  // 490 px desktop) : sinon la suite de /profil saute à l'arrivée (CLS, #400).
+  if (etat === null) return <SqueletteFoyer />;
 
   const partage = etat.membres > 1;
   const valide = codeValide(etat);

@@ -46,6 +46,10 @@ import { BadgeSaison } from "@/components/ui/badge-saison";
 import { TogglePreferenceRecette } from "@/components/ui/toggle-preference-recette";
 import { estDeSaison, LIBELLE_SAISON, SAISONS } from "@/lib/saisons";
 import { FormulaireRecette } from "@/components/recettes/formulaire-recette";
+import {
+  SqueletteEnteteRecettes,
+  SqueletteListeRecettes,
+} from "@/components/recettes/squelette-recettes";
 import type { Planning, Recette, Saison, ReglagesGeneration } from "@/types";
 
 type Vue =
@@ -350,14 +354,10 @@ function ContenuRecettes() {
         </p>
       )}
 
-      {/* État chargement (RG-09). min-h-dvh : la suite de la page et le pied
-          de page restent sous la ligne de flottaison au lieu d'être repoussés
-          par la liste chargée (CLS). */}
-      {recettes === null && erreur === null && (
-        <p role="status" className="min-h-dvh animate-pulse text-brand-700/85">
-          Chargement…
-        </p>
-      )}
+      {/* État chargement (RG-09, #400) : squelette de la liste. Il garde
+          min-h-dvh : la suite de la page et le pied de page restent sous la
+          ligne de flottaison au lieu d'être repoussés par la liste chargée (CLS). */}
+      {recettes === null && erreur === null && <SqueletteListeRecettes />}
 
       {/* Alerte vivier insuffisant (#2 PR3) : anticipe l'échec de génération */}
       {recettes !== null &&
@@ -529,14 +529,14 @@ function ContenuRecettes() {
 
 export default function PageRecettes() {
   // Frontière Suspense exigée par useSearchParams (ContenuRecettes). Le repli
-  // reprend l'état de chargement de la liste (RG-09).
+  // reprend la mise en page du chargement de la liste (RG-09, #400) : titre réel,
+  // bouton « Nouvelle recette » en bloc (pas encore hydraté), puis le squelette.
   return (
     <Suspense
       fallback={
         <main id="contenu" className="mx-auto w-full max-w-2xl flex-1 p-4 md:p-8">
-          <p role="status" className="animate-pulse text-brand-700/85">
-            Chargement…
-          </p>
+          <SqueletteEnteteRecettes />
+          <SqueletteListeRecettes />
         </main>
       }
     >

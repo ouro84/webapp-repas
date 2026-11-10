@@ -8,7 +8,9 @@
 // génération (complète côté serveur, unitaire côté client) applique les règles.
 //
 // États (RG-09) : chargement, erreur, chargé (les valeurs par défaut tiennent
-// lieu de contenu quand l'utilisateur n'a jamais rien enregistré).
+// lieu de contenu quand l'utilisateur n'a jamais rien enregistré). Pendant le
+// chargement (#400), les cinq cartes et leurs intitulés sont rendus tels quels,
+// une seule fois : seuls les contrôles et les compteurs passent en squelette.
 //
 // Bonus : B1 réinitialiser aux défauts (sans auto-save), B2 aperçu du nombre de
 // recettes éligibles par créneau, B3 refus de sauvegarde si la configuration
@@ -27,6 +29,7 @@ import {
 import { analyserVivier } from "@/lib/generateur";
 import { PERSONNES_MAX, PERSONNES_MIN } from "@/lib/personnes";
 import { Interrupteur } from "@/components/ui/interrupteur";
+import { Squelette, TexteSquelette, ZoneChargement } from "@/components/ui/squelette";
 import type { Recette, ReglagesGeneration, PlafondCreneau } from "@/types";
 
 // Ordre d'affichage du contrôle segmenté : les plafonds de temps, puis
@@ -100,7 +103,7 @@ function StepperPersonnes({
   const styleBouton =
     "flex size-9 items-center justify-center rounded-full border border-brand-200 text-lg leading-none text-brand-700 transition hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.92] motion-reduce:active:scale-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent";
   return (
-    <div className="inline-flex items-center gap-3">
+    <div className="inline-flex items-center gap-3 align-top">
       <button
         type="button"
         aria-label="Moins de personnes"
@@ -122,6 +125,20 @@ function StepperPersonnes({
       >
         +
       </button>
+    </div>
+  );
+}
+
+// Squelette du stepper (#400) : même boîte que `StepperPersonnes` (deux boutons
+// `size-9`, compteur `w-16`, `align-top` pour que la ligne fasse exactement 36 px).
+function SqueletteStepper() {
+  return (
+    <div className="inline-flex items-center gap-3 align-top">
+      <Squelette sur="carte" className="size-9 rounded-full" />
+      <span className="w-16 text-center text-sm font-medium text-brand-900">
+        <TexteSquelette sur="carte">8 pers.</TexteSquelette>
+      </span>
+      <Squelette sur="carte" className="size-9 rounded-full" />
     </div>
   );
 }
@@ -192,12 +209,6 @@ export default function PageReglages() {
       <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
         {erreur}
       </p>
-    ) : form === null ? (
-      // min-h-dvh : le pied de page reste sous la ligne de flottaison au lieu
-      // d'être repoussé par le formulaire chargé (CLS).
-      <p role="status" className="min-h-dvh animate-pulse text-brand-700/85">
-        Chargement…
-      </p>
     ) : (
       <GenerationReglages
         form={form}
@@ -235,7 +246,7 @@ function GenerationReglages({
   enregistrement,
   enregistrer,
 }: {
-  form: ReglagesGeneration;
+  form: ReglagesGeneration | null;
   setForm: React.Dispatch<React.SetStateAction<ReglagesGeneration | null>>;
   recettes: Recette[] | null;
   analyse: ReturnType<typeof analyserVivier> | null;
@@ -256,7 +267,7 @@ function GenerationReglages({
     return recettes.filter((r) => rangTemps(r.tempsPreparation) <= max).length;
   }
   function vegeActif(cle: CleCreneau): boolean {
-    return form.vegetarienPrefere?.[cle] ?? false;
+    return form?.vegetarienPrefere?.[cle] ?? false;
   }
   function definirVegePrefere(cle: CleCreneau, valeur: boolean): void {
     setForm((f) => {
@@ -277,7 +288,7 @@ function GenerationReglages({
       (r) => r.vegetarien === true && rangTemps(r.tempsPreparation) <= max
     ).length;
   }
-  const mixActif = form.mixAccompagnementJour ?? false;
+  const mixActif = form?.mixAccompagnementJour ?? false;
   function definirMix(valeur: boolean): void {
     setForm((f) => (f ? { ...f, mixAccompagnementJour: valeur } : f));
   }
@@ -285,12 +296,15 @@ function GenerationReglages({
     recettes === null
       ? null
       : recettes.filter((r) => r.accompagnement === "legumes").length;
-  const saisonnaliteActif = form.saisonnalite !== false;
+  const saisonnaliteActif = form?.saisonnalite !== false;
   function definirSaisonnalite(valeur: boolean): void {
     setForm((f) => (f ? { ...f, saisonnalite: valeur } : f));
   }
 
-  return (
+  // Réglages pas encore lus (`form === null`) : chaque contrôle devient un
+  // squelette ; titres, libellés et textes d'aide sont ceux de l'état chargé,
+  // rendus une seule fois (aucune copie des textes, aucun décalage au remplacement).
+  const contenu = (
     <>
       <p className="mb-6 text-sm text-brand-700/85">
         Ces règles s’appliquent à la prochaine génération (complète ou d’un seul
@@ -307,7 +321,7 @@ function GenerationReglages({
         </p>
         <div className="flex flex-col gap-5">
           {CRENEAUX.map(({ cle, libelle }) => {
-            const eligibles = nbEligibles(form.plafonds[cle]);
+            const eligibles = form ? nbEligibles(form.plafonds[cle]) : null;
             return (
               <div
                 key={cle}
@@ -320,23 +334,33 @@ function GenerationReglages({
                   >
                     {libelle}
                   </span>
+                  {form === null && (
+                    <span className="text-xs text-brand-700/85">
+                      <TexteSquelette sur="carte">12 recettes éligibles</TexteSquelette>
+                    </span>
+                  )}
                   {eligibles !== null && (
                     <span className="text-xs text-brand-700/85">
                       {eligibles} recette{eligibles > 1 ? "s" : ""} éligible
                       {eligibles > 1 ? "s" : ""}
                     </span>
                   )}
-                  {form.plafonds[cle] === "aucun" && (
+                  {form?.plafonds[cle] === "aucun" && (
                     <span className="text-xs text-brand-700/85">
                       Ce repas n’est pas généré.
                     </span>
                   )}
                 </div>
-                <SegmentPlafond
-                  libelleId={`plafond-${cle}`}
-                  valeur={form.plafonds[cle]}
-                  onChange={(t) => definirPlafond(cle, t)}
-                />
+                {form ? (
+                  <SegmentPlafond
+                    libelleId={`plafond-${cle}`}
+                    valeur={form.plafonds[cle]}
+                    onChange={(t) => definirPlafond(cle, t)}
+                  />
+                ) : (
+                  // Segment chargé : p-0.5 + bordure + boutons de 32 px (py-1.5, ligne de 20 px) = 38 px.
+                  <Squelette sur="carte" className="h-[38px] rounded-full sm:w-60" />
+                )}
               </div>
             );
           })}
@@ -356,7 +380,7 @@ function GenerationReglages({
         <div className="flex flex-col gap-5">
           {CRENEAUX.map(({ cle, libelle }) => {
             const actif = vegeActif(cle);
-            const eligibles = actif ? nbVegeEligibles(form.plafonds[cle]) : null;
+            const eligibles = form && actif ? nbVegeEligibles(form.plafonds[cle]) : null;
             return (
               <div
                 key={cle}
@@ -376,11 +400,15 @@ function GenerationReglages({
                     </span>
                   )}
                 </div>
-                <Interrupteur
-                  libelleId={`vege-${cle}`}
-                  actif={actif}
-                  onChange={(v) => definirVegePrefere(cle, v)}
-                />
+                {form ? (
+                  <Interrupteur
+                    libelleId={`vege-${cle}`}
+                    actif={actif}
+                    onChange={(v) => definirVegePrefere(cle, v)}
+                  />
+                ) : (
+                  <Squelette sur="carte" className="h-6 w-11 shrink-0 rounded-full" />
+                )}
               </div>
             );
           })}
@@ -413,11 +441,15 @@ function GenerationReglages({
               </span>
             )}
           </div>
-          <Interrupteur
-            libelleId="mix-legume"
-            actif={mixActif}
-            onChange={definirMix}
-          />
+          {form ? (
+            <Interrupteur
+              libelleId="mix-legume"
+              actif={mixActif}
+              onChange={definirMix}
+            />
+          ) : (
+            <Squelette sur="carte" className="h-6 w-11 shrink-0 rounded-full" />
+          )}
         </div>
       </section>
 
@@ -435,11 +467,15 @@ function GenerationReglages({
           <span id="saisonnalite" className="text-sm font-medium text-brand-900">
             Ne proposer que des recettes de saison
           </span>
-          <Interrupteur
-            libelleId="saisonnalite"
-            actif={saisonnaliteActif}
-            onChange={definirSaisonnalite}
-          />
+          {form ? (
+            <Interrupteur
+              libelleId="saisonnalite"
+              actif={saisonnaliteActif}
+              onChange={definirSaisonnalite}
+            />
+          ) : (
+            <Squelette sur="carte" className="h-6 w-11 shrink-0 rounded-full" />
+          )}
         </div>
       </section>
 
@@ -454,10 +490,14 @@ function GenerationReglages({
         <p className="mb-4 text-sm text-brand-700/85">
           Appliqué à chaque repas d’un planning fraîchement généré.
         </p>
-        <StepperPersonnes
-          valeur={form.personnesDefaut}
-          onChange={(n) => setForm((f) => (f ? { ...f, personnesDefaut: n } : f))}
-        />
+        {form ? (
+          <StepperPersonnes
+            valeur={form.personnesDefaut}
+            onChange={(n) => setForm((f) => (f ? { ...f, personnesDefaut: n } : f))}
+          />
+        ) : (
+          <SqueletteStepper />
+        )}
       </section>
 
       {/* RG-47 (#217) : au moins un créneau doit rester actif. */}
@@ -481,29 +521,40 @@ function GenerationReglages({
         </p>
       )}
 
-      <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-        <button
-          type="button"
-          onClick={() =>
-            setForm({
-              ...REGLAGES_DEFAUT,
-              plafonds: { ...REGLAGES_DEFAUT.plafonds },
-            })
-          }
-          className="rounded-full border border-brand-200 px-5 py-2.5 text-sm font-medium text-brand-700 transition hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100"
-        >
-          Réinitialiser
-        </button>
-        <button
-          type="button"
-          onClick={enregistrer}
-          disabled={!modifie || !faisable || enregistrement}
-          aria-busy={enregistrement}
-          className="rounded-full bg-primary px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {enregistrement ? "Enregistrement…" : "Enregistrer"}
-        </button>
-      </div>
+      {/* Pendant le chargement, les boutons n'existent pas encore : un bloc
+          invisible réserve leur rangée (CLS, #400). Mobile : Réinitialiser
+          (`py-2.5` + `text-sm` + bordure = 42 px) + `gap-2` + Enregistrer
+          (40 px, sans bordure) = 90 px ; dès `sm`, une rangée de 42 px. */}
+      {form === null && (
+        <div data-testid="reserve-boutons-reglages" className="invisible h-[90px] sm:h-[42px]" />
+      )}
+      {form !== null && (
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            onClick={() =>
+              setForm({
+                ...REGLAGES_DEFAUT,
+                plafonds: { ...REGLAGES_DEFAUT.plafonds },
+              })
+            }
+            className="rounded-full border border-brand-200 px-5 py-2.5 text-sm font-medium text-brand-700 transition hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100"
+          >
+            Réinitialiser
+          </button>
+          <button
+            type="button"
+            onClick={enregistrer}
+            disabled={!modifie || !faisable || enregistrement}
+            aria-busy={enregistrement}
+            className="rounded-full bg-primary px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {enregistrement ? "Enregistrement…" : "Enregistrer"}
+          </button>
+        </div>
+      )}
     </>
   );
+
+  return form === null ? <ZoneChargement>{contenu}</ZoneChargement> : contenu;
 }

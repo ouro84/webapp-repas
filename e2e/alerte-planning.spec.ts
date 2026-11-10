@@ -16,7 +16,11 @@
 
 import { test, expect } from "./fixtures";
 import type { Browser, Page } from "@playwright/test";
-import { abonnementRealtimePret, nettoyerEtatDistant } from "./helpers";
+import {
+  abonnementRealtimePret,
+  attendreChargementTermine,
+  nettoyerEtatDistant,
+} from "./helpers";
 
 // Ouvre une page authentifiée dans un contexte neuf (un « appareil »).
 async function ouvrirAppareil(browser: Browser): Promise<Page> {
@@ -49,6 +53,8 @@ test("un membre en magasin est alerté quand le planning change à la maison (US
   // --- Appareil B : ouvre le planning du même foyer (récupère celui de A) ---
   const b = await ouvrirAppareil(browser);
   await b.goto("/planning");
+  // #400 : le squelette rend aussi 7 `main ul > li` ; attendre la fin du chargement.
+  await attendreChargementTermine(b);
   await expect(b.locator("main ul > li")).toHaveCount(7); // planning de A hydraté
   // Abonnement temps réel de A (côté courses) confirmé avant que B ne régénère.
   await abonnementCycleA;
@@ -88,6 +94,7 @@ test("une édition en attente survit à la modification d’un autre créneau pa
   // --- B ouvre le même planning ---
   const b = await ouvrirAppareil(browser);
   await b.goto("/planning");
+  await attendreChargementTermine(b); // #400 : pas les 7 `li` du squelette
   await expect(b.locator("main ul > li")).toHaveCount(7);
   // Abonnement temps réel du planning de A confirmé par Supabase.
   await abonnementA;
@@ -122,6 +129,7 @@ test("une édition en attente survit à la modification d’un autre créneau pa
   // --- A repousse la fusion ; après rechargement, les deux persistent ---
   await expect.poll(() => dirty(a)).toBeNull();
   await a.reload();
+  await attendreChargementTermine(a); // #400 : pas les 7 `li` du squelette
   await expect(a.locator("main ul > li")).toHaveCount(7);
   await expect(a.locator("main ul > li").nth(0)).toContainText("3 pers.");
   await expect(a.locator("main ul > li").nth(1)).toContainText("1 pers.");

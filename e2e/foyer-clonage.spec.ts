@@ -26,6 +26,7 @@ import type {
 } from "@playwright/test";
 import {
   E2E_PASSWORD,
+  attendreChargementTermine,
   fermerModaleDoublonsSiPresente,
   lireEnvLocal,
   marquerOnboardingCompletDistant,
@@ -130,6 +131,7 @@ test("quitter un foyer partagé clone les données chez le partant, sans rien re
   await expect(y.getByRole("button", { name: "Quitter le foyer" })).toBeVisible();
   // Y voit bien le planning PARTAGÉ de X (foyer commun).
   await y.goto("/planning");
+  await attendreChargementTermine(y); // #400 : pas les 7 `li` du squelette
   await expect(y.locator("main ul > li")).toHaveCount(7);
 
   // --- Y : quitte → clonage (RG-34) ---
@@ -143,6 +145,7 @@ test("quitter un foyer partagé clone les données chez le partant, sans rien re
 
   // CŒUR RG-34 : Y repart AVEC une copie — son planning n'est pas vide…
   await y.goto("/planning");
+  await attendreChargementTermine(y); // #400 : pas les 7 `li` du squelette
   await expect(y.locator("main ul > li")).toHaveCount(7);
   // …et sa liste de courses (dérivée du planning cloné) non plus.
   await y.goto("/courses");
@@ -150,6 +153,7 @@ test("quitter un foyer partagé clone les données chez le partant, sans rien re
 
   // PÉRENNITÉ : X conserve son planning (rien ne lui a été retiré à la sortie de Y).
   await x.goto("/planning");
+  await attendreChargementTermine(x); // #400 : pas les 7 `li` du squelette
   await expect(x.locator("main ul > li")).toHaveCount(7);
 
   // Aucun crash React (error boundary) sur les deux appareils.

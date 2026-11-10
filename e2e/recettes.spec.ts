@@ -6,6 +6,7 @@
 import { test, expect } from "./fixtures";
 import { request as apiRequest, type Page } from "@playwright/test";
 import {
+  attendreChargementTermine,
   nettoyerRecettesDistantes,
   nettoyerMasquagesDistants,
   nettoyerPreferencesDistantes,
@@ -247,6 +248,7 @@ test("« Mes recettes » permet de marquer favorite/évitée, avec bascule direc
 
 test("la recherche filtre la liste des recettes", async ({ page }) => {
   await page.goto("/recettes");
+  await attendreChargementTermine(page); // #400 : pas les `li` du squelette
   await expect(page.locator("main li").first()).toBeVisible();
   await page.getByPlaceholder("Rechercher une recette…").fill("zzzzz-introuvable");
   await expect(page.getByText(/Aucune recette ne correspond/)).toBeVisible();

@@ -13,8 +13,8 @@
 //
 // Le cycle affiché et son planning projeté sont branchés via useSyncExternalStore
 // (useCycleAffiche/useCyclePlanning) ; les coches via storeCoches (lib/stockage.ts).
-// Côté serveur les snapshots valent null : la page est prérendue en état
-// "Chargement…", puis hydratée.
+// Côté serveur les snapshots valent null : la page est prérendue en squelette
+// (`SqueletteCourses`, #400), puis hydratée.
 //
 // Animation de réordonnancement (RG-11) : un article coché glisse en fin de
 // catégorie via l'API View Transitions quand le navigateur la supporte —
@@ -96,6 +96,7 @@ import { formaterQuantite } from "@/lib/unites";
 import { LIBELLES_CATEGORIES } from "@/lib/courses";
 import { FormulaireArticleManuel } from "@/components/courses/formulaire-article-manuel";
 import { PanierChronodrive } from "@/components/courses/panier-chronodrive";
+import { SqueletteCourses } from "@/components/courses/squelette-courses";
 import { EcranChargement } from "@/components/ui/ecran-chargement";
 import type { SaisieArticleManuel } from "@/lib/persistance";
 import type {
@@ -105,8 +106,8 @@ import type {
   ReglagesGeneration,
 } from "@/types";
 
-// Vrai uniquement après hydratation côté navigateur — permet d'afficher
-// "Chargement…" pendant le prérendu/calcul initial sans setState (RG-09).
+// Vrai uniquement après hydratation côté navigateur — permet d'afficher le
+// squelette pendant le prérendu/calcul initial sans setState (RG-09, #400).
 function useHydratation(): boolean {
   return useSyncExternalStore(
     () => () => {},
@@ -463,7 +464,11 @@ function ContenuCourses() {
   // localStorage) tombait dans l'état vide le temps d'un rendu, même pour un
   // utilisateur qui a bien un planning (#257). ---
   if (!hydrate || cycle === null) {
-    return <EcranChargement />;
+    return (
+      <EcranChargement>
+        <SqueletteCourses />
+      </EcranChargement>
+    );
   }
 
   // --- État vide (RG-09) : cycle résolu mais aucun repas planifié dessus
@@ -819,7 +824,13 @@ function ContenuCourses() {
 export default function PageCourses() {
   // Frontière Suspense exigée par useSearchParams (Next 16, cf. app/recettes/page.tsx).
   return (
-    <Suspense fallback={<EcranChargement />}>
+    <Suspense
+      fallback={
+        <EcranChargement>
+          <SqueletteCourses />
+        </EcranChargement>
+      }
+    >
       <ContenuCourses />
     </Suspense>
   );

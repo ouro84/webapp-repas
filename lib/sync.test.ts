@@ -235,6 +235,91 @@ describe("hydrater — last-write-wins / dirty-first (RG-23)", () => {
   });
 });
 
+describe("storeSemaineLue — fin de la première lecture de la semaine (#400)", () => {
+  it("faux avant hydrater et pendant la lecture, vrai (et notifié) après une lecture réussie", async () => {
+    const { hydrater, storeSemaineLue } = await chargerSync();
+    const { semaineParDefaut } = await import("@/lib/semaines");
+    let resoudre: (valeur: unknown) => void = () => {};
+    persistance.chargerPlanningDistant.mockReturnValue(
+      new Promise((r) => {
+        resoudre = r;
+      })
+    );
+    const rappel = vi.fn();
+    storeSemaineLue.sAbonner(rappel);
+    expect(storeSemaineLue.lire()).toBe(false);
+
+    const enCours = hydrater();
+    expect(storeSemaineLue.lire()).toBe(false);
+    resoudre({ planning: planning(semaineParDefaut()), updatedAt: "2026-06-15T10:00:00.000Z" });
+    await enCours;
+
+    expect(storeSemaineLue.lire()).toBe(true);
+    expect(rappel).toHaveBeenCalled();
+  });
+
+  it("lecture qui rejette → vrai quand même, sans planning en cache (état vide, pas de squelette infini)", async () => {
+    persistance.chargerPlanningDistant.mockRejectedValue(new Error("hors-ligne"));
+    const { hydrater, storeSemaineLue } = await chargerSync();
+    const journal = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      await hydrater();
+    } finally {
+      journal.mockRestore();
+    }
+
+    expect(storeSemaineLue.lire()).toBe(true);
+    expect(localStorage.getItem("planning_courant")).toBeNull();
+  });
+
+  it("hydrater qui lève → vrai quand même (try/finally)", async () => {
+    persistance.chargerPlanningDistant.mockRejectedValue(new Error("hors-ligne"));
+    const { hydrater, storeSemaineLue } = await chargerSync();
+    const journal = vi.spyOn(console, "error").mockImplementation(() => {});
+    const original = Storage.prototype.setItem;
+    const espion = vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (
+      this: Storage,
+      cle: string,
+      valeur: string
+    ) {
+      if (cle === "semaine_affichee") throw new Error("quota");
+      original.call(this, cle, valeur);
+    });
+    try {
+      await expect(hydrater()).rejects.toThrow("quota");
+    } finally {
+      espion.mockRestore();
+      journal.mockRestore();
+    }
+
+    expect(storeSemaineLue.lire()).toBe(true);
+  });
+
+  it("cache local DIRTY (le local fait foi) → vrai tout de suite, avant toute lecture distante", async () => {
+    localStorage.setItem("planning_courant", JSON.stringify(planning("2026-W10")));
+    localStorage.setItem("planning_dirty", "1");
+    const { hydrater, storeSemaineLue } = await chargerSync();
+
+    const enCours = hydrater();
+    expect(storeSemaineLue.lire()).toBe(true);
+    await enCours;
+    expect(storeSemaineLue.lire()).toBe(true);
+  });
+
+  it("ne repasse jamais à faux (remontage SPA : dejaHydrate)", async () => {
+    const { hydrater, storeSemaineLue } = await chargerSync();
+    await hydrater();
+    await hydrater();
+    expect(storeSemaineLue.lire()).toBe(true);
+  });
+
+  it("snapshot serveur = faux (squelette prérendu)", async () => {
+    const { storeSemaineLue } = await chargerSync();
+    expect(storeSemaineLue.lireServeur()).toBe(false);
+  });
+});
+
 describe("file de rejeu hors-ligne (RG-23)", () => {
   it("échec de push → planning_dirty conservé (rejouable)", async () => {
     const local = planning("2026-W10");

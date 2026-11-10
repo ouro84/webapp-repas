@@ -269,6 +269,42 @@ export function useSemaineAffichee(): string | null {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Semaine lue (#400, RG-09) — store en mémoire : vrai dès que la première
+// lecture de `hydrater` est terminée (réussie, ratée ou levée), ou tout de suite
+// si le cache local fait foi. Ne repasse jamais à faux : une navigation SPA ne
+// relit pas (`dejaHydrate`), un rechargement complet recrée le module. Pourquoi :
+// `planning === null` confondait « pas encore lu » et « semaine vide », d'où un
+// faux état vide sur un appareil sans cache local.
+// ---------------------------------------------------------------------------
+let semaineLue = false;
+const abonnesSemaineLue = new Set<() => void>();
+
+function marquerSemaineLue(): void {
+  if (semaineLue) return;
+  semaineLue = true;
+  for (const rappel of abonnesSemaineLue) rappel();
+}
+
+export const storeSemaineLue = {
+  sAbonner(rappel: () => void): () => void {
+    abonnesSemaineLue.add(rappel);
+    return () => abonnesSemaineLue.delete(rappel);
+  },
+  lire: (): boolean => semaineLue,
+  // Prérendu : jamais lue (le squelette est rendu côté serveur).
+  lireServeur: (): boolean => false,
+};
+
+/** Vrai quand la première lecture de la semaine est terminée (squelette sinon, #400). */
+export function useSemaineLue(): boolean {
+  return useSyncExternalStore(
+    storeSemaineLue.sAbonner,
+    storeSemaineLue.lire,
+    storeSemaineLue.lireServeur
+  );
+}
+
 
 // ---------------------------------------------------------------------------
 // Cycle affiché (#257) — store adossé à localStorage. Porte l'ancre (date ISO)
@@ -2630,28 +2666,37 @@ export async function hydrater(semaineVoulue: string | null = null): Promise<voi
     return;
   }
   dejaHydrate = true;
-  purgerHistorique(); // rétention 12 semaines (#5) — fire-and-forget
+  // Semaine lue (#400) : posée à la sortie de la première lecture, quelle
+  // qu'elle soit (`finally`) ; le remontage SPA ci-dessus n'y touche pas (un
+  // premier appel encore en vol la posera, ex. double montage de StrictMode).
+  try {
+    purgerHistorique(); // rétention 12 semaines (#5) — fire-and-forget
 
-  const local = planningLocal();
-  if (local && (estDirty() || lireMajLocale() === 0)) {
-    // Cas e2e/offline : le local fait foi, on ne le remplace pas.
-    definirSemaineAffichee(local.semaine);
-    // Relecture US-21 ratée avant le rechargement (`CLE_A_RELIRE`, #355) :
-    // `pousser` la refait d'abord et ne pousse que la fusion.
-    if (estDirty()) void pousser();
-    await hydraterCoches();
-    // Coches clées par CYCLE (#257) : réabonnement sur l'ancre active (null hors
-    // /courses → no-op sûr), pas sur la semaine du planning.
-    void synchroniserAbonnementCoches(ancreActive());
-    void synchroniserAbonnementPlanning(local.semaine);
-    if (semaineVoulue && semaineVoulue !== local.semaine) void naviguerVers(semaineVoulue);
-    return;
+    const local = planningLocal();
+    if (local && (estDirty() || lireMajLocale() === 0)) {
+      // Cas e2e/offline : le local fait foi, on ne le remplace pas.
+      definirSemaineAffichee(local.semaine);
+      // Le cache affiché est déjà la semaine : pas de squelette (#400).
+      marquerSemaineLue();
+      // Relecture US-21 ratée avant le rechargement (`CLE_A_RELIRE`, #355) :
+      // `pousser` la refait d'abord et ne pousse que la fusion.
+      if (estDirty()) void pousser();
+      await hydraterCoches();
+      // Coches clées par CYCLE (#257) : réabonnement sur l'ancre active (null hors
+      // /courses → no-op sûr), pas sur la semaine du planning.
+      void synchroniserAbonnementCoches(ancreActive());
+      void synchroniserAbonnementPlanning(local.semaine);
+      if (semaineVoulue && semaineVoulue !== local.semaine) void naviguerVers(semaineVoulue);
+      return;
+    }
+
+    // Cas nominal : on affiche la semaine par défaut (ou celle du lien) depuis la
+    // base (chargement forcé — pas de garde « déjà affichée », car le cache peut
+    // être vide). Une lecture ratée est journalisée par `chargerSemaineDansCache`.
+    await chargerSemaineDansCache(semaineVoulue ?? semaineParDefaut());
+  } finally {
+    marquerSemaineLue();
   }
-
-  // Cas nominal : on affiche la semaine par défaut (ou celle du lien) depuis la
-  // base (chargement forcé — pas de garde « déjà affichée », car le cache peut
-  // être vide).
-  await chargerSemaineDansCache(semaineVoulue ?? semaineParDefaut());
 }
 
 // Démarre la synchro : abonnement aux écritures (planning + coches), temps réel

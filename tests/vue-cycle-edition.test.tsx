@@ -11,6 +11,8 @@ import type { JourPlanning, Planning } from "@/types";
 const m = vi.hoisted(() => ({
   editerSlot: vi.fn(),
   modifierSlotDistant: vi.fn(),
+  // Barrière optionnelle sur la lecture du cycle (squelette de premier chargement, #400).
+  barriereLecture: null as Promise<void> | null,
 }));
 
 vi.mock("sonner", () => ({
@@ -31,14 +33,16 @@ function recette(id: string) {
 }
 vi.mock("@/lib/persistance", () => ({
   chargerLongueurCycle: () => Promise.resolve(7),
-  chargerPlanningDistant: (semaine: string) =>
-    Promise.resolve({
+  chargerPlanningDistant: async (semaine: string) => {
+    await m.barriereLecture;
+    return {
       planning: {
         semaine,
         jours: JOURS.map((jour) => ({ jour, dejeuner: recette(`d-${jour}`), diner: recette(`s-${jour}`) })),
       },
       updatedAt: "2026-11-07T10:00:00.000Z",
-    }),
+    };
+  },
 }));
 vi.mock("@/lib/foyer", () => ({ chargerJourCoursesFoyer: () => Promise.resolve(1) }));
 vi.mock("@/lib/ancre-cycle", () => ({ resoudreCycle: vi.fn() }));
@@ -61,6 +65,7 @@ beforeEach(() => {
   m.editerSlot.mockReset();
   m.modifierSlotDistant.mockReset();
   m.modifierSlotDistant.mockResolvedValue(undefined);
+  m.barriereLecture = null;
   for (const f of [toast, toast.error, toast.success, toast.warning, toast.dismiss]) vi.mocked(f).mockClear();
 });
 
@@ -192,5 +197,27 @@ describe("VuePlanningCycle : retours d'édition alignés sur la vue Semaine (#37
     fireEvent.click(boutons[boutons.length - 1]);
 
     await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  });
+});
+
+describe("VuePlanningCycle : squelette du premier chargement (#400)", () => {
+  it("lecture en attente : un seul role=status, titre réel et grille « Déjeuner » ; plus aucun une fois le cycle lu", async () => {
+    let lire!: () => void;
+    m.barriereLecture = new Promise<void>((r) => (lire = r));
+    const { container } = render(
+      <VuePlanningCycle idsModifiables={new Set()} vue="cycle" onChangerVue={() => {}} />
+    );
+
+    // Un seul rôle status, annonçant « Chargement… » ; le titre est du vrai texte (aria-hidden).
+    await waitFor(() => expect(screen.getAllByRole("status")).toHaveLength(1));
+    expect(screen.getByRole("status").textContent).toContain("Chargement…");
+    expect(container.querySelector("h1")?.textContent).toBe("Mon planning du cycle");
+    // 7 jours × grilles mobile et desktop.
+    expect(screen.getAllByText("Déjeuner")).toHaveLength(14);
+
+    await act(async () => lire());
+
+    await screen.findAllByRole("button", { name: /^Changer le dîner/ });
+    expect(screen.queryAllByRole("status")).toHaveLength(0);
   });
 });

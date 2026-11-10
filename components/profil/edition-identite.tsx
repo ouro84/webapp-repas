@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import { Avatar } from "@/components/ui/avatar";
 import { PALETTE_AVATAR } from "@/lib/avatar";
 import { sauvegarderProfil, useProfil } from "@/lib/profil";
+import { SqueletteIdentite } from "@/components/profil/squelettes-profil";
 
 export function EditionIdentite() {
   const profil = useProfil();
@@ -21,23 +22,9 @@ export function EditionIdentite() {
   const [enregistrement, setEnregistrement] = useState(false);
   const [couleurEnCours, setCouleurEnCours] = useState<string | null>(null);
 
-  if (profil === null) {
-    return (
-      // Hauteur réservée ≈ section chargée (246 px mobile, 208 px desktop) :
-      // sinon tout /profil descend à l'arrivée du profil (CLS).
-      <section className="mb-8 min-h-[15.4rem] md:min-h-[13rem]" aria-labelledby="section-identite">
-        <h2
-          id="section-identite"
-          className="mb-4 text-lg font-semibold text-brand-900"
-        >
-          Mon identité
-        </h2>
-        <p role="status" className="animate-pulse text-brand-700/85">
-          Chargement…
-        </p>
-      </section>
-    );
-  }
+  // Squelette à la hauteur de la section chargée (246 px mobile, 208 px
+  // desktop) : sinon tout /profil descend à l'arrivée du profil (CLS, #400).
+  if (profil === null) return <SqueletteIdentite />;
 
   // Le brouillon s'amorce sur la valeur du profil au premier rendu chargé.
   const prenom = prenomSaisi ?? profil.prenom ?? "";

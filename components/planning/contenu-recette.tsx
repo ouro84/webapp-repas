@@ -168,6 +168,12 @@ export function ContenuRecette({
   );
 }
 
+// Classes du titre de section en variante "cuisine" (/ce-soir), partagées avec
+// son squelette de chargement (`components/ce-soir/squelette-ce-soir.tsx`,
+// #400) pour que les deux restent jumelés (CLS).
+export const CLASSES_TITRE_SECTION_CUISINE =
+  "mb-3 text-sm font-semibold uppercase tracking-wide text-brand-700/85";
+
 // Titre de section : h3 sous le h2 de la fiche modale, h2 sous le h1 de la page.
 function TitreSection({
   variante,
@@ -178,9 +184,7 @@ function TitreSection({
 }) {
   if (variante === "cuisine") {
     return (
-      <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-brand-700/85">
-        {children}
-      </h2>
+      <h2 className={CLASSES_TITRE_SECTION_CUISINE}>{children}</h2>
     );
   }
   return (
