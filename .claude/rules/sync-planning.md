@@ -88,7 +88,7 @@ La base est la source de vérité ; localStorage est le cache de la semaine affi
 
 ## Changement de foyer
 
-Après jonction, sortie ou déconnexion, appeler `reinitialiserCacheFoyer()` (vide planning, coches, drapeaux, horodatages, instantané confirmé, relecture à refaire et snapshot ; garde `semaine_affichee`) puis recharger. Il arrête d'abord les deux moteurs de coche (`arreter()`) : un flush en vol finit sans réécrire la file purgée ni envoyer la suite sous le nouveau foyer. Il republie ensuite l'indicateur (`publierEtat`), sinon il gardait l'état de l'ancien foyer. Sans cela, le dirty-first ferait foi avec l'ancien cache et un push différé l'écrirait sous le nouveau foyer.
+Après jonction, sortie ou déconnexion, appeler `reinitialiserCacheFoyer()` (vide planning, coches, drapeaux, horodatages, instantané confirmé, relecture à refaire, snapshot et préférences favori/évité en attente, #404 ; garde `semaine_affichee`) puis recharger. Il arrête d'abord les deux moteurs de coche (`arreter()`) : un flush en vol finit sans réécrire la file purgée ni envoyer la suite sous le nouveau foyer. Il republie ensuite l'indicateur (`publierEtat`), sinon il gardait l'état de l'ancien foyer. Sans cela, le dirty-first ferait foi avec l'ancien cache et un push différé l'écrirait sous le nouveau foyer.
 
 ## Tests de `lib/sync.ts`
 

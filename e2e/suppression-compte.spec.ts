@@ -11,24 +11,22 @@ import {
   E2E_PASSWORD,
   attendreChargementTermine,
   fermerModaleDoublonsSiPresente,
+  inscrireDistant,
   lireEnvLocal,
-  marquerOnboardingCompletDistant,
 } from "./helpers";
 
 const RUN = Date.now();
+
+// Email unique par exécution d'un test : `--repeat-each` rejoue un test dans le
+// même worker (même `RUN`), et un signup sur l'email d'un compte qu'on vient de
+// supprimer échoue côté Auth (HTTP 500, 23505 `users_email_partial_key`, #404).
+function emailUnique(prefixe: string): string {
+  return `${prefixe}-${RUN}-${test.info().repeatEachIndex}@example.com`;
+}
 const CODE_RX = /^[A-HJ-NP-Z2-9]{8}$/;
 
 async function inscrire(request: APIRequestContext, email: string): Promise<void> {
-  const url = lireEnvLocal("NEXT_PUBLIC_SUPABASE_URL");
-  const anon = lireEnvLocal("NEXT_PUBLIC_SUPABASE_ANON_KEY");
-  const r = await request.post(`${url}/auth/v1/signup`, {
-    headers: { apikey: anon, "Content-Type": "application/json" },
-    data: { email, password: E2E_PASSWORD },
-  });
-  if (![200, 400, 422].includes(r.status())) {
-    throw new Error(`Signup ${email} impossible : HTTP ${r.status()} — ${await r.text()}`);
-  }
-  await marquerOnboardingCompletDistant(request, email, E2E_PASSWORD);
+  await inscrireDistant(request, email); // jeton du signup mis en cache (#404)
 }
 
 async function connecter(
@@ -57,7 +55,9 @@ async function verifierCompteSupprime(
     headers: { apikey: anon, "Content-Type": "application/json" },
     data: { email, password: E2E_PASSWORD },
   });
-  expect(r.ok()).toBe(false);
+  // 400 (identifiants invalides) seulement : un 429 de l'Auth de staging ne
+  // prouve pas la suppression (#404).
+  expect(r.status()).toBe(400);
 }
 
 async function supprimerCompte(page: Page): Promise<void> {
@@ -74,7 +74,7 @@ test("supprimer son compte en solo efface le compte et ses données (#237)", asy
   request,
 }) => {
   test.setTimeout(60_000);
-  const email = `suppr-solo-${RUN}@example.com`;
+  const email = emailUnique("suppr-solo");
   await inscrire(request, email);
 
   const contexte = await browser.newContext({ storageState: { cookies: [], origins: [] } });
@@ -90,8 +90,8 @@ test("supprimer son compte en foyer partagé préserve les données des autres m
   request,
 }) => {
   test.setTimeout(120_000);
-  const emailX = `suppr-x-${RUN}@example.com`;
-  const emailY = `suppr-y-${RUN}@example.com`;
+  const emailX = emailUnique("suppr-x");
+  const emailY = emailUnique("suppr-y");
   await inscrire(request, emailX);
   await inscrire(request, emailY);
 

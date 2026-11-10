@@ -18,7 +18,7 @@ import type {
 } from "@playwright/test";
 import {
   E2E_PASSWORD,
-  lireEnvLocal,
+  inscrireDistant,
   attendreChargementTermine,
   marquerOnboardingCompletDistant,
 } from "./helpers";
@@ -26,17 +26,9 @@ import {
 const RUN = Date.now();
 const CODE_RX = /^[A-HJ-NP-Z2-9]{8}$/;
 
-// Signup REST idempotent (confirmation email désactivée → utilisable aussitôt).
+// Signup REST idempotent, jeton du signup mis en cache (#404).
 async function inscrire(request: APIRequestContext, email: string): Promise<void> {
-  const url = lireEnvLocal("NEXT_PUBLIC_SUPABASE_URL");
-  const anon = lireEnvLocal("NEXT_PUBLIC_SUPABASE_ANON_KEY");
-  const r = await request.post(`${url}/auth/v1/signup`, {
-    headers: { apikey: anon, "Content-Type": "application/json" },
-    data: { email, password: E2E_PASSWORD },
-  });
-  if (![200, 400, 422].includes(r.status())) {
-    throw new Error(`Signup ${email} impossible : HTTP ${r.status()} — ${await r.text()}`);
-  }
+  await inscrireDistant(request, email, { onboarde: false });
 }
 
 async function connecter(context: BrowserContext, email: string): Promise<Page> {

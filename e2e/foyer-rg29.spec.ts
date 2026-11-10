@@ -17,29 +17,16 @@ import type {
 import {
   E2E_PASSWORD,
   fermerModaleDoublonsSiPresente,
-  lireEnvLocal,
-  marquerOnboardingCompletDistant,
+  inscrireDistant,
 } from "./helpers";
 
 const CODE_RX = /^[A-HJ-NP-Z2-9]{8}$/;
 const RUN = Date.now();
 
 // Signup REST idempotent + marquage onboarding (sinon le login atterrirait sur
-// /bienvenue au lieu de /planning) — même contrat que foyer-clonage.
-async function inscrire(
-  request: APIRequestContext,
-  email: string
-): Promise<void> {
-  const url = lireEnvLocal("NEXT_PUBLIC_SUPABASE_URL");
-  const anon = lireEnvLocal("NEXT_PUBLIC_SUPABASE_ANON_KEY");
-  const r = await request.post(`${url}/auth/v1/signup`, {
-    headers: { apikey: anon, "Content-Type": "application/json" },
-    data: { email, password: E2E_PASSWORD },
-  });
-  if (![200, 400, 422].includes(r.status())) {
-    throw new Error(`Signup ${email} impossible : HTTP ${r.status()} — ${await r.text()}`);
-  }
-  await marquerOnboardingCompletDistant(request, email, E2E_PASSWORD);
+// /bienvenue au lieu de /planning), jeton du signup mis en cache (#404).
+async function inscrire(request: APIRequestContext, email: string): Promise<void> {
+  await inscrireDistant(request, email);
 }
 
 async function connecter(context: BrowserContext, email: string): Promise<Page> {

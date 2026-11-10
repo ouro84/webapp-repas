@@ -2247,6 +2247,13 @@ describe("relecture US-21 : rejeu des éditions locales en attente (#355)", () =
     sync.reinitialiserCacheFoyer();
     expect(localStorage.getItem("planning_confirme")).toBeNull();
   });
+
+  it("reinitialiserCacheFoyer efface les préférences en attente de l'ancien foyer (#404)", async () => {
+    const sync = await chargerSync();
+    localStorage.setItem("preferences_en_attente", JSON.stringify({ r1: "evitee" }));
+    sync.reinitialiserCacheFoyer();
+    expect(localStorage.getItem("preferences_en_attente")).toBeNull();
+  });
 });
 
 // Gardes ciblées de la synchro temps réel (#355, Task 3) : rejeu d'un event

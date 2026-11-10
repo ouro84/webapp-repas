@@ -28,8 +28,7 @@ import {
   E2E_PASSWORD,
   attendreChargementTermine,
   fermerModaleDoublonsSiPresente,
-  lireEnvLocal,
-  marquerOnboardingCompletDistant,
+  inscrireDistant,
 } from "./helpers";
 
 // 8 caractères de l'alphabet de generer_code_invitation (sans I/O/0/1).
@@ -38,25 +37,11 @@ const CODE_RX = /^[A-HJ-NP-Z2-9]{8}$/;
 // entre exécutions et les rejeux de retry).
 const RUN = Date.now();
 
-// Crée le compte côté Supabase (signup REST idempotent, confirmation email
-// désactivée → utilisable aussitôt, cf. auth.setup).
-async function inscrire(
-  request: APIRequestContext,
-  email: string
-): Promise<void> {
-  const url = lireEnvLocal("NEXT_PUBLIC_SUPABASE_URL");
-  const anon = lireEnvLocal("NEXT_PUBLIC_SUPABASE_ANON_KEY");
-  const r = await request.post(`${url}/auth/v1/signup`, {
-    headers: { apikey: anon, "Content-Type": "application/json" },
-    data: { email, password: E2E_PASSWORD },
-  });
-  if (![200, 400, 422].includes(r.status())) {
-    throw new Error(`Signup ${email} impossible : HTTP ${r.status()} — ${await r.text()}`);
-  }
-  // Onboarding terminé (#22 PR2) : sinon le login serait redirigé vers /bienvenue
-  // (compte neuf → onboarding_complete false par défaut) et `connecter` (qui
-  // attend /planning) échouerait.
-  await marquerOnboardingCompletDistant(request, email, E2E_PASSWORD);
+// Crée le compte côté Supabase (signup REST idempotent, onboarding marqué
+// terminé : sinon le login atterrirait sur /bienvenue), jeton du signup mis en
+// cache (#404).
+async function inscrire(request: APIRequestContext, email: string): Promise<void> {
+  await inscrireDistant(request, email);
 }
 
 // Connecte le compte dans un contexte neuf (un « appareil ») via la vraie page
