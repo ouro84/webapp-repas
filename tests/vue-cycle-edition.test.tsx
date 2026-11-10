@@ -74,11 +74,18 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+// Boutons « Changer le dîner » de la grille (14 cellules × 2 paliers), ciblés
+// par leur aria-label : une requête par rôle avec `name` calcule le rôle, la
+// visibilité et le nom accessible de chaque élément (~1 000 nœuds), et coûtait
+// ~2 s sous la charge de la suite complète, assez pour dépasser le délai du
+// test (#403).
+const CHANGER_DINER = /^Changer le dîner/;
+
 // Le dernier « Changer » de la grille : dernier jour du cycle, jamais passé
 // (pas de confirmation RG-24 à traverser).
 async function afficherEtChanger(): Promise<void> {
   render(<VuePlanningCycle idsModifiables={new Set()} vue="cycle" onChangerVue={() => {}} />);
-  const boutons = await screen.findAllByRole("button", { name: /^Changer le dîner/ });
+  const boutons = await screen.findAllByLabelText(CHANGER_DINER);
   fireEvent.click(boutons[boutons.length - 1]);
 }
 
@@ -193,7 +200,7 @@ describe("VuePlanningCycle : retours d'édition alignés sur la vue Semaine (#37
     expect(toast.error).toHaveBeenCalledWith(MESSAGES_EDITION.indisponible);
 
     editionReussie();
-    const boutons = screen.getAllByRole("button", { name: /^Changer le dîner/ });
+    const boutons = screen.getAllByLabelText(CHANGER_DINER);
     fireEvent.click(boutons[boutons.length - 1]);
 
     await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
@@ -217,7 +224,7 @@ describe("VuePlanningCycle : squelette du premier chargement (#400)", () => {
 
     await act(async () => lire());
 
-    await screen.findAllByRole("button", { name: /^Changer le dîner/ });
+    await screen.findAllByLabelText(CHANGER_DINER);
     expect(screen.queryAllByRole("status")).toHaveLength(0);
   });
 });
