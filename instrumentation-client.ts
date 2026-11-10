@@ -7,9 +7,13 @@
 // Si la variable est absente (DSN vide), Sentry se désactive silencieusement.
 
 import * as Sentry from "@sentry/nextjs";
+import { COLLECTE_SENTRY } from "@/lib/sentry-collecte";
 
 Sentry.init({
   dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
+
+  // Base restrictive explicite : sans elle, Sentry v11 collecte large.
+  dataCollection: COLLECTE_SENTRY,
 
   // Monitoring d'erreurs uniquement : pas de tracing (tracesSampleRate
   // absent = désactivé) ni de session replay — trop intrusif pour un
