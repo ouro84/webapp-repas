@@ -22,6 +22,13 @@ Les minutes facturées sont la **somme des durées de chaque job** (arrondie à 
 - **jobs e2e sérialisés** (`strategy.max-parallel: 1`) : `partage` et `jetable` tapent le même Supabase de staging, qui gèle parfois ~30 s sous charge, et deux jobs en parallèle aggravaient ces gels (échecs de génération réelle). Coût : ~4 min d'horloge de plus par run ; minutes facturées inchangées (somme des durées). GitHub ne garantit pas l'ordre strict de la matrice : seule compte l'absence de parallélisme, `partage` est listé en premier par convention. Pourquoi : un e2e connu flaky ne part pas en CI, et la charge concurrente sur staging en fabriquait (#357) ;
 - `paths-ignore` sur `pull_request` : `**/*.md`, `content/aide/**`, `revueDesign/**`, `.claude/**`, `.gitignore` (une PR doc-only ne lance aucune CI). Toute nouvelle origine de doc pure peut y être ajoutée. `push: main` reste sans filtre.
 
+## CLI Supabase v3
+
+- **`db push` exige `--yes --remote`** (`migrate-staging` et `migrate-prod`, après `link --project-ref`, inchangé). Pourquoi : en v3, `db push` sans cible vise la stack **locale**, et toute modification d'un projet hébergé sans terminal échoue (`HostedMutationConsentRequiredError`) ; `echo y |` et `SUPABASE_YES` dans un `.env` ne confirment pas.
+- **`supabase/config.toml` n'a plus de `[inbucket]`** (renommé `[local_smtp]`) : v3 refuse de charger l'ancienne clé, y compris pour `db push`.
+- En v3, les variables `SUPABASE_*` du shell et les fichiers `.env*` du projet priment sur `config.toml`. Aucun `.env` n'est versionné (sauf `.env.example`), donc rien à régler en CI ; ne pas en ajouter un sans relire cette règle.
+- `migrate-prod` ne tourne qu'après le merge : après un changement de CLI ou de commande, vérifier son run sur `main` (cf. « Incidents connus »).
+
 ## Cache du navigateur Playwright
 
 Le job `playwright-cache` peuple le cache **une fois** ; `e2e` fait `actions/cache/restore` (restore-only, jamais de save, donc aucune course de sauvegarde entre jobs). La clé de cache est dérivée de la **version de `@playwright/test`**. Un filet `playwright install chromium`, gardé par `cache-hit != 'true'`, est borné à `timeout-minutes: 5`.

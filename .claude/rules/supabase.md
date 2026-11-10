@@ -14,7 +14,7 @@ paths:
 
 ## Migrations
 
-- **Tout changement de schéma passe par un fichier** `supabase/migrations/<timestamp 14 chiffres>_<nom>.sql`, appliqué par la CI via `supabase db push` (staging sur chaque PR, prod sur push `main`). Le SQL editor ne modifie jamais le schéma, sinon la base diverge des migrations.
+- **Tout changement de schéma passe par un fichier** `supabase/migrations/<timestamp 14 chiffres>_<nom>.sql`, appliqué par la CI via `supabase db push --yes --remote` (CLI v3, cf. `ci.md` ; staging sur chaque PR, prod sur push `main`). Le SQL editor ne modifie jamais le schéma, sinon la base diverge des migrations.
 - **Appliquer une migration de branche sur staging avant `npm run test:e2e:staging`** : l'exécuter via `node scripts/query-supabase.mjs upxoxrjumxpzumakawiv "<sql>"`, puis l'inscrire dans `supabase_migrations.schema_migrations` pour que le `db push` de la CI ne la rejoue pas.
 - **Sans CI** (crédits Actions épuisés) : appliquer le fichier `.sql` par un script Node qui le lit et l'envoie à l'API de management (`/v1/projects/<ref>/database/query`), puis insérer `(version, name, statements = array[<contenu>])` dans `supabase_migrations.schema_migrations`. Pourquoi : un SQL qui contient `$$` et des apostrophes casse en argument shell de `query-supabase.mjs`. En prod, uniquement sur validation humaine, migration **avant** le merge.
 - La baseline `20260606225900_init.sql` est marquée appliquée sur prod et staging ; une base neuve la rejoue entièrement.
