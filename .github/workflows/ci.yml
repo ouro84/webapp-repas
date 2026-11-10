@@ -90,9 +90,11 @@ jobs:
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_DB_PASSWORD: ${{ secrets.STAGING_SUPABASE_DB_PASSWORD }}
+        # CLI v3 : `db push` sans cible vise la stack locale (--remote) et
+        # refuse de modifier un projet hébergé sans consentement (--yes).
         run: |
           npx supabase link --project-ref upxoxrjumxpzumakawiv
-          npx supabase db push
+          npx supabase db push --yes --remote
 
   # Pré-chauffe le cache du navigateur Playwright UNE SEULE FOIS, en parallèle de
   # migrate-staging (hors chemin critique : e2e attend déjà migrate-staging, donc
@@ -288,6 +290,7 @@ jobs:
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        # CLI v3 : --yes --remote obligatoires (cf. migrate-staging).
         run: |
           npx supabase link --project-ref gabyhlcwahzquolwxmgd
-          npx supabase db push
+          npx supabase db push --yes --remote
