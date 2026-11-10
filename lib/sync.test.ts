@@ -1811,6 +1811,79 @@ describe("hydraterCycle : jour de courses illisible", () => {
   });
 });
 
+// #402 (RG-09) : premier accès à /courses sans cycle en cache, lecture du cycle
+// en échec. Sans signal d'échec, le cycle restait `null` et la page sur son
+// squelette, sans fin. « Réessayer » rejoue le même chargement.
+describe("hydraterCycle : premier chargement en échec (#402)", () => {
+  it("signale l'échec quand aucun cycle n'a pu être posé, et « Réessayer » relance le chargement", async () => {
+    const erreur = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      persistance.chargerPlanningDistant.mockRejectedValue(new Error("réseau"));
+      const { hydraterCycle, storeEchecChargementCycle, reessayerChargementCycle } =
+        await chargerSync();
+
+      await hydraterCycle();
+
+      expect(localStorage.getItem("cycle_affiche")).toBeNull();
+      expect(storeEchecChargementCycle.lire()).toBe(true);
+      expect(erreur).toHaveBeenCalledWith("Chargement du cycle échoué.", expect.any(Error));
+
+      // Second essai réussi : l'échec est levé dès la relance, le cycle est posé.
+      persistance.chargerPlanningDistant.mockResolvedValue(null);
+      const relance = reessayerChargementCycle();
+      expect(storeEchecChargementCycle.lire()).toBe(false);
+      await relance;
+
+      expect(localStorage.getItem("cycle_affiche")).not.toBeNull();
+      expect(storeEchecChargementCycle.lire()).toBe(false);
+    } finally {
+      erreur.mockRestore();
+    }
+  });
+
+  it("un cycle déjà affiché (cache) n'est pas un échec : il reste affiché", async () => {
+    const erreur = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const { hydraterCycle, storeEchecChargementCycle } = await chargerSync();
+      await hydraterCycle(); // premier chargement réussi : cycle posé
+      persistance.chargerPlanningDistant.mockRejectedValue(new Error("réseau"));
+
+      await hydraterCycle();
+
+      expect(localStorage.getItem("cycle_affiche")).not.toBeNull();
+      expect(storeEchecChargementCycle.lire()).toBe(false);
+    } finally {
+      erreur.mockRestore();
+    }
+  });
+
+  it("relais ?ancre= (allerAuCycle) hors ligne sans cycle en cache : échec signalé, « Réessayer » rejoue la même ancre", async () => {
+    const { allerAuCycle, storeEchecChargementCycle, reessayerChargementCycle } =
+      await chargerSync();
+    // Un planning non poussé (dirty) que l'envoi ne parvient pas à écrire :
+    // attendreSync() échoue, la navigation est annulée.
+    localStorage.setItem("planning_courant", JSON.stringify(planning("2026-W45")));
+    localStorage.setItem("planning_dirty", "1");
+    persistance.sauvegarderPlanningDistant.mockRejectedValue(new Error("hors ligne"));
+    const erreur = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await allerAuCycle("2026-11-02");
+
+      expect(localStorage.getItem("cycle_affiche")).toBeNull();
+      expect(storeEchecChargementCycle.lire()).toBe(true);
+
+      // Retour en ligne : l'envoi passe, puis le cycle demandé est chargé.
+      persistance.sauvegarderPlanningDistant.mockResolvedValue("2026-11-10T10:00:00.000Z");
+      await reessayerChargementCycle();
+
+      expect(JSON.parse(localStorage.getItem("cycle_affiche")!).ancre).toBe("2026-11-02");
+      expect(storeEchecChargementCycle.lire()).toBe(false);
+    } finally {
+      erreur.mockRestore();
+    }
+  });
+});
+
 // #355 : une relecture US-21 (changement d'un autre membre) alors que des
 // éditions locales ne sont pas encore poussées les rejoue sur les créneaux que
 // le distant n'a pas touchés ; sur un même créneau, le distant gagne. Base de

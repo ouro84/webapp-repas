@@ -68,6 +68,8 @@ import {
   useSyncCourses,
   usePresenceCourses,
   useCycleAffiche,
+  useEchecChargementCycle,
+  reessayerChargementCycle,
   useCyclePlanning,
   useArticlesManuels,
   useGenerationCycle,
@@ -252,6 +254,8 @@ function ContenuCourses() {
   // Cycle actuellement affiché ({ ancre, longueur }) et son planning projeté —
   // stores dédiés (#257), distincts de storePlanning (semaine unique).
   const cycle = useCycleAffiche();
+  // Premier chargement sans aucun cycle affiché en échec (#402) : état erreur.
+  const echecChargement = useEchecChargementCycle();
   // Jour de courses du foyer (#352) : situe le cycle affiché vs le cycle
   // courant (libellé relatif). Même source que lib/sync.ts (fail-open : lundi,
   // repli loggé par `jourCoursesOuLundi`, jumeau de la vue Cycle).
@@ -463,6 +467,35 @@ function ContenuCourses() {
   // cours) — sans cette garde, la toute première visite (rien en
   // localStorage) tombait dans l'état vide le temps d'un rendu, même pour un
   // utilisateur qui a bien un planning (#257). ---
+  // --- État erreur (RG-09) : aucun cycle n'a pu être chargé (premier accès
+  // sans cache, lecture ratée ou relais `?ancre=` hors ligne). Sans lui, le
+  // squelette restait affiché sans fin (#402). Même présentation que la vue
+  // Cycle de /planning. ---
+  if (hydrate && cycle === null && echecChargement) {
+    return (
+      <main
+        id="contenu"
+        className="mx-auto flex w-full max-w-2xl flex-1 flex-col items-center justify-center gap-6 p-8"
+      >
+        <h1 className="font-display text-2xl font-semibold text-brand-900">Liste de courses</h1>
+        <div
+          role="alert"
+          className="max-w-md rounded-lg border border-red-200 bg-red-50 p-4 text-center"
+        >
+          <p className="font-medium text-red-800">Impossible de charger la liste de courses.</p>
+          <p className="mt-1 text-sm text-red-700">Vérifie ta connexion et réessaie.</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => void reessayerChargementCycle()}
+          className="rounded-full bg-primary px-6 py-3 font-medium text-white transition hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 active:scale-[0.97] motion-reduce:active:scale-100"
+        >
+          Réessayer
+        </button>
+      </main>
+    );
+  }
+
   if (!hydrate || cycle === null) {
     return (
       <EcranChargement>

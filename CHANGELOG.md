@@ -29,6 +29,7 @@ et ce projet adhère au [Versionnage Sémantique](https://semver.org/lang/fr/).
 
 ### Corrigé
 
+- Liste de courses : à la première ouverture sur un appareil, si la liste ne peut pas être chargée (réseau coupé), la page affiche « Impossible de charger la liste de courses. » et un bouton « Réessayer », au lieu de rester indéfiniment en chargement (#402).
 - Planning : sur un nouvel appareil, la semaine n’affiche plus un instant « Aucun planning pour cette semaine. » avant de montrer le planning enregistré (#400).
 
 - Connexion d’un assistant IA : l’écran d’autorisation n’affiche plus à tort « Cette demande d’autorisation est invalide ou a expiré » quand il se charge deux fois de suite ; il ne lit plus la demande qu’une fois (#399).
